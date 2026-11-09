@@ -1,0 +1,100 @@
+;; inputs 14e0fd0dfc274cf2823dd1d24f1db05cb51d628569ea57a62716a7473478b136 programs/solvers/0c9aba6e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0c9aba6e
+
+(DET &frame_dim ConstOutDimAxis)
+
+(DET &arr_dim SepTileCountAxis)
+
+(DET &gap DivisorRatio)
+
+(INIT &tile_decompose_outer Frame
+  (extent (A N)
+    (&arr_dim *A *N)))
+
+(INIT &tile_decompose_inner Frame
+  (extent (A N)
+    (&frame_dim *A *N)))
+
+(INIT &tile_decompose_tiling Tiling
+  (outer (P)
+    (&tile_decompose_outer.cell *P))
+  (inner (P)
+    (&tile_decompose_inner.cell *P))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(DET &divide_axis AxisDomain)
+
+(DET &divide_gap DivisorRatio)
+
+(DET &combine PanelCombine)
+
+(RULE &decompose
+  (&tile_decompose_tiling.cell *P *P_outer *P_inner))
+
+(ALTS $d "how the grid splits into the two panels" $Table
+  (ALT $Count
+    (DET &divisor SepTileCount)
+
+    (INIT &decompose_division Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (parts (A N)
+        (&divide_axis *A)
+        (&divisor *N))
+      (gap (A G)
+        (&divide_axis *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &decompose
+      (&decompose_division.tile *P *P_outer *P_inner)))
+  (ALT $Size
+    (INIT &decompose_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (&divide_axis *A)
+        (&frame_dim A (:N *K)))
+      (gap (A G)
+        (&divide_axis *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &decompose
+      (&decompose_division2.tile *P *P_outer *P_inner))))
+
+(ALTS $b "how the two panels combine into a cell's output" $Lookup
+  (ALT $Nor
+    (INIT &frame_frame Frame
+      (extent (A N)
+        (&frame_dim *A *N)))
+
+    (DET &bg DominantColor)
+
+    (DET &out_fill AnyOutNewColor)
+
+    (RULE &filled
+      (input (:P *P_grid_in) *Col)
+      (NOT (&bg (:C Col)))
+      (&decompose (:P P_grid_in) (:P_inner *O)))
+
+    (RULE &output
+      (&frame_frame.cell *P)
+      (OR ((NOT (&filled (:O P)))
+           (&out_fill (:C *Col)))
+          ((&filled (:O P))
+           (&bg (:C Col)))))))
+
+(INIT &combine_match Inclusion
+  (pattern ((:pattern Id) (:m (:P P_outer) (:Col C)))
+    (&combine *Id (:P *P_outer) *C))
+  (observed ((:observed P_grid_out) (:m (:P P_tile) (:Col C)))
+    (&decompose (:P *P_grid_in) (:P_outer *P_tile) (:P_inner *P_grid_out))
+    (input (:P P_grid_in) (:Col *C))))
+
+(RULE &output
+  (&combine *Id (:C_out *Col))
+  (&combine_match.equal (:observed *P) (:pattern Id)))
+
+(OUT (&output ^P ^Col))

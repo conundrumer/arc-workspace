@@ -1,0 +1,74 @@
+;; inputs 2577ffec1838919472dcbc5c3b5838d73f843d346b4dc1dd557e07c2cd383967 programs/solvers/762cd429.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 762cd429
+
+(DET &bg DominantColor)
+
+(DET &factor SepThickness)
+
+;; Coincides with $Away on this task: the seed touches the left edge and grows right.
+(DET &grow DirDomain)
+
+;; The seed: the non-bg cells, as a box.
+(INIT &seed BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &grow2
+  (&grow *D))
+
+(RULE &seed_corner
+  (&seed.cell *P)
+  (&seed.box *B)
+  (inside (:A P) B)
+  (same_corner (:D *Dg) (:P1 P) (:P2 B)))
+
+(ALTS $choice "how the growth direction is read" $Stored
+  (ALT $Away
+    (RULE &grow2
+      (&seed.box *B)
+      (margin B (:D *D2) (:K 0))
+      (opposite (:D D2) (:Opp *D)))))
+
+(RULE &anchor
+  (&grow2 (:D *G))
+  (opposite (:D G) (:Opp *G_back))
+  (&seed_corner (:P *P_front) *Dg)
+  (diag_dirs (:D Dg) (:D1 *D) (:D2 G))
+  (&seed_corner (:P *P_back) (:Dg *Dg_back))
+  (diag_dirs (:D Dg_back) (:D1 D) (:D2 G_back))
+  (neighbor (:P P_front) (:D G) (:Q *P_next)))
+
+(RULE &source
+  (input (:P *Q))
+  (&anchor *Dg *P_back *P_next)
+  (relative (:Base P_next) (:X Q) (:X_rel *V))
+  (&factor (:G *F))
+  (diag_dirs (:D Dg) *D1 *D2)
+  (opposite (:D D1) (:Opp *O1))
+  (margin (:B V) (:D O1) (:K *K1))
+  (divide (:T K1) (:Side F) (:Gap 0) (:Part *N1))
+  (opposite (:D D2) (:Opp *O2))
+  (margin (:B V) (:D O2) (:K *K2))
+  (divide (:T K2) (:Side F) (:Gap 0) (:Part *N2))
+  (jump (:P P_back) (:D D1) (:K N1) (:Q *P1))
+  (jump (:P P1) (:D D2) (:K N2) (:Q *P)))
+
+(INIT &chain Propagation
+  (key ((&seed.cell (:P ^S)))
+    (source ((:n S))))
+  (edge ((:a P) (:b Q))
+    (&source *Q *P)))
+
+(RULE &copy
+  (&chain.reached (:key *S) (:n *P))
+  (input (:P S) *Col))
+
+(RULE &output
+  (input *P)
+  (OR ((&copy P *Col))
+      ((NOT (&copy P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

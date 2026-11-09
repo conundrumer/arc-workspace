@@ -1,0 +1,39 @@
+;; inputs 5bd171096df70bad1ab7799b3b70f7b2a068a919bbc2fbc2e95e7cefb3442d15 programs/solvers/1d61978c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1d61978c
+
+(DET &mark ChangedColor)
+
+(DET &major_paint AnyOutNewColor)
+
+(DET &minor_paint AnyOutNewColor)
+
+(RULE &streak
+  (input *P *Col)
+  (&mark (:C Col))
+  (diag_axis_of *D (:Da *A))
+  (neighbor P D *Q)
+  (input (:P Q) Col))
+
+;; Each axis against the other: excess holds for the axis with more marks.
+(INIT &cmp Excess
+  (key ((OR ((&streak *P ^A))
+            ((&streak P (:A *A2))
+             (diag_perp (:Da A) (:Da2 A2)))))
+    (plus ((:m P))
+      (&streak *P A))
+    (minus ((:m P))
+      (&streak *P (:A *A2))
+      (diag_perp (:Da A) (:Da2 A2)))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&mark (:C Col))))
+      ((&streak P *A)
+       (OR ((&cmp.excess (:key A))
+            (&major_paint (:C Col)))
+           ((diag_perp (:Da A) (:Da2 *A2))
+            (&cmp.excess (:key (:A A2)))
+            (&minor_paint (:C Col)))))))
+
+(OUT (&output ^P ^Col))

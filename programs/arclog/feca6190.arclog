@@ -1,0 +1,61 @@
+;; inputs 007f9725bc45b6ec10c7f2676e522860ebc994ab551d92fd8e7f7b6ce21e45aa programs/solvers/feca6190.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; feca6190
+
+(DET &bg DominantColor)
+
+(INIT &side Cardinality
+  (member ((:m (:Ink P) (:Cell Q)))
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (input (:P *Q))))
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side.size *N)))
+
+(RULE &long_axis
+  (input *P)
+  (axis_extents P *A *N1 *N2)
+  (> N1 N2))
+
+(DET &sweep DiagDirDomain)
+
+(RULE &seated
+  (input (:P *P_in) *Col)
+  (&frame.cell *P)
+  (&sweep (:D *Diag))
+  (&long_axis *A)
+  (diag_dirs (:D Diag) A (:D1 *Dh) (:D2 *Dv))
+  (opposite (:D Dh) (:Opp *Dh0))
+  (opposite (:D Dv) (:Opp *Dv0))
+  (margin (:B P) (:D Dv0) (:K 0))
+  (same_dist (:D Dh0) (:P1 P_in) (:P2 P)))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&seated *P)
+    (frame_extent P *A *N)))
+
+(INIT &rays Ray
+  (source (P)
+    (&seated *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir (D)
+    (&sweep *D)))
+
+(RULE &rays_ray
+  (&rays.ray *P *D *K (:Origin *Src))
+  (&frame.cell P))
+
+(RULE &output
+  (OR ((&rays.ray *P (:Origin *Q))
+       (&frame.cell P)
+       (&seated (:P Q) *Col))
+      ((&frame.cell P)
+       (NOT (&rays_ray P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

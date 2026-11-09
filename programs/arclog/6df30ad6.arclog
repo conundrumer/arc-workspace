@@ -1,0 +1,102 @@
+;; inputs 130a3ced3f77e6e97d01e88560df52a7134f1c256a1d19059d37cdf61b0670d0 programs/solvers/6df30ad6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6df30ad6
+
+(DET &bg DominantColor)
+
+(DET &shape VanishedColor)
+
+(RULE &shape2
+  (input *P *Col)
+  (&shape (:C Col)))
+
+(RULE &dot
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&shape (:C Col))))
+
+(RULE &grow_step
+  (dir8_elem *D))
+
+(RULE &other_step
+  (dir_elem *D))
+
+(ALTS $grow "the ring shape" $Square
+  (ALT $Diamond
+    (RULE &grow_step
+      (dir_elem *D))
+
+    (RULE &other_step
+      (dir8_elem *D))))
+
+(ALTS $tie "settles a first ring that holds dots of several colors" $Nearer
+  (ALT $Most
+    (INIT &most_count Cardinality
+      (key ((&first.minimal (:t (:V *P)))
+            (&dot P ^Col))
+        (member ((:m P))
+          (&first.minimal (:t (:V *P)))
+          (&dot P Col))))
+
+    ;; The color with the most dots in the first ring.
+    (INIT &most Order
+      (member ((:t Col))
+        (&most_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&most_count.size (:key *Col) *N)))
+
+    (RULE &fill
+      (&most.maximal (:t *Col)))))
+
+;; The rings each growth adds around the shape: a cell's ring is its hop
+;; count from the shape under that growth's steps.
+(INIT &rings Distance
+  (edge ((:a Q) (:b P))
+    (input (:P *Q))
+    (input *P)
+    (&grow_step *D)
+    (neighbor (:P Q) D (:Q P)))
+  (source ((:n P))
+    (&shape2 *P)))
+
+;; The dots in the first ring that holds one.
+(INIT &first Order
+  (member ((:t (:V P) (:S K)))
+    (&dot *P)
+    (&rings.distance (:n P) *K))
+  (score ((:t (:V P) (:S K)) (:S K))
+    (&dot *P)
+    (&rings.distance (:n P) *K)))
+
+;; The other growth's rings around the shape, keyed by the growth whose first
+;; ring they order.
+(INIT &other_rings Distance
+  (edge ((:a Q) (:b P))
+    (input (:P *Q))
+    (input *P)
+    (&other_step *D)
+    (neighbor (:P Q) D (:Q P)))
+  (source ((:n P))
+    (&shape2 *P)))
+
+;; The nearest of the first ring's dots, by the other growth's rings.
+(INIT &nearest Order
+  (member ((:t (:V P) (:S K)))
+    (&first.minimal (:t (:V *P)))
+    (&other_rings.distance (:n P) *K))
+  (score ((:t (:V P) (:S K)) (:S K))
+    (&first.minimal (:t (:V *P)))
+    (&other_rings.distance (:n P) *K)))
+
+(RULE &fill
+  (&nearest.minimal (:t (:V *P)))
+  (&dot P *Col))
+
+(RULE &output
+  (OR ((&shape2 *P)
+       (&fill *Col))
+      ((input P)
+       (NOT (&shape2 P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

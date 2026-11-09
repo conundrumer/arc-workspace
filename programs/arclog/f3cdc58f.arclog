@@ -1,0 +1,70 @@
+;; inputs 66c284d46c9f61a7d758557185c59d0265f5738186ca7452a425f081a24be6b7 programs/solvers/f3cdc58f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f3cdc58f
+
+(INPUT scattered-marks "a grid on the background color (0) holds single cells, each in one of the palette colors (1, 2, 3, 4), scattered without structure.")
+
+(INPUT counts-fit-height "each palette color has at most as many cells as the grid has rows.")
+
+(OUTPUT bar-per-color "the output has the input's size and is background everywhere except the bars.")
+
+(OUTPUT bar-position "the bar of the color at rank k in bar_order is the line k cells from the start_side edge, perpendicular to that edge."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  ;; the edge the first bar sits against
+  (DET &start_side DirDomain)
+
+  (DET &bar_order
+    (ex_output *P (:Col *C))
+    (NOT (&bg C))
+    (&start_side (:D *S))
+    (margin (:B P) (:D S) (:K *R)))
+
+  ;; the cell count of each bar_order color
+  (INIT &color_count Cardinality
+    (key ((input *P ^Col)
+          (&bar_order (:C Col)))
+      (member ((:m P))
+        (input *P Col)
+        (&bar_order (:C Col)))))
+
+  ;; the colors the input holds, in bar_order
+  (INIT &held Order
+    (member ((:t Col))
+      (&color_count.size (:key *Col)))
+    (score ((:t Col) (:S R))
+      (&color_count.size (:key *Col))
+      (&bar_order (:C Col) *R))))
+
+(OUTPUT bar-height "the bar starts on the base_side edge and reaches as many cells into the grid as the input has cells of its color, painted in that color.")
+
+(ALTS $choice "what a color with no cell does to the slots" $KeepSlot
+  (ALT $PackBars
+    (OUTPUT bar-position "a color's bar stands at its rank among the bar_order colors the input holds.")
+    (RULE &slot
+      (&held.rank (:t *Col) *R))))
+
+;; the edge the bars stand on
+(DET &base_side DirDomain)
+
+(RULE &slot
+  (&bar_order (:C *Col) *R))
+
+(RULE &bar
+  (input *P)
+  (&slot *Col *R)
+  (&start_side (:D *S))
+  (margin (:B P) (:D S) (:K R))
+  (&base_side (:D *B))
+  (margin (:B P) (:D B) *K)
+  (&color_count.size (:key Col) *N)
+  (< K N))
+
+(RULE &output
+  (OR ((&bar *P *Col))
+      ((input P)
+       (NOT (&bar P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

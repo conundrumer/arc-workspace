@@ -123,7 +123,7 @@ The encoder runs one level at a time: the t-th table of every program of a batch
 
 ## Training
 
-The engine replays each gold stream of `work/arclog/gen/`, and later of re-arc and arcscene tasks, and records each table at its token index. The encoder and the language model train end to end on the next-token loss. Random identifiers are drawn fresh for each training example.
+The engine replays each gold stream of `programs/arclog/`, and later of re-arc and arcscene tasks, and records each table at its token index. The encoder and the language model train end to end on the next-token loss. Random identifiers are drawn fresh for each training example.
 
 The encoder also takes a masked loss on every table: a field of a row is hidden, and the encoder predicts it from the table's other rows, the evidence tables' rows and the earlier tables' vectors. A number or a margin is predicted as a class, a Position or direction per edge from the edge channels, and an identity value as a pointer to a row that holds the same value, or as a value no row holds. Since a derived table follows from earlier tables, the loss also trains the cached vectors to keep what later tables need. Masked fields of `ex_output` are the task itself.
 

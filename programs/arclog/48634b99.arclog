@@ -1,0 +1,124 @@
+;; inputs 58ddec092fd2ae0d3a110e75a22c7e74722b8225ed140f62f67a46dbb4799c26 programs/solvers/48634b99.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 48634b99
+
+(DET &bg DominantColor)
+
+(DET &bar ColorDomain)
+
+(DET &mark ChangedColor)
+
+(DET &axis AxisDomain)
+
+(DET &step TileCount)
+
+(RULE &bar_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bars Connectivity
+  (node (P)
+    (&bar_cell *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&bars.component *P ^Id))
+    (cell (P)
+      (&bars.component *P Id))))
+
+(RULE &bar_pos
+  (&bars.component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &gauge
+  (&bars.component *P *Id)
+  (&mark_cell P))
+
+(RULE &fill_dir
+  (&gauge *Id)
+  (&bbox.box (:key Id) *B)
+  (&bars.component *P Id)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B))
+  (&mark_cell P)
+  (&axis *A)
+  (axis_of D A))
+
+(RULE &bar_idx
+  (&bar_pos *Id *P *P_inner)
+  (&fill_dir *D)
+  (margin (:B P_inner) D *K))
+
+;; $Step — the bar a gauge cell's within-bar position lands in once the bar
+;; is stretched by &step.
+(RULE &target
+  (&gauge (:Id *Id_g))
+  (&bar_pos (:Id Id_g) *P_inner)
+  (&axis *A)
+  (axis_of *D A)
+  (&step (:N *K))
+  (edge_inset D K (:B *B_step))
+  (compose (:A P_inner) (:B B_step) (:C *P_inner2))
+  (&bar_pos *Id (:P_inner P_inner2)))
+
+(RULE &fill_idx
+  (&gauge *Id)
+  (&bar_idx Id *P *K)
+  (OR ((&mark_cell P))
+      ((&fill_dir *D)
+       (neighbor P D *Q)
+       (&mark_cell (:P Q)))))
+
+(ALTS $t "which bar the gauge moves to" $Step
+  (ALT $Next
+    (RULE &bar_len
+      (&axis *A)
+      (&bars.component *P *Id)
+      (&bbox.box (:key Id) *B)
+      (box_extent B P A *N))
+
+    (INIT &longer Order
+      (member ((:t (:V Id) (:S N)))
+        (&bar_len *Id *N)
+        (&gauge (:Id *Id_g))
+        (&bar_len (:Id Id_g) (:N *N_g))
+        (> N N_g))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&bar_len *Id *N)
+        (&gauge (:Id *Id_g))
+        (&bar_len (:Id Id_g) (:N *N_g))
+        (> N N_g)))
+
+    (RULE &target
+      (&longer.minimal (:t (:V *Id))))))
+
+(ALTS $f "how far the fill reaches" $Grow
+  (ALT $Half
+    ;; $Half — nearer the fill's end than the far end.
+    (RULE &filled
+      (&target *Id)
+      (&bar_pos Id *P *P_inner)
+      (&fill_dir *D)
+      (dist_pair (:P P_inner) D *K *K2)
+      (< K K2))))
+
+(RULE &filled
+  (&target *Id)
+  (&bar_idx Id *P *K)
+  (&fill_idx K))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&mark (:C *Col)))
+      ((input P)
+       (IF ((&bar_cell P))
+           ((NOT (&filled P))
+            (&bar (:C Col)))
+           ((&bg (:C Col)))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,6 @@
+;; inputs 1a27c1ca73ddd530b870f71c0350f581e626b8da8dda4628863fbce82f004d22 programs/solvers/53b68214.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 53b68214
+
+(param &growth Dir (DIR_B))
+(param &out_dim number (10))

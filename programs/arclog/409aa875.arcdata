@@ -1,0 +1,23 @@
+;; inputs 1c89dbc81de161a7b839e397d18a2aed2ab9dfe6462924f64d587b9d29783c3d programs/solvers/409aa875.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 409aa875
+
+(param &bg Color (7))
+(param &mark Color (9))
+(param &clash Color (1))
+(param &reach number (5))
+(param &glyph.shape (Ident Position)
+  (0 (grid
+    (1 1)
+    (1 _)))
+  (1 (grid
+    (_ 1 _)
+    (1 _ 1))))
+(param &glyph.apex (Ident Position)
+  (0 (grid
+    (1 _)
+    (_ _)))
+  (1 (grid
+    (_ 1 _)
+    (_ _ _))))
+(param &glyph.aim (Ident Dir8) (0 DIAG_TL) (1 DIR_T))

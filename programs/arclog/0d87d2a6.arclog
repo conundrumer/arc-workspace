@@ -1,0 +1,91 @@
+;; inputs 182dc49048ca0f311e4446488f5e361db56a4183d484af1cc73fe6752deb6152 programs/solvers/0d87d2a6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0d87d2a6
+
+(DET &mark RarestColor)
+
+;; Keyed by the axis of the edge the marker sits on.
+(INIT &mark_cast Ray
+  (key ((OR ((input (:P *M) *Col)
+             (&mark (:C Col))
+             (margin (:B M) *D (:K 0))
+             (axis_of D ^A))
+            ((axis_elem A)
+             (axis4_of D A))
+            ((axis_elem A)
+             (input *P))))
+    (source ((:P M))
+      (input (:P *M) *Col)
+      (&mark (:C Col))
+      (margin (:B M) *D (:K 0))
+      (axis_of D A))
+    (node (P)
+      (axis_elem A)
+      (input *P))
+    (dir (D)
+      (axis_elem A)
+      (axis4_of *D A))))
+
+(RULE &mark_cast_cell
+  (axis_elem (:A *Key))
+  (input))
+
+(RULE &mark_cast_ray
+  (&mark_cast.ray (:key (:A *Key)) *P *D *K (:Origin *Src))
+  (&mark_cast_cell Key)
+  (input P))
+
+(DET &body ColorDomain)
+
+(DET &paint RarestColor)
+
+(RULE &line
+  (&mark_cast_ray *P))
+
+(ALTS $d "how a line is drawn" $Cast
+  (ALT $Span
+    (RULE &mark_cast_between
+      (axis_elem (:A *Key))
+      (input *P)
+      (axis4_of *D (:A Key))
+      (dir8_opposite D (:D2 *O))
+      (&mark_cast.ray (:key (:A Key)) P D)
+      (&mark_cast.ray (:key (:A Key)) P (:D O)))
+
+    (RULE &line
+      (&mark_cast_between *P))))
+
+(ALTS $s "which objects a line catches" $Graze
+  (ALT $Pierce
+    ;; The objects a line catches: the components that the line's cells select.
+    ;; $Pierce is the seed rule alone — a line cell that lands on an object selects
+    ;; it, and one that lands elsewhere selects nothing.
+    (INIT &reach Flood
+      (node (P)
+        (input *P *Col)
+        (&body (:C Col)))
+      (source (P)
+        (&line *P)))))
+
+;; The objects a line catches: the components that the line's cells select.
+;; $Pierce is the seed rule alone — a line cell that lands on an object selects
+;; it, and one that lands elsewhere selects nothing.
+(INIT &reach Flood
+  (node (P)
+    (OR ((input *P *Col)
+         (&body (:C Col)))
+        ((&line P))))
+  (source (P)
+    (&line *P)))
+
+(RULE &painted
+  (OR ((&line *P))
+      ((&reach.reached P))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

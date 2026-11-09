@@ -1,0 +1,375 @@
+;; inputs ac2cc0b5faa39dd99b56533a2ff4d1755060289d77bdebc55f06f99a4a2e528f programs/solvers/d6e50e54.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d6e50e54
+
+(INPUT one-square-block "one solid square of &block_color on a field of &bg"
+
+  (DET &block_color
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output (:Col C))))
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (DET &uneven
+    (&palette.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&palette.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&palette.maximal (:t *C))
+    (NOT (&uneven (:Col C))))
+
+  (RULE &joined
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) Col))
+
+  (INIT &piece Connectivity
+    (key ((&joined *P ^Col))
+      (node (P)
+        (&joined *P Col)))))
+
+(INPUT single-cell-marks "one or more single cells of &mark_color, each outside the block"
+
+  (DET_OR_RULE &mark_color RarestColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Bg))
+    (&bg (:C Bg))
+    (NOT (&bg C))))
+
+(INPUT marks-in-line "each mark lies in the block's rows or in the block's columns, so it faces exactly one side of the block")
+
+(OUTPUT block-recolor "every cell of the block becomes &fill_color"
+
+  (DET &fill_color
+    (ex_output (:Col *C))
+    (NOT (ex_input (:Col C)))))
+
+(OUTPUT mark-cleared "each mark's input cell becomes &bg")
+
+(OUTPUT mark-pull "a mark at distance d from the side it faces (d = 1 for a cell touching the block) moves toward the block along its line. When d is less than the block's side length, measured along the mark's line, the mark lands on the block's cell on that side, in the mark's line. Otherwise it lands on the cell just outside that side, in the mark's line"
+
+  (RULE &block
+    (input *P *Col)
+    (&block_color (:C Col)))
+
+  (RULE &found_mark)
+
+  (RULE &mark
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &overlap
+    (&mark *P)
+    (&block P))
+
+  (RULE &find
+    (&found_mark)
+    (&block)
+    (NOT (&overlap)))
+
+  (RULE &pull_blocked
+    (&find)
+    (&block *P))
+
+  (RULE &pull_dir
+    (&find)
+    (dir_elem *D))
+
+  ;; Each mark's casts along its row and column, stopped by the block.
+  (INIT &pull Ray
+    (source (P)
+      (&find)
+      (&mark *P))
+    (node (P)
+      (input *P)
+      (NOT (&pull_blocked P)))
+    (dir (D)
+      (&pull_dir *D)))
+
+  (INIT &pull_full Ray
+    (source (P)
+      (&find)
+      (&mark *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&pull_dir *D)))
+
+  (RULE &pull_stop_full
+    (&pull.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&pull_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &approach
+    (&pull_stop_full (:V1 *Q) (:V2 *D_in) (:V3 *K) (:V4 *Src))
+    (opposite (:D D_in) (:Opp *D)))
+
+  (INIT &nearest Order
+    (member ((:t K))
+      (&approach *K))
+    (score ((:t K) (:S K))
+      (&approach *K)))
+
+  ;; The marks of each lane, ranked by distance.
+  (INIT &lane Order
+    (key ((&approach ^Q ^D *K))
+      (member ((:t K))
+        (&approach Q D *K))
+      (score ((:t K) (:S K))
+        (&approach Q D *K)))))
+
+(OUTPUT mark-on-top "a mark that lands on the block is drawn in &mark_color over the fill")
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &offline
+    (&find)
+    (&mark (:P *Src))
+    (NOT (&approach Src)))
+
+  (INIT &hull BoundingBox
+    (cell (P)
+      (&block *P)))
+
+  (RULE &side
+    (&hull.box *B)
+    (&block *P)
+    (box_extent B P *A *N))
+
+  ;; The mark's distance is below the block's extent along the mark's line.
+  (RULE &within
+    (&approach *Src *D *K)
+    (axis_of D *A)
+    (&side A *N)
+    (< K N))
+
+  (RULE &lands
+    (&within *Src))
+
+  (RULE &landing
+    (&approach *Src *Q *D)
+    (OR ((NOT (&lands Src))
+         (neighbor (:P Q) D (:Q *P)))
+        ((&lands Src)
+         (= P Q))))
+
+  (RULE &rest
+    (&landing *Src *P))
+
+  (RULE &placed
+    (&rest *Src *P)
+    (input (:P Src) *Col))
+
+  (RULE &defined
+    (&find)
+    (NOT (&offline))))
+
+(ALTS $l "which marks land on the block" $Within
+  (ALT $Within
+    (ALTS $r "what gives the reach a mark's distance is compared with" $Along
+      (ALT $ReachAcross
+        (OUTPUT mark-pull "the reach is the block's extent along the side the mark faces; defined where the concept is"
+          ;; The distance is below the block's extent along the side the mark faces.
+          (RULE &within
+            (&approach *Src *D *K)
+            (axis_of D *A)
+            (perp A *A2)
+            (&side (:A A2) *N)
+            (< K N))))
+      (ALT $ReachMin
+        (OUTPUT mark-pull "the reach is the shorter of the block's two extents; defined where the concept is"
+          ;; The distance is below both of the block's extents.
+          (RULE &within
+            (&approach *Src *D *K)
+            (axis_of D *A)
+            (perp A *A2)
+            (&side A (:N *N1))
+            (&side (:A A2) (:N *N2))
+            (< K N1)
+            (< K N2))))
+      (ALT $ReachMax
+        (OUTPUT mark-pull "the reach is the longer of the block's two extents; defined where the concept is"
+          ;; The distance is below one of the block's extents.
+          (RULE &within
+            (&approach *Src *K)
+            (&side *N)
+            (< K N))))))
+  (ALT $NearestLands
+    (OUTPUT mark-pull "a mark lands on the block when it is the nearest to the block of all marks, ties included, and stops just outside it otherwise; defined where the concept is"
+      (RULE &within
+        (&approach *Src *K)
+        (&nearest.minimal (:t K))))))
+
+(ALTS $tc "a mark that touches the block" $TouchLands
+  (ALT $TouchStays
+    (OUTPUT mark-pull "a mark that touches the block stays where it is, just outside it; defined where the concept is"
+      (RULE &touching
+        (&approach *Src *Q *D)
+        (neighbor (:P Q) D (:Q Src)))
+
+      (RULE &lands
+        (&within *Src)
+        (NOT (&touching Src))))))
+
+(ALTS $rc "when the block takes the fill color" $Always
+  (ALT $RecolorWhenHit
+    (OUTPUT block-recolor "the block takes &fill_color only when a mark lands on it, and keeps its color otherwise; defined where the concept is"
+      (RULE &hit
+        (&rest *P)
+        (&block P)))
+    (RULE &output
+      (OR ((&defined)
+           (&block *P)
+           (NOT (&placed P))
+           (IF ((&hit))
+               ((&fill_color (:C *Col)))
+               ((input P Col))))
+          ((&defined)
+           (&placed P Col))
+          ((&defined)
+           (&mark P)
+           (NOT (&placed P))
+           (&bg (:C Col)))
+          ((&defined)
+           (input P Col)
+           (NOT (&placed P))
+           (NOT (&block P))
+           (NOT (&mark P)))))
+    (ALT $RestCleared
+      (RULE &output
+        (OR ((&defined)
+             (&block *P)
+             (NOT (&placed P))
+             (IF ((&hit))
+                 ((&fill_color (:C *Col)))
+                 ((input P Col))))
+            ((&defined)
+             (input P)
+             (NOT (&placed P))
+             (NOT (&block P))
+             (NOT (&mark P))
+             (&bg (:C Col)))
+            ((&defined)
+             (&placed P Col))
+            ((&defined)
+             (&mark P)
+             (NOT (&placed P))
+             (&bg (:C Col))))))))
+
+(ALTS $co "two marks that land on one cell" $Merge
+  (ALT $Stack
+    (OUTPUT mark-pull "marks on one line and one side rest in order of distance, each farther one on the next cell outward from the one before it when its own landing cell is taken; defined where the concept is"
+      ;; A lane's marks rest in a row outward from where its nearest mark lands, each
+      ;; one cell further out per mark nearer than it.
+      (RULE &rest
+        (&approach *Src *Q *D *K)
+        (&lane.rank (:key Q D) (:t K) *R)
+        (&approach (:Src *Src0) Q D (:K *K0))
+        (&lane.rank (:key Q D) (:t K0) (:R 0))
+        (&landing (:Src Src0) (:P *P0))
+        (jump (:P P0) D (:K R) (:Q *P))))))
+
+(ALTS $ol "a mark in neither the block's rows nor its columns" $OffLineUndefined
+  (ALT $OffLineStay
+    (INPUT marks-in-line "a mark may lie in neither the block's rows nor its columns")
+    (OUTPUT off-line-stay "such a mark stays where it is"
+      (RULE &placed
+        (OR ((&offline (:Src *P))
+             (input P *Col))
+            ((&rest *Src P)
+             (input (:P Src) Col))))
+
+      (RULE &defined
+        (&find))))
+  (ALT $OffLineErase
+    (INPUT marks-in-line "a mark may lie in neither the block's rows nor its columns")
+    (OUTPUT off-line-erase "such a mark clears to &bg"
+      (RULE &defined
+        (&find)))))
+
+(ALTS $rs "the cells no rule names" $RestKept
+  (ALT $RestCleared
+    (OUTPUT rest-kept "every other cell becomes &bg; defined where the concept is")
+    (RULE &output
+      (OR ((&defined)
+           (input *P)
+           (NOT (&placed P))
+           (NOT (&block P))
+           (NOT (&mark P))
+           (&bg (:C *Col)))
+          ((&defined)
+           (&placed P Col))
+          ((&defined)
+           (&mark P)
+           (NOT (&placed P))
+           (&bg (:C Col)))
+          ((&defined)
+           (&block P)
+           (NOT (&placed P))
+           (&fill_color (:C Col)))))))
+
+(ALTS $mc "how the marks are found" $MarkStored
+  (ALT $MarkColorByShape
+    (INPUT single-cell-marks "the marks are the single-cell objects of any color other than &bg; undefined where they have more than one color"
+      (RULE &lone
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&joined P Col)))
+
+      (RULE &mixed
+        (&lone (:Col *Col1))
+        (&lone (:Col *Col2))
+        (!= Col1 Col2))
+
+      (RULE &mark
+        (&lone *P)
+        (NOT (&mixed)))
+
+      (RULE &found_mark
+        (NOT (&mixed))))))
+
+(ALTS $bk "how the block is found" $BlockStored
+  (ALT $BlockColorByShape
+    (INPUT one-square-block "the block is the one object of more than one cell of any color other than &bg; undefined where there is not exactly one"
+      (RULE &two_pieces
+        (&piece.component (:Id *Id1))
+        (&piece.component (:Id *Id2))
+        (!= Id1 Id2))
+
+      (RULE &block
+        (&joined *P)
+        (NOT (&two_pieces))))))
+
+(RULE &output
+  (OR ((&defined)
+       (&placed *P *Col))
+      ((&defined)
+       (&mark P)
+       (NOT (&placed P))
+       (&bg (:C Col)))
+      ((&defined)
+       (&block P)
+       (NOT (&placed P))
+       (&fill_color (:C Col)))
+      ((&defined)
+       (input P Col)
+       (NOT (&placed P))
+       (NOT (&block P))
+       (NOT (&mark P)))))
+
+(OUT (&output ^P ^Col))

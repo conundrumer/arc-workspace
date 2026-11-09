@@ -1,0 +1,131 @@
+;; inputs f434e436f6216d764d42fad51dc8df74be71372a66f0dbf9e544ed84df7629de programs/solvers/447fd412.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 447fd412
+
+;; The drawing's color.
+(DET &ink RarestColor)
+
+;; The color of the marks and of the blocks.
+(DET &mark UnchangedColor)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(INIT &obj Connectivity
+  (node (P)
+    (OR ((&ink_cell *P))
+        ((input P *Col)
+         (&mark (:C Col))))))
+
+(RULE &template
+  (&obj.component *Id *P)
+  (&ink_cell P))
+
+(INIT &block BoundingBox
+  (key ((&obj.component ^Id *P)
+        (NOT (&template Id)))
+    (cell (P)
+      (&obj.component Id *P)
+      (NOT (&template Id)))))
+
+(RULE &template_cell
+  (&template *Id)
+  (&obj.component Id *P)
+  (input P *Col))
+
+(RULE &template_mark
+  (&template_cell *P *Col)
+  (&mark (:C Col)))
+
+(RULE &side
+  (&block.box (:key *Id) *B)
+  (&block.cell (:key Id) *P)
+  (perp *A *A2)
+  (box_extent B P A (:N *K))
+  (box_extent B P (:A A2) (:N K)))
+
+(RULE &strip
+  (&side *Id *K)
+  (&block.box (:key Id) *B)
+  (input (:P *Q))
+  (relative (:Base B) (:X Q) (:X_rel *Q_rel))
+  (opposite *D (:Opp *O))
+  (margin (:B Q_rel) (:D O) (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Part *N) (:Remainder *K_in)))
+
+(RULE &scaled
+  (&template_mark (:P *T0))
+  (&strip *Id *Q (:D *D1) (:N *N1))
+  (axis_of (:D D1) (:A *A1))
+  (jump (:P T0) (:D D1) (:K N1) (:Q *P1))
+  (&strip Id Q (:D *D2) (:N *N2))
+  (axis_of (:D D2) (:A *A2))
+  (perp (:A A1) A2)
+  (jump (:P P1) (:D D2) (:K N2) (:Q *P))
+  (&template_cell P))
+
+(RULE &box_place
+  (&strip *Id (:Q *C) (:D *D1) (:N 0) (:K_in *K1))
+  (axis_of (:D D1) (:A *A1))
+  (&strip Id (:Q C) (:D *D2) (:N 0) (:K_in *K2))
+  (axis_of (:D D2) (:A *A2))
+  (perp (:A A1) A2))
+
+(RULE &seated
+  (&scaled *T0 *Id *P (:Q *C))
+  (&template_mark P)
+  (&block.cell (:key (:Id *Id2)) (:P C))
+  (&side Id *K)
+  (&side (:Id Id2) K)
+  (&block.box (:key (:Id Id2)) (:B *B2))
+  (inside (:A C) (:B B2))
+  (relative (:Base B2) (:X C) (:X_rel *R))
+  (&strip Id (:Q C) (:D *D1) (:K_in *K1))
+  (&strip Id (:Q C) (:D *D2) (:K_in *K2))
+  (&box_place Id D1 K1 D2 K2 (:C *C2))
+  (&block.box (:key Id) *B)
+  (inside (:A C2) B)
+  (relative (:Base B) (:X C2) (:X_rel R)))
+
+(RULE &astray
+  (&template_mark (:P *T0))
+  (&side *Id)
+  (&template_mark *P)
+  (NOT (&seated T0 Id P)))
+
+(RULE &covers
+  (&scaled *T0 *Id *P *Q)
+  (NOT (&astray T0 Id)))
+
+(RULE &carried
+  (&template_cell *P *Col)
+  (&ink (:C Col)))
+
+(RULE &covered_cell
+  (&covers *P *Q))
+
+(ALTS $carry "What a template cell carries into its box." $Ink
+  (ALT $Whole
+    (RULE &carried
+      (&template_cell *P *Col))))
+
+(ALTS $cover "Which cells of a covered box the stamp reaches." $Box
+  (ALT $Cells
+    (RULE &covered_cell
+      (&covers *Id *P *Q)
+      (&strip Id Q (:D *D1) (:K_in *K1))
+      (&strip Id Q (:D *D2) (:K_in *K2))
+      (&box_place Id D1 K1 D2 K2 *C)
+      (&block.cell (:key Id) (:P C)))))
+
+(RULE &stamped
+  (&covered_cell (:P *P2) (:Q *P))
+  (&carried (:P P2) *Col))
+
+(RULE &output
+  (OR ((&stamped *P *Col))
+      ((input P Col)
+       (NOT (&stamped P)))))
+
+(OUT (&output ^P ^Col))

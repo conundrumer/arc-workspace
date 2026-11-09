@@ -1,0 +1,102 @@
+;; inputs af5245908fe7a5cbf2a6160828461d05e694aa51787a4afb0f438f7b36c5b128 programs/solvers/27a28665.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 27a28665
+
+(DET &bg RarestColor)
+
+(DET &out_dim
+  (ex_output *P)
+  (frame_extent P *A *N))
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (&out_dim *A *N)))
+
+(RULE &silhouette
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Examples with the same silhouette share an entry.
+(INIT &same Inclusion
+  (pattern ((:pattern E) (:m P))
+    (&silhouette *E *P)
+    (ex_output E))
+  (observed ((:observed E) (:m P))
+    (&silhouette *E *P)
+    (ex_output E)))
+
+(INIT &entry Quotient
+  (equivalent ((:a E) (:b E2))
+    (&same.equal (:observed *E) (:pattern *E2))))
+
+(DET &pattern_member
+  (&entry.class (:a *E) *Id)
+  (ex_output E)
+  (&silhouette E *P))
+
+(INIT &lookup_match Inclusion
+  (pattern ((:pattern Id) (:m P))
+    (&pattern_member *Id *P))
+  (observed ((:m P))
+    (&silhouette *P)))
+
+(DET &pattern_out
+  (&entry.class (:a *E) *Id)
+  (ex_output E (:Col *C)))
+
+(ALTS $choice "what of the silhouette gives the color" $Lookup
+  (ALT $Classify
+    (DET &cell_train
+      (ex_input (:E *E_train) *P)
+      (ex_output (:E E_train)))
+
+    (DET &in_dim ConstInDim)
+
+    (INIT &corner_pos_frame Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&in_dim *N)))
+
+    (DET &corner_pos
+      (&corner_pos_frame.cell *P)
+      (same_corner *D (:P1 P) (:P2 0)))
+
+    (DET &center_pos
+      (&cell_train *P)
+      (centered P))
+
+    (RULE &center_on
+      (&center_pos *P)
+      (&silhouette P))
+
+    (INIT &corners Cardinality
+      (member ((:m P))
+        (&corner_pos *P)
+        (&silhouette P))
+      (domain ()
+        (input)))
+
+    (DET &center_off_out
+      (ex_output *E (:Col *C))
+      (NOT (&center_on E)))
+
+    (DET &center_on_out
+      (ex_output *E (:Col *C))
+      (&center_on E)
+      (&corners.size E *N))
+
+    (RULE &output
+      (OR ((NOT (&center_on))
+           (&center_off_out (:C *Col))
+           (&out_pos_frame.cell *P))
+          ((&center_on)
+           (&corners.size *N)
+           (&center_on_out N (:C Col))
+           (&out_pos_frame.cell P))))))
+
+(RULE &output
+  (&pattern_out *Id (:C *Col))
+  (&lookup_match.equal (:pattern Id))
+  (&out_pos_frame.cell *P))
+
+(OUT (&output ^P ^Col))

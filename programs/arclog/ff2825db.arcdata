@@ -1,0 +1,124 @@
+;; inputs 9b0eaf214d825434c83e79eee4b56aa0f5c35437d41425392751a8e91293827c programs/solvers/ff2825db.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ff2825db
+
+(param &background Color (0))
+(param &strip_side Dir (DIR_T))
+
+(alts $side
+  (alt $StripSideDerived
+    (witness strip-left variant $StripSideDerived
+      (relaxed palette-strip)
+      (separates "the palette strip lies on the left edge line, not the top; the concept at the stored top side reads the top row as the strip and the left frame column as scattered cells, so color 5 wins and only the frame is drawn, while $StripSideDerived finds the strip on the left, picks 2 and draws its box outline")
+      (input (grid
+        (1 5 5 5 5 5 5 5 5 5)
+        (1 5 0 0 0 0 0 0 0 5)
+        (2 5 0 0 0 0 0 0 0 5)
+        (2 5 0 0 1 0 2 0 0 5)
+        (3 5 0 0 0 0 0 0 0 5)
+        (3 5 0 0 0 0 0 0 0 5)
+        (4 5 0 0 0 1 2 0 0 5)
+        (4 5 0 2 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output $StripSideStored (grid
+        (1 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 0 0 0 0 0 0 0 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output $StripSideDerived (grid
+        (1 2 2 2 2 2 2 2 2 2)
+        (1 2 0 0 0 0 0 0 0 2)
+        (2 2 0 0 0 0 0 0 0 2)
+        (2 2 0 2 2 2 2 0 0 2)
+        (3 2 0 2 0 0 2 0 0 2)
+        (3 2 0 2 0 0 2 0 0 2)
+        (4 2 0 2 0 0 2 0 0 2)
+        (4 2 0 2 2 2 2 0 0 2)
+        (5 2 0 0 0 0 0 0 0 2)
+        (5 2 2 2 2 2 2 2 2 2))))))
+
+(alts $tie
+  (alt $TieBoth
+    (witness tied-counts borderline any
+      (relaxed distinct-counts)
+      (separates "the two scattered colors have 2 cells each: the concept is undefined on the tie, while $TieBoth gives one output per tied color")
+      (input (grid
+        (1 1 2 2 3 3 4 4 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 0 0 1 0 0 0 0 0 5)
+        (5 0 0 0 0 0 1 0 0 5)
+        (5 0 0 2 0 0 2 0 0 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output $TieUndefined undefined)
+      (output $TieBoth
+        (grid
+          (1 1 2 2 3 3 4 4 5 5)
+          (1 1 1 1 1 1 1 1 1 1)
+          (1 0 0 0 0 0 0 0 0 1)
+          (1 0 0 0 0 0 0 0 0 1)
+          (1 0 0 1 1 1 1 0 0 1)
+          (1 0 0 1 1 1 1 0 0 1)
+          (1 0 0 0 0 0 0 0 0 1)
+          (1 0 0 0 0 0 0 0 0 1)
+          (1 0 0 0 0 0 0 0 0 1)
+          (1 1 1 1 1 1 1 1 1 1))
+        (grid
+          (1 1 2 2 3 3 4 4 5 5)
+          (2 2 2 2 2 2 2 2 2 2)
+          (2 0 0 0 0 0 0 0 0 2)
+          (2 0 0 0 0 0 0 0 0 2)
+          (2 0 0 0 0 0 0 0 0 2)
+          (2 0 0 0 0 0 0 0 0 2)
+          (2 0 0 2 2 2 2 0 0 2)
+          (2 0 0 0 0 0 0 0 0 2)
+          (2 0 0 0 0 0 0 0 0 2)
+          (2 2 2 2 2 2 2 2 2 2))))))
+
+(alts $region
+  (alt $CountWithStrip
+    (witness color-off-strip borderline concept
+      (separates "a scattered color, 6, is not in the strip; the concept counts the box alone and picks 6 (3 cells against 2), while $CountWithStrip adds the strip's two cells of 1 and picks 1")
+      (input (grid
+        (1 1 2 2 3 3 4 4 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 0 0 0 0 0 0 6 0 5)
+        (5 0 0 1 0 0 0 0 0 5)
+        (5 0 0 0 0 0 1 0 0 5)
+        (5 0 0 6 0 0 6 0 0 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 0 0 0 0 0 0 0 0 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output $CountBox (grid
+        (1 1 2 2 3 3 4 4 5 5)
+        (6 6 6 6 6 6 6 6 6 6)
+        (6 0 0 0 0 0 0 0 0 6)
+        (6 0 0 6 6 6 6 6 0 6)
+        (6 0 0 6 0 0 0 6 0 6)
+        (6 0 0 6 0 0 0 6 0 6)
+        (6 0 0 6 6 6 6 6 0 6)
+        (6 0 0 0 0 0 0 0 0 6)
+        (6 0 0 0 0 0 0 0 0 6)
+        (6 6 6 6 6 6 6 6 6 6)))
+      (output $CountWithStrip (grid
+        (1 1 2 2 3 3 4 4 5 5)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 0 0 0 0 0 0 0 0 1)
+        (1 0 0 0 0 0 0 0 0 1)
+        (1 0 0 1 1 1 1 0 0 1)
+        (1 0 0 1 1 1 1 0 0 1)
+        (1 0 0 0 0 0 0 0 0 1)
+        (1 0 0 0 0 0 0 0 0 1)
+        (1 0 0 0 0 0 0 0 0 1)
+        (1 1 1 1 1 1 1 1 1 1))))))

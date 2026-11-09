@@ -1,0 +1,86 @@
+;; inputs 5d8865dcbdd8be174eacb580fbbbce677347a99f2ab47f0dd28828b50989d00b programs/solvers/3ee1011a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3ee1011a
+
+(DET &bg DominantColor)
+
+;; Each bar: its color, and how many cells it covers.
+(INIT &bar Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; The canvas: a square as wide as the longest bar.
+(INIT &longest Order
+  (member ((:t N))
+    (&bar.size *N))
+  (score ((:t N) (:S N))
+    (&bar.size *N)))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&longest.maximal (:t *N))))
+
+;; The concentric frames, counted inward from the canvas border.
+(INIT &rim Boundary
+  (cell (P)
+    (&canvas.cell *P)))
+
+(INIT &rim_depth CellDistance
+  (node (P)
+    (&canvas.cell *P))
+  (source (P)
+    (&rim.boundary *P)))
+
+(INIT &size_rank Order
+  (member ((:t N))
+    (&bar.size *N))
+  (score ((:t N) (:S N))
+    (&bar.size *N)))
+
+(ALTS $choice "which bar each frame's color comes from" $Rank
+  (ALT $Stamp
+    ;; The centered square left after peeling K frames.
+    (INIT &core BoundingBox
+      (key ((&rim_depth.distance ^K))
+        (cell (P)
+          (&rim_depth.distance *P (:K *K2))
+          (<= K K2))))
+
+    ;; The squares a cell sits in, by side.
+    (INIT &innermost Order
+      (key ((&core.cell (:key *K) ^P)
+            (&core.box (:key K) *B)
+            (perp *A *A2)
+            (box_extent B P A *N)
+            (box_extent B P (:A A2) N)
+            (&bar.size N))
+        (member ((:t N))
+          (&core.cell (:key *K) P)
+          (&core.box (:key K) *B)
+          (perp *A *A2)
+          (box_extent B P A *N)
+          (box_extent B P (:A A2) N)
+          (&bar.size N))
+        (score ((:t N) (:S N))
+          (&core.cell (:key *K) P)
+          (&core.box (:key K) *B)
+          (perp *A *A2)
+          (box_extent B P A *N)
+          (box_extent B P (:A A2) N)
+          (&bar.size N))))
+
+    ;; A cell takes the smallest square covering it.
+    (RULE &output
+      (&innermost.minimal (:key *P) (:t *N))
+      (&bar.size (:key *Col) N))))
+
+(RULE &output
+  (&rim_depth.distance *P *K)
+  (&bar.size (:key *Col) *N)
+  (&size_rank.dual_rank (:t N) (:R K)))
+
+(OUT (&output ^P ^Col))

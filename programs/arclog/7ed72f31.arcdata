@@ -1,0 +1,5 @@
+;; inputs d6dbbaeab16f1f4b7a9f642111c08b2c032f3fcc899a88858613e9f2396f9bd9 programs/solvers/7ed72f31.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7ed72f31
+
+(param &mirror Color (2))

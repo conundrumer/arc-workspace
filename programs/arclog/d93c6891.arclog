@@ -1,0 +1,311 @@
+;; inputs 516e1290749bf2afb7f1fbe32448a768c33aec835efbfaa1dcc0ed2bfde02ebc programs/solvers/d93c6891.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d93c6891
+
+(INPUT field "one rectangle of `floor` color (4), with the bars and blocks on it, on a `background` (0) that fills the rest of the grid")
+
+(INPUT blocks "rectangles of `block` color (7), each with one side on one side of the field's border, and that side of the field faces the background")
+
+(INPUT bars "straight runs of `bar` color (5) on the field's border, and each bar touches exactly one block")
+
+(INPUT whole-layers "for each block, the count of bar cells that touch it is a whole multiple of the block's extent along its border side, and is at most the block's area"
+
+  (DET &repaint
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET &chain
+    (&repaint (:C_in *C_block) (:C_out *C_bar))
+    (&repaint (:C_in C_bar) (:C_out *C_floor)))
+
+  (DET &block
+    (&chain (:C_block *C)))
+
+  (RULE &block_cell
+    (input *P *Col)
+    (&block (:C Col)))
+
+  (INIT &blocks Connectivity
+    (node (P)
+      (&block_cell *P)))
+
+  (INIT &area Cardinality
+    (key ((&blocks.component *P (:Id ^B)))
+      (member ((:m P))
+        (&blocks.component *P (:Id B))))))
+
+(OUTPUT bar-count "each block takes the total count of cells in the bars that touch it"
+
+  (DET &bar
+    (&chain (:C_bar *C)))
+
+  (RULE &bar_cell
+    (input *P *Col)
+    (&bar (:C Col)))
+
+  (INIT &block_box BoundingBox
+    (key ((&blocks.component *P (:Id ^B)))
+      (cell (P)
+        (&blocks.component *P (:Id B)))))
+
+  ;; The box of each train input's cells in colors other than col.
+  (INIT &rest_box BoundingBox
+    (key ((ex_output ^E)
+          (ex_input E ^Col))
+      (cell (P)
+        (ex_input E *P (:Col *Col2))
+        (!= Col2 Col))))
+
+  (DET &inside_rest
+    (&rest_box.box (:key *E (:Col *C)) *B)
+    (ex_input E *P (:Col C))
+    (inside (:A P) B))
+
+  (DET &background
+    (ex_output *E)
+    (ex_input E (:Col *C))
+    (NOT (&inside_rest C)))
+
+  (RULE &faces
+    (input *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) *Col)
+    (&background (:C Col)))
+
+  ;; A walk along the field's border ring, from block b's ring cells through bar
+  ;; cells.
+  (INIT &ring_walk Flood
+    (key ((OR ((&faces *P)
+               (&bar_cell P)
+               (&block_box.box (:key ^B)))
+              ((&faces P)
+               (&blocks.component P (:Id B)))))
+      (node (P)
+        (OR ((&faces *P)
+             (&bar_cell P)
+             (&block_box.box (:key B)))
+            ((&faces P)
+             (&blocks.component P (:Id B)))))
+      (source (P)
+        (&faces *P)
+        (&blocks.component P (:Id B))))))
+
+(OUTPUT fill-from-border "in each block, the layers parallel to its border side, starting at the border, turn `bar` color, as many layers as the count divided by the block's extent along the border; the other layers of the block keep `block` color")
+
+(OUTPUT bars-erase "every bar cell turns `floor` color")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color"
+
+  (INIT &bars Connectivity
+    (node (P)
+      (&bar_cell *P)))
+
+  (RULE &depth
+    (&blocks.component *P (:Id *B))
+    (&block_box.box (:key B) (:B *Bx))
+    (inside (:A P) (:B Bx))
+    (relative (:Base Bx) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K))
+
+  (RULE &border_side
+    (&blocks.component *P (:Id *B))
+    (&faces P *D))
+
+  (RULE &taken
+    (&blocks.component *P (:Id *B))
+    (dir_elem *D)
+    (neighbor P D (:Q *Q2))
+    (&bars.component (:P Q2) *Id)
+    (&bars.component (:P *Q) Id))
+
+  (INIT &take_count Cardinality
+    (key ((&taken ^B *Q))
+      (member ((:m Q))
+        (&taken B *Q))))
+
+  (RULE &fill_side
+    (&border_side *B *D))
+
+  (RULE &sides_clash
+    (&fill_side *B *D)
+    (&fill_side B (:D *D2))
+    (!= D D2))
+
+  (RULE &pour
+    (&fill_side *B *D)
+    (NOT (&sides_clash B))
+    (&take_count.size (:key B) *N)
+    (&block_box.box (:key B) (:B *Bx))
+    (&blocks.component *P (:Id B))
+    (axis_of D *A)
+    (perp A *A2)
+    (box_extent (:B Bx) P (:A A2) (:N *E))
+    (divide (:T N) (:Side E) (:Gap 0) (:Part *Layers) (:Remainder *Rest)))
+
+  (DET &floor
+    (&chain (:C_floor *C))))
+
+(ALTS $c "which bar cells a block takes" $Contact4
+  (ALT $Contact8
+    (OUTPUT bar-count "each block takes every cell of each bar that touches it at a side or a corner"
+      (RULE &taken
+        (&blocks.component *P (:Id *B))
+        (neighbor P *D (:Q *Q2))
+        (&bars.component (:P Q2) *Id)
+        (&bars.component (:P *Q) Id))))
+  (ALT $RingPath
+    (OUTPUT bar-count "each block takes the bar cells that a walk along the field's border ring reaches from the block's own ring cells, stepping through bar cells"
+      (RULE &taken
+        (&ring_walk.reached (:key *B) (:P *Q))
+        (&bar_cell (:P Q))))))
+
+(ALTS $s "the side the layers start from" $FromBorder
+  (ALT $FromBarLine
+    (OUTPUT fill-from-border "the layers run parallel to the line of the bars the block takes, and start at the block side nearest that line; a one-cell bar takes the border side; the count is divided by the block's extent along that side; undefined where the bars give two sides"
+      (RULE &taken_bar
+        (&taken *B *Q)
+        (&bars.component (:P Q) *Id))
+
+      (RULE &bar_axis
+        (&bars.component (:P *Q) *Id)
+        (axis_of *D *A)
+        (neighbor (:P Q) D (:Q *Q2))
+        (&bars.component (:P Q2) Id))
+
+      (RULE &fill_side
+        (OR ((&taken_bar *B *Id)
+             (&bar_axis Id *A)
+             (perp A (:A2 *A_fill))
+             (axis_of *D (:A A_fill))
+             (&bars.component (:P *Q) Id)
+             (&block_box.box (:key B) (:B *Bx))
+             (relative (:Base Bx) (:X Q) (:X_rel *Q_rel))
+             (dist_pair (:P Q_rel) D *K *K2)
+             (< K K2))
+            ((&taken_bar B (:Id *Id2))
+             (NOT (&bar_axis (:Id Id2)))
+             (&border_side B D)))))))
+
+(ALTS $r "a bar count that is not a whole multiple of the block's extent along the side the layers start from" $WholeOnly
+  (ALT $FloorLayers
+    (INPUT whole-layers "the count need not be a whole multiple")
+    (OUTPUT fill-from-border "the whole layers the count gives fill, and the cells left over are dropped")
+    (RULE &undefined
+      (OR ((&taken *B)
+           (NOT (&pour B)))
+          ((&overfull B))))
+    (ALT $CapAtBlock
+      (RULE &undefined
+        (&taken *B)
+        (NOT (&pour B)))))
+  (ALT $PartialFromBar
+    (INPUT whole-layers "the count need not be a whole multiple")
+    (OUTPUT fill-from-border "the whole layers fill, and the cells left over fill the next layer from the block end that the bars touch; undefined where cells are left over and the bars touch both ends or neither"
+      (RULE &next_layer
+        (&pour *B *D *Layers *Rest)
+        (> Rest 0)
+        (&depth B D (:K Layers)))
+
+      (RULE &touched_end
+        (&pour *B *D)
+        (perp_dir D (:D2 *E1))
+        (&taken B *Q)
+        (&blocks.component *P (:Id B))
+        (&block_box.box (:key B) (:B *Bx))
+        (inside (:A P) (:B Bx))
+        (same_dist (:D E1) (:P1 P) (:P2 Bx))
+        (nearer (:D E1) (:P Q) (:Q P)))
+
+      (RULE &one_end
+        (&touched_end *B *E1)
+        (opposite (:D E1) (:Opp *E2))
+        (NOT (&touched_end B (:E1 E2)))))
+    (RULE &undefined
+      (OR ((&next_layer *B)
+           (NOT (&one_end B)))
+          ((&taken B)
+           (NOT (&pour B)))
+          ((&overfull B))))
+
+    (RULE &poured_cell
+      (OR ((&pour *B *D *Layers *Rest)
+           (&one_end B (:E1 *E))
+           (&depth B *P D (:K Layers))
+           (&depth B P (:D E) *K)
+           (< K Rest))
+          ((&pour (:B *B2) (:D *D2) (:Layers *Layers2))
+           (&depth (:B B2) P (:D D2) (:K *K2))
+           (< K2 Layers2))))
+    (ALT $CapAtBlock
+      (RULE &undefined
+        (OR ((&next_layer *B)
+             (NOT (&one_end B)))
+            ((&taken B)
+             (NOT (&pour B))))))))
+
+(ALTS $o "a bar count of more than the block's area" $WithinBlock
+  (ALT $CapAtBlock
+    (INPUT whole-layers "the count may be more than the block's area")
+    (OUTPUT fill-from-border "there the whole block fills, and the extra bar cells are erased with the rest")
+    (RULE &undefined
+      (OR ((&taken *B)
+           (NOT (&pour B)))
+          ((&pour B *Rest)
+           (> Rest 0))))))
+
+(ALTS $l "a bar that no block takes" $EraseAll
+  (ALT $KeepLoose
+    (OUTPUT bars-erase "only the bar cells a block takes turn `floor` color, and the others keep `bar` color")
+    (RULE &erased
+      (&taken *Q))))
+
+(ALTS $f "the cells that make up the field, which give each block's border side" $NonBackground
+  (ALT $FieldByColors
+    (INPUT field "the field is the cells of `floor`, `bar` or `block` color, and a block's border side is a side that faces no field cell; reads no `background`"
+      (RULE &field_cell
+        (input *P *Col)
+        (OR ((&floor (:C Col)))
+            ((&bar (:C Col)))
+            ((&block (:C Col)))))
+
+      (RULE &faces
+        (input *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (NOT (&field_cell (:P Q)))))))
+
+(RULE &overfull
+  (&take_count.size (:key *B) *N)
+  (&area.size (:key B) (:N *A))
+  (> N A))
+
+(RULE &undefined
+  (OR ((&taken *B)
+       (NOT (&pour B)))
+      ((&pour B *Rest)
+       (> Rest 0))
+      ((&overfull B))))
+
+(RULE &poured_cell
+  (&pour *B *D *Layers)
+  (&depth B *P D *K)
+  (< K Layers))
+
+(RULE &erased
+  (&bar_cell (:P *Q)))
+
+(RULE &output
+  (OR ((&blocks.component *P (:Id *B))
+       (NOT (&undefined B))
+       (IF ((&poured_cell P))
+           ((&bar (:C *Col)))
+           ((&block (:C Col)))))
+      ((&erased (:Q P))
+       (&floor (:C Col)))
+      ((input P Col)
+       (NOT (&block_cell P))
+       (NOT (&erased (:Q P))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,40 @@
+;; inputs d85414a5b5f28382997db32e1aa09b6a6493d30773c027ae94fcd91b6611ca1a programs/solvers/b1fc8b8e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b1fc8b8e
+
+(param &ink Color (8))
+(param &unit Position
+  (grid
+    (1 1)
+    (1 1)))
+(param &covered_class Ident (1))
+(param &broken_class Ident (0))
+(param &class_count (Ident number) (0 12) (1 16))
+(param &class_grid (Ident Position Color)
+  (0 (grid
+    (0 8 0 0 8)
+    (8 8 0 8 8)
+    (0 0 0 0 0)
+    (0 8 0 0 8)
+    (8 8 0 8 8)))
+  (1 (grid
+    (8 8 0 8 8)
+    (8 8 0 8 8)
+    (0 0 0 0 0)
+    (8 8 0 8 8)
+    (8 8 0 8 8))))
+(param &class_tile (Ident Color Position)
+  (0 0 (grid
+    (1 _)
+    (_ _)))
+  (0 8 (grid
+    (_ 1)
+    (1 1)))
+  (1 8 (grid
+    (1 1)
+    (1 1))))
+(param &canvas_dim number (5))
+(param &bg Color (0))
+(param &arr_dim number (2))
+(param &tile_dim number (2))
+(param &gap number (1))

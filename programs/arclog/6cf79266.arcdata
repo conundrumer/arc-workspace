@@ -1,0 +1,7 @@
+;; inputs d3f61a5e2cb5b26e0c1b2fab210e9dbecfbe7c4e5d5e01c49da0f4f7578ac74c programs/solvers/6cf79266.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6cf79266
+
+(param &bg Color (0))
+(param &fill Color (1))
+(param &dim number (3))

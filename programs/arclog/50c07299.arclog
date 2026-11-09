@@ -1,0 +1,64 @@
+;; inputs d30ad3875795b375226c142fedc29173f8c59a92d8048835d7db3a14516fc9da programs/solvers/50c07299.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 50c07299
+
+(DET &bg DominantColor)
+
+(DET &ink ChangedColor)
+
+;; The direction the segment runs and travels.
+(DET &dir DiagDirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(RULE &trailing
+  (&mark *P)
+  (&mark (:P *Q))
+  (&dir *D)
+  (nearer D (:P Q) (:Q P)))
+
+(RULE &beyond
+  (&mark (:P *P2))
+  (NOT (&trailing (:P P2)))
+  (&dir *D)
+  (neighbor (:P P2) D (:Q *P)))
+
+(RULE &grown
+  (OR ((&mark *P))
+      ((&beyond P))))
+
+(RULE &drawn
+  (&beyond (:P *B))
+  (&grown (:P *P2))
+  (relative (:Base P2) (:X B) (:X_rel *V))
+  (compose (:A B) (:B V) (:C *P)))
+
+(ALTS $choice "what fixes the new segment" $Turn
+  (ALT $Count
+    (INIT &line Ray
+      (source (P)
+        (&beyond *P))
+      (node (P)
+        (input *P))
+      (dir (D)
+        (&dir *D)))
+
+    (INIT &size Cardinality
+      (member ((:m P))
+        (&mark *P)))
+
+    (RULE &drawn
+      (&line.ray *P *K)
+      (&size.size *N)
+      (<= K N))))
+
+(RULE &output
+  (OR ((&drawn *P)
+       (&ink (:C *Col)))
+      ((input P)
+       (NOT (&drawn P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

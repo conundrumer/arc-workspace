@@ -1,0 +1,87 @@
+;; inputs d8eca39aabb2db352677edd4422d3ebd79dfd90f9900200309e6591f86bd1047 programs/solvers/88e364bc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 88e364bc
+
+(DET &bg DominantColor)
+
+(DET &marker ChangedColor)
+
+(DET &head RarestColor)
+
+(RULE &wall_color
+  (input (:Col *C))
+  (NOT (&bg C))
+  (NOT (&marker C)))
+
+(INIT &closed Enclosure
+  (key ((&wall_color ^C))
+    (cell (P)
+      (input *P (:Col *C2))
+      (!= C2 C))))
+
+(RULE &legend_cell
+  (&closed.enclosed (:key *C) *P)
+  (input P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&marker (:C Col))))
+
+(RULE &head_of
+  (&wall_color *C)
+  (&head (:C *Col)))
+
+(RULE &marker_cell
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&marker_cell P)))
+      ((&marker_cell P)
+       (&bg (:C Col)))))
+
+(ALTS $choice "what marks an arrow's head" $Stored
+  (ALT $Minority
+    (INIT &ink_count Cardinality
+      (key ((&legend_cell ^C *P ^Col))
+        (member ((:m P))
+          (&legend_cell C *P Col))))
+
+    (INIT &rarest Order
+      (key ((&ink_count.size (:key ^C *Col) *N))
+        (member ((:t (:V Col) (:S N)))
+          (&ink_count.size (:key C *Col) *N))
+        (score ((:t (:V Col) (:S N)) (:S N))
+          (&ink_count.size (:key C *Col) *N))))
+
+    (RULE &head_of
+      (&rarest.minimal (:key *C) (:t (:V *Col))))))
+
+(RULE &arrow
+  (&head_of *C (:Col *Col_head))
+  (&legend_cell C (:P *P_head) (:Col Col_head))
+  (&legend_cell C (:P *P_tail) (:Col *Col_tail))
+  (NOT (&head_of C (:Col Col_tail)))
+  (neighbor (:P P_tail) *D (:Q P_head)))
+
+;; A marker moves through the cells its enclosing color closes off.
+(INIT &slide Ray
+  (key ((OR ((&closed.enclosed (:key ^C) *P))
+            ((&arrow C *D))))
+    (source (P)
+      (&closed.enclosed (:key C) *P))
+    (node (P)
+      (&closed.enclosed (:key C) *P))
+    (dir (D)
+      (&arrow C *D))))
+
+(RULE &landed
+  (&marker_cell (:P *P2))
+  (&slide.end *P (:Origin P2)))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&marker (:C *Col)))
+      ((&cleared P Col)
+       (NOT (&landed P)))))
+
+(OUT (&output ^P ^Col))

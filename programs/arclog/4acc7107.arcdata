@@ -1,0 +1,8 @@
+;; inputs 341d3092f30eb6cf7d74aafb65b64db917e3f13b048f04ee426023ec2fa4ae04 programs/solvers/4acc7107.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4acc7107
+
+(param &bg Color (0))
+(param &corner DiagDir (DIAG_BL))
+(param &stack_axis Axis (AXIS_V))
+(param &gap number (1))

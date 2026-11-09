@@ -1,0 +1,316 @@
+;; inputs 3b24c42aea3b3f2eddc72bef707d4a6f511d8a097fb09ef92b13d2d773eb802b programs/solvers/9f669b64.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9f669b64
+
+(INPUT background "every cell not in one of three objects is the background color")
+
+(INPUT wedge "one object is a wedge. It narrows toward one side, and its narrow end touches the projectile.")
+
+(INPUT projectile "one solid rectangle touches the wedge's narrow end. Its width across the launch direction is even.")
+
+(INPUT target "one solid rectangle lies in line with the projectile, on the side away from the wedge. It spans the projectile's whole width across the launch direction, and it extends past the projectile on both sides. It may touch the projectile or lie across a background gap.")
+
+(OUTPUT launch-direction "the projectile moves in the direction that points from the wedge through the projectile")
+
+(OUTPUT wedge-stays "the wedge keeps its cells")
+
+(OUTPUT projectile-to-edge "the projectile moves in the launch direction until its far side touches the grid edge. Its old cells become background."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &piece Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (INIT &hull BoundingBox
+    (key ((&piece.component ^Id *P))
+      (cell (P)
+        (&piece.component Id *P))))
+
+  (RULE &beyond
+    (&hull.box (:key *Id) *B)
+    (&hull.box (:key (:Id *Id2)) (:B *B2))
+    (!= Id Id2)
+    (opposite *D (:Opp *D_back))
+    (&piece.component Id *P)
+    (inside (:A P) B)
+    (same_dist (:D D_back) (:P1 P) (:P2 B))
+    (nearer D P (:Q B2)))
+
+  (RULE &hole
+    (&hull.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&piece.component Id P)))
+
+  (RULE &rect
+    (&hull.box (:key *Id))
+    (NOT (&hole Id)))
+
+  (RULE &touch
+    (&piece.component *Id *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&piece.component (:Id *Id2) (:P Q))
+    (!= Id Id2))
+
+  (RULE &roles
+    (&touch (:Id *W) (:Id2 *P))
+    (NOT (&rect (:Id W)))
+    (&rect (:Id P))
+    (&rect (:Id *T))
+    (!= T P))
+
+  (RULE &shot
+    (&roles *W *P *T)
+    (&beyond (:Id P) (:Id2 W) *D))
+
+  ;; The projectile moves toward D until it rests against the grid edge.
+  (INIT &fall Distance
+    (key ((&shot ^P ^D))
+      (source_distance (K)
+        (&piece.component (:Id P) (:P *Q))
+        (margin (:B Q) D *K)))))
+
+(OUTPUT target-split "the center line of the projectile's path cuts the target in two halves. Each half shifts outward, away from that line and across the launch direction, by half the projectile's width."
+
+  ;; Each object's lines across each direction, ranked from that edge.
+  (INIT &lines Order
+    (key ((&piece.component ^Id *P)
+          (dir_elem ^D)
+          (margin (:B P) D *K))
+      (member ((:t K))
+        (&piece.component Id *P)
+        (margin (:B P) D *K))
+      (score ((:t K) (:S K))
+        (&piece.component Id *P)
+        (margin (:B P) D *K))))
+
+  (RULE &half_line
+    (&lines.rank (:key *Id *D) (:t *K) *R)
+    (&lines.dual_rank (:key Id D) (:t K) (:R *R2))
+    (< R R2))
+
+  (RULE &halves
+    (&shot *P *T *D)
+    (perp_dir D (:D2 *E1)))
+
+  ;; The count of the object's lines in its half toward D.
+  (INIT &half_width Cardinality
+    (key ((OR ((&half_line ^Id ^D *K))
+              ((&hull.box (:key Id))
+               (dir_elem D))))
+      (member ((:m K))
+        (&half_line Id D *K))
+      (domain ()
+        (&hull.box (:key Id))
+        (dir_elem D))))
+
+  ;; The projectile's center line cuts the target.
+  (RULE &half
+    (&halves *P *T *D *E1)
+    (&piece.component (:Id T) (:P *Q))
+    (margin (:B Q) (:D E1) (:K *K_q))
+    (&half_line (:Id P) (:D E1) *K)
+    (<= K_q K))
+
+  ;; The projectile's lines each half covers ahead of the projectile.
+  (INIT &cover Cardinality
+    (key ((OR ((&half ^P ^T ^D *Q (:E1 ^E))
+               (&hull.box (:key (:Id P)) *B)
+               (nearer D (:P Q) (:Q B))
+               (margin (:B Q) (:D E) *K)
+               (&piece.component (:Id P) (:P *Q2))
+               (margin (:B Q2) (:D E) K))
+              ((&halves P T D (:E1 E)))))
+      (member ((:m K))
+        (&half P T D *Q (:E1 E))
+        (&hull.box (:key (:Id P)) *B)
+        (nearer D (:P Q) (:Q B))
+        (margin (:B Q) (:D E) *K)
+        (&piece.component (:Id P) (:P *Q2))
+        (margin (:B Q2) (:D E) K))
+      (domain ()
+        (&halves P T D (:E1 E))))))
+
+(OUTPUT path-clear "the cells in the projectile's path that the moved projectile does not cover are background")
+
+(ALTS $roles "which objects are the wedge, the projectile, and the target" $Touch
+  (ALT $ProjectileBetween
+    (INPUT projectile "the projectile is the object with the other two wholly on opposite sides of it along one axis. The target is the one of those two that is a solid rectangle spanning the projectile across that axis, and the wedge is the other."
+      (RULE &short_side
+        (&hull.box (:key *Id) *B)
+        (&hull.box (:key (:Id *Id2)) (:B *B2))
+        (!= Id Id2)
+        (perp_dir *D (:D2 *E))
+        (NOT (nearer (:D E) (:P B2) (:Q B))))
+
+      (RULE &roles
+        (&beyond (:Id *T) (:Id2 *P) *D)
+        (opposite D (:Opp *D2))
+        (&beyond (:Id *W) (:Id2 P) (:D D2))
+        (&rect (:Id T))
+        (NOT (&short_side (:Id P) (:Id2 T) D))))))
+
+(ALTS $launch "the direction the projectile moves" $FromWedge
+  (ALT $TowardTarget
+    (OUTPUT launch-direction "the projectile moves toward the side on which the target lies wholly beyond it"
+      (RULE &shot
+        (&roles *P *T)
+        (&beyond (:Id T) (:Id2 P) *D))))
+  (ALT $WedgeTip
+    (OUTPUT launch-direction "the projectile moves toward the side the wedge narrows to: off its back side, every wedge cell has a wedge cell behind it"
+      (RULE &unbacked
+        (&hull.box (:key *Id) *B)
+        (&piece.component Id *P)
+        (opposite *D (:Opp *D_back))
+        (OR ((NOT (inside (:A P) B)))
+            ((NOT (same_dist (:D D_back) (:P1 P) (:P2 B)))))
+        (neighbor P (:D D_back) *Q)
+        (NOT (&piece.component Id (:P Q))))
+
+      (RULE &stepped
+        (&hull.box (:key *Id) *B)
+        (&piece.component Id *P)
+        (dir_elem *D)
+        (OR ((NOT (inside (:A P) B)))
+            ((NOT (same_dist D (:P1 P) (:P2 B)))))
+        (neighbor P D *Q)
+        (NOT (&piece.component Id (:P Q))))
+
+      (RULE &shot
+        (&roles *W *P *T)
+        (&stepped (:Id W) *D)
+        (NOT (&unbacked (:Id W) D))))))
+
+(ALTS $stop "where the projectile stops" $ToEdge
+  (ALT $StopPerAxis
+    (OUTPUT projectile-to-edge "along &far_axis, the projectile's leading side stops on the target's far side. Along the other axis, its trailing side stops on the target's near side."
+      ;; The axis on which the projectile stops by its leading side.
+      (DET &far_axis AxisDomain)
+
+      (RULE &anchor
+        (OR ((axis_of *D *A)
+             (NOT (&far_axis A))
+             (opposite D (:Opp *D_anchor)))
+            ((&far_axis (:A *A2))
+             (axis_of D (:A A2))
+             (= D_anchor D)))))
+    (RULE &travel
+      (&shot *P *T *D)
+      (&anchor D (:D_anchor *D_a))
+      (axis_of D *A)
+      (&hull.box (:key (:Id P)) *B)
+      (&piece.component (:Id P) (:P *Q))
+      (inside (:A Q) B)
+      (same_dist (:D D_a) (:P1 Q) (:P2 B))
+      (&hull.box (:key (:Id T)) (:B *B2))
+      (&piece.component (:Id T) (:P *Q2))
+      (inside (:A Q2) (:B B2))
+      (same_dist (:D D_a) (:P1 Q2) (:P2 B2))
+      (same_line A (:P Q) (:Q Q2))
+      (relative (:Base Q) (:X Q2) (:X_rel *V)))))
+
+(ALTS $shift "how far each target half moves" $HalfWidth
+  (ALT $ShiftOne
+    (OUTPUT target-split "each half shifts by &shift. A cell on the cut line is in neither half, and the model is undefined."
+      (DET &shift DivisorRatio))
+    (RULE &amount
+      (&halves *P *T *D *E1)
+      (&shift *K)))
+  (ALT $OddFloor
+    (OUTPUT target-split "each half shifts by the count of projectile lines strictly on its side of the projectile's center line. A cell on the cut line is in neither half, and the model is undefined.")
+    (RULE &amount
+      (&halves *P *T *D *E1)
+      (&half_width.size (:key (:Id P) (:D E1)) (:N *K))))
+  (ALT $PushOut
+    (OUTPUT target-split "each half shifts by the count of the projectile's lines it covers ahead of the projectile. A cell on the cut line is in neither half, and the model is undefined.")
+    (RULE &amount
+      (&cover.size (:key *P *T *D (:E *E1)) (:N *K)))))
+
+(ALTS $split "where the target is cut" $PathCenter
+  (ALT $SplitTargetCenter
+    (OUTPUT target-split "the target's own center line cuts it in two halves. A cell on that line is in neither half, and the model is undefined."
+      (RULE &half
+        (&halves *P *T *D *E1)
+        (&piece.component (:Id T) (:P *Q))
+        (margin (:B Q) (:D E1) (:K *K_q))
+        (&half_line (:Id T) (:D E1) *K)
+        (<= K_q K)))))
+
+(RULE &fall_travel_full
+  (&fall.distance (:key (:P *Id) *D) *K)
+  (&shot (:P Id) D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &travel
+  (&shot *P *T *D)
+  (&fall_travel_full (:Id P) D (:V2 *V)))
+
+(RULE &flies
+  (&shot (:P *P2) *T *D)
+  (&travel (:P P2) T D *V)
+  (&piece.component (:Id P2) (:P *P_cell))
+  (input (:P P_cell) *Col)
+  (compose (:A P_cell) (:B V) (:C *P)))
+
+(RULE &center_line
+  (&lines.rank (:key *Id *D) (:t *K) *R)
+  (&lines.dual_rank (:key Id D) (:t K) R))
+
+(RULE &amount
+  (&halves *P *T *D *E1)
+  (&half_width.size (:key (:Id P) (:D E1)) (:N *K))
+  (NOT (&center_line (:Id P) (:D E1))))
+
+(RULE &lands
+  (&shot (:P *P2) *T *D)
+  (&half (:P P2) T D (:Q *P) (:E1 *E))
+  (&amount (:P P2) T D (:E1 E) *K)
+  (jump P (:D E) K *Q))
+
+(RULE &stranded
+  (&shot *T)
+  (&piece.component (:Id T) *P)
+  (NOT (&lands P)))
+
+(RULE &ground
+  (&shot (:P *P_id) *T)
+  (input *P (:Col *Col_in))
+  (OR ((&piece.component (:Id P_id) P)
+       (&bg (:C *Col)))
+      ((NOT (&piece.component (:Id P_id) P))
+       (NOT (&piece.component (:Id T) P))
+       (= Col Col_in))
+      ((&piece.component (:Id T) P)
+       (&bg (:C Col)))))
+
+(RULE &ambiguous
+  (&shot *P *T *D)
+  (&shot (:P *P2) (:T *T2) (:D *D2))
+  (OR ((!= P P2))
+      ((!= T T2))
+      ((!= D D2))))
+
+(RULE &ready
+  (&shot *P *T *D)
+  (NOT (&ambiguous))
+  (&travel P T D)
+  (NOT (&stranded)))
+
+;; The moved projectile over the moved target over the ground.
+(RULE &output
+  (&ready)
+  (input *P)
+  (OR ((&flies P *Col))
+      ((&lands (:P *P2) (:Q P))
+       (NOT (&flies P))
+       (input (:P P2) Col))
+      ((&ground P Col)
+       (NOT (&flies P))
+       (NOT (&lands (:Q P))))))
+
+(OUT (&output ^P ^Col))

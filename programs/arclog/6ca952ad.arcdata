@@ -1,0 +1,7 @@
+;; inputs 45a88026d31881a5d54e803687d145e04ec05cb5eea5646b55f2814c9c0b4ece programs/solvers/6ca952ad.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ca952ad
+
+(param &bg Color (7))
+(param &grav Dir (DIR_B))
+(param &heavy number (4))

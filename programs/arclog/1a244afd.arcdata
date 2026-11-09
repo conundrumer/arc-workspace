@@ -1,0 +1,14 @@
+;; inputs 68ace59dbe88df93a49b3a0f2bde2bd5abd41995da95d6d7ff63b074e82b84c0 programs/solvers/1a244afd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1a244afd
+
+(param &bg Color (8))
+(param &pivot Color (1))
+(param &pointer Color (6))
+(param &mark Color (7))
+(param &sense Sense (SENSE_CC))
+(param &turn_map (Dir Dir)
+  (DIR_T DIR_L)
+  (DIR_L DIR_B)
+  (DIR_B DIR_R)
+  (DIR_R DIR_T))

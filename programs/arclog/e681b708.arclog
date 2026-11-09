@@ -1,0 +1,154 @@
+;; inputs 8a3061f2865137cd6c4f22d1b8c81d47cf64aad34c109230a8babfe019c703f9 programs/solvers/e681b708.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e681b708
+
+(INPUT wall-lines "horizontal and vertical lines of &line_color (1) on a &background (0) field, each running from a grid edge or another line to a grid edge or another line"
+
+  (DET &dot
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET_OR_RULE &background DominantColor
+    (&dot *E *P)
+    (ex_input E P (:Col *C_dot))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (!= C C_dot))
+
+  (DET &line_color
+    (&dot *E *P)
+    (ex_input E P (:Col *C))))
+
+(INPUT markers "each end of a line and each cell where lines meet holds a marker, a color other than &line_color and &background, and no other line cell does")
+
+(INPUT rooms "the lines cut the grid into rectangular rooms, each a 4-connected part of the cells that are not line cells"
+
+  (RULE &marker
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&line_color (:C Col))))
+
+  (RULE &runs_blocked
+    (input *P *Col)
+    (NOT (&line_color (:C Col))))
+
+  ;; Casts from each marker along its row and column through line cells.
+  (INIT &runs Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P)
+      (NOT (&runs_blocked P)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &runs_full Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &runs_stop_full
+    (&runs.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&runs_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &line
+    (OR ((&marker *P))
+        ((&runs.ray P *D (:Origin *S))
+         (&runs_stop_full (:V1 *Q) (:V2 D) (:V4 S))
+         (&marker (:P Q)))))
+
+  (INIT &rooms8 Connectivity
+    (node (P)
+      (input *P)
+      (NOT (&line P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT loose-dots "each room holds single cells of &line_color, no two 4-adjacent, none 4-adjacent to a line cell")
+
+(INPUT clear-majority "among the markers on the walls of each room that holds a dot, one color occurs more often than every other"
+
+  (INIT &rooms4 Connectivity
+    (node (P)
+      (input *P)
+      (NOT (&line P))))
+
+  (RULE &room
+    (&rooms4.component *P *Id))
+
+  (INIT &tally_count Cardinality
+    (key ((&room *P ^Id)
+          (neighbor P *D (:Q *M))
+          (&marker (:P M) ^Col))
+      (member ((:m M))
+        (&room *P Id)
+        (neighbor P *D (:Q *M))
+        (&marker (:P M) Col))))
+
+  ;; The commonest marker color around each room, each marker counted once.
+  (INIT &tally Order
+    (key ((&tally_count.size (:key ^Id *Col)))
+      (member ((:t Col))
+        (&tally_count.size (:key Id *Col)))
+      (score ((:t Col) (:S Count))
+        (&tally_count.size (:key Id *Col) (:N *Count))))))
+
+(OUTPUT dot-recolor "a line cell is a marker, or a &line_color cell on a straight run of &line_color cells between two markers in its row or column; every other &line_color cell is a dot, and takes the color that occurs most often among the markers 8-adjacent to its room"
+
+  (INIT &parts Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))))
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $rooms "how non-line cells join into rooms" $Rooms4
+  (ALT $Rooms8
+    (INPUT rooms "non-line cells join by 8-adjacency, so two walls that touch only at a corner do not close a room"
+      (RULE &room
+        (&rooms8.component *P *Id)))))
+
+(ALTS $dots "which &line_color cells are dots" $RunDots
+  (ALT $IsolatedDots
+    (OUTPUT dot-recolor "only &line_color cells whose 4-adjacent cells are all &background are dots, and every other &line_color cell keeps its color"
+      (RULE &touched
+        (input *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (input (:P Q) *Col)
+        (NOT (&background (:C Col)))))
+    (RULE &dot2
+      (input *P *Col)
+      (&line_color (:C Col))
+      (NOT (&touched P))))
+  (ALT $MarkerFreeParts
+    (OUTPUT dot-recolor "the dots are the &line_color cells whose 4-connected part of cells other than &background holds no marker"
+      (RULE &marked_part
+        (&parts.component *P *Id)
+        (&marker P)))
+    (RULE &dot2
+      (&parts.component *P *Id)
+      (NOT (&marked_part Id)))))
+
+(RULE &dot2
+  (input *P *Col)
+  (&line_color (:C Col))
+  (NOT (&line P)))
+
+(RULE &output
+  (OR ((&dot2 *P)
+       (&room P *Id)
+       (&tally.maximal (:key Id) (:t *Col)))
+      ((input P Col)
+       (NOT (&dot2 P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,83 @@
+;; inputs 7248e515407b9fe1552b154dbe666dc22ba0affaef3c3824dbe452899b3731a7 programs/solvers/9473c6fb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9473c6fb
+
+(DET &bg DominantColor)
+
+(DET &order_corner DiagDirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &cand
+  (&order_corner (:D *Diag))
+  (corner_dir (:C Diag) *D))
+
+;; The marks by distance from edge d, nearest first.
+(INIT &order Order
+  (key ((&cand ^D))
+    (score ((:t P) (:S N))
+      (&mark *P)
+      (margin (:B P) D (:K *N))))
+  (member ((:t P))
+    (&mark *P)))
+
+(RULE &tie
+  (&cand *D)
+  (&mark *P)
+  (&mark (:P *Q))
+  (!= P Q)
+  (same_dist D (:P1 P) (:P2 Q)))
+
+(DET &rank_dir
+  (&cand *E *D)
+  (&order_corner (:D *Diag))
+  (NOT (&tie E D)))
+
+(DET &cycle_succ
+  (&order_corner (:D *Diag))
+  (&rank_dir *E Diag *D)
+  (&order.successor E (:key D) (:a *P) (:b *P2))
+  (ex_output E P (:Col *C))
+  (ex_output E (:P P2) (:Col *C_next)))
+
+(INIT &cycle Walk
+  (successor ((:p C) (:p_next C2))
+    (&cycle_succ *C (:C_next *C2)))
+  (steps ((:N R))
+    (&order.rank *R)))
+
+(RULE &order_dir
+  (&cand *D)
+  (NOT (&tie D)))
+
+(DET &cycle_start
+  (&order_corner (:D *Diag))
+  (&rank_dir *E Diag *D)
+  (&order.minimal E (:key D) (:t *P))
+  (ex_output E P (:Col *C)))
+
+(ALTS $choice "which of the corner's two directions ranks the marks" $Separate
+  (ALT $Span
+    (RULE &spans
+      (&cand *D)
+      (&mark *P)
+      (margin (:B P) D (:K 0))
+      (opposite D (:Opp *D_far))
+      (&mark (:P *Q))
+      (margin (:B Q) (:D D_far) (:K 0)))
+
+    (RULE &order_dir
+      (&spans *D))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&order_dir *D)
+       (&order.rank (:key D) (:t P) *R)
+       (&cycle_start (:C *C0))
+       (&cycle.walk (:p0 C0) (:N R) (:p *Col)))
+      ((&bg (:C Col_in))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

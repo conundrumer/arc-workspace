@@ -1,0 +1,162 @@
+;; inputs 98a86e162fc818da143322b92231cb4de99ca89b18210400083fda81dffaa9b2 programs/solvers/cd3c21df.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cd3c21df
+
+(param &background Color (0))
+
+(alts $odd
+  (alt $OwnColor
+    (witness shared-color-odd foreign any
+      (relaxed one-unique-object)
+      (separates "the unmatched 5 bar shares its color with the 5 pairs, and a 7 cell sits apart; the concept finds two unmatched objects and is undefined, and matching by color set or by an own color gives the 7 cell")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 0 0 2 0 0)
+        (0 0 0 0 0 2 0 7)
+        (0 0 5 5 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 2 0 0 5 5 5 0)
+        (0 2 0 0 0 0 0 0)))
+      (output $Translate $CongruentCopy $RecolorCopy undefined)
+      (output $ColorSetCopy $OwnColor (grid
+        (7))))
+    (witness two-color-odd ordinary concept
+      (separates "the unmatched object holds 2 and 3, each also held by a pair of dots; matching by translation or by color set gives the 2 3 bar, and picking the object with its own color finds none and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 2 3 0 0 2 0)
+        (0 0 0 0 0 0 0)
+        (0 3 0 0 2 0 0)
+        (0 0 0 0 0 0 3)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $Unmatched (grid
+        (2 3)))
+      (output $OwnColor undefined))
+    (witness own-color-dot foreign any
+      (relaxed one-unique-object)
+      (separates "a 7 dot sits beside a 2 3 bar whose colors pairs of dots hold; matching by translation or by color set finds two unmatched objects and is undefined, picking the object with its own color gives the 7 dot, and matching up to a renaming of colors pairs the 7 dot with the other dots and gives the 2 3 bar")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 2 3 0 0 2 0)
+        (0 0 0 0 0 0 0)
+        (0 3 0 0 2 0 7)
+        (0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $Translate $CongruentCopy $ColorSetCopy undefined)
+      (output $RecolorCopy (grid
+        (2 3)))
+      (output $OwnColor (grid
+        (7))))))
+
+(alts $copy
+  (alt $CongruentCopy
+    (witness rotated-copy variant any
+      (relaxed one-unique-object)
+      (relaxed others-repeat)
+      (separates "each repeated object's copy is turned, not translated; matching by translation finds no copy and leaves three unmatched objects, so the concept is undefined, and matching by turns, by color set or by an own color gives the 1 cell")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 6 6 6 0 0 0)
+        (0 0 6 0 0 6 0)
+        (0 0 0 0 0 6 6)
+        (0 4 0 0 0 6 0)
+        (0 4 0 0 0 0 0)
+        (0 0 0 4 4 0 1)))
+      (output $Translate $RecolorCopy undefined)
+      (output $CongruentCopy $ColorSetCopy $OwnColor (grid
+        (1)))))
+  (alt $ColorSetCopy
+    (witness shared-color-odd foreign any)
+    (witness shape-differs ordinary concept
+      (separates "the unmatched 5 L shares its color with a pair of 5 bars; matching by shape gives the L, and matching by color set finds no unmatched object and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 5 5 0 0 2 0)
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 5 0 0)
+        (0 0 0 0 5 5 0)
+        (0 5 5 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $Translate $CongruentCopy $RecolorCopy (grid
+        (5 0)
+        (5 5)))
+      (output $ColorSetCopy $OwnColor undefined)))
+  (alt $RecolorCopy
+    (witness recolored-copy variant any
+      (relaxed one-unique-object)
+      (relaxed others-repeat)
+      (separates "each repeated shape's copy is in another color; matching by shape and colors finds three unmatched objects and is undefined, and matching up to a renaming of colors gives the 1 L")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 3 3 0 0 6 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 4 4 0 0)
+        (0 6 0 0 0 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 1 0)))
+      (output $Translate $CongruentCopy $ColorSetCopy $OwnColor undefined)
+      (output $RecolorCopy (grid
+        (1 0)
+        (1 1))))))
+
+(alts $adj
+  (alt $Adjacency8
+    (witness diagonal-object variant $Adjacency8
+      (relaxed objects-on-background)
+      (relaxed one-unique-object)
+      (separates "two 5 cells touch at a corner; under 4-adjacency they are two 5 dots among four, no object is unmatched, and the concept is undefined, and under 8-adjacency they are one diagonal object with no copy")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 5 0 0 0 5 0)
+        (0 0 5 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 5 0 0)
+        (0 0 0 0 0 0 0)
+        (0 5 0 0 0 2 0)))
+      (output $Adjacency4 undefined)
+      (output $Adjacency8 (grid
+        (5 0)
+        (0 5))))))
+
+(alts $fill
+  (alt $CropInput
+    (witness nested-in-box borderline concept
+      (separates "a 4 cell of a repeated pair lies in the box of the unmatched L; the concept fills that cell with background, and cropping the input keeps the 4")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 2 0 4 0 5 5)
+        (0 2 0 0 0 0 0)
+        (0 2 2 2 0 0 0)
+        (0 0 0 0 0 4 0)
+        (0 5 5 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $FillBackground (grid
+        (2 0 0)
+        (2 0 0)
+        (2 2 2)))
+      (output $CropInput (grid
+        (2 0 4)
+        (2 0 0)
+        (2 2 2))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "5 is the commonest color; the concept takes 0 as background and gives the 7 cell, and the derived background 5 makes all the other cells one object and gives the input back")
+      (input (grid
+        (5 5 5 0 2)
+        (5 5 5 0 0)
+        (0 0 0 0 7)
+        (5 5 5 0 0)
+        (5 5 5 0 2)))
+      (output ($Translate &background=$Stored) $CongruentCopy $ColorSetCopy $OwnColor (grid
+        (7)))
+      (output &background=$Derived (grid
+        (5 5 5 0 2)
+        (5 5 5 0 0)
+        (0 0 0 0 7)
+        (5 5 5 0 0)
+        (5 5 5 0 2)))
+      (output $RecolorCopy undefined))))

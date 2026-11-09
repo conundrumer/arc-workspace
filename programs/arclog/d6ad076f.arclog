@@ -1,0 +1,190 @@
+;; inputs 41c8fc0a7781dfff3b5ff85f432cd666b9313f449699394d7942e457cdfca63b programs/solvers/d6ad076f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d6ad076f
+
+(INPUT two-blocks "every input holds exactly two solid rectangles, each of one color other than &bg and of distinct colors, on a field of &bg"
+
+  (DET &repainted
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET_OR_RULE &bg DominantColor
+    (&repainted *C)))
+
+(INPUT facing-across-gap "the two rectangles are separated along one axis by a gap of &bg cells at least one cell wide, and their spans on the other axis overlap by at least three cells")
+
+(OUTPUT bridge "each cell that lies in the gap between the two rectangles along the axis that separates them, and whose line on the other axis lies within the overlap of the two rectangles' spans on that axis, at least &inset cells from each end of that overlap, takes &fill"
+
+  (INIT &blocks Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (INIT &box BoundingBox
+    (key ((&blocks.component *P ^Id))
+      (cell (P)
+        (&blocks.component *P Id))))
+
+  (RULE &gap
+    (input *P)
+    (opposite *D (:Opp *D2))
+    (&box.box (:key (:Id *A)) (:B *B2))
+    (margin (:B B2) D (:K *K_box))
+    (margin (:B P) D *K)
+    (< K K_box)
+    (&box.box (:key (:Id *B)) (:B *B3))
+    (margin (:B B3) (:D D2) (:K *K_box2))
+    (margin (:B P) (:D D2) (:K *K2))
+    (< K2 K_box2))
+
+  (RULE &aside
+    (&gap *A *B *D *P)
+    (perp_dir D (:D2 *E))
+    (OR ((&box.box (:key (:Id A)) (:B *B2))
+         (margin (:B B2) (:D E) (:K *K_box))
+         (margin (:B P) (:D E) *K)
+         (< K K_box))
+        ((&box.box (:key (:Id B)) (:B *B3))
+         (margin (:B B3) (:D E) (:K *K_box2))
+         (margin (:B P) (:D E) (:K *K2))
+         (< K2 K_box2))))
+
+  (RULE &region2
+    (&gap *A *B *D *P)
+    (NOT (&aside A B D P)))
+
+  (RULE &obstructed
+    (&region2 *A *B *D *P)
+    (input P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &facing
+    (&region2 *A *B *D)
+    (NOT (&obstructed A B D)))
+
+  ;; The bridge between the pair.
+  (INIT &bridge BoundingBox
+    (key ((&region2 ^E ^A ^B ^D *P)
+          (&repainted E P))
+      (cell (P)
+        (&region2 E A B D *P)
+        (&repainted E P))))
+
+  ;; The cells between the pair.
+  (INIT &region BoundingBox
+    (key ((&facing ^E ^A ^B ^D))
+      (cell (P)
+        (&region2 E A B D *P))))
+
+  (DET &inset
+    (&region.box (:key *E *A *B *D) (:B *B_region))
+    (&bridge.box (:key E A B D) (:B *B_bridge))
+    (relative (:Base B_region) (:X B_bridge) (:X_rel *B_rel))
+    (perp_dir D *D2)
+    (margin (:B B_rel) (:D D2) *K))
+
+  (DET &fill
+    (&repainted (:C2 *C))))
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &narrower
+    (&facing *A *B *D)
+    (axis_of D (:A *Ax))
+    (perp (:A Ax) (:A2 *Ax2))
+    (OR ((= *N A)
+         (= *W B))
+        ((= N B)
+         (= W A)))
+    (&box.box (:key (:Id N)) (:B *B_n))
+    (&box.box (:key (:Id W)) (:B *B_w))
+    (&blocks.component *P (:Id N))
+    (box_extent (:B B_n) P (:A Ax2) (:N *K_n))
+    (box_extent (:B B_w) P (:A Ax2) (:N *K_w))
+    (< K_n K_w)))
+
+(ALTS $span "the extent of the bridge on the axis across the gap" $Overlap
+  (ALT $NarrowerFace
+    (OUTPUT bridge "the bridge's extent across the gap is the narrower block's span, less &inset lines at each end; undefined where the two blocks' spans across the gap are equally wide")
+    (RULE &bound
+      (&narrower *A *B (:N *Id))))
+  (ALT $NarrowerFaceClipped
+    (OUTPUT bridge "the bridge's extent across the gap is the narrower block's span less &inset lines at each end, cut to the overlap of the two spans; undefined where the two blocks' spans across the gap are equally wide")
+    (RULE &bound
+      (&narrower *A *B (:N *Id)))
+
+    (RULE &trimmed
+      ;; The wider block's span cuts the bridge.
+      (OR ((&gap *A *B *D *P)
+           (&narrower A B *W)
+           (perp_dir D (:D2 *E))
+           (&box.box (:key (:Id W)) (:B *B2))
+           (margin (:B B2) (:D E) (:K *K_box))
+           (margin (:B P) (:D E) *K)
+           (< K K_box))
+          ((&gap A B D P)
+           (&bound A B *Id)
+           (perp_dir D (:D2 *E2))
+           (&inset (:K *K3))
+           (jump P (:D E2) (:K K3) *Q)
+           (&box.box (:key Id) (:B *B22))
+           (margin (:B B22) (:D E2) (:K *K_box2))
+           (margin (:B Q) (:D E2) (:K *K2))
+           (< K2 K_box2))))))
+
+(ALTS $block_count "how many blocks the scene holds" $Two
+  (ALT $EveryFacingPair
+    (INPUT two-blocks "two or more solid rectangles of distinct colors on &bg; undefined where no two rectangles face each other")
+    (OUTPUT bridge "a bridge spans the gap between each two rectangles that face each other across a gap of &bg")
+    (RULE &pair
+      (&facing *A *B *D))))
+
+(RULE &bound
+  (&facing *A *B)
+  (OR ((= *Id A))
+      ((= Id B))))
+
+(RULE &trimmed
+  (&gap *A *B *D *P)
+  (&bound A B *Id)
+  (perp_dir D (:D2 *E))
+  (&inset *K)
+  (jump P (:D E) K *Q)
+  (&box.box (:key Id) (:B *B2))
+  (margin (:B B2) (:D E) (:K *K_box))
+  (margin (:B Q) (:D E) (:K *K2))
+  (< K2 K_box))
+
+(RULE &third
+  (&facing *A *B)
+  (&blocks.component (:Id *C))
+  (!= C A)
+  (!= C B))
+
+(RULE &pair
+  (&facing *A *B *D)
+  (NOT (&third A B)))
+
+(RULE &unbounded
+  (&pair *A *B)
+  (NOT (&bound A B)))
+
+(RULE &defined
+  (&pair)
+  (NOT (&unbounded)))
+
+(RULE &bridge2
+  (&defined)
+  (&pair *A *B *D)
+  (&gap A B D *P)
+  (NOT (&trimmed A B D P)))
+
+(RULE &output
+  (OR ((&bridge2 *P)
+       (&fill (:C *Col)))
+      ((&defined)
+       (input P Col)
+       (NOT (&bridge2 P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,78 @@
+;; inputs 525e59cb3a2e50c2b0e0f35949b27f18bc4f095be3f89263961160d39c3b2352 programs/solvers/91714a58.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 91714a58
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The rectangles each color draws. An outline spans at least two cells on
+;; each axis, so a run one cell wide draws none.
+(INIT &outline Outlines
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col))))
+
+;; The one color a rectangle holds, absent where it holds more than one.
+(INIT &rect_color Singleton
+  (key ((&outline.box ^B))
+    (member ((:v C))
+      (input *P (:Col *C))
+      (inside (:A P) B))))
+
+(RULE &rect_cell
+  (&rect_color.value (:key *B) (:v *Col))
+  (input *P)
+  (inside (:A P) B))
+
+(INIT &biggest_count Cardinality
+  (key ((&rect_cell ^B *P))
+    (member ((:m P))
+      (&rect_cell B *P))))
+
+;; The solid rectangle holding the most cells.
+(INIT &biggest Order
+  (member ((:t B))
+    (&biggest_count.size (:key *B)))
+  (score ((:t B) (:S N))
+    (&biggest_count.size (:key *B) *N)))
+
+(RULE &keep
+  (&biggest.maximal (:t *B))
+  (&rect_cell B *Col *P))
+
+(ALTS $choice "Which cells form the figure." $Rect
+  (ALT $Thick
+    ;; The side of the square a thick cell lies in.
+    (DET &square_side TileCount)
+
+    (INIT &square_frame Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&square_side *N)))
+
+    ;; The squares of each color.
+    (INIT &block Occurrences
+      (key ((OR ((&ink *P ^Col))
+                ((&ink Col)
+                 (&square_frame.cell (:P *S)))))
+        (cell (P)
+          (&ink *P Col))
+        (shape ((:P S))
+          (&ink Col)
+          (&square_frame.cell (:P *S)))))
+
+    (RULE &keep
+      (&block.occurrence (:key *Col) (:P *M))
+      (&square_frame.cell (:P *S))
+      (compose (:A M) (:B S) (:C *P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&keep P *Col))
+      ((NOT (&keep P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

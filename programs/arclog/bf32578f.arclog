@@ -1,0 +1,199 @@
+;; inputs 2fa3196274c8bf1e4bc248b52a33e6e3a1313a11c7f0575b85697f1f75eaa26f programs/solvers/bf32578f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bf32578f
+
+(INPUT one-shape "the input holds one shape of one color on a field of bg"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &shape
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The shape's color.
+  (INIT &hue Singleton
+    (member ((:v Col))
+      (&shape *P)
+      (input P *Col))))
+
+(INPUT half-outline "the shape is an open curve whose two ends lie in its column nearest mirror-dir, so that it opens toward mirror-dir")
+
+(INPUT room "the grid has room for the shape's mirror image on its mirror-dir side")
+
+(OUTPUT mirror "the shape and its mirror image, across the line just past the shape's edge toward mirror-dir, form one closed outline")
+
+(OUTPUT fill-inside "each cell the closed outline encloses takes the shape's color, and every other cell, the outline included, is bg"
+
+  ;; the direction the shape opens toward, in which its mirror image lies
+  (DET &mirror_dir DirDomain)
+
+  (RULE &open_dir
+    (&mirror_dir *D))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (&shape *P)))
+
+  (RULE &image
+    (&open_dir *D)
+    (axis_of D *A)
+    (&shape *P)
+    (&shape_box.box *B)
+    (box_extent B P A (:N *W))
+    (edge_outset D (:K W) (:B *B_out))
+    (compose (:A B) (:B B_out) (:C *B2))
+    (inside (:A P) (:B B2))
+    (relative (:Base B2) (:X P) (:X_rel *P_rel))
+    (axis_inversion A (:T *F))
+    (apply (:D F) (:P P_rel) (:P_out *Q_rel))
+    (compose (:A B2) (:B Q_rel) (:C *Q)))
+
+  (RULE &outline
+    (OR ((&open_dir)
+         (&shape *P))
+        ((&image (:Q P)))))
+
+  (INIT &span_frame Frame
+    (key ((axis4_elem ^A)))
+    (extent ((:A A2) N)
+      (&outline *P)
+      (frame_extent P (:A *A2) *N)))
+
+  (INIT &span Ray
+    (key ((OR ((&outline *P)
+               (axis4_elem ^A))
+              ((&open_dir)
+               (axis4_of *D A))
+              ((&span_frame.cell (:key A) P))))
+      (source (P)
+        (&outline *P)
+        (axis4_elem A))
+      (node (P)
+        (&span_frame.cell (:key A) *P))
+      (dir (D)
+        (&open_dir)
+        (axis4_of *D A))))
+
+  (RULE &span_between
+    (&open_dir)
+    (input *P)
+    (axis4_of *D (:A *Key))
+    (dir8_opposite D (:D2 *O))
+    (&span.ray (:key (:A Key)) P D)
+    (&span.ray (:key (:A Key)) P (:D O)))
+
+  (INIT &closed Enclosure
+    (cell (P)
+      (&open_dir)
+      (input *P)
+      (NOT (&outline P))))
+
+  (RULE &spanned
+    (&span_between (:Key *A) *P)
+    (NOT (&outline P)))
+
+  ;; The outline with the cells it encloses.
+  (INIT &solid Boundary
+    (cell (P)
+      (OR ((&outline *P))
+          ((&closed.enclosed P))))))
+
+(ALTS $i "which cells of the closed outline's frame take the shape's color" $Enclosed
+  (ALT $SpanAlong
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along mirror-dir's axis takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&open_dir *D)
+      (axis_of D *A)
+      (&spanned A *P)))
+  (ALT $SpanAcross
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along the axis across mirror-dir takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&open_dir *D)
+      (axis_of D (:A *A0))
+      (perp (:A A0) (:A2 *A))
+      (&spanned A *P)))
+  (ALT $SpanBoth
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along each axis takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&spanned *A *P)
+      (perp A *A2)
+      (&spanned (:A A2) P)))
+  (ALT $SpanEither
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along some axis takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&spanned *A *P)
+      (axis_elem A)))
+  (ALT $ErodeFilled
+    (OUTPUT fill-inside "the outline with the cells it encloses, less that set's rim, takes the shape's color, so an outline cell with all four neighbors in the set takes it too. Undefined where the concept is.")
+    (RULE &filled
+      (&solid.cell *P)
+      (NOT (&solid.boundary P))))
+  (ALT $SpanAny
+    (OUTPUT fill-inside "each cell off the outline with outline cells on both sides along some row, column or diagonal takes the shape's color. Undefined where the concept is.")
+    (RULE &filled
+      (&spanned *P))))
+
+(ALTS $m "how the side the shape opens toward is found" $StoredDir
+  (ALT $MirrorDirFromEnds
+    (INPUT half-outline "the shape is an open curve with two ends, each a shape cell with one 8-neighbor in the shape, and mirror-dir is the one side of the shape's bounding box whose line holds both ends. Undefined where the shape has other than two ends, where no side or more than one side holds both, and where the concept is undefined at that direction."
+      (RULE &threaded
+        (&shape *P)
+        (neighbor P (:D *D1) (:Q *Q1))
+        (&shape (:P Q1))
+        (neighbor P (:D *D2) (:Q *Q2))
+        (&shape (:P Q2))
+        (!= D1 D2))
+
+      (RULE &end
+        (&shape *P)
+        (neighbor P *Q)
+        (&shape (:P Q))
+        (NOT (&threaded P)))
+
+      (RULE &many_ends
+        (&end (:P *P1))
+        (&end (:P *P2))
+        (&end (:P *P3))
+        (!= P1 P2)
+        (!= P1 P3)
+        (!= P2 P3))
+
+      (RULE &end_side
+        (&shape_box.box *B)
+        (&end (:P *P1))
+        (&end (:P *P2))
+        (!= P1 P2)
+        (inside (:A P1) B)
+        (same_dist *D P1 (:P2 B))
+        (inside (:A P2) B)
+        (same_dist D (:P1 P2) (:P2 B)))
+
+      (RULE &open_dir
+        (&end_side *D)
+        (NOT (&many_ends))
+        (ALL ((&end_side (:D *D1))
+              (&end_side (:D *D2)))
+             ((= D1 D2)))))))
+
+(RULE &spill
+  (&image *Q)
+  (NOT (input (:P Q))))
+
+(RULE &defined
+  (&open_dir)
+  (NOT (&spill))
+  (&hue.value))
+
+(RULE &filled
+  (&closed.enclosed *P))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&defined)
+       (&hue.value (:v *Col)))
+      ((&defined)
+       (input P)
+       (NOT (&filled P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,52 @@
+;; inputs 047819647e9a91fa0e322e60df821535c648ca146139097ce5d8a8733f033803 programs/solvers/2281f1f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2281f1f4
+
+(DET &marker RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &header DiagDirDomain)
+
+(RULE &marked
+  (input *P)
+  (&header (:D *Diag))
+  (corner_dir (:C Diag) *A *D)
+  (&marker (:C *M))
+  (input (:P *Q) (:Col M))
+  (margin (:B Q) D (:K 0))
+  (same_line A P Q))
+
+(RULE &cross
+  (&header (:D *Diag))
+  (diag_dirs (:D Diag) *D1 *D2)
+  (&marked *P (:D D1))
+  (&marked P (:D D2)))
+
+(ALTS $choice "what a marked line carries off the crossings" $Cross
+  (ALT $Stamp
+    (DET &bg DominantColor)
+
+    (RULE &selected
+      (&header (:D *Diag))
+      (diag_dirs (:D Diag) (:D1 *Dp) (:D2 *Ds))
+      (&marked *P (:D Ds))
+      (NOT (margin (:B P) (:D Ds) (:K 0))))
+
+    (RULE &output
+      (OR ((&selected *P *Dp)
+           (&marked P (:D Dp))
+           (&fill (:C *Col)))
+          ((&selected P (:Dp *Dp2))
+           (NOT (&marked P (:D Dp2)))
+           (&bg (:C Col)))
+          ((input P Col)
+           (NOT (&selected P)))))))
+
+(RULE &output
+  (OR ((&cross *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&cross P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,73 @@
+;; inputs 44c1761392256cdbf50350e05f1e8e1247cf382260aba2d773c8aaebee6e80d0 programs/solvers/9af7a82c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9af7a82c
+
+(param &bg Color (0))
+(param &corner DiagDir (DIAG_TL))
+(param &bar_axis Axis (AXIS_V))
+
+(alts $adj
+  (alt $Corner
+    (witness diagonal-split variant concept
+      (relaxed blobs)
+      (separates "$Edge (a region joins along edges alone) from $Corner (a corner touch also joins): a color whose regions touch at a corner")
+      (input (grid
+        (2 1 1 1)
+        (2 2 1 1)
+        (1 1 2 1)))
+      (output $PerColor $Corner (grid
+        (1 2)
+        (1 2)
+        (1 2)
+        (1 2)
+        (1 0)
+        (1 0)
+        (1 0)
+        (1 0)))
+      (output $Edge (grid
+        (1 2 1 2)
+        (1 2 1 0)
+        (1 2 0 0)
+        (1 0 0 0)
+        (1 0 0 0)
+        (1 0 0 0))))))
+
+(alts $bars
+  (alt $PerRegion
+    (witness split-color variant concept
+      (relaxed blobs)
+      (separates "$PerColor (one bar per color) from $PerRegion (one bar per connected region): a color in two regions of different sizes")
+      (input (grid
+        (2 1 2 2)
+        (1 1 1 1)))
+      (output $PerColor (grid
+        (1 2)
+        (1 2)
+        (1 2)
+        (1 0)
+        (1 0)))
+      (output $PerRegion (grid
+        (1 2 2)
+        (1 2 0)
+        (1 0 0)
+        (1 0 0)
+        (1 0 0))))))
+
+(alts $fill
+  (alt $Included
+    (witness fill-in-input variant concept
+      (relaxed fill)
+      (separates "$Excluded (the fill color's cells are not counted) from $Included (every cell counts): the fill color present in the input")
+      (input (grid
+        (0 0 1)
+        (1 1 1)))
+      (output $Excluded (grid
+        (1)
+        (1)
+        (1)
+        (1)))
+      (output $Included (grid
+        (1 0)
+        (1 0)
+        (1 0)
+        (1 0))))))

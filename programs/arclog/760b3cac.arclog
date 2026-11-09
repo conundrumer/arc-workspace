@@ -1,0 +1,83 @@
+;; inputs 76aaa11cb6d521fa158159d50d3b65ef1d98d8a371a03bdcac4dd8afb483900b programs/solvers/760b3cac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 760b3cac
+
+(DET &tile_dim TileCount)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (axis_elem *A)
+    (&tile_dim (:N *K))))
+
+(DET &pattern UnchangedColor)
+
+(RULE &tile
+  (input (:P *P_grid))
+  (&tile_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(RULE &pattern_tile
+  (input (:P *P_grid) *Col)
+  (&pattern (:C Col))
+  (&tile P_grid *P_tile))
+
+(INIT &mirror_tiling Tiling
+  (outer ((:P T_pat))
+    (&pattern_tile (:P_tile *T_pat)))
+  (inner ((:P Q_intile))
+    (&tile *P_intile)
+    (axis_of *A)
+    (axis_inversion A (:T *F))
+    (apply (:D F) (:P P_intile) (:P_out *Q_intile))))
+
+(DET &marker UnchangedColor)
+
+;; The axis the marker's corner points along.
+(DET &axis AxisDomain)
+
+(RULE &marker_cell
+  (input (:P *P_grid) *Col)
+  (&marker (:C Col))
+  (&tile P_grid *P_tile *P_intile))
+
+(RULE &dir
+  (&marker_cell *P_intile)
+  (corner_dist (:P P_intile) *Diag (:K 0))
+  (&axis *A)
+  (corner_dir (:C Diag) A *D))
+
+(ALTS $choice "how the marker's pointing direction is read" $Corner
+  (ALT $Lean
+    (DET &facing
+      (&marker_cell *E (:P_tile *T_mark))
+      (&pattern_tile E (:P_tile *T_pat))
+      (dir_elem *D)
+      (neighbor (:P T_mark) D (:Q T_pat)))
+
+    (RULE &dir
+      (&facing (:D *D_near))
+      (&marker_cell (:P_intile *P_near))
+      (margin (:B P_near) (:D D_near) (:K 0))
+      (opposite (:D D_near) (:Opp *D_far))
+      (&marker_cell (:P_intile *P_far))
+      (margin (:B P_far) (:D D_far) (:K 0))
+      (perp_dir (:D D_near) (:D2 *D))
+      (nearer D (:P P_near) (:Q P_far)))))
+
+(RULE &mirror
+  (&dir *D)
+  (&mirror_tiling.cell (:P_outer *T_pat) (:P_inner *Q_intile) (:P *Q_grid))
+  (neighbor (:P T_pat) D (:Q *T_out))
+  (&tile *P_grid (:P_tile T_out) *P_intile)
+  (axis_of D *A)
+  (axis_inversion A (:T *F))
+  (apply (:D F) (:P P_intile) (:P_out Q_intile)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&mirror (:P_grid P))))
+      ((&mirror (:P_grid P) *Q_grid)
+       (input (:P Q_grid) Col))))
+
+(OUT (&output ^P ^Col))

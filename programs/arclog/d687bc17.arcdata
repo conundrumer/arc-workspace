@@ -1,0 +1,120 @@
+;; inputs 032811d4828000c0ae9876afb10a06dad9ece0f41c29228a32a136729de7cb6d programs/solvers/d687bc17.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d687bc17
+
+(param &background Color (0))
+
+(alts $l
+  (alt $Stack
+    (witness same-line-clash variant $Stack
+      (relaxed no-landing-clash)
+      (separates "two dots of the top wall's color share a column: the concept puts both on the one cell next to the wall, $Stack piles the second one under the first")
+      (input (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 4 0 0 3)
+        (0 8 8 8 8 8 0)))
+      (output $Merge (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 8 8 8 8 8 0)))
+      (output $Stack (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 4 0 0 3)
+        (2 0 0 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 8 8 8 8 8 0))))))
+
+(alts $m
+  (alt $MoveObjects
+    (witness bent-object borderline $MoveObjects
+      (relaxed scattered-dots)
+      (separates "a three-cell object of the top wall's color with a gap above one cell: the concept moves each cell to the wall row alone, $MoveObjects moves the object rigidly until it touches the wall, $Stack piles the cells of each column against the wall")
+      (input (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 4 0 0 0 3)
+        (2 0 4 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 8 8 8 8 8 0)))
+      (output ($Merge $Dots) (grid
+        (0 4 4 4 4 4 0)
+        (2 0 4 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 8 8 8 8 8 0)))
+      (output $MoveObjects (grid
+        (0 4 4 4 4 4 0)
+        (2 0 4 0 0 0 3)
+        (2 0 4 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 8 8 8 8 8 0)))
+      (output $Stack (grid
+        (0 4 4 4 4 4 0)
+        (2 0 4 4 0 0 3)
+        (2 0 4 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 8 8 8 8 8 0))))))
+
+(alts $w
+  (alt $NearerWall
+    (witness two-walls-one-color borderline $NearerWall
+      (relaxed distinct-wall-colors)
+      (separates "the top and bottom walls share the dot's color: the concept sends a copy of the dot to each wall, $NearerWall sends it to the nearer one")
+      (input (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 0 0 0 3)
+        (2 0 0 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 4 4 4 4 4 0)))
+      (output $EveryWall (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 4 0 0 3)
+        (0 4 4 4 4 4 0)))
+      (output $NearerWall (grid
+        (0 4 4 4 4 4 0)
+        (2 0 0 4 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (2 0 0 0 0 0 3)
+        (0 4 4 4 4 4 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "a three-row grid whose top wall color outnumbers 0: the stored background 0 keeps the dots, the derived background is 4, so the 0 cells read as dots of no wall's color and become 4")
+      (input (grid
+        (0 4 4 4 4 4 0)
+        (2 4 0 4 0 4 3)
+        (0 8 8 8 8 8 0)))
+      (output &background=$Stored (grid
+        (0 4 4 4 4 4 0)
+        (2 4 0 4 0 4 3)
+        (0 8 8 8 8 8 0)))
+      (output &background=$Derived (grid
+        (0 4 4 4 4 4 0)
+        (2 4 4 4 4 4 3)
+        (0 8 8 8 8 8 0))))))

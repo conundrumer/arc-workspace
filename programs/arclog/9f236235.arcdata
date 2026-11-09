@@ -1,0 +1,25 @@
+;; inputs 690af41bf11229357c048c344f13b9611e39edaddca0190a2919c7b891148c9f programs/solvers/9f236235.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9f236235
+
+(param &pose D4 (D4_LR))
+(param &gap number (1))
+
+(alts $choice
+  (alt $EvenTiling
+    (witness unequal borderline concept
+      (relaxed even)
+      (separates "panels cut by the lines that draw them, against panels read off an even tiling")
+      (input (grid
+        (3 3 5 0 0 0 0)
+        (5 5 5 5 5 5 5)
+        (0 0 5 4 4 4 4)
+        (0 0 5 4 4 4 4)
+        (0 0 5 4 4 4 4)))
+      (output concept (grid
+        (0 3)
+        (4 0)))
+      (output $EvenTiling (grid
+        (0 0 5 3)
+        (4 4 5 0)
+        (4 4 5 0))))))

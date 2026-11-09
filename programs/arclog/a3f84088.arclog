@@ -1,0 +1,447 @@
+;; inputs ebde942dfa39d76ac42c2ee6d4d5061affdc44042065212521f1231f10c81020 programs/solvers/a3f84088.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a3f84088
+
+(INPUT square-frame "each input holds one square, one-cell-thick outline of &frame_color on a field of &background"
+
+  (DET &frame_color UnchangedColor)
+
+  (DET &background SharedColor))
+
+(INPUT empty-inside "every cell inside that outline is &background")
+
+(OUTPUT ring-depth "the cells that an outline of &frame_color closes off from the grid edge, where a cell escapes by side-by-side steps through cells of other colors, form a region, one per closed-off component; a region cell's depth is the count of the region's rings outside it: its Chebyshev distance to the nearest cell outside the region, less one"
+
+  (RULE &wall
+    (&frame_color *C))
+
+  (RULE &open
+    (&wall (:C *Ky))
+    (input *P *Col)
+    (!= Col Ky))
+
+  (INIT &closed Enclosure
+    (key ((&open ^Ky *P))
+      (cell (P)
+        (&open Ky *P))))
+
+  (RULE &bg_color
+    (&background *C))
+
+  (RULE &ink_color
+    (&bg_color (:C *Bg))
+    (input (:Col *C))
+    (!= C Bg))
+
+  ;; The one color of the cells other than the background.
+  (INIT &ink Singleton
+    (member ((:v C))
+      (&ink_color *C)))
+
+  (RULE &area
+    (&closed.enclosed (:key (:Ky *C)) *P *Id))
+
+  ;; The open cells the grid edge reaches by side or diagonal steps.
+  (INIT &leak Flood
+    (key ((&open (:Ky ^C) *P))
+      (node (P)
+        (&open (:Ky C) *P))
+      (source (P)
+        (&open (:Ky C) *P)
+        (margin (:B P) *D (:K 0))))
+    (step ((:Delta V))
+      (OR ((diag_dir_elem *D)
+           (step_offset D *V))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) V)))))
+
+  (INIT &leak_regions Connectivity
+    (key ((&open (:Ky ^C) *P)
+          (NOT (&leak.reached (:key C) P)))
+      (node (P)
+        (&open (:Ky C) *P)
+        (NOT (&leak.reached (:key C) P)))))
+
+  (INIT &leak_cheb Boundary
+    (key ((&leak_regions.component (:key ^C) *P))
+      (cell (P)
+        (&leak_regions.component (:key C) *P)))
+    (dir (D)
+      (dir8_elem *D)))
+
+  (INIT &manh Boundary
+    (key ((&area ^C *P))
+      (cell (P)
+        (&area C *P)))))
+
+(OUTPUT cycle-color "a region cell takes the &cycle entry at its depth modulo the number of entries"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (DET &open2
+    (ex_input *E *P *Col)
+    (NOT (&frame_color (:C Col))))
+
+  (INIT &closed2 Enclosure
+    (key ((&open2 ^E *P))
+      (cell (P)
+        (&open2 E *P))))
+
+  ;; One instance serves every component of a key: two components meet at
+  ;; most at a corner, where both cells lie on the rim.
+  (INIT &cheb2 Boundary
+    (key ((&closed2.enclosed (:key ^E) *P))
+      (cell (P)
+        (&closed2.enclosed (:key E) *P)))
+    (dir (D)
+      (dir8_elem *D)))
+
+  (INIT &cheb_depth2 CellDistance
+    (key ((OR ((&cheb2.boundary (:key ^E) *P))
+              ((&closed2.enclosed (:key E) P))))
+      (node (P)
+        (&closed2.enclosed (:key E) *P))
+      (source (P)
+        (&cheb2.boundary (:key E) *P)))
+    (step ((:Delta S))
+      (step_offset *D (:V *S))))
+
+  (DET &seen
+    (&cheb_depth2.distance (:key *E) *P *K)
+    (ex_output E P *Col))
+
+  (DET &clash
+    (&seen (:K *W))
+    (> W 0)
+    (&seen (:K *K1) (:Col *C1))
+    (divide (:T K1) (:Side W) (:Gap 0) (:Remainder *Idx))
+    (&seen (:K *K2) (:Col *C2))
+    (divide (:T K2) (:Side W) (:Gap 0) (:Remainder Idx))
+    (!= C1 C2))
+
+  ;; The shortest period no pair contradicts.
+  (INIT &shortest Order
+    (member ((:t W))
+      (&seen (:K *W))
+      (> W 0)
+      (NOT (&clash W)))
+    (score ((:t W) (:S W))
+      (&seen (:K *W))
+      (> W 0)
+      (NOT (&clash W))))
+
+  (DET &cycle
+    (&shortest.minimal (:t *W))
+    (&seen (:K *K2) (:Col *C))
+    (divide (:T K2) (:Side W) (:Gap 0) (:Remainder *K)))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  ;; The last entry, which the outline itself would take.
+  (INIT &entries Order
+    (member ((:t K))
+      (&cycle *K))
+    (score ((:t K) (:S K))
+      (&cycle *K)))
+
+  (INIT &area_box BoundingBox
+    (key ((&area ^C ^Id *P))
+      (cell (P)
+        (&area C Id *P)))))
+
+(OUTPUT outside-kept "every cell outside the regions keeps its input color"
+
+  ;; One instance serves every component of a key: two components meet at
+  ;; most at a corner, where both cells lie on the rim.
+  (INIT &cheb Boundary
+    (key ((&closed.enclosed (:key ^Ky) *P))
+      (cell (P)
+        (&closed.enclosed (:key Ky) *P)))
+    (dir (D)
+      (dir8_elem *D)))
+
+  (INIT &cheb_depth CellDistance
+    (key ((OR ((&cheb.boundary (:key ^Ky) *P))
+              ((&closed.enclosed (:key Ky) P))))
+      (node (P)
+        (&closed.enclosed (:key Ky) *P))
+      (source (P)
+        (&cheb.boundary (:key Ky) *P)))
+    (step ((:Delta S))
+      (step_offset *D (:V *S))))
+
+  (INIT &period Cardinality
+    (member ((:m K))
+      (&cycle *K))
+    (domain ()))
+
+  (RULE &ring
+    (&cheb_depth.distance (:key (:Ky *C)) *P *K))
+
+  (RULE &phase
+    (&ring *K)
+    (&period.size (:N *W))
+    (divide (:T K) (:Side W) (:Gap 0) (:Remainder *Idx)))
+
+  (RULE &bg_phase
+    (&cycle (:K *Idx) (:C *Col))
+    (&background (:C Col)))
+
+  (RULE &hue
+    (&wall *C)
+    (&cycle (:K *Idx) (:C *Col)))
+
+  (RULE &tint
+    (&wall *C)
+    (&ring C *P *K)
+    (&phase K *Idx)
+    (&hue C Idx *Col)))
+
+(ALTS $region "which cells take the cycle" $Enclosed
+  (ALT $Enclosed
+    (ALTS $step "how a cell escapes to the grid edge" $SideStep
+      (ALT $DiagonalLeak
+        (OUTPUT ring-depth "a cell also escapes by diagonal steps, so an outline that closes only at a corner closes nothing off"
+          (INIT &leak_cheb_depth CellDistance
+            (key ((OR ((&leak_cheb.boundary (:key (:C ^Ky)) *P))
+                      ((&leak_regions.component (:key (:C Ky)) P))))
+              (node (P)
+                (&leak_regions.component (:key (:C Ky)) *P))
+              (source (P)
+                (&leak_cheb.boundary (:key (:C Ky)) *P)))
+            (step ((:Delta S))
+              (step_offset *D (:V *S))))
+          (RULE &area
+            (&leak_regions.component (:key *C) *P *Id))
+          (RULE &ring
+            (&leak_cheb_depth.distance (:key (:Ky *C)) *P *K)))
+        (ALT $ManhattanDepth
+          (OUTPUT ring-depth "depth is the city-block distance to the nearest cell outside the region, less one"
+            (RULE &ring
+              (&manh_depth.distance (:key *C) *P *K))))))
+    (ALTS $metric "the distance that sets depth" $Chebyshev
+      (ALT $ManhattanDepth
+        (OUTPUT ring-depth "depth is the city-block distance to the nearest cell outside the region, less one"
+          (INIT &manh_depth CellDistance
+            (key ((OR ((&manh.boundary (:key ^C) *P))
+                      ((&area C P))))
+              (node (P)
+                (&area C *P))
+              (source (P)
+                (&manh.boundary (:key C) *P))))
+          (RULE &ring
+            (&manh_depth.distance (:key *C) *P *K))))))
+  (ALT $BboxRegion
+    (OUTPUT ring-depth "the region is the inside of the bounding box of all &frame_color cells, and depth is a cell's distance to the nearest side of that inside"
+      (INIT &frame_box BoundingBox
+        (key ((&wall ^C))
+          (cell (P)
+            (input *P (:Col C)))))
+
+      ;; The inside of the box.
+      (INIT &box_depth Boundary
+        (key ((&frame_box.box (:key ^C) *B)
+              (input *P)
+              (interior (:A P) B))
+          (cell (P)
+            (&frame_box.box (:key C) *B)
+            (input *P)
+            (interior (:A P) B)))
+        (dir (D)
+          (dir8_elem *D))))
+    (OUTPUT outside-kept "the box's own border takes &frame_color"
+      (INIT &box_depth_depth CellDistance
+        (key ((OR ((&box_depth.boundary (:key (:C ^Ky)) *P))
+                  ((&frame_box.box (:key (:C Ky)) *B)
+                   (input P)
+                   (interior (:A P) B))))
+          (node (P)
+            (&frame_box.box (:key (:C Ky)) *B)
+            (input *P)
+            (interior (:A P) B))
+          (source (P)
+            (&box_depth.boundary (:key (:C Ky)) *P)))
+        (step ((:Delta S))
+          (step_offset *D (:V *S))))
+
+      (RULE &ring
+        (&box_depth_depth.distance (:key (:Ky *C)) *P *K)))
+    (RULE &paint
+      (OR ((&wall (:C *Col))
+           (&frame_box.box (:key (:C Col)) (:B *B_box))
+           (input *P)
+           (inside (:A P) (:B B_box))
+           (NOT (interior (:A P) (:B B_box))))
+          ((&tint *C P Col))))
+    (ALT $FrameAnyColor
+      (OUTPUT ring-depth "every color other than the background is tried as an outline; under BboxRegion the box bounds all cells of other colors than the background, and is undefined when they hold two colors"
+        (RULE &wall
+          (&ink.value (:v *C))))
+      (RULE &output
+        (NOT (&ink.plural))
+        (OR ((&paint *P *Col))
+            ((input P Col)
+             (NOT (&paint P))))))
+    (ALT $CenterDot
+      (OUTPUT cycle-color "the center cell of a region whose bounding box has an odd number of rows and of columns takes the outline's color, whatever its depth"
+        (RULE &dot
+          (&frame_box.box (:key *C) *B)
+          (input *P)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_rel))
+          (centered (:P P_rel))))
+      (RULE &paint
+        (OR ((&wall (:C *Col))
+             (&frame_box.box (:key (:C Col)) (:B *B_box))
+             (input *P)
+             (inside (:A P) (:B B_box))
+             (NOT (interior (:A P) (:B B_box))))
+            ((&wall (:C Col))
+             (&dot (:C Col) P))
+            ((&tint *C P Col)
+             (NOT (&dot C P))))))
+    (ALT $GapKept
+      (RULE &paint
+        (OR ((&wall (:C *Col))
+             (&frame_box.box (:key (:C Col)) (:B *B_box))
+             (input *P)
+             (inside (:A P) (:B B_box))
+             (NOT (interior (:A P) (:B B_box))))
+            ((&tint *C P *Idx Col)
+             (NOT (&bg_phase Idx)))))
+      (ALT $CenterDot
+        (RULE &paint
+          (OR ((&wall (:C *Col))
+               (&frame_box.box (:key (:C Col)) (:B *B_box))
+               (input *P)
+               (inside (:A P) (:B B_box))
+               (NOT (interior (:A P) (:B B_box))))
+              ((&tint *C P *Idx Col)
+               (NOT (&bg_phase Idx))
+               (NOT (&dot C P)))
+              ((&wall (:C Col))
+               (&dot (:C Col) P))))))
+    (ALT $InteriorKept
+      (RULE &paint
+        (OR ((&wall (:C *Col))
+             (&frame_box.box (:key (:C Col)) (:B *B_box))
+             (input *P)
+             (inside (:A P) (:B B_box))
+             (NOT (interior (:A P) (:B B_box))))
+            ((&tint *C P Col)
+             (input P (:Col *Col_in))
+             (&bg_color (:C Col_in)))))
+      (ALT $CenterDot
+        (RULE &paint
+          (OR ((&wall (:C *Col))
+               (&frame_box.box (:key (:C Col)) (:B *B_box))
+               (input *P)
+               (inside (:A P) (:B B_box))
+               (NOT (interior (:A P) (:B B_box))))
+              ((&tint *C P Col)
+               (input P (:Col *Col_in))
+               (&bg_color (:C Col_in))
+               (NOT (&dot C P)))
+              ((&wall (:C Col))
+               (&dot (:C Col) P))))))))
+
+(ALTS $frame "which color draws the outline" $StoredFrame
+  (ALT $FrameAnyColor
+    (OUTPUT ring-depth "every color other than the background is tried as an outline; under BboxRegion the box bounds all cells of other colors than the background, and is undefined when they hold two colors"
+      (RULE &outline_phase
+        (&cycle (:K *Idx) (:C *Col))
+        (&frame_color (:C Col)))
+
+      (RULE &wall
+        (&ink_color *C))
+
+      (RULE &hue
+        (&wall *C)
+        (&cycle (:K *Idx) (:C *Col0))
+        (OR ((&outline_phase Idx)
+             (= *Col C))
+            ((NOT (&outline_phase Idx))
+             (= Col Col0)))))
+    (OUTPUT cycle-color "the cycle entries of &frame_color take the color of the region's outline")
+    (ALTS $ring2 "the color at the cycle entries that repeat the outline, under FrameAnyColor" $OutlineRing2
+      (ALT $InnerFrameStored
+        (OUTPUT cycle-color "only the last cycle entry takes the outline's color, and every other entry keeps its stored color"
+          (RULE &outline_phase
+            (&entries.dual_rank (:t *Idx) (:R 0))))))))
+
+(ALTS $write "which region cells the cycle writes" $WriteAll
+  (ALT $GapKept
+    (OUTPUT cycle-color "a cell at the entry of &background keeps its input color")
+    (RULE &paint
+      (&tint *C *P *Idx *Col)
+      (NOT (&bg_phase Idx)))
+    (ALT $CenterDot
+      (RULE &paint
+        (OR ((&tint *C *P *Idx *Col)
+             (NOT (&bg_phase Idx))
+             (NOT (&dot C P)))
+            ((&wall (:C Col))
+             (&dot (:C Col) P))))))
+  (ALT $InteriorKept
+    (OUTPUT cycle-color "only cells of the background color are written, and every other cell keeps its input color")
+    (RULE &paint
+      (&tint *C *P *Col)
+      (input P (:Col *Col_in))
+      (&bg_color (:C Col_in)))
+    (ALT $CenterDot
+      (RULE &paint
+        (OR ((&tint *C *P *Col)
+             (input P (:Col *Col_in))
+             (&bg_color (:C Col_in))
+             (NOT (&dot C P)))
+            ((&wall (:C Col))
+             (&dot (:C Col) P)))))))
+
+(ALTS $bg "the background color" $StoredBackground
+  (ALT $DerivedBackground
+    (OUTPUT cycle-color "the background is the input's commonest color, and it replaces &background at that color's cycle entry"
+      (RULE &bg_color
+        (&commonest.maximal (:t *C)))
+
+      (RULE &swap
+        (&bg_phase *Idx)
+        (&bg_color (:C *Col)))
+
+      (RULE &hue
+        (&wall *C)
+        (&cycle (:K *Idx) (:C *Col0))
+        (OR ((&swap Idx *Col))
+            ((NOT (&swap Idx))
+             (= Col Col0)))))))
+
+(ALTS $center "the color of a region's center cell" $RingCenter
+  (ALT $CenterDot
+    (OUTPUT cycle-color "the center cell of a region whose bounding box has an odd number of rows and of columns takes the outline's color, whatever its depth"
+      (RULE &dot
+        (&area_box.box (:key *C *Id) *B)
+        (&area C Id *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (centered (:P P_rel))))
+    (RULE &paint
+      (OR ((&wall (:C *Col))
+           (&dot (:C Col) *P))
+          ((&tint *C P Col)
+           (NOT (&dot C P)))))))
+
+(RULE &paint
+  (&tint *C *P *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,266 @@
+;; inputs eb4a694ac2e0501ea10d3903ac68036139d51e2f256c5dc7ade563d8c973d38e programs/solvers/fe45cba4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fe45cba4
+
+(INPUT background-field "every cell outside the shapes holds the background color.")
+
+(INPUT one-pair-color "exactly one color has two 4-connected components, the key and the lock; every other non-background color is one component.")
+
+(INPUT key-on-mover-side "the key lies wholly toward mover_side of the lock, with no column in common.")
+
+(INPUT pieces-interlock "some translation of the key is disjoint from the lock and the union of the two is a solid rectangle, and only one translation does this."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &pieces Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &piece_pair
+    (&pieces.component (:key *Col) *Id)
+    (&pieces.component (:key Col) (:Id *Id2))
+    (!= Id Id2))
+
+  (RULE &crowded
+    (&piece_pair *Col (:Id *I1) (:Id2 *I2))
+    (&pieces.component (:key Col) (:Id *I3))
+    (!= I1 I3)
+    (!= I2 I3))
+
+  (RULE &cand_pair
+    (&piece_pair *Col (:Id *Key) (:Id2 *Lock))
+    (NOT (&crowded Col)))
+
+  (RULE &key_cell
+    (&cand_pair *Key *Lock)
+    (&pieces.component *P (:Id Key)))
+
+  (RULE &lock_cell
+    (&cand_pair *Key *Lock)
+    (&pieces.component *P (:Id Lock)))
+
+  ;; the translations that land the key in the grid, off the lock
+  (INIT &landing Occurrences
+    (key ((OR ((&key_cell ^Key ^Lock *P))
+              ((&cand_pair Key Lock)
+               (input P)
+               (NOT (&lock_cell Key Lock P)))))
+      (cell (P)
+        (&cand_pair Key Lock)
+        (input *P)
+        (NOT (&lock_cell Key Lock P)))
+      (shape (P)
+        (&key_cell Key Lock *P))))
+
+  (RULE &moved_cell
+    (&landing.occurrence (:key *Key *Lock) (:P *V))
+    (&key_cell Key Lock (:P *S))
+    (compose (:A V) (:B S) (:C *P)))
+
+  (INIT &union_box BoundingBox
+    (key ((OR ((&landing.occurrence (:key (:Key ^Pr_key) (:Lock ^Pr_lock)) (:P ^V))
+               (&lock_cell (:Key Pr_key) (:Lock Pr_lock) *P))
+              ((&moved_cell (:Key Pr_key) (:Lock Pr_lock) V P))))
+      (cell (P)
+        (OR ((&landing.occurrence (:key (:Key Pr_key) (:Lock Pr_lock)) (:P V))
+             (&lock_cell (:Key Pr_key) (:Lock Pr_lock) *P))
+            ((&moved_cell (:Key Pr_key) (:Lock Pr_lock) V P)))))))
+
+(OUTPUT erase-key "the key's cells become background.")
+
+(OUTPUT plug-key "the key is painted at the translation at which it fills the lock's notch, so the lock and the key together form a solid rectangle in the pair color."
+
+  (RULE &not_toward
+    (&key_cell *Key *Lock *P)
+    (&lock_cell Key Lock (:P *Q))
+    (dir_elem *D)
+    (NOT (nearer D P Q)))
+
+  (RULE &toward
+    (&cand_pair *Key *Lock)
+    (dir_elem *D)
+    (NOT (&not_toward Key Lock D)))
+
+  (INIT &piece_box BoundingBox
+    (key ((&pieces.component *P (:Id ^I)))
+      (cell (P)
+        (&pieces.component *P (:Id I)))))
+
+  (RULE &off_slab
+    (&cand_pair *Key *Lock)
+    (&piece_box.box (:key (:I Lock)) *B)
+    (input (:P *Q))
+    (margin (:B Q) *D (:K *K_q))
+    (NOT (&toward Key Lock D))
+    (margin B D (:K *K_b))
+    (< K_q K_b))
+
+  (RULE &slab_cell
+    (&cand_pair *Key *Lock)
+    (input (:P *Q))
+    (NOT (&off_slab Key Lock Q)))
+
+  ;; the box of the lock together with one cell of its slab
+  (INIT &reach_box BoundingBox
+    (key ((&slab_cell (:Key ^Pr_key) (:Lock ^Pr_lock) ^Q))
+      (cell ((:P P2))
+        (OR ((&lock_cell (:Key Pr_key) (:Lock Pr_lock) (:P *P2)))
+            ((= P2 Q))))))
+
+  (INIT &rect_area Cardinality
+    (key ((&reach_box.box (:key ^Pr_key ^Pr_lock) (:B ^R))
+          (input *P)
+          (inside (:A P) (:B R)))
+      (member ((:m P))
+        (&reach_box.box (:key Pr_key Pr_lock) (:B R))
+        (input *P)
+        (inside (:A P) (:B R)))))
+
+  (INIT &pair_area Cardinality
+    (key ((OR ((&key_cell ^Key ^Lock *P))
+              ((&lock_cell Key Lock P))))
+      (member ((:m P))
+        (OR ((&key_cell Key Lock *P))
+            ((&lock_cell Key Lock P)))))))
+
+(OUTPUT keep-rest "the lock and every shape of another color are copied unchanged."
+
+  (RULE &gap
+    (&piece_box.box (:key (:I *Id)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&pieces.component P Id))))
+
+(ALTS $m "which of the two pieces moves" $SideMoves
+  (ALT $NotchedStays
+    (INPUT key-on-mover-side "the piece that stays is the one whose bounding-box gap is nonempty and reaches no corner of its bounding box, and the other piece moves; undefined where both pieces, or neither, have such a gap"
+      (RULE &corner_gap
+        (&gap *Id *P)
+        (&piece_box.box (:key (:I Id)) *B)
+        (inside (:A P) B)
+        (same_corner (:P1 P) (:P2 B)))
+
+      (RULE &notched
+        (&gap *Id)
+        (NOT (&corner_gap Id))))
+    (RULE &mover
+      (&cand_pair *Key *Lock)
+      (&notched (:Id Lock))
+      (NOT (&notched (:Id Key))))))
+
+(ALTS $pc "which colors are plugged" $OnePairColor
+  (ALT $EveryPairColor
+    (INPUT one-pair-color "every color that comes in two pieces is plugged; undefined where a color has more than two pieces")
+    (RULE &plugged_color
+      (&piece_pair *Col)
+      (NOT (&crowded Col)))
+
+    (RULE &colors_defined
+      (NOT (&crowded)))))
+
+(ALTS $pl "how the pair's color is placed on the lock" $Plug
+  (ALT $Plug
+    (ALTS $f "what fixes the translation of the key" $Interlock
+      (ALT $FillsNotch
+        (INPUT pieces-interlock "some translation of the key is disjoint from the lock and covers every cell of the lock's bounding-box gap, and only one translation does this")
+        (OUTPUT plug-key "the key is painted at that translation; undefined where the lock has no gap, or where no such translation exists or more than one does"
+          (RULE &open_gap
+            (&landing.occurrence (:key *Key *Lock) (:P *V))
+            (&gap (:Id Lock) *P)
+            (NOT (&moved_cell Key Lock V P))))
+        (RULE &fit
+          (&landing.occurrence (:key *Key *Lock) (:P *V))
+          (&gap (:Id Lock))
+          (NOT (&open_gap Key Lock V))))))
+  (ALT $AreaRectangle
+    (OUTPUT plug-key "the pair's color is painted as a solid rectangle on the lock's rows, flush with the lock's side away from the key, holding as many cells as the two pieces; undefined where no such rectangle fits in the grid")
+    (RULE &placed
+      (&rect_area.size (:key (:Pr_key *Key) (:Pr_lock *Lock) *R) *N)
+      (&pair_area.size (:key Key Lock) N)
+      (input *P)
+      (inside (:A P) (:B R)))))
+
+;; the side the moving piece lies on, relative to the piece that stays
+(DET &mover_side DirDomain)
+
+(RULE &pair_color
+  (&cand_pair *Key *Lock)
+  (&pieces.component (:key *Col) (:Id Key)))
+
+(RULE &plugged_color
+  (&piece_pair *Col)
+  (NOT (&crowded Col))
+  (ALL ((&piece_pair (:Col *Col2)))
+       ((= Col Col2))))
+
+(RULE &colors_defined
+  (&plugged_color))
+
+(RULE &mover
+  (&mover_side *D)
+  (&toward *Key *Lock D))
+
+(RULE &hole
+  (&union_box.box (:key (:Pr_key *Key) (:Pr_lock *Lock) *V) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&lock_cell Key Lock P))
+  (NOT (&moved_cell Key Lock V P)))
+
+(RULE &fit
+  (&landing.occurrence (:key *Key *Lock) (:P *V))
+  (NOT (&hole Key Lock V)))
+
+(RULE &ambiguous
+  (&fit *Key *Lock (:V *V1))
+  (&fit Key Lock (:V *V2))
+  (!= V1 V2))
+
+(RULE &placed
+  (&fit *Key *Lock *V)
+  (NOT (&ambiguous Key Lock))
+  (&moved_cell Key Lock V *P))
+
+(RULE &plug
+  (&plugged_color *Col)
+  (&pair_color *Key *Lock Col)
+  (&mover Key Lock))
+
+(RULE &has_mover
+  (&mover (:Key *Pr_key) (:Lock *Pr_lock))
+  (&pair_color (:Key Pr_key) (:Lock Pr_lock) *Col))
+
+(RULE &unresolved
+  (OR ((&plugged_color *Col)
+       (NOT (&has_mover Col)))
+      ((&plug (:Key *Pr_key) (:Lock *Pr_lock))
+       (NOT (&placed (:Key Pr_key) (:Lock Pr_lock))))))
+
+(RULE &defined
+  (&colors_defined)
+  (NOT (&unresolved)))
+
+(RULE &painted
+  (&plug (:Key *Pr_key) (:Lock *Pr_lock))
+  (&placed (:Key Pr_key) (:Lock Pr_lock) *P)
+  (&pair_color (:Key Pr_key) (:Lock Pr_lock) *Col))
+
+(RULE &erased
+  (&plug (:Key *Pr_key) (:Lock *Pr_lock))
+  (&key_cell (:Key Pr_key) (:Lock Pr_lock) *P))
+
+(RULE &output
+  (&defined)
+  (input *P (:Col *Col_in))
+  (OR ((&painted P *Col))
+      ((&erased P)
+       (NOT (&painted P))
+       (&background (:C Col)))
+      ((NOT (&painted P))
+       (NOT (&erased P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

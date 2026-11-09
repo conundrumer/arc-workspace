@@ -1,0 +1,8 @@
+;; inputs 89674e2c9ba80d4c194db125f06c1bb70e88ef48881dc96fbcf39a3bbd0f0d6d programs/solvers/9356391f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9356391f
+
+(param &bg Color (0))
+(param &divider Color (5))
+(param &legend_dir Dir (DIR_T))
+(param &read_sense Sense (SENSE_CC))

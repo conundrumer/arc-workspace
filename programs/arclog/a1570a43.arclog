@@ -1,0 +1,244 @@
+;; inputs 3946e5b7a72f37dfb72f76d2f124db63f8db75273c823d0c3bbb1b8ba47daaec programs/solvers/a1570a43.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a1570a43
+
+(INPUT markers "four single cells of &marker_color sit at the corners of an axis-aligned rectangle"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET_OR_RULE &marker_color RarestColor)
+
+  ;; The bounding box of each non-background color; the marker rectangle is the
+  ;; box of the marker color.
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (cell (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &at_corner
+    (input *P *Col)
+    (&color_box.box (:key Col) *B)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B)))
+
+  (RULE &off_corner
+    (OR ((input *P *Col)
+         (NOT (&at_corner P Col)))
+        ((&color_box.box (:key Col) *B)
+         (input (:P *P2))
+         (inside (:A P2) B)
+         (same_corner *D (:P1 P2) (:P2 B))
+         (OR ((NOT (input (:P P2) Col)))
+             ((inside (:A P2) B)
+              (same_corner (:D *D2) (:P1 P2) (:P2 B))
+              (!= D2 D))))))
+
+  (INIT &corner_color Singleton
+    (member ((:v Col))
+      (&color_box.box (:key *Col))
+      (NOT (&off_corner Col)))))
+
+(INPUT shape "one connected object of &shape_color lies on the &background field, off the marker cells"
+
+  (DET &shape_color ColorDomain))
+
+(INPUT fits "the shape's bounding box has the height and width of the rectangle's interior, the cells strictly between the marker rows and strictly between the marker columns")
+
+(OUTPUT keep-markers "the markers stay where they are")
+
+(OUTPUT place "the shape translates as one piece so that its bounding box is the interior of the marker rectangle; the cells it left take &background"
+
+  (RULE &marker_color2
+    (&marker_color (:C *K)))
+
+  (RULE &shape_cell
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (RULE &cargo
+    (&marker_color2)
+    (&shape_cell *P *Col))
+
+  (INIT &joint BoundingBox
+    (cell (P)
+      (&cargo *P)))
+
+  (RULE &unit
+    (&cargo *P *Col)
+    (&joint.box *B))
+
+  ;; The interior of each marker rectangle.
+  (INIT &inner BoundingBox
+    (key ((&marker_color2 ^K))
+      (cell (P)
+        (&color_box.box (:key (:Col K)) (:B *R))
+        (input *P)
+        (interior (:A P) (:B R)))))
+
+  ;; The unit's box is a translate of the interior.
+  (RULE &place
+    (&unit *B)
+    (&marker_color2 *K)
+    (&inner.box (:key K) (:B *I))
+    (relative (:Base B) (:X I) (:X_rel *V)))
+
+  (RULE &landed
+    (&place *B *V)
+    (&unit B *P *Col)
+    (compose (:A P) (:B V) (:C *Q)))
+
+  ;; The color each landed cell shows; two pieces that give one cell different
+  ;; colors leave it none.
+  (INIT &shows Singleton
+    (key ((&landed ^Q *Col)
+          (&marker_color2 *K)
+          (input (:P Q) (:Col *C))
+          (!= C K))
+      (member ((:v Col))
+        (&landed Q *Col)
+        (&marker_color2 *K)
+        (input (:P Q) (:Col *C))
+        (!= C K))))
+
+  (INIT &piece4 Connectivity
+    (node (P)
+      (&cargo *P)))
+
+  (INIT &piece8 Connectivity
+    (node (P)
+      (&cargo *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(ALTS $anchor "how the shape's destination is fixed" $Fill
+  (ALT $Center
+    (OUTPUT place "the shape translates so that its bounding box sits at equal margins from the marker rectangle on each axis; undefined where the two extents differ in parity on an axis, or a moved cell falls off the grid"
+      ;; The color each landed cell shows; two pieces that give one cell different
+      ;; colors leave it none.
+      (INIT &shows Singleton
+        (key ((OR ((&landed ^Q *Col)
+                   (&marker_color2 *K)
+                   (input (:P Q) (:Col *C))
+                   (!= C K))
+                  ((&landed Q)
+                   (&marker_color2 K)
+                   (input (:P Q) (:Col K)))))
+          (member ((:v Col))
+            (OR ((&landed Q *Col)
+                 (&marker_color2 *K)
+                 (input (:P Q) (:Col *C))
+                 (!= C K))
+                ((&landed Q)
+                 (&marker_color2 (:K Col))
+                 (input (:P Q) Col))))))
+
+      (RULE &shift
+        (&unit *B)
+        (input *P)
+        (inside (:A P) B)
+        (same_corner (:P1 P) (:P2 B))
+        (input (:P *Q))
+        (relative (:Base P) (:X Q) (:X_rel *V)))
+
+      (RULE &lands
+        (&shift *B *V)
+        (&marker_color2 *K)
+        (&color_box.box (:key (:Col K)) (:B *R))
+        (compose (:A B) (:B V) (:C *T_grid))
+        (relative (:Base R) (:X T_grid) (:X_rel *T)))
+
+      ;; The box sits at equal margins from the rectangle on each axis.
+      (RULE &place
+        (&lands *B *V *T)
+        (centered (:P T))))
+    (ALTS $top "what shows where a moved cell lands on a marker, under Center" $MarkerTop
+      (ALT $ShapeTop
+        (OUTPUT keep-markers "a moved cell that lands on a marker covers it"
+          ;; The color each landed cell shows; two pieces that give one cell different
+          ;; colors leave it none.
+          (INIT &shows Singleton
+            (key ((&landed ^Q *Col))
+              (member ((:v Col))
+                (&landed Q *Col)))))))))
+
+(ALTS $others "what happens to the cells that are neither markers nor the shape color" $KeepRest
+  (ALT $EraseRest
+    (OUTPUT place "the output starts blank, and only the markers and the moved shape are drawn on it")
+    (RULE &stays
+      (&marker_color2 (:K *Col))
+      (input *P Col)))
+  (ALT $Carry
+    (OUTPUT place "the unit that moves is every cell that is neither &background nor the marker color, and its cells keep their colors"
+      (RULE &cargo
+        (&marker_color2 *K)
+        (input *P *Col)
+        (NOT (&background (:C Col)))
+        (!= Col K)))
+    (RULE &stays
+      (&marker_color2)
+      (input *P *Col)
+      (NOT (&cargo P)))))
+
+(ALTS $grouping "what moves as one piece" $ColorClass
+  (ALT $PerObject
+    (OUTPUT place "each piece of edge-adjacent moving cells is placed alone by its own bounding box, and all of them are drawn; undefined where two placed pieces give one cell different colors"
+      (INIT &piece_box BoundingBox
+        (key ((&piece4.component *P ^Id))
+          (cell (P)
+            (&piece4.component *P Id))))
+
+      (RULE &unit
+        (&piece_box.cell (:key *Id) *P)
+        (&piece_box.box (:key Id) *B)
+        (&cargo P *Col)))
+    (ALTS $conn "which cells join into one piece under PerObject" $Conn4
+      (ALT $Conn8
+        (OUTPUT place "diagonal neighbors also join into one piece"
+          (INIT &piece_box BoundingBox
+            (key ((&piece8.component *P ^Id))
+              (cell (P)
+                (&piece8.component *P Id)))))))))
+
+(ALTS $marker "where the marker color comes from" $StoredMarker
+  (ALT $DeriveMarker
+    (INPUT markers "the marker color is the one non-background color whose cells are exactly the four corners of a rectangle; undefined when no color or more than one color is"
+      (RULE &marker_color2
+        (&corner_color.value (:v *K))))))
+
+(RULE &plan
+  (&unit))
+
+(RULE &stranded
+  (&plan)
+  (&unit *B)
+  (NOT (&place B)))
+
+(RULE &strays
+  (&landed *Q)
+  (NOT (input (:P Q))))
+
+(RULE &stays
+  (&marker_color2)
+  (input *P *Col)
+  (NOT (&shape_cell P)))
+
+(RULE &painted
+  (OR ((&shows.value (:key *Q) (:v *Col)))
+      ((&plan)
+       (input (:P Q))
+       (NOT (&landed Q))
+       (OR ((&stays (:P Q) Col))
+           ((NOT (&stays (:P Q)))
+            (&background (:C Col)))))))
+
+(RULE &output
+  (&painted (:Q *P) *Col)
+  (NOT (&stranded))
+  (NOT (&strays)))
+
+(OUT (&output ^P ^Col))

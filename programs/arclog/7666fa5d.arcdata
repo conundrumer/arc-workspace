@@ -1,0 +1,7 @@
+;; inputs 67b7d7fe2a1e0a1c04b9e6fd4cdfc69a1da7a82bd71c1def96b9b3c11fca41a3 programs/solvers/7666fa5d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7666fa5d
+
+(param &bg Color (8))
+(param &fill Color (2))
+(param &fill_axis DiagAxis (DAXIS_DG))

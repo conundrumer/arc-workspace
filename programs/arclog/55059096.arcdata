@@ -1,0 +1,6 @@
+;; inputs daaee921302b90e8fee86439ba9ca7dcd32d8c93d168bbb81c7a2d0f614e9bf6 programs/solvers/55059096.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 55059096
+
+(param &bg Color (0))
+(param &trail Color (2))

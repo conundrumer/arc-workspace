@@ -1,0 +1,409 @@
+;; inputs 312f30ed4b59c62b95f3ca22e5e957621f272c71570ffac847426342d18f691f programs/solvers/e87109e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e87109e9
+
+(INPUT legend-strip "a strip along the top side of the grid, drawn in 5, holds 4 boxes of extent 4. Each box is 0 except for one full line of one color, the marker, along one of the two box sides perpendicular to the top side."
+
+  ;; The color of each edge's outer line, where that line holds one color.
+  (INIT &outer_line Singleton
+    (key ((dir_elem ^D))
+      (member ((:v Col))
+        (input *P *Col)
+        (margin (:B P) D (:K 0))))))
+
+(INPUT field "the rest of the grid, the scene, is a field of one background color, which differs between inputs.")
+
+(INPUT rectangles "the scene holds solid one-color rectangles. Each rectangle's color is the marker color of a legend box, and no two rectangles touch.")
+
+(INPUT block "the scene holds one solid square of 8, which touches no rectangle.")
+
+(INPUT square-hits "each beam that meets a rectangle meets it with its full width, and after each turn the beam has at least one free step.")
+
+(OUTPUT crop-scene "the output is the scene, the input without the legend strip.")
+
+(OUTPUT beam-each-way "from the block, a copy of the block slides one cell at a time toward each of the four cardinal directions."
+
+  (DET &border_color
+    (ex_output *E)
+    (ex_input E *P (:Col *C))
+    (margin (:B P) *D (:K 0)))
+
+  (DET &edge_defect
+    (&border_color *E *D *C)
+    (&border_color E D (:C *C2))
+    (!= C2 C))
+
+  (DET &legend_edge
+    (dir_elem *D)
+    (NOT (&edge_defect D)))
+
+  (DET &vanished
+    (ex_output *E)
+    (ex_input E (:Col *C))
+    (NOT (ex_output E (:Col C))))
+
+  (DET &kept_somewhere
+    (&vanished *C)
+    (ex_output *E)
+    (NOT (&vanished E C)))
+
+  (DET &dropped
+    (&vanished *C)
+    (NOT (&kept_somewhere C)))
+
+  (DET &legend_frame_color
+    (&dropped *C)
+    (&border_color C))
+
+  (RULE &legend
+    (&legend_edge *D)
+    (&legend_frame_color (:C *Col)))
+
+  (RULE &line_defect
+    (&legend *D *Col)
+    (axis_of D *A)
+    (input *P (:Col *Col2))
+    (!= Col2 Col)
+    (split P A (:Along *L)))
+
+  (RULE &frame_line
+    (&legend *D *Col)
+    (axis_of D *A)
+    (input *P Col)
+    (split P A (:Along *L))
+    (NOT (&line_defect L)))
+
+  (RULE &in_strip
+    (&frame_line *L)
+    (&legend *D)
+    (input *P)
+    (nearer D P (:Q L)))
+
+  (RULE &scene_in
+    (&legend *D)
+    (axis_of D *A)
+    (input *P)
+    (split P A (:Along *L))
+    (NOT (&frame_line L))
+    (NOT (&in_strip P)))
+
+  (INIT &scene_box BoundingBox
+    (cell (P)
+      (&scene_in *P)))
+
+  (RULE &scene
+    (&scene_in (:P *P2))
+    (input (:P P2) *Col)
+    (&scene_box.box *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &bg_mode_count Cardinality
+    (key ((&scene *P ^Col))
+      (member ((:m P))
+        (&scene *P Col))))
+
+  (RULE &box_cell
+    (&in_strip *P)
+    (&legend (:Col *Col_f))
+    (input P *Col)
+    (!= Col Col_f))
+
+  (DET &legend_blank_color
+    (&dropped *C)
+    (NOT (&border_color C)))
+
+  (RULE &blank
+    (&legend_blank_color (:C *Col)))
+
+  (RULE &marker
+    (&box_cell *P *Col)
+    (NOT (&blank Col)))
+
+  (RULE &marker_side
+    (&marker *P)
+    (&legend (:D *E) (:Col *Col_f))
+    (perp_dir (:D E) (:D2 *D))
+    (neighbor P D *Q)
+    (input (:P Q) (:Col Col_f)))
+
+  (RULE &sense
+    (&marker *P *Col)
+    (&marker_side P *D)
+    (&legend (:D *E))
+    (turn *S (:D E) (:D2 D)))
+
+  ;; The background color.
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  (DET &gained
+    (ex_output *E (:P *Q) (:Col *C))
+    (ex_input E *P (:Col *C2))
+    (same_corner *D (:P1 P) (:P2 Q))
+    (!= C2 C))
+
+  (DET &gain_defect
+    (&gained *C)
+    (ex_output *E)
+    (diag_dir_elem *D)
+    (NOT (&gained E D C)))
+
+  (DET &block_color
+    (&gained *C)
+    (NOT (&gain_defect C)))
+
+  (RULE &block_color2
+    (&block_color (:C *Col)))
+
+  (INIT &block_box BoundingBox
+    (cell (P)
+      (&scene *P *Col)
+      (&block_color2 Col)))
+
+  (RULE &cover
+    (&block_box.box (:B *B0))
+    (&block_color2 *Col)
+    (&scene (:P *P0) Col)
+    (&scene *P)
+    (relative (:Base P0) (:X P) (:X_rel *V))
+    (compose (:A B0) (:B V) (:C *B))
+    (inside (:A B) (:B 0)))
+
+  (RULE &unlisted
+    (&scene *P *Col)
+    (NOT (&bg_mode.maximal (:t Col)))
+    (NOT (&block_color2 Col))
+    (NOT (&sense Col)))
+
+  (RULE &obstacle
+    (OR ((&scene *P *Col)
+         (&sense Col))
+        ((&unlisted P Col))))
+
+  (RULE &hit
+    (&obstacle *P *Col)
+    (&cover P (:B *B2))
+    (opposite (:D *W) (:Opp *W_back))
+    (neighbor (:P B2) (:D W_back) (:Q *B))
+    (&cover B))
+
+  (INIT &walk Propagation
+    (source ((:n B W))
+      (&block_box.box *B)
+      (dir_elem (:D *W)))
+    (edge ((:a B W) (:b (:B B2) (:W W3)))
+      (OR ((&cover *B)
+           (dir_elem (:D *W))
+           (neighbor (:P B) (:D W) (:Q *B2))
+           (&cover (:B B2))
+           (NOT (&hit B W))
+           (= *W3 W))
+          ((&hit B W *Col)
+           (&sense Col *S)
+           (turn S (:D W) (:D2 W3))
+           (= B2 B))))))
+
+(OUTPUT turn-at-rectangle "when the next step of a copy would cover a cell of a rectangle, the copy turns by the sense the legend box of that rectangle's color gives, and slides on from where it stopped. A marker on the box side that a quarter turn in sense s takes `legend_edge` to gives a turn in sense s. A copy whose next step would cover a cell of a color that no legend box holds stops there.")
+
+(OUTPUT exit-at-edge "a copy stops when its next step would leave the grid.")
+
+(OUTPUT paint-trace "each cell that a copy covers on its way takes `block_color`. Every other cell keeps its scene color. Beams cross each other and the block freely.")
+
+(ALTS $edge "where the legend edge comes from" $LegendEdgeStored
+  (ALT $LegendEdgeDerived
+    (INPUT legend-strip "the legend edge is the edge whose outer line is all `legend_frame_color` and whose next line is not. Undefined on an input with no such edge."
+      (RULE &framed_edge
+        (&outer_line.value (:key *D) (:v *Col))
+        (input *P)
+        (margin (:B P) D (:K 0))
+        (opposite D (:Opp *D_in))
+        (neighbor P (:D D_in) *Q)
+        (input (:P Q) (:Col *Col2))
+        (!= Col2 Col))
+
+      (RULE &legend
+        (&legend_frame_color (:C *Col))
+        (&framed_edge *D Col)))
+    (ALT $LegendFrameColorDerived
+      (INPUT legend-strip "the frame color is the color of the outer line on the legend edge. Undefined where that line holds two colors."
+        (RULE &legend
+          (&framed_edge *D *Col))))))
+
+(ALTS $frame "where the legend frame color comes from" $LegendFrameColorStored
+  (ALT $LegendFrameColorDerived
+    (INPUT legend-strip "the frame color is the color of the outer line on the legend edge. Undefined where that line holds two colors."
+      (RULE &legend
+        (&legend_edge *D)
+        (&outer_line.value (:key D) (:v *Col))))))
+
+(ALTS $blank "where the legend blank color comes from" $LegendBlankColorStored
+  (ALT $LegendBlankColorDerived
+    (INPUT legend-strip "the blank color is the commonest color among the strip's cells that are not the frame color."
+      (INIT &blank_mode_count Cardinality
+        (key ((&box_cell *P ^Col))
+          (member ((:m P))
+            (&box_cell *P Col))))
+
+      (INIT &blank_mode Order
+        (member ((:t Col))
+          (&blank_mode_count.size (:key *Col)))
+        (score ((:t Col) (:S N))
+          (&blank_mode_count.size (:key *Col) *N)))
+
+      (RULE &blank
+        (&blank_mode.maximal (:t *Col))))))
+
+(ALTS $block "where the block color comes from" $BlockColorStored
+  (ALT $BlockColorStored
+    (ALTS $u "what a beam does at a cell of a color that no legend box holds" $StopAtUnlistedColor
+      (ALT $PaintOverUnlistedColor
+        (OUTPUT turn-at-rectangle "a cell of a color that no legend box holds is no obstacle, and the beam paints it."
+          (RULE &obstacle
+            (&scene *P *Col)
+            (&sense Col))))
+      (ALT $PassUnderUnlistedColor
+        (OUTPUT turn-at-rectangle "a cell of a color that no legend box holds is no obstacle, and it keeps its color."
+          (RULE &obstacle
+            (&scene *P *Col)
+            (&sense Col)))
+        (RULE &trace
+          (&walk.reached (:n *B))
+          (&cover *P B)
+          (NOT (&unlisted P))))))
+  (ALT $BlockColorDerived
+    (INPUT block "the block color is the one scene color that is not the background and that no legend box holds. Undefined where the scene holds two or more such colors."
+      (RULE &obstacle
+        (&scene *P *Col)
+        (&sense Col))
+
+      (INIT &block_candidate Singleton
+        (member ((:v Col))
+          (&scene *Col)
+          (NOT (&bg_mode.maximal (:t Col)))
+          (NOT (&sense Col))))
+
+      (RULE &block_color2
+        (&block_candidate.value (:v *Col))))))
+
+(ALTS $bg "how the background is found" $BackgroundSceneMode
+  (ALT $BackgroundWholeInputMode
+    (INPUT field "the background is the commonest color of the whole input, legend included."
+      (INIT &bg_mode_count Cardinality
+        (key ((input *P ^Col))
+          (member ((:m P))
+            (input *P Col)))))))
+
+(ALTS $dirs "which directions the block shoots beams toward" $BeamDirectionsAll
+  (ALT $BeamDirectionsStored
+    (OUTPUT beam-each-way "the beams start toward each direction of a stored set."
+      (DET &has_counterpart
+        (ex_output *E (:P *Q))
+        (ex_input E *P)
+        (same_corner *D (:P1 P) (:P2 Q)))
+
+      (DET &misaligned
+        (ex_output *E (:P *Q) (:Col *C))
+        (&block_color (:C *Cb))
+        (!= C Cb)
+        (diag_dir_elem *D)
+        (OR ((NOT (&has_counterpart E D Q)))
+            ((ex_input E *P (:Col *C2))
+             (same_corner D (:P1 P) (:P2 Q))
+             (!= C2 C))))
+
+      (DET &dir_defect
+        (&block_color (:C *Cb))
+        (ex_input *E *P (:Col Cb))
+        (dir_elem *D)
+        (neighbor P D (:Q *P2))
+        (ex_input E (:P P2) (:Col *C2))
+        (!= C2 Cb)
+        (ex_output E (:P *Q2) (:Col *C3))
+        (same_corner (:D *D2) (:P1 P2) (:P2 Q2))
+        (NOT (&misaligned E (:D D2)))
+        (!= C3 Cb))
+
+      (DET &beam_dirs
+        (dir_elem *D)
+        (NOT (&dir_defect D)))
+
+      (INIT &walk Propagation
+        (source ((:n B W))
+          (&block_box.box *B)
+          (&beam_dirs (:D *W)))
+        (edge ((:a B W) (:b (:B B2) (:W W3)))
+          (OR ((&cover *B)
+               (dir_elem (:D *W))
+               (neighbor (:P B) (:D W) (:Q *B2))
+               (&cover (:B B2))
+               (NOT (&hit B W))
+               (= *W3 W))
+              ((&hit B W *Col)
+               (&sense Col *S)
+               (turn S (:D W) (:D2 W3))
+               (= B2 B))))))
+    (ALT $StopWhenTurnBlocked
+      (OUTPUT turn-at-rectangle "a beam whose first step after a turn is blocked ends there."
+        (INIT &walk Propagation
+          (source ((:n B W))
+            (&block_box.box *B)
+            (&beam_dirs (:D *W)))
+          (edge ((:a B W) (:b (:B B2) (:W W3)))
+            (OR ((&cover *B)
+                 (dir_elem (:D *W))
+                 (neighbor (:P B) (:D W) (:Q *B2))
+                 (&cover (:B B2))
+                 (NOT (&hit B W))
+                 (= *W3 W))
+                ((&hit B W *Col)
+                 (&sense Col *S)
+                 (turn S (:D W) (:D2 W3))
+                 (NOT (&hit B (:W W3)))
+                 (= B2 B)))))))))
+
+(ALTS $blocked "what a beam does when its first step after a turn is blocked" $TurnAgainWhenBlocked
+  (ALT $StopWhenTurnBlocked
+    (OUTPUT turn-at-rectangle "a beam whose first step after a turn is blocked ends there."
+      (INIT &walk Propagation
+        (source ((:n B W))
+          (&block_box.box *B)
+          (dir_elem (:D *W)))
+        (edge ((:a B W) (:b (:B B2) (:W W3)))
+          (OR ((&cover *B)
+               (dir_elem (:D *W))
+               (neighbor (:P B) (:D W) (:Q *B2))
+               (&cover (:B B2))
+               (NOT (&hit B W))
+               (= *W3 W))
+              ((&hit B W *Col)
+               (&sense Col *S)
+               (turn S (:D W) (:D2 W3))
+               (NOT (&hit B (:W W3)))
+               (= B2 B))))))))
+
+(RULE &malformed
+  (&marker *P)
+  (NOT (&marker_side P)))
+
+(RULE &trace
+  (&walk.reached (:n *B))
+  (&cover *P B))
+
+(RULE &defined
+  (&frame_line)
+  (NOT (&malformed))
+  (&block_color2))
+
+(RULE &output
+  (OR ((&trace *P)
+       (&block_color2 *Col)
+       (&defined))
+      ((&scene P Col)
+       (NOT (&trace P))
+       (&defined))))
+
+(OUT (&output ^P ^Col))

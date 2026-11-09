@@ -1,0 +1,228 @@
+;; inputs 9f278f32c3563b6b6baf2bcbd69985258740123113881b67fdf7cc9e94c2bce1 programs/solvers/df8cc377.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; df8cc377
+
+(INPUT hollow-frames "a few one-cell-thick rectangle outlines, each in its own color, each around an interior of background cells at least one cell on each side."
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_commonest
+    (&commonest.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&not_commonest C)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &pieces Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (INIT &piece_outline Outlines
+    (key ((&pieces.component *P ^Id))
+      (node (P)
+        (&pieces.component *P Id)))))
+
+(INPUT scattered-dots "single cells in colors that no frame has, scattered on the background outside the frames, with one dot color per frame.")
+
+(INPUT counts-match "for each frame, exactly one dot color has as many dots as the frame's checkerboard has cells, and no two frames share that color.")
+
+(OUTPUT erase-dots "every dot becomes background.")
+
+(OUTPUT keep-frames "every frame cell keeps its color.")
+
+(OUTPUT checker-fill "in each frame's interior, the cells whose row and column offsets from the anchor corner of the interior have an even sum take the dot color whose dot count equals the number of those cells, and the other interior cells stay background."
+
+  ;; the interior corner whose cell the checkerboard fills
+  (DET &anchor DiagDirDomain (ONE))
+
+  (INIT &class_outline Outlines
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &class_stray
+    (&class_outline.box (:key *Col) *B)
+    (&ink *P Col)
+    (OR ((NOT (inside (:A P) B)))
+        ((interior (:A P) B))))
+
+  (RULE &frame
+    (&class_outline.box (:key *Col) *B)
+    (NOT (&class_stray Col B)))
+
+  ;; The frame's interior.
+  (INIT &hollow BoundingBox
+    (key ((&frame ^B))
+      (cell (P)
+        (input *P)
+        (interior (:A P) B))))
+
+  (RULE &checker
+    (&hollow.box (:key (:B *Fr)) (:B *B_in))
+    (&anchor *D)
+    (&hollow.cell (:key (:B Fr)) *P)
+    (inside (:A P) (:B B_in))
+    (relative (:Base B_in) (:X P) (:X_rel *P_rel))
+    (corner_dist (:P P_rel) (:Diag D) *K)
+    (&hollow.cell (:key (:B Fr)) (:P *M))
+    (inside (:A M) (:B B_in))
+    (relative (:Base B_in) (:X M) (:X_rel *M_rel))
+    (corner_dist (:P M_rel) (:Diag D) (:K *J))
+    (corner_dir (:C D) (:D *D_edge))
+    (opposite (:D D_edge) (:Opp *D_away))
+    (jump (:P M_rel) (:D D_away) (:K J) *Q)
+    (corner_dist (:P Q) (:Diag D) K))
+
+  (INIT &checker_size Cardinality
+    (key ((&checker ^D ^Fr *P))
+      (member ((:m P))
+        (&checker D Fr *P))))
+
+  (RULE &dot
+    (&ink *P *Col)
+    (NOT (&frame Col)))
+
+  (INIT &dot_cells Cardinality
+    (key ((&dot *P ^Col))
+      (member ((:m P))
+        (&dot *P Col))))
+
+  (RULE &dot_count
+    (&dot_cells.size (:key *Col) *N))
+
+  (RULE &take
+    (&checker_size.size (:key *D (:Fr *B)) *N)
+    (&dot_count *Col N))
+
+  (RULE &frame_cell
+    (&frame *Col)
+    (&ink *P Col))
+
+  (INIT &dot_pieces Connectivity
+    (key ((&dot *P ^Col))
+      (node (P)
+        (&dot *P Col))))
+
+  (INIT &dot_piece_count Cardinality
+    (key ((&dot_pieces.component (:key ^Col) *Id))
+      (member ((:m Id))
+        (&dot_pieces.component (:key Col) *Id))))
+
+  (RULE &frame_score
+    (&checker_size.size (:key *D *Fr) *N))
+
+  (INIT &frame_rank Order
+    (key ((&frame_score ^D *N))
+      (member ((:t N))
+        (&frame_score D *N))
+      (score ((:t N) (:S N))
+        (&frame_score D *N))))
+
+  (INIT &dot_rank Order
+    (member ((:t N))
+      (&dot_count *N))
+    (score ((:t N) (:S N))
+      (&dot_count *N)))
+
+  (INIT &hollow_size Cardinality
+    (key ((&hollow.cell (:key ^B) *P))
+      (member ((:m P))
+        (&hollow.cell (:key B) *P)))))
+
+(ALTS $m "how a frame picks its dot color" $ExactCount
+  (ALT $MatchByRank
+    (OUTPUT checker-fill "the frames are ranked by checkerboard cell count and the dot colors by dot count, both dense and ascending, and the frame of rank k takes the dot color of rank k. Undefined where two dot colors of one rank meet a frame of that rank."
+      (RULE &take
+        (&frame_score *D (:Fr *B) *N)
+        (&frame_rank.rank (:key D) (:t N) *R)
+        (&dot_count *Col (:N *N2))
+        (&dot_rank.rank (:t N2) R)))
+    (ALTS $k "what ranks the frames" $RankByChecker
+      (ALT $RankByArea
+        (OUTPUT checker-fill "the frames are ranked by interior area."
+          (RULE &frame_score
+            (&anchor *D)
+            (&hollow_size.size (:key (:B *Fr)) *N)))))))
+
+(ALTS $c "what a dot color's count counts" $CountCells
+  (ALT $CountPieces
+    (OUTPUT checker-fill "a dot color's count is the number of its 4-connected pieces."
+      (RULE &dot_count
+        (&dot_piece_count.size (:key *Col) *N)))))
+
+(ALTS $f "what a frame is" $ColorClassFrame
+  (ALT $FramePerPiece
+    (INPUT hollow-frames "a frame is a 4-connected one-color piece that forms a rectangle outline, and a dot is every other non-background cell."
+      (RULE &piece_stray
+        (&piece_outline.box (:key *Id) *B)
+        (&pieces.component *P Id)
+        (OR ((NOT (inside (:A P) B)))
+            ((interior (:A P) B))))
+
+      (RULE &frame_piece
+        (&piece_outline.box (:key *Id) *B)
+        (NOT (&piece_stray Id B)))
+
+      (RULE &frame
+        (&frame_piece *Id *B)
+        (&pieces.component (:key *Col) Id))
+
+      (RULE &frame_cell
+        (&frame_piece *Id)
+        (&pieces.component *P Id))
+
+      (RULE &dot
+        (&ink *P *Col)
+        (NOT (&frame_cell P))))))
+
+(ALTS $u "what happens to the dots of a color that no frame takes" $EraseAllDots
+  (ALT $KeepUnmatchedDots
+    (OUTPUT erase-dots "only the dots of a color that a frame takes become background, and the others keep their color."
+      (RULE &kept
+        (&anchor *D)
+        (&dot *P *Col)
+        (NOT (&take D Col))))
+    (RULE &output
+      (OR ((&filled *D *P *Col))
+          ((&kept (:D *D2) P Col))
+          ((&frame_cell P)
+           (input P Col))
+          ((&anchor (:D *D3))
+           (input P)
+           (NOT (&frame_cell P))
+           (NOT (&filled (:D D3) P))
+           (NOT (&kept (:D D3) P))
+           (&background (:C Col)))))))
+
+(RULE &filled
+  (&take *D *B *Col)
+  (&checker D (:Fr B) *P))
+
+(RULE &output
+  (OR ((&filled *D *P *Col))
+      ((&frame_cell P)
+       (input P Col))
+      ((&anchor (:D *D2))
+       (input P)
+       (NOT (&frame_cell P))
+       (NOT (&filled (:D D2) P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

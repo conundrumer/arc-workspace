@@ -1,0 +1,157 @@
+;; inputs 7b698b19ccfcb096f7fd0c20dc9cf3665af562034ef176b604ad3728900eda10 programs/solvers/d37a1ef5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d37a1ef5
+
+(INPUT background "the grid is &background (0) outside the frame and in the frame's empty interior cells"
+
+  (DET &changed
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (DET_OR_RULE &background DominantColor
+    (&changed *E *P)
+    (ex_input E P (:Col *C))))
+
+(INPUT one-frame "one 1-wide rectangle outline in &frame_color (2), with an interior at least one cell wide on each axis"
+
+  (DET_OR_RULE &frame_color SharedColor
+    (&changed *E *P)
+    (ex_output E P (:Col *C)))
+
+  (RULE &frame
+    (&frame_color (:C *W)))
+
+  (INIT &frame_box BoundingBox
+    (key ((&frame (:W ^C)))
+      (cell (P)
+        (input *P (:Col C)))))
+
+  ;; The one interior inside each frame box.
+  (INIT &frame_box_id Quotient
+    (equivalent ((:a B) (:b B))
+      (&frame_box.box *B))))
+
+(INPUT marks-inside "one or more cells of mark_color (5) lie in the frame's interior, and no other interior cell is non-background")
+
+(OUTPUT fill-outside-box "each interior cell of the frame outside the bounding box of the marks becomes &frame_color"
+
+  (RULE &wall
+    (&frame_color (:C *W)))
+
+  ;; The cells each candidate color closes off from the grid edge.
+  (INIT &enclosed Enclosure
+    (key ((&wall (:W ^C)))
+      (cell (P)
+        (input *P *Col)
+        (!= Col C))))
+
+  (RULE &region_cell
+    (&enclosed.enclosed (:key *C) *P *Id))
+
+  (RULE &mark
+    (&frame *W)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (!= Col W))
+
+  ;; The box each interior keeps open.
+  (INIT &kept BoundingBox
+    (key ((&region_cell (:C ^W) ^Id *P)
+          (&mark W P))
+      (cell (P)
+        (&region_cell (:C W) Id *P)
+        (&mark W P)))))
+
+(OUTPUT keep-box "each cell inside the bounding box of the marks keeps its input color, marks and background cells alike")
+
+(OUTPUT keep-rest "the frame and every cell outside it keep their input color")
+
+(ALTS $marks "which interior cells are marks" $NonBackgroundMarks
+  (ALT $MarkColorStored
+    (INPUT marks-inside "the marks are the interior cells of &mark_color (5); other interior cells are filled over"
+      (DET &kept_mark
+        (&changed *E *P)
+        (ex_input E P (:Col *Bg))
+        (ex_output E P (:Col *Fill))
+        (ex_input E (:P *Q) (:Col *C))
+        (ex_output E (:P Q) (:Col C))
+        (!= C Bg)
+        (!= C Fill))
+
+      (DET &unmarked
+        (&kept_mark *C)
+        (&kept_mark *E)
+        (NOT (&kept_mark E C)))
+
+      (DET_OR_RULE &mark_color RarestColor
+        (&kept_mark *C)
+        (NOT (&unmarked C)))
+
+      (RULE &mark
+        (&frame *W)
+        (input *P *Col)
+        (&mark_color (:C Col))))))
+
+(ALTS $scope "which marks the box bounds" $InteriorMarks
+  (ALT $GlobalMarksBox
+    (INPUT marks-inside "the marks are the non-background, non-&frame_color cells of the whole grid")
+    (OUTPUT fill-outside-box "one box bounds every mark of the grid, and each interior cell outside that box becomes &frame_color"
+      ;; The box each interior keeps open.
+      (INIT &kept BoundingBox
+        (key ((&region_cell (:C ^W) ^Id))
+          (cell (P)
+            (&mark W *P)))))))
+
+(ALTS $interior "which cells form the interior" $EnclosedInterior
+  (ALT $InteriorByFrameBox
+    (INPUT one-frame "the interior is every non-&frame_color cell strictly inside the bounding box of the &frame_color cells, whether or not the outline is closed"
+      (RULE &region_cell
+        (&frame_box.box (:key *C) *B)
+        (&frame_box_id.class (:a B) *Id)
+        (input *P *Col)
+        (!= Col C)
+        (interior (:A P) B)))))
+
+(ALTS $empty "what an interior with no mark does" $EmptyFrameFilled
+  (ALT $EmptyFrameKept
+    (OUTPUT fill-outside-box "an interior that holds no mark keeps its input")
+    (RULE &fillable
+      (&region_cell *C *Id *P)
+      (&mark (:W C) P))))
+
+(ALTS $frame "how the frame color is found" $StoredFrameColor
+  (ALT $FrameColorFromOutline
+    (INPUT one-frame "the frame color is each color, other than a grid corner's color, whose cells close cells off from the grid edge; undefined where no color does"
+      (RULE &corner_color
+        (input *P (:Col *C))
+        (inside (:A P) (:B 0))
+        (same_corner (:P1 P) (:P2 0)))
+
+      (RULE &wall
+        (input (:Col *W))
+        (NOT (&corner_color (:C W))))
+
+      (RULE &frame
+        (&enclosed.enclosed (:key (:C *W)))))))
+
+(RULE &in_box
+  (&kept.box (:key (:W *C) *Id) *B)
+  (&region_cell C Id *P)
+  (inside (:A P) B))
+
+(RULE &fillable
+  (&region_cell *C *Id))
+
+(RULE &filled
+  (&fillable (:C *Col) *Id)
+  (&region_cell (:C Col) Id *P)
+  (NOT (&in_box (:C Col) Id P)))
+
+(RULE &output
+  (OR ((&filled *P *Col))
+      ((&frame)
+       (input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

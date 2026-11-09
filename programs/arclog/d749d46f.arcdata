@@ -1,0 +1,99 @@
+;; inputs 58c94db3ccea9519b0f983323a25fe13c7934c88352af1b7a4c536fd7811ce46 programs/solvers/d749d46f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d749d46f
+
+(param &hang_edge Dir (DIR_T))
+(param &pack_edge Dir (DIR_L))
+(param &output_height number (10))
+(param &gap number (1))
+
+(alts $g
+  (alt $GapPerNeighbor
+    (witness gap-two variant $GapPerNeighbor
+      (relaxed bars-in-a-row)
+      (separates "The bars stand two columns apart. The concept spaces the output bars at the stored gap of one column; $GapPerNeighbor keeps the input's two-column spacing in both rows.")
+      (input (grid
+        (8 8 1 1 8 1 1 8)
+        (8 8 1 1 8 1 1 8)
+        (1 1 1 1 8 1 1 8)))
+      (output $StoredGap (grid
+        (8 8 1 8 8 8 1 8 8 8)
+        (8 8 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 8 1 8 1 1 1 1)
+        (8 8 1 8 1 8 1 1 1 1)
+        (8 8 1 8 1 8 1 1 1 1)))
+      (output $GapPerNeighbor (grid
+        (8 8 1 1 8 8 8 1 1 8 8 8)
+        (8 8 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 8 1 1 8 1 1 1 1)
+        (8 8 1 1 8 1 1 8 1 1 1 1)
+        (8 8 1 1 8 1 1 8 1 1 1 1))))
+    (witness gaps-unequal borderline $GapPerNeighbor
+      (relaxed bars-in-a-row)
+      (separates "The bars stand one column apart and then two. The concept spaces every output bar one column apart; $GapPerNeighbor keeps one gap of one column and one of two.")
+      (input (grid
+        (8 8 1 8 1 1 8)
+        (1 1 1 8 1 1 8)
+        (1 1 1 1 1 1 8)))
+      (output $StoredGap (grid
+        (8 8 1 8 8 1 8 8 8)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 8 1 1 1 1)
+        (8 1 8 1 8 1 1 1 1)
+        (8 1 8 1 8 1 1 1 1)))
+      (output $GapPerNeighbor (grid
+        (8 8 1 8 8 1 1 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 8 1 1 1 1)
+        (8 1 8 1 1 8 1 1 1 1)
+        (8 1 8 1 1 8 1 1 1 1))))))
+
+(alts $c
+  (alt $BarColorMinority
+    (witness bars-outweigh-background variant concept
+      (separates "The bars cover more cells than the background. The concept takes the top-left color as the bar color and lays out two 3x2 bars; $BarColorMinority takes the rarer color, the one gap column, as a single 1x2 bar on a field of the other color.")
+      (input (grid
+        (8 8 8 1 8 8 8)
+        (8 8 8 1 8 8 8)))
+      (output $Corner (grid
+        (8 8 8 1 8 8 8)
+        (8 8 8 1 8 8 8)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (8 8 1 8 8 1 1)
+        (8 8 1 8 8 1 1)
+        (8 8 1 8 8 1 1)))
+      (output $BarColorMinority (grid
+        (1 1)
+        (8 8)
+        (8 8)
+        (8 8)
+        (8 8)
+        (8 8)
+        (8 8)
+        (8 8)
+        (1 8)
+        (1 8))))))

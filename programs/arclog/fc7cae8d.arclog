@@ -1,0 +1,220 @@
+;; inputs 1376bb8846564cc8768305ab90ff24f8a4d402f928c2cc0812ff85246871b18f programs/solvers/fc7cae8d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fc7cae8d
+
+(INPUT color-frame "two adjacent edges of the grid are each a solid line of one color, the two colors different, with stray cells of the line's color just inside it.")
+
+(INPUT noise-edges "the other two edges hold scattered noise (5) cells on the background (0).")
+
+(INPUT picture "one rectangle on the background (0) field, clear of the edges, with a one-cell-wide strip outside each of two adjacent sides, as long as that side, one strip in each frame color.")
+
+(INPUT picture-colors "no cell of the picture holds a frame color.")
+
+(OUTPUT crop-picture "the output is the picture's box, the strips left out, each cell copied, background (0) cells included."
+
+  (RULE &edge_cell
+    (input *P *Col)
+    (margin (:B P) *D (:K 0)))
+
+  (INIT &edge_mode_count Cardinality
+    (key ((&edge_cell ^D *P ^Col))
+      (member ((:m P))
+        (&edge_cell D *P Col))))
+
+  ;; The color of each edge line: its commonest color.
+  (INIT &edge_mode Order
+    (key ((&edge_mode_count.size (:key ^D *Col)))
+      (member ((:t Col))
+        (&edge_mode_count.size (:key D *Col)))
+      (score ((:t Col) (:S N))
+        (&edge_mode_count.size (:key D *Col) *N))))
+
+  (RULE &frame_cand
+    (perp_dir (:D *D1) *D2)
+    (&edge_mode.maximal (:key (:D D1)) (:t *C1))
+    (&edge_mode.maximal (:key (:D D2)) (:t *C2))
+    (!= C1 C2))
+
+  (RULE &frame_defect
+    (&frame_cand *D1 *C1 *D2 *C2)
+    (OR ((&edge_cell (:D D1) *Col))
+        ((&edge_cell (:D D2) Col)))
+    (!= Col C1)
+    (!= Col C2))
+
+  (RULE &frame_edge
+    (&frame_cand (:D1 *D) (:C1 *Col) *D2 *C2)
+    (NOT (&frame_defect (:D1 D) (:C1 Col) D2 C2)))
+
+  (INIT &input_mode_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &input_mode Order
+    (key ((&input_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&input_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&input_mode_count.size (:key E *Col) *N))))
+
+  (DET &uncommon
+    (&input_mode.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&input_mode.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&input_mode.maximal (:t *C))
+    (NOT (&uncommon C)))
+
+  (DET &missing
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET_OR_RULE &noise DominantColor RarestColor
+    (ex_input (:Col *C))
+    (NOT (&missing C))
+    (NOT (ex_output (:Col C))))
+
+  (INIT &content Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&noise (:C Col)))
+      (NOT (&frame_edge Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &content_size Cardinality
+    (key ((&content.component *P ^Id))
+      (member ((:m P))
+        (&content.component *P Id))))
+
+  (INIT &largest Order
+    (member ((:t (:V Id) (:S N)))
+      (&content_size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&content_size.size (:key *Id) *N)))
+
+  (INIT &content_box BoundingBox
+    (cell (P)
+      (&content.component *P *Id)
+      (&largest.maximal (:t (:V Id))))))
+
+(OUTPUT orient-by-color "the picture is moved by the D4 element that takes the side each strip borders to the grid edge of the strip's color."
+
+  (RULE &run_node
+    (input *P (:Col *Key))
+    (&frame_edge (:Col Key)))
+
+  (INIT &run Ray
+    (key ((OR ((&run_node (:Key ^Ky) *P))
+              ((&frame_edge (:Col Ky))
+               (dir_elem *D))))
+      (source (P)
+        (&run_node (:Key Ky) *P))
+      (node (P)
+        (&run_node (:Key Ky) *P))
+      (dir (D)
+        (&frame_edge (:Col Ky))
+        (dir_elem *D))))
+
+  (RULE &run_run_full
+    (&run.ray (:key (:Ky *V0)) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &strip_corner
+    (input (:P *X) *Col)
+    (diag_dirs (:D *K) (:D1 *U) (:D2 *R))
+    (neighbor (:P X) (:D U) (:Q *E1))
+    (input (:P E1) (:Col *C1))
+    (&frame_edge (:Col C1))
+    (neighbor (:P X) (:D R) (:Q *E2))
+    (input (:P E2) (:Col *C2))
+    (&frame_edge (:Col C2))
+    (!= C1 C2)
+    (!= Col C1)
+    (!= Col C2))
+
+  (RULE &strip
+    (&strip_corner *X *K *U (:C1 *Col) *R)
+    (opposite (:D R) (:Opp *S))
+    (neighbor (:P X) (:D U) (:Q *E1))
+    (OR ((&run_run_full (:V0 Col) (:V1 E1) (:V2 U) (:V3 *P)))
+        ((= P E1))))
+
+  ;; The picture's box: the cells beside the strips span it.
+  (INIT &box BoundingBox
+    (key ((&strip ^X ^K *S (:P *Q))
+          (opposite (:D S) (:Opp *D))
+          (neighbor (:P Q) D (:Q *P)))
+      (cell (P)
+        (&strip X K *S (:P *Q))
+        (opposite (:D S) (:Opp *D))
+        (neighbor (:P Q) D (:Q *P)))))
+
+  (RULE &tainted
+    (OR ((&strip *X *K *S *Col (:P *Q))
+         (OR ((opposite (:D S) (:Opp *D)))
+             ((= D S)))
+         (neighbor (:P Q) D (:Q *Q2))
+         (input (:P Q2) Col))
+        ((&box.box (:key X K) *B)
+         (input *P (:Col *Col2))
+         (&frame_edge (:Col Col2))
+         (inside (:A P) B))))
+
+  (RULE &picture
+    (&box.box (:key *X *K) *B)
+    (NOT (&tainted X K))))
+
+(ALTS $o "Which D4 element turns the picture." $ByColor
+  (ALT $CornerSwap
+    (OUTPUT orient-by-color "of the two D4 elements that take the strips' corner of the picture to the corner where the frame edges meet, the one that swaps the axes; it reads no strip color.")
+    ;; The element that takes the strips' corner of the picture to the frame's corner and swaps
+    ;; the axes.
+    (RULE &orient
+      (&picture *X *K)
+      (diag_opposite (:D K) (:Opp *K_pic))
+      (&frame_edge (:D *D1))
+      (&frame_edge (:D *D2))
+      (diag_dirs (:D *K_frame) D1 D2)
+      (apply_diag_dir (:D *G) (:Dir K_pic) (:Dir_out K_frame))
+      (apply_dir (:D G) (:Dir D1) (:Dir_out *D3))
+      (axis_of (:D D1) (:A *A1))
+      (axis_of (:D D3) (:A *A3))
+      (perp (:A A1) (:A2 A3)))))
+
+(ALTS $e "Which cells of the input form the picture." $StripBox
+  (ALT $ContentBox
+    (OUTPUT crop-picture "the box is the bounding box of the largest 8-connected set of cells that are neither background, noise nor a frame color; undefined where no cell is such.")
+    (RULE &extent
+      (&picture *X *K)
+      (&content_box.box *B))))
+
+(RULE &orient
+  (&strip *X *K (:S *S1) (:Col *C1))
+  (&strip X K (:S *S2) (:Col *C2))
+  (!= S1 S2)
+  (&frame_edge (:D *D1) (:Col C1))
+  (&frame_edge (:D *D2) (:Col C2))
+  (apply_dir (:D *G) (:Dir S1) (:Dir_out D1))
+  (apply_dir (:D G) (:Dir S2) (:Dir_out D2)))
+
+(RULE &extent
+  (&picture *X *K *B))
+
+(RULE &output
+  (&orient (:X *K_x) (:K *K_k) *G)
+  (&extent (:X K_x) (:K K_k) *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P_inner))
+  (apply (:D G) (:P P_inner) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

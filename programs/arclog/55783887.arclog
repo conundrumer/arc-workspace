@@ -1,0 +1,53 @@
+;; inputs b26af9c8bc71b51c8a5bc7d1d3a85fadea2edfcd4009ce648c13c71cab3b234a programs/solvers/55783887.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 55783887
+
+(DET &line_color SharedColor)
+
+;; The span the line marks of each diagonal axis delimit.
+(INIT &span Ray
+  (key ((diag_axis_elem (:Da ^DA)))
+    (dir (D)
+      (axis4_of *D (:A DA))))
+  (source (P)
+    (input *P *Col)
+    (&line_color (:C Col)))
+  (node (P)
+    (input *P)))
+
+(RULE &span_between
+  (diag_axis_elem (:Da *Key))
+  (input *P)
+  (axis4_of *D (:A Key))
+  (dir8_opposite D (:D2 *O))
+  (&span.ray (:key (:DA Key)) P D)
+  (&span.ray (:key (:DA Key)) P (:D O)))
+
+(DET &cast_color UnchangedColor)
+
+(RULE &blank
+  (input *P *Col)
+  (NOT (&line_color (:C Col)))
+  (NOT (&cast_color (:C Col))))
+
+(RULE &emit
+  (input *P *Col)
+  (&cast_color (:C Col))
+  (&span_between (:Key *DA) P)
+  (diag_perp (:Da DA) (:Da2 *Da)))
+
+(RULE &paint
+  (OR ((&span_between *P)
+       (&blank P)
+       (&line_color (:C *Col)))
+      ((&emit (:P *Q) (:Da *DA))
+       (&blank P)
+       (same_line (:A DA) P Q)
+       (&cast_color (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

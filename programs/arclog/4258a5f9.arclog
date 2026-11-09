@@ -1,0 +1,67 @@
+;; inputs 2b8a04b71e7b93eb21ded5fafc204d007a654527f93e79f3d5de6fb434126b7d programs/solvers/4258a5f9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4258a5f9
+
+(DET &marker RarestColor)
+
+(DET &halo AnyOutNewColor)
+
+(RULE &marker_at
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &halo2
+  (&marker_at (:P *M))
+  (&halo (:C *Col))
+  (neighbor (:P M) *D (:Q *P))
+  (input P))
+
+(ALTS $choice "every marker sits away from the grid edge, on an otherwise empty field, so the program's edge clipping and its passthrough over ink go unwitnessed here" $Grow
+  (ALT $Stamp
+    (DET &mark
+      (ex_input *E *P *Col)
+      (&marker (:C Col)))
+
+    (DET &stamped
+      (ex_output *E *P *Col)
+      (OR ((&mark E P))
+          ((ex_input E P (:Col *Col_in))
+           (!= Col_in Col))))
+
+    ;; Each stamp with its marker, one 8-connected blob.
+    (INIT &blob Connectivity
+      (key ((&stamped ^E *P))
+        (node (P)
+          (&stamped E *P)))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    ;; Two markers in one blob leave its cells no unique source.
+    (INIT &blob_marker Singleton
+      (key ((&mark ^E *P)
+            (&blob.component (:key E) P ^Id))
+        (member ((:v P))
+          (&mark E *P)
+          (&blob.component (:key E) P Id))))
+
+    (DET &template
+      (&blob_marker.value (:key *E *Id) (:v *M))
+      (&blob.component (:key E) *P Id)
+      (&stamped E P *Col)
+      (relative (:Base M) (:X P) (:X_rel *Delta)))
+
+    (RULE &halo2
+      (&marker_at (:P *Q))
+      (&template (:Delta *Off) *Col)
+      (compose (:A Q) (:B Off) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&halo2 *P *Col))
+      ((input P Col)
+       (NOT (&halo2 P)))))
+
+(OUT (&output ^P ^Col))

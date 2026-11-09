@@ -1,0 +1,238 @@
+;; inputs 1364e95eaad0ee6571e0086a7a29c6e1a5a5f0304821754eeb83ee727c227bb0 programs/solvers/f9d67f8b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f9d67f8b
+
+(INPUT mirror-picture "the grid is cut from a square canvas whose picture is mirror symmetric left to right and top to bottom; the grid's margins within the canvas are `canvas_margin` ([0, 2, 0, 2]: the canvas extends two lines past the bottom and the right edge), and every cell whose canvas mirror image lies in the grid holds that image's color, where neither cell is covered"
+
+  (DET &mask_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= Col2 C))
+
+  (RULE &visible3
+    (input *P *Col)
+    (NOT (&mask_color (:C Col))))
+
+  (RULE &apos
+    (input *P)
+    (split P *A *Along))
+
+  (RULE &cell_split
+    (&visible3 *P *Col)
+    (split P *A *Along *Across))
+
+  (RULE &ext_cand
+    (&apos *A *Along)
+    (axis_of *D A)
+    (margin (:B Along) D *K)
+    (edge_inset D K *B))
+
+  (RULE &ext_map
+    (&ext_cand *A *B)
+    (&apos A *Along)
+    (axis_inversion A (:T *F))
+    (compose (:A Along) B (:C *Lc))
+    (apply (:D F) (:P Lc) (:P_out *L_img))
+    (&apos A (:Along *Along2))
+    (compose (:A Along2) B (:C L_img)))
+
+  (RULE &mismatch
+    (&ext_map *A *B (:Along *L1) (:Along2 *L2))
+    (&cell_split A (:Along L1) (:Across *X) (:Col *C1))
+    (&cell_split A (:Along L2) (:Across X) (:Col *C2))
+    (!= C2 C1))
+
+  (RULE &paired
+    (&ext_map *A *B (:Along *L1) (:Along2 *L2))
+    (!= L1 L2)
+    (&cell_split A (:Along L1) (:Across *X))
+    (&cell_split A (:Along L2) (:Across X)))
+
+  (RULE &symmetric
+    (&paired *A *B)
+    (NOT (&mismatch A B)))
+
+  (INIT &axis_margin2 Singleton
+    (key ((&symmetric ^A *B))
+      (member ((:v B))
+        (&symmetric A *B)))))
+
+(INPUT tiled-picture "the canvas cuts into `tile_count` × `tile_count` tiles, and `tile_sym` gives each tile the group of canvas mirrors and turns that holds on its cells: the mirrors across the canvas's center lines in every tile, and also its two diagonals in each tile with one coordinate in the band of rows and columns 8–23 and the other outside it")
+
+(INPUT covering-blocks "some solid rectangles of `mask_color` lie over the picture, and the picture itself holds no `mask_color`")
+
+(INPUT mask-recoverable "each covered cell has an image, under a member of its tile's group, that is in the grid and not covered")
+
+(OUTPUT uncovered-kept "each cell not of `mask_color` keeps its color")
+
+(OUTPUT restore "each covered cell takes the color of its images, under the members of its tile's group, that are in the grid and not covered"
+
+  (DET &cell_split2
+    (ex_output *E *P *Col)
+    (split P *A *Along *Across))
+
+  (DET &apos2
+    (ex_output *E *P)
+    (split P *A *Along))
+
+  (DET &ext_cand2
+    (&apos2 *E *A *Along)
+    (axis_of *D A)
+    (margin (:B Along) D *K)
+    (edge_inset D K *B))
+
+  (DET &ext_map2
+    (&ext_cand2 *E *A *B)
+    (&apos2 E A *Along)
+    (axis_inversion A (:T *F))
+    (compose (:A Along) B (:C *Lc))
+    (apply (:D F) (:P Lc) (:P_out *L_img))
+    (&apos2 E A (:Along *Along2))
+    (compose (:A Along2) B (:C L_img)))
+
+  (DET &mismatch2
+    (&ext_map2 *E *A *B (:Along *L1) (:Along2 *L2))
+    (&cell_split2 E A (:Along L1) (:Across *X) (:Col *C1))
+    (&cell_split2 E A (:Along L2) (:Across X) (:Col *C2))
+    (!= C2 C1))
+
+  (DET &broken
+    (OR ((&mismatch2 *A *B))
+        ((&ext_cand2 A B)
+         (ex_output *E)
+         (NOT (&ext_cand2 E A B)))))
+
+  (DET &paired2
+    (&ext_map2 *E *A *B (:Along *L1) (:Along2 *L2))
+    (!= L1 L2)
+    (&cell_split2 E A (:Along L1) (:Across *X))
+    (&cell_split2 E A (:Along L2) (:Across X)))
+
+  (DET &axis_margin
+    (&paired2 *A *B)
+    (NOT (&broken A B)))
+
+  (DET &canvas_margin
+    (&axis_margin (:A *A1) (:B *B1))
+    (perp (:A A1) *A2)
+    (&axis_margin (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B)))
+
+  (RULE &margin
+    (&canvas_margin *B))
+
+  (RULE &canvas
+    (input (:P *P_grid))
+    (&margin *B)
+    (compose (:A P_grid) B (:C *P_canvas)))
+
+  (RULE &image
+    (input *P (:Col *M))
+    (&mask_color (:C M))
+    (&canvas (:P_grid P) (:P_canvas *Pc))
+    (apply *D (:P Pc) (:P_out *Qc))
+    (&canvas (:P_grid *Q) (:P_canvas Qc))
+    (&visible3 (:P Q) *Col)))
+
+(ALTS $r "Which images restore a covered cell." $TileGroups
+  (ALT $DiagonalFallback
+    (INPUT tiled-picture "no tiles; the picture holds the mirrors across the canvas's center lines everywhere, and its diagonals and quarter turns where they serve")
+    (OUTPUT restore "a covered cell takes the color that its row-mirror, column-mirror and half-turn images share, of those that are in the grid and not covered; where it has none, the color that its images under the other transforms share, of those visible"
+      (RULE &mirror
+        (OR ((axis_inversion (:A *A1) (:T *D)) (axis_elem (:A A1)))
+            ((axis_inversion (:A *A2) (:T *F1)) (axis_elem (:A A2))
+             (axis_inversion (:A *A3) (:T *F2)) (axis_elem (:A A3))
+             (d4_compose (:A F1) (:B F2) (:C D)))))
+
+      (RULE &has_mirror
+        (&image *P *D)
+        (&mirror D)))
+    (RULE &output
+      (OR ((&image *P *D *Col)
+           (&mirror D))
+          ((&image P Col)
+           (NOT (&has_mirror P)))
+          ((&visible3 P Col))))))
+
+(ALTS $ce "Where the canvas, and so the mirror center, comes from." $StoredCenter
+  (ALT $DerivedCenter
+    (INPUT mirror-picture "the canvas margin on each axis is the one margin at which the uncovered cells are mirror symmetric; undefined where no margin or more than one qualifies"
+      (RULE &margin
+        (&axis_margin2.value (:key (:A *A1)) (:v *B1))
+        (perp (:A A1) *A2)
+        (&axis_margin2.value (:key (:A A2)) (:v *B2))
+        (compose (:A B1) (:B B2) (:C *B))))))
+
+(DET &canvas_cell
+  (ex_output *E (:P *P2) *Col)
+  (&canvas_margin *B)
+  (compose (:A P2) B (:C *P)))
+
+(DET &broken_at
+  (&canvas_cell *E *P *Col)
+  (apply *D P (:P_out *Q))
+  (&canvas_cell E (:P Q) (:Col *Col2))
+  (!= Col2 Col))
+
+(DET &cand_count
+  (&canvas_cell *P)
+  (sub_extent P *A (:K *N)))
+
+(INIT &cand_tile_division Division
+  (key ((&cand_count ^N))
+    (parts (A N)
+      (axis_elem *A)))
+  (cell (P)
+    (&canvas_cell *P)))
+
+(DET &cand_broken
+  (&cand_tile_division.tile (:key *N) *P (:P_outer *P_tile))
+  (&broken_at P *D))
+
+(DET &cand_sym
+  (&cand_tile_division.tile (:key *N) (:P_outer *P_tile))
+  (d4_elem *D)
+  (NOT (&cand_broken N P_tile D)))
+
+;; The tile count is the coarsest decomposition whose tiles hold different groups.
+(INIT &nonuniform Order
+  (member ((:t N))
+    (&cand_sym *N (:P_tile *T1) *D)
+    (&cand_tile_division.tile (:key N) (:P_outer *T2))
+    (NOT (&cand_sym N (:P_tile T2) D)))
+  (score ((:t N) (:S N))
+    (&cand_sym *N (:P_tile *T1) *D)
+    (&cand_tile_division.tile (:key N) (:P_outer *T2))
+    (NOT (&cand_sym N (:P_tile T2) D))))
+
+;; Each tile's group is the named subgroup that equals its unbroken set.
+(INIT &symid Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:observed T) (:m D))
+    (&nonuniform.minimal (:t *N))
+    (&cand_sym N (:P_tile *T) *D)))
+
+(DET &tile_sym
+  (&symid.equal (:observed *P_tile) (:pattern *S)))
+
+(RULE &tile_count
+  (&tile_sym (:P_tile *T))
+  (frame_extent (:P T) *A *N))
+
+(INIT &output_division Division
+  (cell ((:P Pc))
+    (&canvas (:P_canvas *Pc)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tile_count *N)))
+
+(RULE &output
+  (OR ((&visible3 *P *Col))
+      ((&image P *D Col)
+       (&canvas (:P_grid P) (:P_canvas *Pc))
+       (&output_division.tile (:P Pc) (:P_outer *T))
+       (&tile_sym (:P_tile T) *S)
+       (sym_member S D))))
+
+(OUT (&output ^P ^Col))

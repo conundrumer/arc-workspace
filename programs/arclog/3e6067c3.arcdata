@@ -1,0 +1,5 @@
+;; inputs a0b9461a25c5cf6a4f0a4640a87baf1b51abe41bd0b8e4e4387b9f1395ea1dc8 programs/solvers/3e6067c3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3e6067c3
+
+(param &seq_dir Dir (DIR_L))

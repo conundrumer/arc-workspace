@@ -1,0 +1,138 @@
+;; inputs 0fc9aca6aef832326aea7d0782b6129e188cffe6356c6726ee9df17b53aa63eb programs/solvers/18286ef8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 18286ef8
+
+;; The color of the cutting lines.
+(DET &divider SharedColor)
+
+(RULE &line_broken
+  (input *P *Col)
+  (NOT (&divider (:C Col)))
+  (split P *A (:Along *L)))
+
+(RULE &frame_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&line_broken L)))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D *K)
+  (&frame_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; The color of the relocating cell.
+(DET &gaze ChangedColor)
+
+;; The color of the marker it looks at.
+(DET &target VanishedColor)
+
+(RULE &gaze_cell
+  (input *P *Col)
+  (&gaze (:C Col))
+  (&frame_tile_of P *P_tile))
+
+(RULE &gaze_tile_cell
+  (&gaze_cell *P_tile)
+  (&frame_tile_of *P P_tile))
+
+(RULE &target_cell
+  (input *P *Col)
+  (&target (:C Col)))
+
+(RULE &target_tile
+  (&target_cell *P)
+  (&frame_tile_of P *P_tile))
+
+(RULE &look
+  (&gaze_cell *P_tile)
+  (&target_tile (:P_tile *P_tile_t))
+  (neighbor (:P P_tile) *D (:Q P_tile_t)))
+
+(RULE &dest
+  (&gaze_cell (:P *P2))
+  (&look *D)
+  (neighbor (:P P2) D (:Q *P)))
+
+(ALTS $choice "where the gaze lands" $Step
+  (ALT $Slide
+    ;; The gaze slides across its own tile, the way it looks.
+    (INIT &slide Ray
+      (source (P)
+        (&gaze_tile_cell *P))
+      (node (P)
+        (&gaze_tile_cell *P))
+      (dir (D)
+        (&look *D)))
+
+    (RULE &dest
+      (&gaze_cell (:P *P2))
+      (&slide.end *P (:Origin P2))))
+  (ALT $Map
+    ;; The gaze's tile viewed from its own extent, so a tile position of the
+    ;; arrangement names a cell inside it.
+    (INIT &bbox BoundingBox
+      (cell (P)
+        (&gaze_tile_cell *P)))
+
+    (RULE &dest
+      (&target_tile (:P_tile *P_tile_t))
+      (&gaze_tile_cell *P)
+      (&bbox.box *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel P_tile_t)))))
+
+(RULE &output
+  (OR ((&dest *P)
+       (&gaze (:C *Col)))
+      ((&gaze_cell P)
+       (&dest (:P *Q))
+       (input (:P Q) Col))
+      ((&target_cell P)
+       (&gaze (:C Col)))
+      ((input P Col)
+       (NOT (&dest P))
+       (NOT (&gaze_cell P))
+       (NOT (&target_cell P)))))
+
+(OUT (&output ^P ^Col))

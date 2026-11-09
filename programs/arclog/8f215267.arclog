@@ -1,0 +1,107 @@
+;; inputs cc57c006ac3295d6d1684cf355adcd024a0d444086387a34087bc2da7cc4035b programs/solvers/8f215267.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8f215267
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The frame edge the dots count in from.
+(DET &dot_dir DirDomain)
+
+;; Distance between dots.
+(DET &spacing TileCount)
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+;; The objects, one color each.
+(INIT &comps Connectivity
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col))))
+
+(INIT &drect Outlines
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col))))
+
+(RULE &in_hole
+  (&drect.box *B)
+  (&comps.component *P *Id)
+  (interior (:A P) B))
+
+(RULE &holed
+  (&drect.box (:key *Col) *B)
+  (input (:P *Q))
+  (interior (:A Q) B))
+
+(RULE &draws
+  (&drect.box (:key *Col) *B)
+  (&comps.component (:key Col) *P *Id)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(RULE &frame
+  (&holed *Col *B)
+  (&draws Col *Id B)
+  (NOT (&in_hole B Id)))
+
+(ALTS $choice "what makes an object a frame" $Rect
+  (ALT $Enclose
+    ;; What each object closes off, over the cells that are not its own.
+    (INIT &closed Enclosure
+      (key ((&comps.component ^Id))
+        (cell (P)
+          (input *P)
+          (NOT (&comps.component P Id)))))
+
+    (INIT &obox BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &frame
+      (&closed.enclosed (:key *Id))
+      (&comps.component (:key *Col) Id)
+      (&obox.box (:key Id) *B))))
+
+;; The blobs of each color: its objects that are not frames.
+(INIT &blobs Cardinality
+  (key ((&comps.component (:key ^Col) *Id)
+        (NOT (&frame Col Id)))
+    (member ((:m Id))
+      (&comps.component (:key Col) *Id)
+      (NOT (&frame Col Id)))))
+
+(RULE &kept
+  (OR ((&frame *Col *Id)
+       (&comps.component (:key Col) *P Id))
+      ((&frame Col *B)
+       (input P)
+       (interior (:A P) B)
+       (relative (:Base B) (:X P) (:X_rel *P_inner))
+       (&dot_dir *D)
+       (perp_dir D *D2)
+       (dist_pair (:P P_inner) (:D D2) (:K *K2) K2)
+       (margin (:B P_inner) D *K)
+       (&spacing (:N *W))
+       (divide (:T K) (:Side W) (:Gap 0) (:Part *I) (:Remainder 0))
+       (&blobs.size (:key Col) *N)
+       (<= I N))))
+
+(RULE &output
+  (input *P)
+  (OR ((&kept P *Col))
+      ((NOT (&kept P))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,128 @@
+;; inputs 39e1fe664d30ee2c9249276bb1105684289d17f962c96b0293b7b4dec656ce3a programs/solvers/e7a25a18.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e7a25a18
+
+(param &background Color (0))
+(param &frame_color Color (2))
+
+(alts $fill
+  (alt $BlockGrid
+    (witness quadrants-off-scale variant $BlockGrid
+      (relaxed pattern-fits-inside)
+      (separates "the inside is 6 across and the 2x2-block pattern 4 across: $BlockGrid fills each 3x3 quadrant with its block's color and the ratio 1.5 leaves the scaling models undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 2 2 2 2 0 0 0 0)
+        (0 0 2 0 0 0 0 0 0 2 0 0 0 0)
+        (0 0 2 0 3 3 4 4 0 2 0 0 0 0)
+        (0 0 2 0 3 3 4 4 0 2 0 0 0 0)
+        (0 0 2 0 1 1 8 8 0 2 0 0 0 0)
+        (0 0 2 0 1 1 8 8 0 2 0 0 0 0)
+        (0 0 2 0 0 0 0 0 0 2 0 0 0 0)
+        (0 0 2 2 2 2 2 2 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Scaled undefined)
+      (output $BlockGrid (grid
+        (2 2 2 2 2 2 2 2)
+        (2 3 3 3 4 4 4 2)
+        (2 3 3 3 4 4 4 2)
+        (2 3 3 3 4 4 4 2)
+        (2 1 1 1 8 8 8 2)
+        (2 1 1 1 8 8 8 2)
+        (2 1 1 1 8 8 8 2)
+        (2 2 2 2 2 2 2 2))))))
+
+(alts $frame
+  (alt $FrameByOutline
+    (witness recolored-frame variant $FrameByOutline
+      (relaxed one-frame)
+      (separates "the frame is drawn in 5, not the stored frame color: $FrameByOutline finds the outline and fills it in 5, and every model that reads the stored frame color finds no frame and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 5 5 5 5 5 0 0 0 0)
+        (0 0 0 0 5 0 3 5 0 5 0 0 0 0)
+        (0 0 0 0 5 0 6 8 0 5 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 5 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 5 0 0 0 0)
+        (0 0 0 0 5 5 5 5 5 5 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ByColor undefined)
+      (output $FrameByOutline (grid
+        (5 5 5 5 5 5)
+        (5 3 3 5 5 5)
+        (5 3 3 5 5 5)
+        (5 6 6 8 8 5)
+        (5 6 6 8 8 5)
+        (5 5 5 5 5 5))))))
+
+(alts $pattern
+  (alt $PatternAnywhere
+    (witness stray-cell-outside borderline concept
+      (relaxed one-frame)
+      (separates "a cell of 4 sits outside the frame, beside the pattern's row: $PatternAnywhere takes it into the pattern's box with the frame cell between and scales that 2x4 box, and the models that read the pattern inside the frame ignore it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 2 2 2 2 0 0 0 0)
+        (0 0 0 0 2 0 0 3 5 2 4 0 0 0)
+        (0 0 0 0 2 0 0 6 8 2 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 2 2 2 2 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $InsideFrame (grid
+        (2 2 2 2 2 2)
+        (2 3 3 5 5 2)
+        (2 3 3 5 5 2)
+        (2 6 6 8 8 2)
+        (2 6 6 8 8 2)
+        (2 2 2 2 2 2)))
+      (output $PatternAnywhere (grid
+        (2 2 2 2 2 2)
+        (2 3 5 2 4 2)
+        (2 3 5 2 4 2)
+        (2 6 8 2 0 2)
+        (2 6 8 2 0 2)
+        (2 2 2 2 2 2))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "the frame is the grid's border, so the frame color outnumbers 0: background=DominantColor takes 2 as the background, reads the whole inside as the pattern and returns the input, while the stored background gives the pattern scaled by 2")
+      (input (grid
+        (2 2 2 2 2 2)
+        (2 0 3 5 0 2)
+        (2 0 6 8 0 2)
+        (2 0 0 0 0 2)
+        (2 0 0 0 0 2)
+        (2 2 2 2 2 2)))
+      (output &background=$Stored (grid
+        (2 2 2 2 2 2)
+        (2 3 3 5 5 2)
+        (2 3 3 5 5 2)
+        (2 6 6 8 8 2)
+        (2 6 6 8 8 2)
+        (2 2 2 2 2 2)))
+      (output ($ByColor &background=$Derived) (grid
+        (2 2 2 2 2 2)
+        (2 0 3 5 0 2)
+        (2 0 6 8 0 2)
+        (2 0 0 0 0 2)
+        (2 0 0 0 0 2)
+        (2 2 2 2 2 2)))
+      (output ($FrameByOutline &background=$Derived) undefined))))

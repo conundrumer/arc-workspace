@@ -1,0 +1,132 @@
+;; inputs 95d0ae1b23972e89095136364851f41ccf0480bca0604c1d8c0eacf30be00f60 programs/solvers/639f5a19.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 639f5a19
+
+(INIT &bg_count_count Cardinality
+  (key ((ex_input *E *P ^Col))
+    (member ((:m E P))
+      (ex_input *E *P Col))))
+
+(INIT &bg_count Order
+  (member ((:t Col))
+    (&bg_count_count.size (:key *Col)))
+  (score ((:t Col) (:S Count))
+    (&bg_count_count.size (:key *Col) (:N *Count))))
+
+(DET &bg
+  (&bg_count.maximal (:t *Col)))
+
+(INIT &objs2 Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg Col))))
+
+;; Each object's bounding box.
+(INIT &bbox2 BoundingBox
+  (key ((&objs2.component *P ^Id))
+    (cell (P)
+      (&objs2.component *P Id))))
+
+(RULE &box_cell
+  (&bbox2.cell (:key *Id) *P)
+  (&bbox2.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &quad_nearer
+  (&box_cell (:Id *Key) (:P_inner *P))
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(RULE &quad_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&quad_nearer *Key *P (:D D1))
+  (&quad_nearer Key P (:D D2)))
+
+;; Each object is repainted in place, so each output's objects are its
+;; input's.
+(INIT &objs Connectivity
+  (key ((ex_output ^E *P *Col)
+        (NOT (&bg Col)))
+    (node (P)
+      (ex_output E *P *Col)
+      (NOT (&bg Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&objs.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&objs.component (:key E) *P Id))))
+
+(DET &corner_color
+  (&bbox.cell (:key *E *Id) *P)
+  (&bbox.box (:key E Id) *B)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B))
+  (ex_output E P *Col))
+
+(DET &core_color
+  (&objs.component (:key *E) *P)
+  (ex_output E P *Col)
+  (NOT (&corner_color Col)))
+
+;; The core, seen in its object's frame: its margin from that frame's
+;; edges is how deep the band runs.
+(INIT &core_box BoundingBox
+  (key ((&bbox.cell (:key ^E ^Id) *P)
+        (&bbox.box (:key E Id) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (ex_output E P *Col)
+        (&core_color Col))
+    (cell ((:P P_inner))
+      (&bbox.cell (:key E Id) *P)
+      (&bbox.box (:key E Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (ex_output E P *Col)
+      (&core_color Col))))
+
+(DET &band_depth
+  (&core_box.box *B)
+  (margin B *D *K))
+
+;; Nearer some edge of its bounding box than the band is deep.
+(RULE &band_cell
+  (&box_cell *P *P_inner)
+  (margin (:B P_inner) *D *K)
+  (&band_depth (:K *N))
+  (< K N))
+
+(ALTS $choice "how deep a cell lies" $Inset
+  (ALT $Erode
+    (INIT &rim Boundary
+      (key ((&objs2.component *P ^Id))
+        (cell (P)
+          (&objs2.component *P Id))))
+
+    (INIT &rim_depth CellDistance
+      (key ((OR ((&rim.boundary (:key (:Id ^Ky)) *P))
+                ((&objs2.component P (:Id Ky)))))
+        (node (P)
+          (&objs2.component *P (:Id Ky)))
+        (source (P)
+          (&rim.boundary (:key (:Id Ky)) *P))))
+
+    ;; Fewer steps inward from the object's outline than the band is deep.
+    (RULE &band_cell
+      (&rim_depth.distance *P *K)
+      (&band_depth (:K *N))
+      (< K N))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg Col))
+      ((&band_cell P)
+       (&box_cell *Id P *P_inner)
+       (&quad_quadrant (:Key Id) (:P P_inner) (:Diag *G))
+       (&corner_color (:Diag G) Col))
+      ((&objs2.component P)
+       (NOT (&band_cell P))
+       (&core_color Col))))
+
+(OUT (&output ^P ^Col))

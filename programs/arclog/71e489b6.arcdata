@@ -1,0 +1,7 @@
+;; inputs d687e43c5097d0ef757f34d18484badcbc4873983b78c7147c36cc896d52cec6 programs/solvers/71e489b6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 71e489b6
+
+(param &ground Color (0))
+(param &halo Color (7))
+(param &square_side number (2))

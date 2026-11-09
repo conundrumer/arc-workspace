@@ -1,0 +1,9 @@
+;; inputs be4cee8f4e33d9b6ddfc02eb3f0d9f47a48165f8633ecae2d84c5491de5b8c3d programs/solvers/22a4bbc2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22a4bbc2
+
+(param &bg Color (0))
+(param &mark Color (2))
+(param &dir Dir (DIR_T))
+(param &mark_len number (1))
+(param &mark_gap number (2))

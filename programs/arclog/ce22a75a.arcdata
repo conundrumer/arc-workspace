@@ -1,0 +1,8 @@
+;; inputs 44b2cacf996f64dbde66e5ea830ad77211c2870b44ede88f2cb2d33eb82e0658 programs/solvers/ce22a75a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ce22a75a
+
+(param &bg Color (0))
+(param &out_fill Color (1))
+(param &tile_count number (3))
+(param &tile_dim number (3))

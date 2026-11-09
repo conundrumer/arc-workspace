@@ -1,0 +1,138 @@
+;; inputs 650b7536a86c60f4e36d766cd6440c891a00bb0d42582b49024cf91123e27166 programs/solvers/bd283c4a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bd283c4a
+
+(INPUT distinct-counts "no two colors of an input have the same cell count")
+
+(OUTPUT same-size "the output has the input's size")
+
+(OUTPUT count-order "the colors are ranked by their cell count in the input, the highest first; colors of equal count take either order, each order one output")
+
+(OUTPUT raster-fill "the output cells are taken in a raster order that starts at corner &start_corner, runs along axis &fill_axis within a line, and then steps to the next line away from that corner; each color, in rank order, takes as many cells of that order as its input count, after the cells the colors before it took"
+
+  (DET &start_corner DiagDirDomain)
+
+  (DET &fill_axis AxisDomain)
+
+  (RULE &step_axis
+    (&fill_axis (:A *A0))
+    (perp (:A A0) (:A2 *A)))
+
+  (RULE_OR_DET &out_dim
+    (input *P)
+    (axis_elem *A)
+    (frame_extent P A *N))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (&out_dim *A *N)))
+
+  (INIT &raster Order
+    (member ((:t P))
+      (&frame.cell *P))
+    (score ((:t P) (:S K1))
+      (&frame.cell *P)
+      (&start_corner *D)
+      (&step_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&frame.cell *P)
+      (&start_corner *D)
+      (&step_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2)))
+
+  (INIT &size Cardinality
+    (key ((input *P (:Col ^C)))
+      (member ((:m P))
+        (input *P (:Col C)))))
+
+  ;; The input in the same raster order, for the first cell of each color.
+  (INIT &scan Order
+    (member ((:t P))
+      (input *P))
+    (score ((:t P) (:S K1))
+      (input *P)
+      (&start_corner *D)
+      (&step_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (input *P)
+      (&start_corner *D)
+      (&step_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2)))
+
+  ;; A color's first cell has the most cells after it.
+  (INIT &first Order
+    (key ((input *P (:Col ^C))
+          (&scan.dual_rank (:t P) *R))
+      (member ((:t R))
+        (input *P (:Col C))
+        (&scan.dual_rank (:t P) *R))
+      (score ((:t R) (:S R))
+        (input *P (:Col C))
+        (&scan.dual_rank (:t P) *R))))
+
+  ;; Lower count first; of equal counts, the later first cell. A color's place,
+  ;; read as `rank_desc`, is then the count of the colors of higher count or of
+  ;; equal count and an earlier first cell.
+  (INIT &ranked Order
+    (member ((:t C))
+      (input (:Col *C)))
+    (score ((:t C) (:S N))
+      (&size.size (:key *C) *N))
+    (secondary_score ((:t C) (:S R))
+      (&first.maximal (:key *C) (:t *R))))
+
+  (RULE &ties_item
+    (&size.size (:key (:C *C2)) *N)
+    (&size.size (:key *C) N))
+
+  ;; A color takes the place in `ranked` of any color of equal count, so each
+  ;; order of tied colors is one resolution.
+  (CHOOSE &ties
+    (for ((&ties_item ^C2))
+      (from (&ties_item C2 *C)))
+    (never
+      (&ties_item *C2 *C)
+      (&ties_item (:C2 *C22) C)
+      (!= C2 C22)))
+
+  (RULE &place
+    (&ties *C2 *C)
+    (&ranked.dual_rank (:t C2) *R))
+
+  ;; The cells of the colors placed before this one: where its run starts.
+  (INIT &preceding Cardinality
+    (key ((&place ^C))
+      (member ((:m Q))
+        (&place C *R)
+        (&place (:C *C2) (:R *R2))
+        (< R2 R)
+        (input (:P *Q) (:Col C2)))
+      (domain ()
+        (&place C))))
+
+  ;; Those cells and the color's own: where its run ends.
+  (INIT &through Cardinality
+    (key ((OR ((&preceding.member (:key ^C) (:m *Q)))
+              ((&place C)
+               (input (:P Q) (:Col C)))))
+      (member ((:m Q))
+        (OR ((&preceding.member (:key C) (:m *Q)))
+            ((&place C)
+             (input (:P Q) (:Col C))))))))
+
+(ALTS $choice "How colors of equal count are ordered" $EitherOrder
+  (ALT $TieFirstCell
+    (OUTPUT count-order "colors of equal count stand in the order their first cells come in the input's raster order"
+      (RULE &place
+        (&ranked.dual_rank (:t *C) *R)))))
+
+(RULE &output
+  (&raster.rank (:t *P) (:R *K))
+  (&preceding.size (:key (:C *Col)) (:N *S))
+  (<= S K)
+  (&through.size (:key (:C Col)) (:N *E))
+  (< K E))
+
+(OUT (&output ^P ^Col))

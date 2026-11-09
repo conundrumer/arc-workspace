@@ -1,0 +1,210 @@
+;; inputs 60c413a1489a04511a6b999ad439929390f7c2dde7df3551ab1d1f2aa495d542 programs/solvers/bb52a14b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bb52a14b
+
+(param &background Color (0))
+(param &fill_color Color (4))
+
+(alts $under
+  (alt $AnyUnderMarks
+    (witness stray-under-mark borderline $AnyUnderMarks
+      (relaxed bare-copies)
+      (separates "a place shows the key's other cells with a stray 8 under one mark offset, (6,5): the concept needs background there and leaves the place; $AnyUnderMarks fills every mark offset, the stray cell too; $KeepUnderMarks fills the mark offsets that hold background and keeps the 8")
+      (input (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 0 1 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8)))
+      (output $BareMarks (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 0 1 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8)))
+      (output $FillEveryMark (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 1 0 0)
+        (0 0 0 0 0 4 8 4 0 0)
+        (0 0 0 0 0 4 4 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8)))
+      (output $KeepUnderMarks (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 1 0 0)
+        (0 0 0 0 0 8 8 4 0 0)
+        (0 0 0 0 0 4 4 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8))))))
+
+(alts $fill
+  (alt $KeepUnderMarks
+    (witness stray-under-mark borderline $AnyUnderMarks)))
+
+(alts $blank
+  (alt $InkOnlyMatch
+    (witness stray-in-key-blank variant $InkOnlyMatch
+      (relaxed one-key)
+      (separates "the key has a background cell at offset (0,2), and a place shows the key's ink with an 8 at that offset, (5,7): the concept needs background there and leaves the place; $InkOnlyMatch reads only the key's ink and fills the marks")
+      (input (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 0 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 0 8 0 0)
+        (0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8)))
+      (output $MatchBlanks (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 0 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 0 8 0 0)
+        (0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8)))
+      (output $InkOnlyMatch (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 0 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 8 0 0)
+        (0 0 0 0 0 4 8 4 0 0)
+        (0 0 0 0 0 4 4 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 8))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor foreign concept
+      (relaxed scattered-cells)
+      (separates "1 covers more cells than 0: the concept fills the copy at rows 4-6, cols 4-6; background=DominantColor takes 1 as background, needs 1 under the copy's marks, and changes nothing")
+      (input (grid
+        (1 4 1 0 1 1 0 1)
+        (4 8 4 0 1 0 1 1)
+        (4 4 1 0 1 1 0 1)
+        (0 0 0 0 1 1 1 1)
+        (1 0 1 1 1 0 1 0)
+        (1 1 1 1 0 8 0 0)
+        (0 1 0 1 0 0 1 0)
+        (1 1 1 1 0 0 0 0)))
+      (output (&background=$Stored &fill_color=$Stored) (grid
+        (1 4 1 0 1 1 0 1)
+        (4 8 4 0 1 0 1 1)
+        (4 4 1 0 1 1 0 1)
+        (0 0 0 0 1 1 1 1)
+        (1 0 1 1 1 4 1 0)
+        (1 1 1 1 4 8 4 0)
+        (0 1 0 1 4 4 1 0)
+        (1 1 1 1 0 0 0 0)))
+      (output (&fill_color=$Derived &key_dim=$Derived) &background=$Derived (grid
+        (1 4 1 0 1 1 0 1)
+        (4 8 4 0 1 0 1 1)
+        (4 4 1 0 1 1 0 1)
+        (0 0 0 0 1 1 1 1)
+        (1 0 1 1 1 0 1 0)
+        (1 1 1 1 0 8 0 0)
+        (0 1 0 1 0 0 1 0)
+        (1 1 1 1 0 0 0 0)))
+      (output (&fill_color=$Derived &key_dim=$Stored) undefined))))
+
+(alts &fill_color
+  (alt &fill_color=$Derived
+    (witness fill_color=RarestColor borderline concept
+      (separates "8 has two cells and 4 has five: the concept fills the copy at rows 5-7, cols 5-7; fill_color=RarestColor takes 8 as the fill color and changes nothing")
+      (input (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 1 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 0 1 0 0)
+        (0 0 0 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 1)))
+      (output &fill_color=$Stored (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 1 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 1 0 0)
+        (0 0 0 0 0 4 1 4 0 0)
+        (0 0 0 0 0 4 4 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 1)))
+      (output (&fill_color=$Derived &key_dim=$Derived) (grid
+        (0 0 0 0 0 0 0 0 8 0)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 1 4 0 0 0 0 0 0)
+        (0 4 4 1 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 0 1 0 0)
+        (0 0 0 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 1)))
+      (output (&fill_color=$Derived &key_dim=$Stored) undefined))))
+
+(alts &key_dim
+  (alt &key_dim=$Stored
+    (witness key_dim=stored borderline &key_dim=$Stored
+      (separates "the key's marks lie in its top two rows, and its bottom row is ink; one place holds the whole key without marks (rows 5-7, cols 0-2), another its top two rows over background (rows 6-7, cols 5-7): the concept's key is the 2x3 box of the marks and fills both places; key_dim=stored reads the 3x3 box whose other cells are ink and fills only the first")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 8)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 1 8 1 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (1 0 1 0 0 0 0 0 0 1)
+        (0 8 0 0 0 1 0 1 0 0)
+        (1 8 1 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 0)))
+      (output &key_dim=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 8)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 1 8 1 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (1 4 1 0 0 0 0 0 0 1)
+        (4 8 4 0 0 1 4 1 0 0)
+        (1 8 1 0 0 4 8 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 0)))
+      (output &key_dim=$Stored (grid
+        (0 0 0 0 0 0 0 0 0 8)
+        (0 1 4 1 0 0 0 0 0 0)
+        (0 4 8 4 0 0 0 0 0 0)
+        (0 1 8 1 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (1 4 1 0 0 0 0 0 0 1)
+        (4 8 4 0 0 1 0 1 0 0)
+        (1 8 1 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 0))))))

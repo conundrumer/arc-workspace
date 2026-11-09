@@ -1,0 +1,389 @@
+;; inputs 2c2af7c755177d6a35ea3d8c60dcfcea879dfc0718cf4ba06e0d0a3d6bb0cb09 programs/solvers/c663677b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c663677b
+
+(INPUT periodic-pattern "apart from the blanked cells, the grid is periodic on each axis: each cell has the color of every cell that lies a whole number of periods away from it on the row axis and on the column axis. The period on an axis is the shortest shift under which the unblanked cells agree, and it is shorter than the grid on that axis."
+
+  (RULE &line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  ;; The lines a whole number of k apart on axis a, as one class, for each k
+  ;; shorter than the grid on that axis.
+  (INIT &line_class Quotient
+    (edge ((:a A K L) (:b A K (:L L3)))
+      (OR ((&line *A *L)
+           (sub_extent (:P L) A *K)
+           (axis_of *D A)
+           (jump (:P L) D K (:Q *L3))
+           (&line A (:L L3)))
+          ((&line A L)
+           (sub_extent (:P L) A K)
+           (= L3 L)))))
+
+  (INIT &shift_mode_count Cardinality
+    (key ((input *P ^Col)
+          (split P ^A (:Along *L1) (:Across ^L2))
+          (&line_class.class (:a A ^K (:L L1)) ^Id))
+      (member ((:m P))
+        (input *P Col)
+        (split P A (:Along *L1) (:Across L2))
+        (&line_class.class (:a A K (:L L1)) Id))))
+
+  ;; Each cell in its class under shift k on axis a: the class of its line on
+  ;; that axis, and its line on the other axis.
+  (INIT &shift_mode Order
+    (key ((&shift_mode_count.size (:key ^A ^K ^Id (:L2 ^L) *Col)))
+      (member ((:t Col))
+        (&shift_mode_count.size (:key A K Id (:L2 L) *Col)))
+      (score ((:t Col) (:S N))
+        (&shift_mode_count.size (:key A K Id (:L2 L) *Col) *N))))
+
+  (RULE &shift_miss
+    (&shift_mode.maximal (:key *A *K *Id *L) (:t *Col))
+    (&shift_mode_count.member (:key A K Id (:L2 L) (:Col *Col2)) (:m *P))
+    (!= Col2 Col))
+
+  ;; The cells of a frame of extent k on axis a, and of the grid's extent on the
+  ;; other axis, one for each class under the shift.
+  (INIT &shift_frame Frame
+    (key ((input *P)
+          (axis_elem ^A)
+          (sub_extent P A ^K)
+          (OR ((perp A *A2)
+               (frame_extent P (:A A2) *N))
+              ((= A2 A)
+               (= N K)))
+          (input (:P *P2))
+          (sub_extent (:P P2) A K)
+          (OR ((perp A (:A2 *A22))
+               (frame_extent (:P P2) (:A A22) (:N *N2)))
+              ((= A22 A)
+               (= N2 K)))
+          (perp (:A A2) (:A2 A22)))
+      (extent ((:A A2) N)
+        (input *P)
+        (sub_extent P A K)
+        (OR ((perp A *A2)
+             (frame_extent P (:A A2) *N))
+            ((= A2 A)
+             (= N K))))))
+
+  ;; The things that state the grid under each shift: a color for each class,
+  ;; and each cell that lacks some commonest color of its class. A cell of the
+  ;; shift's frame is shorter than the grid on axis a, so no cell of the grid is
+  ;; one.
+  (INIT &shift_things Cardinality
+    (key ((OR ((&shift_frame.cell (:key ^A ^K) (:P *P_frame)))
+              ((&shift_miss A K (:P *P_grid)))))
+      (member ((:m P_frame))
+        (OR ((&shift_frame.cell (:key A K) (:P *P_frame)))
+            ((&shift_miss A K (:P P_frame)))))))
+
+  (INIT &least_shift Order
+    (key ((&shift_things.size (:key ^A *K) *N))
+      (member ((:t (:V K) (:S N)))
+        (&shift_things.size (:key A *K) *N))
+      (score ((:t (:V K) (:S N)) (:S N))
+        (&shift_things.size (:key A *K) *N))))
+
+  ;; The shift on each axis that states the grid in the fewest things.
+  (INIT &one_shift Singleton
+    (key ((&least_shift.minimal (:key ^A) (:t (:V *K))))
+      (member ((:v K))
+        (&least_shift.minimal (:key A) (:t (:V *K)))))))
+
+(INPUT blanked-patches "some cells are blanked, each with &hole_color. The blanked cells form one or more patches. &hole_color occurs nowhere in the pattern."
+
+  (DET &hole_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2)))
+
+(INPUT each-class-seen "for each blanked cell, some cell a whole number of periods away from it on each axis is not blanked.")
+
+(OUTPUT restore-pattern "the output is the input with each blanked cell given the color that the unblanked cells of its class under the periods hold."
+
+  (RULE &hole
+    (&hole_color *C))
+
+  (RULE &blank_cand
+    (&hole_color *C))
+
+  ;; The shifts under which the cells left unblanked agree, with each color
+  ;; read as blank.
+  (INIT &shifts Periods
+    (key ((&blank_cand ^C))
+      (cell (P (:v Col))
+        (input *P *Col)
+        (!= Col C))))
+
+  (RULE_OR_DET &period "The pattern's period on each axis."
+    (&hole *C)
+    (&shifts.fundamental_period (:key C) *A *K))
+
+  (RULE &aperiodic
+    (axis_elem *A)
+    (NOT (&period A)))
+
+  ;; The period classes.
+  (INIT &periodic Wallpaper
+    (grid (P)
+      (input *P))
+    (period (A K)
+      (&period *A *K)))
+
+  ;; The classes of each case: the period classes, joined by the case's further
+  ;; shifts and isometries.
+  (INIT &orbit Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&periodic.action *P (:Q *P2)))
+          ((input P)
+           (= P2 P)))))
+
+  (RULE &broken
+    (&aperiodic))
+
+  (RULE &intact
+    (&hole *C)
+    (input *P *Col)
+    (!= Col C))
+
+  ;; The period classes joined under the tile's witnessed isometries.
+  (INIT &mirror2 Wallpaper
+    (transform ((:D T))
+      (d4_compose (:A *T) (:B *U) (:C *V))
+      (!= U V))
+    (cell (P (:v Col))
+      (&intact *P *Col))
+    (grid (P)
+      (input *P))
+    (period (A K)
+      (&period *A *K))))
+
+(ALTS $d "how a blanked cell is known" $StoredHole
+  (ALT $HoleFromPeriod
+    (INPUT blanked-patches "the blanked cells have the one color whose cells, read as blank, leave the tile of least area under the period derivation of periodic-pattern; undefined where two colors tie, or where no color leaves a period on both axes"
+      (RULE &blank_cand
+        (input (:Col *C)))
+
+      ;; The tile each color leaves when its cells are read as blank.
+      (INIT &hole_tile Frame
+        (key ((&shifts.fundamental_period (:key ^C) *A *K)
+              (&shifts.fundamental_period (:key C) (:A *A2) (:K *K2))
+              (perp A A2))
+          (extent (A (:N K))
+            (&shifts.fundamental_period (:key C) *A *K))))
+
+      (INIT &hole_area Cardinality
+        (key ((&hole_tile.cell (:key ^C) *P))
+          (member ((:m P))
+            (&hole_tile.cell (:key C) *P))))
+
+      (INIT &least_hole Order
+        (member ((:t (:V C) (:S N)))
+          (&hole_area.size (:key *C) *N))
+        (score ((:t (:V C) (:S N)) (:S N))
+          (&hole_area.size (:key *C) *N)))
+
+      (INIT &one_hole Singleton
+        (member ((:v C))
+          (&least_hole.minimal (:t (:V *C)))))
+
+      (RULE &hole
+        (&one_hole.value (:v *C)))))
+  (ALT $ClassMode
+    (INPUT blanked-patches "no cell is known to be blank")
+    (INPUT periodic-pattern "the period on an axis is the shift, among those shorter than the grid on that axis, under which the cells agree apart from damage: the shift that states the grid in the fewest things, a color for each class of cells that share a line on the other axis and lie a whole number of shifts apart, and each cell that lacks some commonest color of its class; undefined where two shifts on an axis tie")
+    (OUTPUT restore-pattern "each cell takes the color that holds more than half the cells of its class"
+      (INIT &orbit_mode_count Cardinality
+        (key ((&orbit.class (:a *P) ^Id)
+              (input P ^Col))
+          (member ((:m P))
+            (&orbit.class (:a *P) Id)
+            (input P Col))))
+
+      (RULE &intact
+        (input *P *Col))
+
+      (RULE &period
+        (&one_shift.value (:key *A) (:v *K)))
+
+      (INIT &orbit_mode Order
+        (key ((&orbit_mode_count.size (:key ^Id *Col)))
+          (member ((:t Col))
+            (&orbit_mode_count.size (:key Id *Col)))
+          (score ((:t Col) (:S N))
+            (&orbit_mode_count.size (:key Id *Col) *N))))
+
+      (RULE &orbit_vote
+        (&orbit_mode.maximal (:key (:Id *O)) (:t *Col))
+        (&orbit.class (:a *P) (:Id O))
+        (input P (:Col *Col2)))
+
+      (INIT &orbit_major Excess
+        (key ((OR ((&orbit_vote ^O ^Col *P (:Col2 Col)))
+                  ((&orbit_vote O Col P *Col2)
+                   (!= Col2 Col))))
+          (plus ((:m P))
+            (&orbit_vote O Col *P (:Col2 Col)))
+          (minus ((:m P))
+            (&orbit_vote O Col *P *Col2)
+            (!= Col2 Col)))))
+    ;; Each cell takes the color that holds more than half of its class.
+    (RULE &output
+      (&orbit.class (:a *P) *Id)
+      (NOT (&broken))
+      (&orbit_major.excess (:key (:O Id) *Col)))))
+
+(ALTS $p "which shifts relate cells" $AxisShifts
+  (ALT $ObliquePeriod
+    (INPUT periodic-pattern "the shifts that relate cells also include each shift shorter than the axis periods, in any direction, under which the unblanked cells agree and at least one pair of unblanked cells meets"
+      (RULE &short_step
+        (&period *A *K)
+        (input *P)
+        (axis_of (:D *Dr) A)
+        (margin (:B P) (:D Dr) (:K *K2))
+        (< K2 K)
+        (jump_offset (:D Dr) (:K K2) *V))
+
+      (RULE &oblique_cand
+        (&short_step *A (:V *V1))
+        (perp A *A2)
+        (&short_step (:A A2) (:V *V2))
+        (compose (:A V1) (:B V2) (:C *V))
+        (!= V 0))
+
+      (RULE &oblique_pair
+        (&oblique_cand *V)
+        (&intact *P *Col)
+        (compose (:A P) (:B V) (:C *Q))
+        (&intact (:P Q) (:Col *Col2)))
+
+      (RULE &oblique_clash
+        (&oblique_pair *V *Col *Col2)
+        (!= Col Col2))
+
+      ;; The classes of each case: the period classes, joined by the case's further
+      ;; shifts and isometries.
+      (INIT &orbit Quotient
+        (edge ((:a P) (:b P2))
+          (OR ((&periodic.action *P (:Q *P2)))
+              ((input P)
+               (= P2 P))
+              ((&oblique_pair *V)
+               (NOT (&oblique_clash V))
+               (input P)
+               (compose (:A P) (:B V) (:C P2))
+               (input (:P P2)))))))
+    (ALT $WitnessedMirror
+      (OUTPUT restore-pattern "classes also merge under each reflection or rotation of the tile, with a shift, that some two unblanked cells it pairs witness and no two contradict"
+        ;; The classes of each case: the period classes, joined by the case's further
+        ;; shifts and isometries.
+        (INIT &orbit Quotient
+          (edge ((:a P) (:b P2))
+            (OR ((&periodic.action *P (:Q *P2)))
+                ((input P)
+                 (= P2 P))
+                ((&oblique_pair *V)
+                 (NOT (&oblique_clash V))
+                 (input P)
+                 (compose (:A P) (:B V) (:C P2))
+                 (input (:P P2)))
+                ((&mirror2.action P (:Q P2))))))))
+    (ALT $StoredMirror
+      (OUTPUT restore-pattern "classes also merge under &mirror; undefined where a merged class holds two colors, where &mirror does not take the grid onto itself, or where the periods differ between the axes"
+        ;; The classes of each case: the period classes, joined by the case's further
+        ;; shifts and isometries.
+        (INIT &orbit Quotient
+          (edge ((:a P) (:b P2))
+            (OR ((&periodic.action *P (:Q *P2)))
+                ((input P)
+                 (= P2 P))
+                ((&oblique_pair *V)
+                 (NOT (&oblique_clash V))
+                 (input P)
+                 (compose (:A P) (:B V) (:C P2))
+                 (input (:P P2)))
+                ((&mirror (:D *T))
+                 (input P)
+                 (apply (:D T) P (:P_out P2))
+                 (input (:P P2))))))))))
+
+(ALTS $i "which further cells join a class" $Translations
+  (ALT $WitnessedMirror
+    (OUTPUT restore-pattern "classes also merge under each reflection or rotation of the tile, with a shift, that some two unblanked cells it pairs witness and no two contradict"
+      ;; The classes of each case: the period classes, joined by the case's further
+      ;; shifts and isometries.
+      (INIT &orbit Quotient
+        (edge ((:a P) (:b P2))
+          (OR ((&periodic.action *P (:Q *P2)))
+              ((input P)
+               (= P2 P))
+              ((&mirror2.action P (:Q P2))))))))
+  (ALT $StoredMirror
+    (INPUT tile-mirror "the grid is symmetric under &mirror, the reflection across its main diagonal")
+    (OUTPUT restore-pattern "classes also merge under &mirror; undefined where a merged class holds two colors, where &mirror does not take the grid onto itself, or where the periods differ between the axes"
+      (DET &asymmetric
+        (reflection (:A *A1) (:T *D)) (diag_axis_elem (:Da A1))
+        (ex_output *E *P (:Col *C))
+        (apply D P (:P_out *Q))
+        (NOT (ex_output E (:P Q) (:Col C))))
+
+      (INIT &symmetric_count Cardinality
+        (key ((ex_output *E)
+              (reflection (:A *A3) ^T) (diag_axis_elem (:Da A3))
+              (NOT (&asymmetric E (:D T))))
+          (member ((:m E))
+            (ex_output *E)
+            (reflection (:A *A4) T) (diag_axis_elem (:Da A4))
+            (NOT (&asymmetric E (:D T))))))
+
+      ;; The reflection across a diagonal under which the most train outputs
+      ;; are symmetric.
+      (INIT &symmetric Order
+        (member ((:t T))
+          (&symmetric_count.size (:key *T)))
+        (score ((:t T) (:S N))
+          (&symmetric_count.size (:key *T) *N)))
+
+      (DET &mirror
+        (&symmetric.maximal (:t *D)))
+
+      ;; The classes of each case: the period classes, joined by the case's further
+      ;; shifts and isometries.
+      (INIT &orbit Quotient
+        (edge ((:a P) (:b P2))
+          (OR ((&periodic.action *P (:Q *P2)))
+              ((input P)
+               (= P2 P))
+              ((&mirror (:D *T))
+               (input P)
+               (apply (:D T) P (:P_out P2))
+               (input (:P P2))))))
+
+      (RULE &broken
+        ;; The mirror takes a cell off the grid, or the periods differ between the
+        ;; axes.
+        (OR ((OR ((&mirror (:D *T))
+                  (input *P)
+                  (apply (:D T) P (:P_out *Q))
+                  (NOT (input (:P Q))))
+                 ((&period *A *K)
+                  (perp A *A2)
+                  (&period (:A A2) (:K *K2))
+                  (!= K K2))))
+            ((&aperiodic)))))))
+
+;; An unblanked cell keeps its color, and a blanked cell takes the colors the
+;; unblanked cells of its class hold.
+(RULE &output
+  (&hole *C)
+  (NOT (&broken))
+  (OR ((&intact *P *Col))
+      ((input P (:Col C))
+       (&orbit.class (:a P) *Id)
+       (&orbit.class (:a *Q) Id)
+       (&intact (:P Q) Col))))
+
+(OUT (&output ^P ^Col))

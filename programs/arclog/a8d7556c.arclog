@@ -1,0 +1,233 @@
+;; inputs 0ff1a667aeae37260e8c548a524cd1879973987dced81b6a1f498496f901727c programs/solvers/a8d7556c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a8d7556c
+
+(INPUT speckle-field "&hole cells lie in no pattern among cells of another color, and some of them form solid rectangles with each side at least &min_side"
+
+  (DET_OR_RULE &hole RarestColor)
+
+  (DET &min_side TileCount))
+
+(OUTPUT greedy-rect-fill "from the &hole cells not yet claimed, take the all-&hole rectangle of largest area with each side at least &min_side, and paint its cells &fill; repeat until no such rectangle is left. Undefined where overlapping rectangles of equal area claim differently under different claim orders."
+
+  (DET &fill AnyOutNewColor)
+
+  (RULE &hole_cell
+    (input *P *Col)
+    (&hole (:C Col)))
+
+  ;; The box two hole cells span.
+  (INIT &span BoundingBox
+    (key ((&hole_cell ^P)
+          (&hole_cell (:P ^Q)))
+      (cell ((:P P2))
+        (OR ((= *P2 P))
+            ((= P2 Q))))))
+
+  (RULE &spoiled
+    (&span.box *B)
+    (input *P *Col)
+    (NOT (&hole (:C Col)))
+    (inside (:A P) B))
+
+  (RULE &short
+    (&span.box *B)
+    (input *P)
+    (box_extent B P *N)
+    (&min_side (:N *K))
+    (< N K))
+
+  (RULE &rect
+    (&span.box *B)
+    (NOT (&spoiled B))
+    (NOT (&short B)))
+
+  (RULE &rect_cell
+    (&rect *B)
+    (&hole_cell *P)
+    (inside (:A P) B))
+
+  (RULE &overlap
+    (&rect_cell *B *P)
+    (&rect_cell (:B *B2) P))
+
+  (INIT &area Cardinality
+    (key ((&rect_cell ^B *P))
+      (member ((:m P))
+        (&rect_cell B *P))))
+
+  (RULE &corner_cell
+    (&rect_cell *B *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (RULE &cand
+    (&rect *B))
+
+  (RULE &scan
+    (diag_dir_elem (:D *C))
+    (axis_elem *A))
+
+  (INIT &lex Order
+    (key ((&scan ^C ^A))
+      (score ((:t P) (:S K1))
+        (&corner_cell *P)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&corner_cell *P)
+        (diag_dist P (:Diag C) A *K1 *K2)))
+    (member ((:t P))
+      (&corner_cell *P)))
+
+  ;; The rectangles in claim order, before the scan breaks a tie: the larger
+  ;; first, by the measures the overlap reading compares.
+  (INIT &by_size Order
+    (member ((:t B))
+      (&rect *B))
+    (score ((:t B) (:S N))
+      (&area.size (:key *B) *N)))
+
+  ;; The rectangles in scan order: by the cell at the scan's corner, then by the
+  ;; cell at the opposite corner.
+  (INIT &scan_order Order
+    (key ((&scan ^C ^A))
+      (score ((:t B) (:S R))
+        (&corner_cell *B (:D C) *P)
+        (&lex.rank (:key C A) (:t P) *R))
+      (secondary_score ((:t B) (:S R))
+        (diag_opposite (:D C) (:Opp *C2))
+        (&corner_cell *B (:D C2) (:P *Q))
+        (&lex.rank (:key C A) (:t Q) *R)))
+    (member ((:t B))
+      (&rect *B)))
+
+  ;; The size order claims first, and the scan decides between two of one size.
+  (RULE &claim_order_elem
+    (&scan *C *A)
+    (&cand *B))
+
+  (INIT &claim_order Order
+    (key ((&claim_order_elem ^C ^A *B))
+      (member ((:t B))
+        (&claim_order_elem C A *B))
+      (score ((:t B) (:S R))
+        (&claim_order_elem C A *B)
+        (&by_size.dual_rank (:t B) *R))
+      (secondary_score ((:t B) (:S R))
+        (&claim_order_elem C A *B)
+        (&scan_order.rank (:key C A) (:t B) *R))))
+
+  (RULE &blocks
+    (&claim_order_elem *C *A (:B *B_last))
+    (&overlap (:B B_last) (:B2 *B)))
+
+  ;; The walk along the claim order: a rectangle no earlier claim took out
+  ;; claims, and takes out each rectangle it blocks; a rectangle taken out
+  ;; is passed over.
+  (INIT &claim Unfold
+    (key ((OR ((&claim_order.minimal (:key ^C ^A) (:t *B)))
+              ((&claim_order_elem C A B))
+              ((&blocks C A (:B_last B) (:B *B2)))))
+      (start ((:t B))
+        (&claim_order.minimal (:key C A) (:t *B)))
+      (initial_untaken ((:item B))
+        (&claim_order_elem C A *B))
+      (conflict ((:item B) (:item2 B2))
+        (&blocks C A (:B_last *B) (:B *B2)))
+      (step ((:t B) (:t2 B2))
+        (&claim_order.successor (:key C A) (:a *B) (:b *B2))
+        (&claim.untaken (:t B) (:item B)))
+      (skip ((:t B) (:t2 B2))
+        (&claim_order.successor (:key C A) (:a *B) (:b *B2))
+        (&claim.excluded (:t B) (:item B)))
+      (take ((:t B) (:item B))
+        (&claim_order_elem C A *B)
+        (&claim.untaken (:t B) (:item B))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $overlap "which cells stay claimed when rectangles share cells" $LargestFirst
+  (ALT $DropDominated
+    (OUTPUT greedy-rect-fill "each rectangle that no other rectangle contains fills, unless such a rectangle of larger area overlaps it"
+      (RULE &contained
+        (&cand *B)
+        (&cand (:B *B2))
+        (!= B B2)
+        (inside (:A B) (:B B2)))
+
+      (RULE &maximal
+        (&cand *B)
+        (NOT (&contained B)))
+
+      (RULE &dominated
+        (&maximal *B)
+        (&maximal (:B *B2))
+        (&overlap B B2)
+        (&area.size (:key B) *N)
+        (&area.size (:key (:B B2)) (:N *N2))
+        (> N2 N))
+
+      (RULE &kept_cell
+        (&maximal *B)
+        (NOT (&dominated B))
+        (&rect_cell B *P)))
+    (RULE &output
+      (input *P (:Col *C))
+      (IF ((&kept_cell P))
+          ((&fill (:C *Col)))
+          ((= Col C)))))
+  (ALT $AxisFirst
+    (OUTPUT greedy-rect-fill "rectangles claim in order of their extent along &first_axis, then of their area"
+      (DET &first_axis AxisDomain)
+
+      (RULE &axis_len
+        (&first_axis *A)
+        (&rect_cell *B *P)
+        (box_extent B P A *N))
+
+      ;; The rectangles in claim order, before the scan breaks a tie: the larger
+      ;; first, by the measures the overlap reading compares.
+      (INIT &by_size Order
+        (member ((:t B))
+          (&rect *B))
+        (score ((:t B) (:S N))
+          (&axis_len *B *N))
+        (secondary_score ((:t B) (:S N))
+          (&area.size (:key *B) *N))))))
+
+(ALTS $qualify "which rectangles count" $AnyRect
+  (ALT $ThicknessTwo
+    (OUTPUT greedy-rect-fill "a rectangle counts only when its extent along one axis is &min_side and no line of &hole cells beside it extends it along that axis"
+      (RULE &thicker
+        (&rect *B)
+        (&rect (:B *B2))
+        (!= B B2)
+        (inside (:A B) (:B B2))
+        (perp *A *A2)
+        (axis_of *D (:A A2))
+        (opposite D (:Opp *D2))
+        (same_dist D (:P1 B) (:P2 B2))
+        (same_dist (:D D2) (:P1 B) (:P2 B2)))
+
+      ;; A rectangle whose extent along some axis is &min_side, and that no
+      ;; rectangle extends along that axis.
+      (RULE &cand
+        (&rect_cell *B *P)
+        (box_extent B P *A (:N *K))
+        (&min_side (:N K))
+        (NOT (&thicker B A))))))
+
+(RULE &claimed_cell
+  (&claim.take (:key *C *A) (:t *B) (:item B))
+  (&rect_cell B *P))
+
+;; Every scan's claims fill, so a cell two scans claim differently takes two
+;; colors.
+(RULE &output
+  (input *P (:Col *C))
+  (&scan (:C *D) *A)
+  (IF ((&claimed_cell (:C D) A P))
+      ((&fill (:C *Col)))
+      ((= Col C))))
+
+(OUT (&output ^P ^Col))

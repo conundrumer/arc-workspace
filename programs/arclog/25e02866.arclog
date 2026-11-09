@@ -1,0 +1,72 @@
+;; inputs a28aaa812bb7da99c2ce9ab3067a1b6d99ce993e6d1a7582daa2c79adcee58ee programs/solvers/25e02866.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 25e02866
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background covers the grid, and the ink is what is drawn on it. The
+;; rectangles cover the ink in the same way.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &panel_mode_count Cardinality
+  (key ((&ink *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&ink *P)
+      (input P Col))))
+
+(INIT &panel_mode Order
+  (member ((:t Col))
+    (&panel_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&panel_mode_count.size (:key *Col) *N)))
+
+;; A panel is a connected island of ink: one rectangle with its painted cells.
+;; Seen from its own box, every panel lands on the same frame — the output frame.
+(INIT &comps Connectivity
+  (node (P)
+    (&ink *P)))
+
+(INIT &panel BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &panel_cell
+  (&panel.cell (:key *Id) *P)
+  (&panel.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_frame)))
+
+(RULE &paint
+  (&panel_cell *P *P_frame)
+  (input P *Col)
+  (NOT (&panel_mode.maximal (:t Col))))
+
+(RULE &overlay
+  (&paint *P_frame *Col))
+
+(ALTS $choice "which painted cells a rectangle contributes" $Layer
+  (ALT $Inside
+    (RULE &overlay
+      (&paint *P_frame *Col)
+      (interior (:A P_frame) (:B 0)))))
+
+(RULE &output
+  (OR ((&overlay (:P_frame *P) *Col))
+      ((&panel_cell (:P_frame P))
+       (NOT (&overlay (:P_frame P)))
+       (&panel_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

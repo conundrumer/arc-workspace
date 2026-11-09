@@ -1,0 +1,214 @@
+;; inputs 8dbdd774d4e82e57c8670f4406d35b3cec02f5e23785f216ff6d452292a89315 programs/solvers/85b81ff1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 85b81ff1
+
+;; The edge the least-inked unit sits at.
+(DET &least_dir DirDomain)
+
+(RULE &axis
+  (&least_dir *D)
+  (axis_of D *A))
+
+(DET &gap DivisorRatio)
+
+(DET &tile_count SepTileCount)
+
+(INIT &decompose_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (&axis *A)
+    (&tile_count *N))
+  (gap (A G)
+    (&axis *A)
+    (&gap (:K *G))))
+
+(RULE &decompose
+  (&decompose_division.tile *P (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(DET &bg RarestColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(ALTS $choice "which kind of unit is reordered, and how" $Tile
+  (ALT $Tile
+    (ALTS $d "which parameter fixes the tile decomposition" $Count
+      (ALT $Size
+        (DET &tile_size SepTileDim)
+        (INIT &decompose_division2 Division
+          (cell ((:P P_grid))
+            (input (:P *P_grid)))
+          (side (A K)
+            (&axis *A)
+            (&tile_size (:D *K)))
+          (gap (A G)
+            (&axis *A)
+            (&gap (:K *G))))
+        (RULE &decompose
+          (&decompose_division2.tile *P (:P_outer *P_tile) (:P_inner *P_intile))))))
+  (ALT $Lines
+    (RULE &line_hole
+      (input *P *Col)
+      (&bg (:C Col))
+      (&axis *A)
+      (split P A (:Along *L)))
+
+    (RULE &line_ink
+      (&ink *P)
+      (&axis *A)
+      (split P A (:Along *L)))
+
+    (RULE &sortable
+      (&line_ink *L)
+      (&line_hole L))
+
+    (INIT &line_order Order
+      (key ((&axis ^A)
+            (axis_of ^D A))
+        (before ((:a L) (:b L2))
+          (&sortable *L)
+          (&sortable (:L *L2))
+          (!= L L2)
+          (margin (:B L) D (:K *K1))
+          (margin (:B L2) D (:K *K2))
+          (< K1 K2)))
+      (member ((:t L))
+        (&sortable *L)))
+
+    (RULE &line_order_pos
+      (&line_order.rank (:key *A *D) (:t *M) (:R *R1))
+      (&line_order.dual_rank (:key A D) (:t M) (:R *R2))
+      (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+    (INIT &line_tally Cardinality
+      (key ((&line_ink ^L *P)
+            (&sortable L))
+        (member ((:m P))
+          (&line_ink L *P)
+          (&sortable L))))
+
+    (INIT &line_rank Order
+      (member ((:t N))
+        (&line_tally.size *N))
+      (score ((:t N) (:S N))
+        (&line_tally.size *N)))
+
+    (RULE &output
+      (OR ((input *P)
+           (&axis *A)
+           (split P A (:Along *L_out) *Across)
+           (&line_order_pos (:M L_out) *P_pos)
+           (&least_dir *D)
+           (margin (:B P_pos) D (:K *R))
+           (&line_tally.size (:key (:L *L_in)) *N)
+           (&line_rank.rank (:t N) R)
+           (compose (:A L_in) (:B Across) (:C *P_grid_in))
+           (input (:P P_grid_in) *Col))
+          ((input P Col)
+           (&axis (:A *A2))
+           (split P (:A A2) (:Along *L))
+           (NOT (&sortable L))))))
+  (ALT $Objects
+    (INIT &obj Connectivity
+      (node (P)
+        (&ink *P)))
+
+    (INIT &obj_order Order
+      (key ((&axis (:A ^A2))
+            (axis_of ^D (:A A2)))
+        (before ((:a Id) (:b Id2))
+          (&obj.component *P *Id)
+          (&axis *A)
+          (split P A (:Along *L))
+          (&obj.component (:P *P2) (:Id *Id2))
+          (&axis (:A *A22))
+          (split (:P P2) (:A A22) (:Along *L2))
+          (!= Id Id2)
+          (margin (:B L) D (:K *K1))
+          (margin (:B L2) D (:K *K2))
+          (< K1 K2)))
+      (member ((:t Id))
+        (&obj.component *P *Id)
+        (&axis *A)
+        (split P A (:Along *L))))
+
+    (RULE &obj_order_pos
+      (&obj_order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+      (&obj_order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+      (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+    (INIT &obj_size Cardinality
+      (key ((&obj.component *P ^Id))
+        (member ((:m P))
+          (&obj.component *P Id))))
+
+    (INIT &obj_rank Order
+      (member ((:t N))
+        (&obj_size.size *N))
+      (score ((:t N) (:S N))
+        (&obj_size.size *N)))
+
+    (INIT &obj_box BoundingBox
+      (key ((&obj.component *P ^Id))
+        (cell (P)
+          (&obj.component *P Id))))
+
+    (RULE &moved
+      (input (:P *P2) *Col)
+      (&obj.component (:P P2) (:Id *Id_src))
+      (&obj_size.size (:key (:Id Id_src)) *N)
+      (&obj_rank.rank (:t N) *R)
+      (&obj_order_pos (:M *Id_dst) *P_pos)
+      (&least_dir *D)
+      (margin (:B P_pos) D (:K R))
+      (&obj_box.box (:key (:Id Id_src)) (:B *B_src))
+      (&obj_box.box (:key (:Id Id_dst)) (:B *B_dst))
+      (relative (:Base B_src) (:X B_dst) (:X_rel *V))
+      (compose (:A P2) (:B V) (:C *P)))
+
+    (RULE &output
+      (OR ((&moved *P *Col))
+          ((input P)
+           (NOT (&moved P))
+           (&bg (:C Col)))))))
+
+(INIT &tile_ink Cardinality
+  (key ((&decompose ^P_tile))
+    (member ((:m P))
+      (&decompose *P P_tile)
+      (&ink P))
+    (domain ()
+      (&decompose P_tile))))
+
+(INIT &tile_rank Order
+  (member ((:t N))
+    (&tile_ink.size *N))
+  (score ((:t N) (:S N))
+    (&tile_ink.size *N)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile_in))
+    (&tile_ink.size (:key (:P_tile *P_tile_in)) *N)
+    (&tile_rank.rank (:t N)))
+  (inner ((:P P_intile))
+    (&decompose *P_intile)
+    (&tile_rank.rank))
+  (gap (A G)
+    (&decompose)
+    (&axis *A)
+    (&gap (:K *G))))
+
+(RULE &output
+  (OR ((&decompose *P (:P_tile *P_tile_out) *P_intile)
+       (&least_dir *D)
+       (margin (:B P_tile_out) D (:K *R))
+       (&tile_ink.size (:key (:P_tile *P_tile_in)) *N)
+       (&tile_rank.rank (:t N) R)
+       (&output_tiling.cell (:P_outer P_tile_in) (:P_inner P_intile) (:P *P_grid_in))
+       (input (:P P_grid_in) *Col))
+      ((input P Col)
+       (NOT (&decompose P)))))
+
+(OUT (&output ^P ^Col))

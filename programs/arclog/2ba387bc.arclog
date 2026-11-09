@@ -1,0 +1,137 @@
+;; inputs fd783d63bfe41e85abcd5a0ed69ec12166df05fe2e05a5b312615f65ed6525a8 programs/solvers/2ba387bc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2ba387bc
+
+;; The side of one square, and so of one output tile.
+(DET &tile_dim TileCount)
+
+(INIT &cells Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&tile_dim *N)))
+
+;; The column hollow squares stack in; solid squares take the other one.
+(DET &hole_side DirDomain)
+
+(RULE &class_axis
+  (&hole_side *D)
+  (axis_of D *A))
+
+;; One column per class, the classes being the two edges of the class axis.
+(INIT &class_count Cardinality
+  (key ((axis_of *D ^A))
+    (member ((:m D))
+      (axis_of *D A))))
+
+(RULE &order_axis
+  (&class_axis (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component ^Id *P))
+    (cell (P)
+      (&comps.component Id *P))))
+
+(RULE &hollow
+  (input *P)
+  (&bbox.box (:key *Id) *B)
+  (inside (:A P) B)
+  (NOT (&comps.component Id P)))
+
+(RULE &stack
+  (&comps.component *Id)
+  (&hole_side (:D *D0))
+  (OR ((NOT (&hollow Id))
+       (opposite (:D D0) (:Opp *D)))
+      ((&hollow Id)
+       (= D D0))))
+
+(INIT &height Cardinality
+  (key ((&stack *Id ^D))
+    (member ((:m Id))
+      (&stack *Id D))))
+
+(INIT &tallest Order
+  (member ((:t N))
+    (&height.size *N))
+  (score ((:t N) (:S N))
+    (&height.size *N)))
+
+(INIT &tiles Frame
+  (extent (A N)
+    (OR ((&order_axis *A)
+         (&tallest.maximal (:t *N)))
+        ((&class_axis A)
+         (&class_count.size (:key A) N)))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tiles.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&cells.cell (:P *P_intile))))
+
+;; The corner reading order runs from.
+(DET &corner DiagDirDomain)
+
+(RULE &order_cell
+  (&stack *Id (:D *Key))
+  (&bbox.box (:key Id) (:B *P)))
+
+(RULE &order_axis_lexorder
+  (&order_cell)
+  (&order_axis *A))
+
+(RULE &order_corner
+  (&order_cell)
+  (&corner *D))
+
+;; Each square compares as its box.
+(INIT &order Order
+  (key ((&order_cell (:Key ^Ky) *P))
+    (member ((:t P))
+      (&order_cell (:Key Ky) *P))
+    (score ((:t P) (:S K1))
+      (&order_cell (:Key Ky) *P)
+      (&order_corner (:D *Diag))
+      (&order_axis_lexorder *A)
+      (diag_dist P Diag A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&order_cell (:Key Ky) *P)
+      (&order_corner (:D *Diag))
+      (&order_axis_lexorder *A)
+      (diag_dist P Diag A *K1 *K2))))
+
+(RULE &square_tile
+  (&stack *Id *D)
+  (&bbox.box (:key Id) *B)
+  (&order.rank (:key (:Ky D)) (:t B) *R)
+  (&tiles.cell (:P *P_tile))
+  (margin (:B P_tile) D (:K 0))
+  (&corner (:D *Cn))
+  (&order_axis *A)
+  (corner_dir (:C Cn) A (:D *D_ord))
+  (margin (:B P_tile) (:D D_ord) (:K R)))
+
+(RULE &tile_cell
+  (&square_tile *Id *P_tile)
+  (&comps.component Id *P (:key *Col))
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &output
+  (&output_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) *P)
+  (OR ((&tile_cell P_tile P_intile *Col))
+      ((NOT (&tile_cell P_tile P_intile))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

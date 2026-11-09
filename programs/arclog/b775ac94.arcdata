@@ -1,0 +1,119 @@
+;; inputs 2318f55437f26b1637adf05d1e6a79b25083f303b976b37e65051da39b631475 programs/solvers/b775ac94.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b775ac94
+
+(param &background Color (0))
+
+(alts $m
+  (alt $BlockMarkers
+    (witness stray-cell borderline $BlockMarkers
+      (relaxed key-block)
+      (separates "A cell of a third color touches the shape outside the key block. $ColorMarkers takes it for a marker that no key block holds and is undefined; $BlockMarkers takes the markers from the block, keeps the stray cell and draws the copies.")
+      (input (grid
+        (2 2 0 0 0 0 0)
+        (6 2 0 0 0 0 0)
+        (0 0 2 4 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $ColorMarkers undefined)
+      (output $BlockMarkers (grid
+        (2 2 0 0 4 4 0)
+        (6 2 0 0 4 0 0)
+        (0 0 2 4 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 3 0 0)
+        (0 0 0 0 3 3 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $o
+  (alt $CopyOver
+    (witness copy-over-object borderline any
+      (relaxed room)
+      (separates "A mirror copy lands on a cell of another object. The concept keeps the object's cell; $CopyOver paints the copy's color over it.")
+      (input (grid
+        (2 2 0 0 0 8 8 0 0 0)
+        (0 2 0 0 0 0 8 2 0 0)
+        (0 0 2 4 0 0 0 7 0 0)
+        (0 0 0 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $KeepObject (grid
+        (2 2 0 0 4 8 8 2 2 0)
+        (0 2 0 0 4 0 8 2 0 0)
+        (0 0 2 4 0 0 0 7 0 0)
+        (0 0 0 3 0 0 0 7 7 0)
+        (0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $CopyOver (grid
+        (2 2 0 0 4 4 8 2 2 0)
+        (0 2 0 0 4 0 8 2 0 0)
+        (0 0 2 4 0 0 0 7 0 0)
+        (0 0 0 3 0 0 0 7 7 0)
+        (0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed shapes)
+      (separates "The objects lie on a field of 5. With the stored background 0, the whole grid is one object and no key block is found, so every other case is undefined; the derived background 5 draws the copies on the field.")
+      (input (grid
+        (2 2 5 5 5 5 5)
+        (5 2 5 5 5 5 5)
+        (5 5 2 4 5 5 5)
+        (5 5 5 3 5 5 5)
+        (5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5)))
+      (output ($ColorMarkers &background=$Stored) undefined)
+      (output $BlockMarkers (grid
+        (2 2 5 5 5 5 5)
+        (5 2 5 5 5 5 5)
+        (5 5 2 4 5 5 5)
+        (5 5 5 3 5 5 5)
+        (5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5)))
+      (output &background=$Derived (grid
+        (2 2 5 5 4 4 5)
+        (5 2 5 5 4 5 5)
+        (5 5 2 4 5 5 5)
+        (5 5 5 3 5 5 5)
+        (5 5 5 5 3 5 5)
+        (5 5 5 5 3 3 5)
+        (5 5 5 5 5 5 5))))))
+
+(alts &quadrant_op
+  (alt &quadrant_op=$Stored
+    (witness quadrant_op=stored variant &quadrant_op=$Stored
+      (separates "At a table whose side entries are quarter turns, the stored table turns the copy beside the key cell; the derived rule reflects it.")
+      (assign &quadrant_op (D4_CW DIAG_BL DIAG_TL) (D4_CC DIAG_BL DIAG_BR) (D4_HT DIAG_BL DIAG_TR) (D4_HT DIAG_BR DIAG_TL) (D4_CW DIAG_BR DIAG_BL) (D4_CW DIAG_TL DIAG_TR) (D4_CC DIAG_TL DIAG_BL) (D4_HT DIAG_TL DIAG_BR))
+      (input (grid
+        (2 2 0 0 0 0 0)
+        (0 2 0 0 0 0 0)
+        (0 0 2 4 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output &quadrant_op=$Derived (grid
+        (2 2 0 0 4 4 0)
+        (0 2 0 0 4 0 0)
+        (0 0 2 4 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 3 0 0)
+        (0 0 0 0 3 3 0)
+        (0 0 0 0 0 0 0)))
+      (output &quadrant_op=$Stored (grid
+        (2 2 0 0 0 4 0)
+        (0 2 0 0 4 4 0)
+        (0 0 2 4 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 3 0 0)
+        (0 0 0 0 3 3 0)
+        (0 0 0 0 0 0 0))))))

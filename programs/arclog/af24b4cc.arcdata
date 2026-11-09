@@ -1,0 +1,658 @@
+;; inputs 12e4b158208eb74939cddd358a0a98ee5d477ecd1eec00ad08dbcc92cf93c027 programs/solvers/af24b4cc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; af24b4cc
+
+(param &bg Color (0))
+(param &tile_edge number (1))
+(param &tile_gap number (1))
+(param &tile_size (Axis number) (AXIS_V 3) (AXIS_H 2))
+(param &tile_count (Axis number) (AXIS_V 2) (AXIS_H 3))
+(param &margin number (1))
+
+(alts $parse
+  (alt $Components
+    (witness split-block variant $NonBgMode
+      (relaxed no-bg-in-block)
+      (separates "block (0,0) holds two cells of 3 that touch at a corner; pieces under either adjacency: the 3s' distances to the edges rank them apart from the blocks, so undefined; dividers: block (0,0) gives 0 counting every cell and 3 counting non-bg cells")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 6 6 0 9 7 0)
+        (0 0 3 0 6 3 0 9 7 0)
+        (0 0 0 0 3 6 0 7 7 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 2 2 0 6 1 0)
+        (0 2 3 0 5 5 0 1 1 0)
+        (0 2 3 0 5 5 0 1 6 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $AllCells (grid
+        (0 0 0 0 0)
+        (0 0 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output $NonBgMode (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output ($Components &canvas.extent=$Derived) undefined)
+      (output ($Cardinal &canvas.extent=$Stored) (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0))))
+    (witness offset-pieces borderline $Components
+      (relaxed block-grid)
+      (separates "input: two pieces of 3 on top, and a piece of 5 below that overlaps both of their columns, so no full column of bg falls between them; pieces: ranked toward each edge, a 2 by 3 picture with the 5 in the middle column; dividers: one tile column, so the picture is 2 by 1, the bottom tile taking 0 counting every cell and 5 counting non-bg cells")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 3 3 0 3 3 0)
+        (0 3 3 0 3 3 0)
+        (0 3 3 0 3 3 0)
+        (0 0 0 0 0 0 0)
+        (0 0 5 5 0 0 0)
+        (0 0 5 5 0 0 0)
+        (0 0 5 5 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($Dividers $AllCells &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) (grid
+        (0 0 0)
+        (0 3 0)
+        (0 0 0)
+        (0 0 0)))
+      (output ($AllCells &canvas.extent=$Stored) (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored &inked_line=$Stored $StoredTileSize ($StoredTileCount $NonBgMode) undefined)
+      (output ($Dividers $NonBgMode &tiling_divider=$Derived) (grid
+        (0 0 0)
+        (0 3 0)
+        (0 5 0)
+        (0 0 0)))
+      (output ($StoredTileCount $AllCells) $Components (grid
+        (0 0 0 0 0)
+        (0 3 0 3 0)
+        (0 0 5 0 0)
+        (0 0 0 0 0))))))
+
+(alts $source
+  (alt $StoredTileSize
+    (witness wide-blocks variant concept
+      (relaxed block-size)
+      (separates "input: blocks of 3 by 5 cells; stored tile size: tiles 2 wide at a 3-cell stride, four columns of tiles that cut the blocks; dividers: two columns of blocks")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 8 3 0 6 6 2 6 6 0)
+        (0 3 8 3 3 3 0 6 6 6 6 6 0)
+        (0 3 3 3 3 8 0 2 6 6 2 6 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 7 7 7 0 4 4 4 4 4 0)
+        (0 7 7 7 1 7 0 4 9 9 4 4 0)
+        (0 7 7 7 7 7 0 4 4 4 9 4 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) ($Components &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 3 6 0)
+        (0 7 4 0)
+        (0 0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored $StoredTileSize (grid
+        (0 0 0 0 0 0)
+        (0 3 3 6 6 0)
+        (0 7 7 4 4 0)
+        (0 0 0 0 0 0)))
+      (output &inked_line=$Stored $StoredTileCount undefined)))
+  (alt $StoredTileCount
+    (witness three-block-rows variant concept
+      (relaxed block-layout)
+      (separates "input: three rows of blocks; stored tile count: two rows of tiles 5 high that cut across a divider; dividers: three rows of blocks")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 6 6 0 9 7 0)
+        (0 8 3 0 6 3 0 9 7 0)
+        (0 3 8 0 3 6 0 7 7 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 6 1 0 4 4 0)
+        (0 5 5 0 1 1 0 4 4 0)
+        (0 5 5 0 1 6 0 8 4 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 6 0 4 4 0 3 3 0)
+        (0 6 3 0 4 4 0 8 3 0)
+        (0 3 6 0 8 4 0 3 8 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers &margin=$Stored &inked_line=$Derived &canvas.extent=$Derived) $StoredTileSize ($Components &canvas.extent=$Derived) (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 5 1 4 0)
+        (0 6 4 3 0)
+        (0 0 0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &inked_line=$Stored &margin=$Derived &tile_gap=SepThickness &tile_edge=SepThickness undefined)
+      (output ($StoredTileCount &tile_edge=$Stored &tile_gap=$Stored) &tile_gap=TileDim &tile_edge=TileDim (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 6 4 3 0)
+        (0 0 0 0 0))))))
+
+(alts $domain
+  (alt $NonBgMode
+    (witness sparse-block variant $NonBgMode
+      (relaxed no-bg-in-block)
+      (separates "block (0,0) holds one cell of 3 and five cells of 0; counting every cell: the block gives 0; counting non-bg cells: 3; pieces: the 1-cell piece's distances to the edges rank it apart from the blocks, so undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 6 6 0 9 7 0)
+        (0 0 0 0 6 3 0 9 7 0)
+        (0 0 0 0 3 6 0 7 7 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 2 2 0 6 1 0)
+        (0 2 3 0 5 5 0 1 1 0)
+        (0 2 3 0 5 5 0 1 6 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $AllCells &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output $NonBgMode (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output ($Components &canvas.extent=$Derived) undefined))))
+
+(alts $adjacency
+  (alt $DiagonalJoin
+    (witness corner-touch variant concept
+      (relaxed no-bg-in-block)
+      (separates "block (0,0) holds a cell of 3 that touches the block's other cells of 3 only at a corner; 8-adjacent pieces: one piece the size of the block, which takes 3; 4-adjacent pieces: a 1-cell piece whose distances to the edges rank it apart from the blocks, so undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 6 6 0 9 7 0)
+        (0 0 3 0 6 3 0 9 7 0)
+        (0 3 3 0 3 6 0 7 7 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 2 2 0 6 1 0)
+        (0 2 3 0 5 5 0 1 1 0)
+        (0 2 3 0 5 5 0 1 6 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Tiling $DiagonalJoin (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output ($Cardinal &canvas.extent=$Derived) undefined)
+      (output ($Cardinal &canvas.extent=$Stored) (grid
+        (0 0 0 0 0)
+        (0 0 6 7 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0))))
+    (witness diagonal-blocks borderline $Cardinal
+      (relaxed block-grid)
+      (separates "input: a block of 3 and a block mostly of 5 that touch only at a corner; 4-adjacent pieces: two pieces on a 2 by 2 picture's diagonal; 8-adjacent pieces: one piece, a 1 by 1 picture of 3")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 3 3 0 0 0)
+        (0 3 3 0 0 0)
+        (0 3 3 0 0 0)
+        (0 0 0 5 5 0)
+        (0 0 0 5 3 0)
+        (0 0 0 3 5 0)
+        (0 0 0 0 0 0)))
+      (output ($Dividers $AllCells &margin=$Stored &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) (grid
+        (0 0 0)
+        (0 0 0)
+        (0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored &inked_line=$Stored &margin=$Derived $StoredTileSize $StoredTileCount undefined)
+      (output ($Dividers $NonBgMode &tiling_divider=$Derived) $DiagonalJoin (grid
+        (0 0 0)
+        (0 3 0)
+        (0 0 0)))
+      (output ($Cardinal &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 3 0 0)
+        (0 0 5 0)
+        (0 0 0 0))))))
+
+(alts $margin
+  (alt $InputMargin
+    (witness wide-border variant concept
+      (relaxed block-grid)
+      (separates "input: a 2-wide border of 0; stored margin: a 1-wide output border; input margin: a 2-wide output border")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 6 6 0 9 7 0 0)
+        (0 0 8 3 0 6 3 0 9 7 0 0)
+        (0 0 3 8 0 3 6 0 7 7 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 2 2 0 6 1 0 0)
+        (0 0 2 3 0 5 5 0 1 1 0 0)
+        (0 0 2 3 0 5 5 0 1 6 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &inked_line=$Derived &tiling_divider=$Derived) &region.box=$Stored &tile_edge=TileDim $Components (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output ($AllCells &tiling_divider=$Stored) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output &inked_line=$Stored ($NonBgMode &tiling_divider=$Stored) $StoredTileSize ($StoredTileCount &tile_edge=$Stored) &tile_edge=SepThickness undefined)
+      (output ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 3 6 7 0 0)
+        (0 0 3 5 1 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant concept
+      (relaxed block-size)
+      (separates "input: blocks of 5 by 5 cells, three of them solid 5, so 5 outnumbers 0; derived bg: 5, so no line divides the input and the output is one cell of 5 in a border of 5; stored bg: 0, the 2 by 2 block picture in a border of 0")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0 5 5 5 5 5 0)
+        (0 5 5 5 5 5 0 5 5 5 5 5 0)
+        (0 5 5 5 5 5 0 5 5 5 5 5 0)
+        (0 5 5 5 5 5 0 5 5 5 5 5 0)
+        (0 5 5 5 5 5 0 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 0 5 5 5 5 5 0)
+        (0 3 3 3 3 3 0 5 5 5 5 5 0)
+        (0 3 3 3 3 3 0 5 5 5 5 5 0)
+        (0 3 3 3 3 3 0 5 5 5 5 5 0)
+        (0 3 3 3 3 3 0 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers &bg=$Stored &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) ($Components &bg=$Stored &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 5 5 0)
+        (0 3 5 0)
+        (0 0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored &inked_line=$Stored $StoredTileSize $StoredTileCount undefined)
+      (output ($AllCells &bg=$Derived) (grid
+        (5 5 5)
+        (5 5 5)
+        (5 5 5)))
+      (output ($NonBgMode &bg=$Derived) ($Cardinal &bg=$Derived) (grid
+        (5 5 5)
+        (5 0 5)
+        (5 5 5))))))
+
+(alts &tile_edge
+  (alt &tile_edge=SepThickness
+    (witness tile_edge=SepThickness variant concept
+      (relaxed block-grid)
+      (relaxed block-size)
+      (relaxed block-layout)
+      (separates "input: three rows and two columns of 3 by 3 blocks, with lines 2 wide along every edge and between the blocks; derived edge width: 2, so the stored tile count cuts tiles 6 high and 2 wide that straddle the dividers, and the middle tile column falls on a divider; stored edge width: 1, which leaves no whole tiles, so undefined; dividers: the 3 by 2 block picture")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 8 3 0 0 6 2 6 0 0)
+        (0 0 3 3 3 0 0 6 6 6 0 0)
+        (0 0 3 3 3 0 0 6 6 6 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 5 2 0 0 5 1 5 0 0)
+        (0 0 2 2 2 0 0 5 5 5 0 0)
+        (0 0 2 2 2 0 0 5 5 5 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 4 1 0 0 9 7 9 0 0)
+        (0 0 1 1 1 0 0 9 9 9 0 0)
+        (0 0 1 1 1 0 0 9 9 9 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &margin=$Stored &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) &region.box=$Stored ($Components &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 3 6 0)
+        (0 2 5 0)
+        (0 1 9 0)
+        (0 0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output ($AllCells &tiling_divider=$Stored) (grid
+        (0 0 0 0 0 0)
+        (0 0 3 6 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 1 9 0 0)
+        (0 0 0 0 0 0)))
+      (output &inked_line=$Stored &margin=$Derived ($NonBgMode &tiling_divider=$Stored) $StoredTileSize ($StoredTileCount &tile_edge=$Stored) undefined)
+      (output ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 3 6 0 0)
+        (0 0 2 5 0 0)
+        (0 0 1 9 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output &tile_edge=SepThickness &tile_edge=TileDim (grid
+        (0 0 0 0 0)
+        (0 3 0 6 0)
+        (0 1 0 9 0)
+        (0 0 0 0 0)))))
+  (alt &tile_edge=TileDim
+    (witness tile_edge=TileDim variant concept
+      (relaxed block-grid)
+      (separates "input: a 2-wide border of 0, with 1-wide lines between the blocks; tile-size edge widths: the stored tile count, inside the edge widths that leave whole tiles, cuts the blocks, the 2 by 3 block picture; stored edge width: 1, which leaves no whole tiles, so undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 6 6 0 9 7 0 0)
+        (0 0 8 3 0 6 3 0 9 7 0 0)
+        (0 0 3 8 0 3 6 0 7 7 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 2 2 0 6 1 0 0)
+        (0 0 2 3 0 5 5 0 1 1 0 0)
+        (0 0 2 3 0 5 5 0 1 6 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &inked_line=$Derived &tiling_divider=$Derived) &region.box=$Stored &tile_edge=TileDim $Components (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output ($AllCells &tiling_divider=$Stored) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output &inked_line=$Stored ($NonBgMode &tiling_divider=$Stored) $StoredTileSize ($StoredTileCount &tile_edge=$Stored) &tile_edge=SepThickness undefined)
+      (output ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 3 6 7 0 0)
+        (0 0 3 5 1 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &tile_gap
+  (alt &tile_gap=SepThickness
+    (witness tile_gap=SepThickness variant concept
+      (relaxed block-grid)
+      (relaxed block-size)
+      (relaxed block-layout)
+      (separates "input: two rows and two columns of 3 by 3 blocks, with lines 2 wide along every edge and between the blocks; derived gap width: 2, so the stored tile count cuts tiles that hold more 0 than block cells, and every output cell is 0; stored gap width: 1, which leaves no whole tiles, so undefined; dividers: the 2 by 2 block picture")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 8 3 0 0 6 2 6 0 0)
+        (0 0 3 3 3 0 0 6 6 6 0 0)
+        (0 0 3 3 3 0 0 6 6 6 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 5 2 0 0 5 1 5 0 0)
+        (0 0 2 2 2 0 0 5 5 5 0 0)
+        (0 0 2 2 2 0 0 5 5 5 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &margin=$Stored &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) &region.box=$Stored ($Components &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 3 6 0)
+        (0 2 5 0)
+        (0 0 0 0)))
+      (output &canvas.extent=$Stored &tile_gap=SepThickness &tile_gap=TileDim (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored &inked_line=$Stored $StoredTileSize ($StoredTileCount &tile_gap=$Stored) undefined)
+      (output &margin=$Derived ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 3 6 0 0)
+        (0 0 2 5 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))))
+  (alt &tile_gap=TileDim
+    (witness tile_gap=TileDim variant concept
+      (relaxed block-grid)
+      (separates "input: the 2 by 3 layout of 3 by 2 blocks, with lines 4 wide along every edge and between the blocks; tile-size gap widths: the stored tile count cuts tiles that hold more 0 than block cells, and every output cell is 0; stored gap width: 1, which leaves no whole tiles, so undefined; dividers: the 2 by 3 block picture")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 8 0 0 0 0 6 2 0 0 0 0 9 7 0 0 0 0)
+        (0 0 0 0 3 3 0 0 0 0 6 6 0 0 0 0 9 9 0 0 0 0)
+        (0 0 0 0 3 8 0 0 0 0 6 2 0 0 0 0 9 7 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 5 0 0 0 0 5 1 0 0 0 0 1 4 0 0 0 0)
+        (0 0 0 0 2 2 0 0 0 0 5 5 0 0 0 0 1 1 0 0 0 0)
+        (0 0 0 0 2 5 0 0 0 0 5 1 0 0 0 0 1 4 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &margin=$Stored &inked_line=$Derived &tiling_divider=$Derived) &region.box=$Stored $Components (grid
+        (0 0 0 0 0)
+        (0 3 6 9 0)
+        (0 2 5 1 0)
+        (0 0 0 0 0)))
+      (output ($AllCells &tiling_divider=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 6 0 9 0 0)
+        (0 0 2 0 5 0 1 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output &inked_line=$Stored ($NonBgMode &tiling_divider=$Stored) $StoredTileSize ($StoredTileCount &tile_gap=$Stored) &tile_gap=SepThickness undefined)
+      (output &margin=$Derived (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 3 6 9 0 0)
+        (0 0 2 5 1 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 6 9 0 0 0 0)
+        (0 0 0 0 2 5 1 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output &tile_gap=TileDim (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0))))))
+
+(alts &margin
+  (alt &margin=$Derived
+    (witness margin=SepThickness variant concept
+      (relaxed block-grid)
+      (separates "input: lines 2 wide along every edge and between the blocks; derived margin: 2, a 2-wide output border; stored margin: a 1-wide output border")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 0 6 6 0 0 9 7 7 0 0)
+        (0 0 8 3 0 0 6 3 0 0 9 7 7 0 0)
+        (0 0 3 8 0 0 3 6 0 0 7 7 7 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 0 2 2 0 0 6 1 1 0 0)
+        (0 0 2 3 0 0 5 5 0 0 1 1 1 0 0)
+        (0 0 2 3 0 0 5 5 0 0 1 6 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &margin=$Stored &inked_line=$Derived &tiling_divider=$Derived) &region.box=$Stored $Components (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored &inked_line=$Stored $StoredTileSize $StoredTileCount undefined)
+      (output &margin=$Derived ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 3 6 7 0 0)
+        (0 0 3 5 1 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &inked_line
+  (alt &inked_line=$Stored
+    (witness inked_line=stored variant concept
+      (relaxed block-size)
+      (separates "input: the stored frame, with blocks 1, 2 and 3 columns wide; derived lines: the dividers bound the blocks; stored lines: the stored dividers cut across the blocks, so blocks (0,0), (0,1) and (1,0) take 0")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 0 6 6 0 9 7 7 0)
+        (0 3 0 6 3 0 9 7 7 0)
+        (0 8 0 3 6 0 7 7 7 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 0 5 5 0 6 1 1 0)
+        (0 2 0 5 2 0 1 1 1 0)
+        (0 2 0 2 5 0 1 6 1 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers &inked_line=$Derived &tiling_divider=$Derived) $NonBgMode $Components (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 2 5 1 0)
+        (0 0 0 0 0)))
+      (output ($AllCells &tiling_divider=$Stored) &inked_line=$Stored $StoredTileSize ($StoredTileCount $AllCells) (grid
+        (0 0 0 0 0)
+        (0 0 0 7 0)
+        (0 0 0 1 0)
+        (0 0 0 0 0))))))
+
+(alts &canvas.extent
+  (alt &canvas.extent=$Stored
+    (witness canvas.extent=stored variant concept
+      (relaxed block-size)
+      (relaxed block-layout)
+      (separates "`canvas.extent=stored` from the derived value: train 0 turned a quarter turn clockwise")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 3 8 3 0)
+        (0 3 3 3 0 8 3 3 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 5 5 2 0 3 6 6 0)
+        (0 5 5 2 0 6 3 6 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 1 1 6 0 7 9 9 0)
+        (0 6 1 1 0 7 7 7 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) ($Components &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 3 3 0)
+        (0 5 6 0)
+        (0 1 7 0)
+        (0 0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored &inked_line=$Stored $StoredTileSize $StoredTileCount undefined))))
+
+(alts &region.box
+  (alt &region.box=$Stored
+    (witness region.box=stored variant concept
+      (relaxed block-grid)
+      (separates "input: a 2-wide border of 0; derived box: margins of 2, a 2-wide output border; stored box: margins of 1, a 1-wide output border")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 6 6 0 9 7 0 0)
+        (0 0 8 3 0 6 3 0 9 7 0 0)
+        (0 0 3 8 0 3 6 0 7 7 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 2 2 0 6 1 0 0)
+        (0 0 2 3 0 5 5 0 1 1 0 0)
+        (0 0 2 3 0 5 5 0 1 6 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers $StoredMargin &inked_line=$Derived &tiling_divider=$Derived) &region.box=$Stored &tile_edge=TileDim $Components (grid
+        (0 0 0 0 0)
+        (0 3 6 7 0)
+        (0 3 5 1 0)
+        (0 0 0 0 0)))
+      (output ($AllCells &tiling_divider=$Stored) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output &inked_line=$Stored ($NonBgMode &tiling_divider=$Stored) $StoredTileSize ($StoredTileCount &tile_edge=$Stored) &tile_edge=SepThickness undefined)
+      (output ($InputMargin &region.box=$Derived) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 3 6 7 0 0)
+        (0 0 3 5 1 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &tiling_divider
+  (alt &tiling_divider=$Stored
+    (witness tiling.divider=stored variant concept
+      (relaxed block-size)
+      (separates "input: blocks of 3 by 5 cells; derived dividers: two columns of blocks; stored dividers, read by their distances to the edges: a line every 3 columns, so four columns of tiles that cut the blocks")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 8 3 0 6 6 2 6 6 0)
+        (0 3 8 3 3 3 0 6 6 6 6 6 0)
+        (0 3 3 3 3 8 0 2 6 6 2 6 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 7 7 7 0 4 4 4 4 4 0)
+        (0 7 7 7 1 7 0 4 9 9 4 4 0)
+        (0 7 7 7 7 7 0 4 4 4 9 4 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Dividers &inked_line=$Derived &tiling_divider=$Derived &canvas.extent=$Derived) ($Components &canvas.extent=$Derived) (grid
+        (0 0 0 0)
+        (0 3 6 0)
+        (0 7 4 0)
+        (0 0 0 0)))
+      (output &canvas.extent=$Stored (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output &tiling_divider=$Stored $StoredTileSize (grid
+        (0 0 0 0 0 0)
+        (0 3 3 6 6 0)
+        (0 7 7 4 4 0)
+        (0 0 0 0 0 0)))
+      (output &inked_line=$Stored $StoredTileCount undefined))))

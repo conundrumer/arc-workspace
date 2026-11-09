@@ -1,0 +1,117 @@
+;; inputs 18c006e3a42799bbb91d2f5223a9514d178ebe790bf839e7d330e9d68016d2e1 programs/solvers/1acc24af.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1acc24af
+
+(DET &wall UnchangedColor)
+
+(DET &piece RarestColor)
+
+(DET &mark AnyOutNewColor)
+
+;; The side the notches open toward — where the pieces lie.
+(DET &open_dir DirDomain)
+
+(RULE &wall2
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(INIT &pieces Connectivity
+  (node (P)
+    (input *P *Col)
+    (&piece (:C Col))))
+
+(RULE &turned
+  (&pieces.component *Id *P)
+  (c4_elem *D)
+  (apply D P (:P_out *Q)))
+
+;; $Slide — wall-free cells connected to the open edge.
+(INIT &flood Flood
+  (node (P)
+    (input *P)
+    (NOT (&wall2 P)))
+  (source (P)
+    (input *P)
+    (&open_dir *D)
+    (margin (:B P) D (:K 0))))
+
+(RULE &access
+  (&flood.reached *P))
+
+;; A notch is where the reachable space reaches into the wall's own box.
+(INIT &wall_box BoundingBox
+  (cell (P)
+    (&wall2 *P)))
+
+(ALTS $a "the space a piece can reach" $Slide
+  (ALT $Drop
+    ;; $Drop — cells the wall does not shadow, casting away from the open edge.
+    (INIT &shadow Ray
+      (source (P)
+        (&wall2 *P))
+      (node (P)
+        (input *P))
+      (dir ((:D D2))
+        (&open_dir *D)
+        (opposite D (:Opp *D2))))
+
+    (RULE &access
+      (input *P)
+      (NOT (&shadow.ray P)))))
+
+(ALTS $g "how a piece may be turned" $Rot
+  (ALT $Flip
+    (RULE &turned
+      (&pieces.component *Id *P)
+      (apply *D P (:P_out *Q)))))
+
+(INIT &notches Connectivity
+  (node (P)
+    (&access *P)
+    (&wall_box.box *B)
+    (inside (:A P) B)))
+
+;; A placement seats one cell of the turned piece on a notch cell, and its
+;; shift carries the rest of the piece. A piece may reach past the notch it
+;; fills, so the plug test reads every placement, not the occurrences.
+(INIT &seat Occurrences
+  (key ((OR ((&turned ^Id ^D *Q))
+            ((&notches.component *P)
+             (&turned Id D))))
+    (cell (P)
+      (&notches.component *P)
+      (&turned Id D))
+    (shape ((:P Q))
+      (&turned Id D *Q))))
+
+(RULE &placed
+  (&seat.candidate (:key *Id *D) (:P *T))
+  (&turned Id D *Q)
+  (compose (:A Q) (:B T) (:C *P)))
+
+(RULE &uncovered
+  (&seat.candidate (:key *Id *D) (:P *T))
+  (&notches.component (:Id *N) *P)
+  (NOT (&placed Id D T P)))
+
+(RULE &unreached
+  (&placed *Id *D *T *P)
+  (NOT (&access P)))
+
+(RULE &plugs
+  (&seat.candidate (:key *Id *D) (:P *T))
+  (&notches.component (:Id *N))
+  (NOT (&uncovered Id D T N))
+  (NOT (&unreached Id D T)))
+
+(RULE &marked
+  (&pieces.component *Id *P)
+  (&plugs Id))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&marked P))
+      ((&mark (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

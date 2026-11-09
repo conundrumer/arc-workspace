@@ -1,0 +1,150 @@
+;; inputs 4408a7b8c7444865c18b20cdbf4103be2905004ff1f71ffc8d0996ad31019599 programs/solvers/b7955b3c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7955b3c
+
+(INPUT layered-rectangles "a background fills the frame, and solid axis-aligned rectangles, each of its own color, lie stacked over it; each rectangle hides the part of every lower rectangle that it covers")
+
+(INPUT visible-extent "each rectangle shows cells on each of its four sides, so the bounding box of its visible cells, with the mark cells it lies under, is the rectangle")
+
+(INPUT marks "marks of color mark_color, each a plus — a center cell and its four cardinal neighbors — lie over the scene and hide the cells under them; no other cell has color mark_color")
+
+(INPUT order-shown "the visible cells give the order of any two rectangles that both cover a mark cell")
+
+(OUTPUT erase-marks "each shown color, the background's included, is a rectangle, the bounding box of its visible cells, and a rectangle is over another when one of its visible cells lies in the other's box, closed transitively; each cell of color mark_color takes the color of the topmost rectangle that covers it; every other cell keeps its color"
+
+  (DET &mark_color ChangedColor)
+
+  (RULE &mark_colored
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &mark_at
+    (&mark_colored *P))
+
+  (RULE &shown
+    (input *P *Col)
+    (NOT (&mark_at P)))
+
+  (INIT &common_count Cardinality
+    (key ((&shown *P ^Col))
+      (member ((:m P))
+        (&shown *P Col))))
+
+  (INIT &box BoundingBox
+    (key ((&shown *P ^Col))
+      (cell (P)
+        (&shown *P Col))))
+
+  (RULE &unit
+    (&shown *Col))
+
+  (RULE &over
+    (&unit (:Col *Hi))
+    (&unit (:Col *Lo))
+    (!= Hi Lo)
+    (&shown *P (:Col Hi))
+    (&box.box (:key (:Col Lo)) *B)
+    (inside (:A P) B))
+
+  (RULE &covers
+    (&unit *Col)
+    (&mark_at *P)
+    (&box.box (:key Col) *B)
+    (inside (:A P) B))
+
+  (DET &erased
+    (ex_input *E *P *Col)
+    (&mark_color (:C Col))
+    (ex_output E P (:Col *Col2))
+    (NOT (&mark_color (:C Col2))))
+
+  (INIT &marks Connectivity
+    (key ((&erased ^E *P))
+      (node (P)
+        (&erased E *P))))
+
+  (INIT &mark_size Cardinality
+    (key ((&marks.component (:key ^E) ^Id *P))
+      (member ((:m P))
+        (&marks.component (:key E) Id *P))))
+
+  ;; The smallest erased component is a single mark.
+  (INIT &smallest Order
+    (member ((:t (:E K_e) (:Id K_id) (:S N)))
+      (&mark_size.size (:key (:E *K_e) (:Id *K_id)) *N))
+    (score ((:t (:E K_e) (:Id K_id) (:S N)) (:S N))
+      (&mark_size.size (:key (:E *K_e) (:Id *K_id)) *N)))
+
+  (INIT &frame BoundingBox
+    (key ((&smallest.minimal (:t ^E ^Id)))
+      (cell (P)
+        (&marks.component (:key E) Id *P))))
+
+  (DET &mark_shape
+    (&frame.cell (:key (:E *K_e) (:Id *K_id)) (:P *P2))
+    (&frame.box (:key (:E K_e) (:Id K_id)) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &plus Occurrences
+    (cell (P)
+      (&mark_colored *P))
+    (shape (P)
+      (&mark_shape *P)))
+
+  (INIT &common Order
+    (member ((:t Col))
+      (&common_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&common_count.size (:key *Col) *N))))
+
+(ALTS $m "which cells are mark cells" $EveryMarkCell
+  (ALT $PlusOccurrences
+    (OUTPUT erase-marks "the mark cells are only the cells of whole placements of the plus in mark_color; a mark-colored cell outside every placement is a rectangle cell"
+      (RULE &mark_at
+        (&plus.occurrence (:P *Q))
+        (&mark_shape (:P *S))
+        (compose (:A Q) (:B S) (:C *P))))))
+
+(ALTS $o "how the visible cells order the rectangles" $Transitive
+  (ALT $DirectOrder
+    (OUTPUT erase-marks "a rectangle is over another only when one of its visible cells lies in the other's box, with no transitive closure; undefined where two rectangles that cover a mark cell are ordered only through a third")
+    (RULE &above
+      (&over *Hi *Lo))))
+
+(ALTS $b "what lies under the rectangles" $BottomLayer
+  (ALT $DominantBackground
+    (OUTPUT dominant-background "the commonest non-mark color is the background, lies under every rectangle and is not one of them, and fills a mark cell that no rectangle covers; undefined where two colors tie for commonest"
+      (RULE &unit
+        (&shown *Col)
+        (NOT (&common.maximal (:t Col)))))
+    (RULE &output
+      (OR ((&mark_at *P)
+           (NOT (&covers P))
+           (&common.maximal (:t *Col)))
+          ((&covers P Col)
+           (NOT (&buried P Col)))
+          ((input P Col)
+           (NOT (&mark_at P)))))))
+
+(INIT &stack Propagation
+  (key ((&unit ^Col))
+    (source ((:n Col))))
+  (edge ((:a Hi) (:b Lo))
+    (&over *Hi *Lo)))
+
+(RULE &above
+  (&stack.reached (:key (:Col *Hi)) (:n *Lo))
+  (!= Hi Lo))
+
+(RULE &buried
+  (&above (:Hi *Col2) (:Lo *Col))
+  (&covers *P (:Col Col2)))
+
+(RULE &output
+  (OR ((&covers *P *Col)
+       (NOT (&buried P Col)))
+      ((input P Col)
+       (NOT (&mark_at P)))))
+
+(OUT (&output ^P ^Col))

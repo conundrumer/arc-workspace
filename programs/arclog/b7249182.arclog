@@ -1,0 +1,157 @@
+;; inputs f119ab736578fda47af47e57f4ee0a89509050503708cee8504f366a6a5e4c34 programs/solvers/b7249182.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7249182
+
+(INPUT two-dots "two single cells on a field of `background`, and nothing else.")
+
+(INPUT shared-line "the two dots are on one row or on one column.")
+
+(INPUT even-span "the run of cells from one dot to the other, both dots included, has an even length, so the run splits into two equal halves.")
+
+(INPUT long-span "each half holds at least `box-depth` cells.")
+
+(OUTPUT halves "the run from one dot to the other splits into two equal halves, and each half takes the color of the dot at its end.")
+
+(OUTPUT stem "a half's cells, from the dot toward the middle, are painted in its color, except for the last `box-depth` cells.")
+
+(OUTPUT crossbar "the next cell of the half after the stem is the center of a crossbar across the line, which reaches `bar-reach` cells to each side, in the half's color, where those cells are in the frame."
+
+  ;; the cells of each half, at its middle end, that the box takes
+  (DET &box_depth SepThickness)
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &dot
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &cast Ray
+    (source (P)
+      (&dot *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &partner
+    (&cast.ray (:P *B) *D (:Origin *A))
+    (dir_elem D)
+    (&dot (:P B))
+    (!= B A))
+
+  (RULE &half
+    (&partner *A *D *B)
+    (opposite D (:Opp *D2))
+    (&cast.ray *P D *K (:Origin A))
+    (&cast.ray P (:D D2) (:K *K2) (:Origin B))
+    (< K K2))
+
+  (RULE &past
+    (&half *A *D *P)
+    (neighbor P D *Q)
+    (NOT (&half A D (:P Q))))
+
+  (RULE &center
+    (&past *A *D *Q)
+    (&box_depth (:G *N))
+    (&half A D (:P *C) *K)
+    (jump (:P C) D (:K N) Q))
+
+  (INIT &across_frame Frame
+    (extent ((:A A2) N)
+      (&center *A *D (:K *Kc))
+      (&half A D *P *K)
+      (>= K Kc)
+      (frame_extent P (:A *A2) *N)))
+
+  (INIT &across Ray
+    (source (P)
+      (&center *A *D (:K *Kc))
+      (&half A D *P *K)
+      (>= K Kc))
+    (node (P)
+      (&across_frame.cell *P))
+    (dir (D)
+      (dir_elem *D))))
+
+(OUTPUT arms "the two ends of the crossbar extend toward the middle along the line, up to the half's last cell, in the half's color, where those cells are in the frame.")
+
+(OUTPUT keep "every other cell keeps its input color.")
+
+(ALTS $span "whether the two halves must meet" $Meet
+  (ALT $OddSpanGap
+    (INPUT even-span "each half is the floor of half the run, counted from its dot, so on a run of odd length the middle cell and the box's middle line across it stay unpainted. Undefined where the concept case is, other than on the run's parity.")
+    (RULE &void
+      (OR ((&partner *A *D)
+           (NOT (&center A D)))
+          ((NOT (&partner)))
+          ((&partner (:A *A2) *B)
+           (&dot (:P *C))
+           (!= C A2)
+           (!= C B))))
+    (ALT $EachPair
+      (RULE &void
+        (OR ((&dot (:P *A))
+             (NOT (&partner A)))
+            ((&partner (:A *A2) *B)
+             (&partner (:A A2) (:B *B2))
+             (!= B B2))
+            ((&partner (:A *A3) *D)
+             (NOT (&center (:A A3) D))))))))
+
+(ALTS $dots "how many dots the input holds" $Two
+  (ALT $EachPair
+    (INPUT two-dots "the cells that are not background come in pairs, each pair on one row or column, and no dot shares a row or column with a dot outside its pair. Each pair gets the bracket. Undefined where a dot shares its row and column with no other dot or with more than one, and where two brackets paint one cell in different colors.")
+    (RULE &void
+      (OR ((&dot (:P *A))
+           (NOT (&partner A)))
+          ((&partner (:A *A2) *B)
+           (&partner (:A A2) (:B *B2))
+           (!= B B2))
+          ((&partner (:A *A3) *D)
+           (NOT (&center (:A A3) D)))
+          ((&apart))))))
+
+(RULE &across_ray
+  (&across.ray *P *D *K (:Origin *Src))
+  (input P))
+
+;; the cells the crossbar reaches to each side of the line
+(DET &bar_reach SepThickness)
+
+(RULE &paint
+  (&dot (:P *A) *Col)
+  (&center A *D *C (:K *Kc))
+  (perp_dir D *D2)
+  (&bar_reach (:G *N))
+  (OR ((&half A D *P *K)
+       (< K Kc))
+      ((&across_ray P (:D D2) K (:Src C))
+       (<= K N))
+      ((&half A D (:P *Q) K)
+       (> K Kc)
+       (&across_ray P (:D D2) (:K N) (:Src Q)))))
+
+(RULE &apart
+  (&past *A *D *Q)
+  (&partner A D *B)
+  (opposite D (:Opp *D2))
+  (NOT (&half (:A B) (:D D2) (:P Q))))
+
+(RULE &void
+  (OR ((&partner *A *D)
+       (NOT (&center A D)))
+      ((&apart))
+      ((NOT (&partner)))
+      ((&partner (:A *A2) *B)
+       (&dot (:P *C))
+       (!= C A2)
+       (!= C B))))
+
+(RULE &output
+  (NOT (&void))
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

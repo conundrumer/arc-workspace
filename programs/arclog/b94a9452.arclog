@@ -1,0 +1,135 @@
+;; inputs ca54f983ecfc8d38c6d66c4adb3b5d43bcf72a16d69edbd5bc798468aaa2d67c programs/solvers/b94a9452.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b94a9452
+
+(INPUT one-object "every input is a field of &background that holds one solid object of other colors."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT nested-squares "the object is a square of one color with a smaller square of a second color centered inside it.")
+
+(OUTPUT crop-to-object "the output is the object's bounding box."
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &object_box BoundingBox
+    (cell (P)
+      (&ink *P))))
+
+(OUTPUT swap-colors "each cell of the outer color takes the inner color, and each cell of the inner color takes the outer color."
+
+  (RULE &recolor_choice)
+
+  ;; The object's one color.
+  (INIT &palette Singleton
+    (member ((:v Col))
+      (&ink *Col)))
+
+  ;; The object's same-colored regions.
+  (INIT &regions Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  ;; The object's cells next to the outside.
+  (INIT &object Boundary
+    (cell (P)
+      (&ink *P)))
+
+  ;; Each region's nesting level: the fewest region boundaries between it and
+  ;; the outside.
+  (INIT &nesting Distance
+    (edge ((:a Id1) (:b Id2))
+      (&regions.component *P (:Id *Id1))
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&regions.component (:P Q) (:Id *Id2))
+      (!= Id1 Id2))
+    (source ((:n Id))
+      (&object.boundary *P)
+      (&regions.component P *Id)))
+
+  (RULE &level
+    (&regions.component *P *Id)
+    (&nesting.distance (:n Id) *K))
+
+  ;; The one color of each level.
+  (INIT &level_color Singleton
+    (key ((&level *P ^K)
+          (&ink P *Col))
+      (member ((:v Col))
+        (&level *P K)
+        (&ink P *Col))))
+
+  (INIT &levels Order
+    (member ((:t K))
+      (&level *K))
+    (score ((:t K) (:S K))
+      (&level *K)))
+
+  (INIT &cycle Order
+    (member ((:t K))
+      (&level *K))
+    (score ((:t K) (:S K))
+      (&level *K))))
+
+(ALTS $recolor "how the object's colors move" $Swap
+  (ALT $Swap
+    (ALTS $lone "what an object of one color gives" $Partnered
+      (ALT $LoneStays
+        (OUTPUT lone-color "an object of one color keeps its color.")
+        (RULE &recolored
+          (OR ((&ink *P *Col)
+               (&palette.value (:v Col)))
+              ((&ink P (:Col *C))
+               (&ink Col)
+               (!= Col C)))))))
+  (ALT $LayerReverse
+    (OUTPUT swap-colors "the object's nested color regions, outermost first, take their colors in reverse order. Undefined where the cells around a region hold more than one color.")
+    (RULE &recolored
+      (&level *P *K)
+      (&levels.dual_rank (:t K) *R)
+      (&levels.rank (:t *K2) R)
+      (&level_color.value (:key (:K K2)) (:v *Col))))
+  (ALT $LayerShiftOut
+    (OUTPUT swap-colors "each nested color region takes the color of the region inside it, and the innermost takes the outermost's color. Undefined where the cells around a region hold more than one color.")
+    (RULE &recolored
+      (&level *P *K)
+      (&cycle.cyclic_successor (:a K) (:b *K2))
+      (&level_color.value (:key (:K K2)) (:v *Col))))
+  (ALT $LayerShiftIn
+    (OUTPUT swap-colors "each nested color region takes the color of the region around it, and the outermost takes the innermost's color. Undefined where the cells around a region hold more than one color.")
+    (RULE &recolored
+      (&level *P *K)
+      (&cycle.cyclic_successor (:a *K2) (:b K))
+      (&level_color.value (:key (:K K2)) (:v *Col)))))
+
+(ALTS $box "what a background cell inside the object's box gives" $Solid
+  (ALT $KeepBackground
+    (OUTPUT keep-background "a background cell inside the object's box keeps the background color.")
+    (RULE &output
+      (OR ((&recolor_choice)
+           (input (:P *P2) *Col)
+           (&background (:C Col))
+           (&object_box.box *B)
+           (inside (:A P2) B)
+           (relative (:Base B) (:X P2) (:X_rel *P)))
+          ((&recolored (:P *P22) Col)
+           (&object_box.box (:B *B2))
+           (inside (:A P22) (:B B2))
+           (relative (:Base B2) (:X P22) (:X_rel P)))))))
+
+(RULE &recolored
+  (&ink *P (:Col *C))
+  (&ink *Col)
+  (!= Col C))
+
+(RULE &output
+  (&recolored (:P *P2) *Col)
+  (&object_box.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

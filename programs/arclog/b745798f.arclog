@@ -1,0 +1,155 @@
+;; inputs ebe08b9fdce9d867d26726b8aa84134896d7f8d0437e36eeaa7110ca7524778c programs/solvers/b745798f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b745798f
+
+(INPUT square-odd-grid "the grid is square, with an odd side, so one middle row and one middle column split it into four equal quadrants.")
+
+(INPUT background-field "every cell outside the pieces is &background (8)."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT four-l-pieces "the input holds four pieces, each a one-color connected set (4-adjacency within its color) of three cells that fill a 2×2 box less one cell; pieces may touch pieces of other colors."
+
+  (INIT &piece4 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &piece
+    (&piece4.component (:key *Col) *P *Id))
+
+  (INIT &piece8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece *P ^Id))
+      (cell (P)
+        (&piece *P Id)))))
+
+(OUTPUT piece-to-corner "each piece goes to the grid corner in the direction its bend cell, the cell of the 2×2 box opposite the missing cell, takes in its box, and its color is kept.")
+
+(OUTPUT arms-to-middle "at that corner, the piece's color fills the cells of both grid edges through that corner that lie nearer that corner than the edge's other end, (side - 1) / 2 cells on each edge of an odd side, so each arm stops one cell before the middle line.")
+
+(OUTPUT rest-background "every other output cell, the middle row and column included, is &background; the output has the input's size."
+
+  (RULE &elbow
+    (&piece *P *Col *Id)
+    (diag_opposite (:D *G) (:Opp *H))
+    (diag_dirs (:D H) *D1 *D2)
+    (neighbor P (:D D1) (:Q *Q1))
+    (&piece (:P Q1) Id)
+    (neighbor P (:D D2) (:Q *Q2))
+    (&piece (:P Q2) Id))
+
+  ;; Nearer the corner than the edge's other end.
+  (RULE &edge_arm
+    (input *P)
+    (diag_dirs (:D *G) (:D1 *D_edge) (:D2 *D_end))
+    (margin (:B P) (:D D_edge) (:K 0))
+    (dist_pair P (:D D_end) *K *K2)
+    (< K K2))
+
+  (RULE &counterpart
+    (diag_dirs (:D *G) *D1 *D2)
+    (input *P)
+    (margin (:B P) (:D D1) (:K 0))
+    (input (:P *Q))
+    (margin (:B Q) (:D D2) (:K 0))
+    (corner_dist P (:Diag G) *K)
+    (corner_dist (:P Q) (:Diag G) K)))
+
+(ALTS $adj "how the cells of one piece are gathered" $Adjacent4
+  (ALT $Pieces8Adjacent
+    (INPUT four-l-pieces "the pieces are one-color sets joined by 8-adjacency, so same-color pieces that touch at a corner are one set, which is no piece and is not placed."
+      (RULE &piece
+        (&piece8.component (:key *Col) *P *Id)))))
+
+(ALTS $shape "which sets are pieces" $Tromino
+  (ALT $PieceAnyL
+    (INPUT four-l-pieces "a piece is exactly two edges of its bounding box that meet at one corner, the bend, each edge of two or more cells."
+      (RULE &box_l_cell
+        (&piece_box.box (:key (:Id *K)) *B)
+        (input (:P *Q))
+        (corner_dir (:C *G) *D)
+        (inside (:A Q) B)
+        (same_dist D (:P1 Q) (:P2 B)))
+
+      (RULE &box_l_defect
+        (OR ((&box_l_cell *K *G *Q)
+             (NOT (&piece (:P Q) (:Id K))))
+            ((&piece (:P *R) (:Id K))
+             (diag_dir_elem (:D G))
+             (NOT (&box_l_cell K G (:Q R)))))))
+    (RULE &bend
+      (&elbow *Id *Col *G)
+      (NOT (&box_l_defect (:K Id) G)))))
+
+(ALTS $arm "how far each arm runs along its edge" $ToMiddle
+  (ALT $ArmKeepsGap
+    (OUTPUT arms-to-middle "an arm holds the edge cells with at least one cell between them and the cell at the same distance from the edge's other end, (side - 1) // 2 cells on each edge, so an even edge keeps two middle cells background."
+      ;; Nearer the corner than the next cell toward the other end is to that end.
+      (RULE &edge_arm
+        (input *P)
+        (diag_dirs (:D *G) (:D1 *D_edge) (:D2 *D_end))
+        (margin (:B P) (:D D_edge) (:K 0))
+        (margin (:B P) (:D D_end) *K)
+        (opposite (:D D_end) (:Opp *D_far))
+        (neighbor P (:D D_far) *Q)
+        (margin (:B Q) (:D D_far) (:K *K2))
+        (< K K2)))))
+
+(ALTS $side "which edge gives an arm its length" $PerEdge
+  (ALT $ArmShortSide
+    (OUTPUT arms-to-middle "both arms of a piece take the length the shorter edge gives: an edge cell is an arm cell when it and the cell at the same distance from the corner on the other edge both lie in the arms their own edges give.")
+    (RULE &arm_cell
+      (&edge_arm *P *G)
+      (&counterpart P G *Q)
+      (&edge_arm (:P Q) G)))
+  (ALT $ArmLongSide
+    (OUTPUT arms-to-middle "both arms of a piece take the length the longer edge gives: an edge cell is an arm cell when it or the cell at the same distance from the corner on the other edge lies in the arm its own edge gives; undefined where arms of two colors meet on a cell.")
+    (RULE &arm_cell
+      (&counterpart *P *G *Q)
+      (OR ((&edge_arm P G))
+          ((&edge_arm (:P Q) G))))))
+
+(RULE &arm_cell
+  (&edge_arm *P *G))
+
+(RULE &tromino_cell
+  (&elbow *Id *P *G)
+  (OR ((diag_opposite (:D G) (:Opp *H))
+       (corner_dir (:C H) *D)
+       (neighbor P D *Q))
+      ((= Q P))))
+
+(RULE &tromino_stray
+  (&elbow *Id *G)
+  (&piece (:P *R) Id)
+  (NOT (&tromino_cell Id G (:Q R))))
+
+(RULE &bend
+  (&elbow *Id *Col *G)
+  (NOT (&tromino_stray Id G)))
+
+(RULE &arm
+  (&bend *Col *G)
+  (&arm_cell *P G))
+
+(RULE &output
+  (OR ((&arm *P *Col))
+      ((input P)
+       (&background (:C Col))
+       (NOT (&arm P)))))
+
+(OUT (&output ^P ^Col))

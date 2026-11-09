@@ -1,0 +1,94 @@
+;; inputs 9bd287c57be75521305d38cc497655e5b1f0d7a8ec7058f4f3223605af3a6a3a programs/solvers/0607ce86.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0607ce86
+
+(DET &block_dim TileCount)
+
+(INIT &block_shape_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&block_dim *N)))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; A copy is what a solid &block_dim block covers; noise sits too thin to
+;; carry one.
+(INIT &occ Occurrences
+  (cell (P)
+    (&ink *P))
+  (shape (P)
+    (&block_shape_frame.cell *P)))
+
+(RULE &solid
+  (&occ.occurrence (:P *M))
+  (&block_shape_frame.cell (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&solid *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &copy_view
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &copy_color
+  (&copy_view *Id *P *P_intile)
+  (input P *Col))
+
+(INIT &template_count Cardinality
+  (key ((&copy_color *Id ^P_intile ^Col))
+    (member ((:m Id))
+      (&copy_color *Id P_intile Col))))
+
+(INIT &template Order
+  (key ((&template_count.size (:key ^P_intile *Col)))
+    (member ((:t Col))
+      (&template_count.size (:key P_intile *Col)))
+    (score ((:t Col) (:S N))
+      (&template_count.size (:key P_intile *Col) *N))))
+
+(ALTS $choice "The cases differ in how the undamaged copy is recovered" $Vote
+  (ALT $Copy
+    (INIT &intact_count Cardinality
+      (key ((&copy_color ^Id *P_intile *Col)
+            (&copy_color (:Id *Id2) P_intile Col)
+            (!= Id Id2))
+        (member ((:m Id2 P_intile))
+          (&copy_color Id *P_intile *Col)
+          (&copy_color (:Id *Id2) P_intile Col)
+          (!= Id Id2))))
+
+    (INIT &intact Order
+      (member ((:t Id))
+        (&intact_count.size (:key *Id)))
+      (score ((:t Id) (:S Count))
+        (&intact_count.size (:key *Id) (:N *Count))))
+
+    (RULE &output
+      (OR ((&copy_view *P *P_intile)
+           (&intact.maximal (:t *Id))
+           (&copy_color Id P_intile *Col))
+          ((input P)
+           (NOT (&solid P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((input *P)
+       (NOT (&solid P))
+       (&bg (:C *Col)))
+      ((&copy_view P *P_intile)
+       (&template.maximal (:key P_intile) (:t Col)))))
+
+(OUT (&output ^P ^Col))

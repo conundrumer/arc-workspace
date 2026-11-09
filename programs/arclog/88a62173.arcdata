@@ -1,0 +1,7 @@
+;; inputs d6e9c1b7a8886dae2d46765a3fc3559085539142dcd490a2b0390f0a9ef8f70e programs/solvers/88a62173.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 88a62173
+
+(param &gap number (1))
+(param &tile_count number (2))
+(param &tile_size number (2))

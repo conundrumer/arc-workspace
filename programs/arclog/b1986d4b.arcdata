@@ -1,0 +1,7 @@
+;; inputs e07cb7db14e56bd41f439d02107552a8dc3adcebede5e0421bc0cd9b93fb4e2c programs/solvers/b1986d4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b1986d4b
+
+(param &corner DiagDir (DIAG_TL))
+(param &axis Axis (AXIS_H))
+(param &gap number (1))

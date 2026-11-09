@@ -1,0 +1,107 @@
+;; inputs 55a3a7a5fd0eeadaa6df2e8014e02c5036b6aece51dbe9bd55793d3068b54471 programs/solvers/78e78cff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 78e78cff
+
+(INIT &palette_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &palette Order
+  (member ((:t Col))
+    (&palette_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&palette_count.size (:key *Col) *N)))
+
+;; The lone cell of its color.
+(INIT &lone Singleton
+  (key ((input *P ^Col))
+    (member ((:v P))
+      (input *P Col))))
+
+(RULE &frame
+  (input *P *Col)
+  (NOT (&palette.maximal (:t Col)))
+  (NOT (&lone.value (:key Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&frame *P)))
+
+(RULE &box_cell
+  (&bbox.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+(INIT &flood Flood
+  (node (P)
+    (&box_cell *P)
+    (NOT (&frame P)))
+  (source (P)
+    (&lone.value (:v *P))))
+
+(INIT &leak_frame Frame
+  (extent (A N)
+    (&flood.reached *P)
+    (frame_extent P *A *N)))
+
+(INIT &leak Ray
+  (source (P)
+    (&flood.reached *P))
+  (node (P)
+    (&leak_frame.cell *P)
+    (NOT (&frame P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &fill
+  (&leak.ray *P)
+  (input P))
+
+(ALTS $choice "how the fill escapes the box; the cases diverge only where a frame cell lies on the seed's row or column inside the box" $Leak
+  (ALT $Crosshair
+    (RULE &cross_blocked
+      (axis_elem (:A *Key))
+      (&frame *P))
+
+    ;; Keyed by the cast axis: a mark on the seed's line of one axis casts
+    ;; along the other.
+    (INIT &cross Ray
+      (key ((OR ((&box_cell *P)
+                 (NOT (&frame P))
+                 (&lone.value (:v *S))
+                 (same_line (:A *A_seed) P (:Q S))
+                 (perp (:A A_seed) (:A2 ^A)))
+                ((axis_of *D A))))
+        (source (P)
+          (&box_cell *P)
+          (NOT (&frame P))
+          (&lone.value (:v *S))
+          (same_line (:A *A_seed) P (:Q S))
+          (perp (:A A_seed) (:A2 A)))
+        (node (P)
+          (axis_of *D A)
+          (input *P)
+          (NOT (&cross_blocked (:Key A) P)))
+        (dir (D)
+          (axis_of *D A))))
+
+    (RULE &cross_cell
+      (axis_elem (:A *Key))
+      (input))
+
+    (RULE &cross_clear
+      (&cross.ray (:key (:A *Key)) *P *D *K (:Origin *Src))
+      (&cross_cell Key)
+      (input P))
+
+    (RULE &fill
+      (&cross_clear *P))))
+
+(RULE &output
+  (OR ((&fill *P)
+       (&lone.value (:key *Col)))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

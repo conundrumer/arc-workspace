@@ -1,0 +1,103 @@
+;; inputs 3c862a089420f16b67e59c0fffee606a47e3d971d9513fb0aaed6f592b99fcc3 programs/solvers/2a28add5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2a28add5
+
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(RULE &ink_at
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&axis *A)
+  (split P A (:Across *P_across)))
+
+(DET &marker VanishedColor)
+
+(RULE &marker_at
+  (input (:P *M) *Col)
+  (&marker (:C Col))
+  (&axis *A)
+  (split (:P M) A (:Across *P_across)))
+
+;; Each ink cell travels toward its line's marker and stops against the marker
+;; or against the ink already packed ahead of it. A cell meets no cell of
+;; another line, so the cells of every line that head one way fall together.
+(INIT &pack Distance
+  (key ((OR ((&ink_at (:P_across *Across) *P)
+             (&marker_at (:P_across Across) *M)
+             (nearer ^D (:P M) (:Q P))
+             (&axis *A)
+             (axis_of D A)
+             (margin (:B P) D *K))
+            ((&ink_at (:P_across Across) P)
+             (&marker_at (:P_across Across) M)
+             (nearer D (:P M) (:Q P))
+             (&axis A)
+             (axis_of D A)
+             (&marker_at (:M *M2))
+             (&axis (:A *A2))
+             (axis_of D (:A A2))
+             (gap D P (:Q M2) K))
+            ((&ink_at (:P_across Across) P)
+             (&marker_at (:P_across Across) M)
+             (nearer D (:P M) (:Q P))
+             (&axis A)
+             (axis_of D A)
+             (&ink_at (:P_across *Across2) (:P *P2))
+             (&marker_at (:P_across Across2) (:M *M22))
+             (nearer D (:P M22) (:Q P2))
+             (!= P P2)
+             (gap D P (:Q P2) K))))
+    (weight ((:a P2) (:b P) (:W K))
+      (&ink_at (:P_across *Across) *P)
+      (&marker_at (:P_across Across) *M)
+      (nearer D (:P M) (:Q P))
+      (&axis *A)
+      (axis_of D A)
+      (&ink_at (:P_across *Across2) (:P *P2))
+      (&marker_at (:P_across Across2) (:M *M2))
+      (nearer D (:P M2) (:Q P2))
+      (!= P P2)
+      (gap D P (:Q P2) *K))
+    (source_distance ((:n P) K)
+      (OR ((&ink_at (:P_across *Across) *P)
+           (&marker_at (:P_across Across) *M)
+           (nearer D (:P M) (:Q P))
+           (&axis *A)
+           (axis_of D A)
+           (margin (:B P) D *K))
+          ((&ink_at (:P_across *Across2) P)
+           (&marker_at (:P_across Across2) (:M *M3))
+           (nearer D (:P M3) (:Q P))
+           (&axis (:A *A3))
+           (axis_of D (:A A3))
+           (&marker_at (:M *M2))
+           (&axis (:A *A2))
+           (axis_of D (:A A2))
+           (gap D P (:Q M2) K))))))
+
+(RULE &pack_dir
+  (&axis *A)
+  (axis_of (:D *Key) A))
+
+(RULE &pack_travel_full
+  (&pack.distance (:key (:D *V0)) (:n *V1) *K)
+  (&pack_dir (:Key V0))
+  (jump_offset (:D V0) K (:V *V2)))
+
+(DET &fill ColorDomain)
+
+(RULE &packed
+  (OR ((&marker_at (:M *P)))
+      ((&pack_travel_full (:V1 *P2) (:V2 *V))
+       (compose (:A P2) (:B V) (:C P)))))
+
+(RULE &output
+  (OR ((&packed *P)
+       (&fill (:C *Col)))
+      ((input P)
+       (NOT (&packed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,239 @@
+;; inputs 778c64ea46576a900f5c90567c2c522e6b63b325f6d373e220acb019455a94c7 programs/solvers/e8686506.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e8686506
+
+(INPUT background "the commonest color fills the grid around everything else.")
+
+(INPUT frame "the frame is all cells of one or two frame colors, and no piece holds a frame color.")
+
+(INPUT pieces "every other non-background cell belongs to a piece, a 4-connected one-color part that touches no other non-background cell, even at a corner."
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (RULE &bg
+    (&commonest.maximal (:t *Col)))
+
+  (RULE &ink
+    (input *Col)
+    (NOT (&bg Col)))
+
+  (INIT &parts8 Connectivity
+    (key ((&ink ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT exact-fit "the pieces, each translated, cover the background cells of the frame's bounding box exactly once, and no other cell."
+
+  ;; One class per set of colors: a pair and its reverse hold the same colors.
+  (INIT &pairs Quotient
+    (equivalent ((:a C1 C2) (:b (:C1 C2) (:C2 C1)))
+      (&ink (:Col *C1))
+      (&ink (:Col *C2))))
+
+  (RULE &frame_set
+    (&ink (:Col *C1))
+    (&ink (:Col *C2))
+    (&pairs.class (:a C1 C2) (:Id *K)))
+
+  (RULE &frame_cell
+    (&frame_set *K)
+    (&pairs.class (:Id K) (:a (:C1 *Col)))
+    (input *P Col))
+
+  (INIT &frame_box BoundingBox
+    (key ((&frame_cell (:K ^Id) *P))
+      (cell (P)
+        (&frame_cell (:K Id) *P))))
+
+  (RULE &gap
+    (&frame_box.box (:key (:Id *K)) *B)
+    (input *P *Col)
+    (&bg Col)
+    (inside (:A P) B))
+
+  (INIT &parts4 Connectivity
+    (key ((&ink ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &piece_cell
+    (&parts4.component (:key *Col) *P (:Id *Pc)))
+
+  (RULE &piece
+    (&frame_set *K)
+    (&piece_cell (:Pc *O) *Col)
+    (NOT (&pairs.class (:Id K) (:a (:C1 Col)))))
+
+  (INIT &gap_count Cardinality
+    (key ((&gap (:K ^Id) *P))
+      (member ((:m P))
+        (&gap (:K Id) *P))))
+
+  (INIT &piece_count Cardinality
+    (key ((&piece (:K ^Id) *O)
+          (&piece_cell (:Pc O) *P))
+      (member ((:m P))
+        (&piece (:K Id) *O)
+        (&piece_cell (:Pc O) *P))))
+
+  ;; A piece's footprint, read from its own box.
+  (INIT &piece_box BoundingBox
+    (key ((&piece_cell (:Pc ^O) *P))
+      (cell (P)
+        (&piece_cell (:Pc O) *P))))
+
+  (RULE &shape
+    (&piece_cell *Pc (:P *P2))
+    (&piece_box.box (:key (:O Pc)) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (RULE &occ_shape
+    (&gap_count.size (:key *Id) *N)
+    (&piece_count.size (:key Id) N)
+    (&piece (:K Id) *O)
+    (&shape (:Pc O) *P))
+
+  ;; Where a piece lands with each of its cells on a gap.
+  (INIT &occ Occurrences
+    (key ((OR ((&occ_shape ^Id ^O *P))
+              ((&occ_shape Id O)
+               (&gap (:K Id) P))))
+      (cell (P)
+        (&occ_shape Id O)
+        (&gap (:K Id) *P))
+      (shape (P)
+        (&occ_shape Id O *P))))
+
+  (RULE &covers
+    (&occ.occurrence (:key (:Id *K) *O) (:P *At))
+    (&shape (:Pc O) (:P *S))
+    (compose (:A At) (:B S) (:C *P)))
+
+  (RULE &unplaced
+    (&piece *K *O)
+    (NOT (&occ.occurrence (:key (:Id K) O))))
+
+  (RULE &pruning_item
+    (&occ.occurrence (:key (:Id *K) *O) (:P *B))
+    (NOT (&unplaced K)))
+
+  ;; The placements some exact cover may hold.
+  (CHOOSE &pruning
+    (for ((&pruning_item ^K ^O))
+      (from (&pruning_item K O *B)))
+    (never
+      (&pruning_item *K *O *B)
+      (&pruning_item K (:O *O2) (:B *B2))
+      (&covers K O (:At B) *P)
+      (&covers K (:O O2) (:At B2) P))))
+
+(OUTPUT find-frame "the frame colors are the set of colors at which exact-fit holds."
+
+  (INIT &most_count Cardinality
+    (key ((input *P ^Col)
+          (&ink Col))
+      (member ((:m P))
+        (input *P Col)
+        (&ink Col))))
+
+  (INIT &most Order
+    (member ((:t Col))
+      (&most_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&most_count.size (:key *Col) *N))))
+
+(OUTPUT crop "the output is the frame's bounding box, with the frame cells kept.")
+
+(OUTPUT fill "each background cell of that box takes the color of the piece that covers it in the exact cover.")
+
+(ALTS $b "How the background color is found." $Commonest
+  (ALT $CornerColor
+    (INPUT background "the color all four grid corners hold fills the grid around everything else; undefined where the corners differ."
+      (RULE &corner
+        (input *P *Col)
+        (corner_dist P (:Diag *D) (:K 0)))
+
+      (RULE &bg
+        (&corner *Col)
+        (ALL ((&corner (:Col *C))
+              (&corner (:Col *C2)))
+             ((= C C2)))))))
+
+(ALTS $f "How the frame colors are found." $Search
+  (ALT $FrameMostCells
+    (OUTPUT find-frame "the frame colors are the colors that have the most cells in the input, ties included; undefined where the other colors' pieces do not cover that box's background exactly."
+      (RULE &off_most
+        (OR ((&frame_set *K)
+             (&most.maximal (:t *Col))
+             (NOT (&pairs.class (:Id K) (:a (:C1 Col)))))
+            ((&frame_set K)
+             (&pairs.class (:Id K) (:a (:C1 *Col2)))
+             (NOT (&most.maximal (:t Col2)))))))
+    (RULE &chosen
+      (&frame_set *K)
+      (NOT (&off_most K)))))
+
+(ALTS $p "How a piece is cut from the input." $Parts4
+  (ALT $Pieces8
+    (INPUT pieces "a piece is an 8-connected one-color part; undefined where no cover exists."
+      (RULE &piece_cell
+        (&parts8.component (:key *Col) *P (:Id *Pc))))))
+
+(RULE &stranded
+  (&piece *K *O)
+  (NOT (&pruning K O)))
+
+(RULE &ties_pool
+  (&pruning *K *O (:B *Pl_b))
+  (NOT (&stranded K)))
+
+;; Each choice of one live placement per piece.
+(RULE &ties_key
+  (&ties_pool *K)
+  (ONE))
+
+;; Each choice of one live placement per piece.
+(RULE &ties
+  (&ties_pool *K *O *Pl_b)
+  (&ties_key K)
+  (ONE K O))
+
+(RULE &laid
+  (&ties *K *O (:Pl_b *Pl_pl_b))
+  (&covers K O (:At Pl_pl_b) *P))
+
+(RULE &clash
+  (&laid *K *O *P)
+  (&laid K (:O *O2) P)
+  (!= O O2))
+
+(RULE &chosen
+  (&frame_set *K))
+
+(RULE &output
+  (&chosen (:K *K_id))
+  (&ties (:K K_id))
+  (NOT (&clash (:K K_id)))
+  (&frame_box.box (:key (:Id K_id)) *B)
+  (OR ((&frame_cell (:K K_id) (:P *P2) *Col))
+      ((&laid (:K K_id) *O (:P P2))
+       (&piece_cell (:Pc O) Col)))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

@@ -375,7 +375,7 @@ def materialize_one(member,session,*,pair_id=None,input_sha256=None):
             elif audit['changed_atoms']!=member['K']:raise ValueError('candidate edit count differs')
             row={k:member[k] for k in ('task','case','point','clause','kind','K','operation','identity')}
             row.update(type='pair',record_format=c.RECORD_FORMAT,programs=dict(gold=gold.sexp(),mutant=mutant.sexp()),gold_sexp=gold.sexp(),mutant_sexp=mutant.sexp(),mutant_stream=dict(ids=ms[0],model=list(ms[1]),paths=ms[2]),audit=audit,
-                relation_source_names=json.loads(gold.relation_source_names_json(str(c.MAIN_ROOT/'work/arclog/gen'),task,member['case'])),producer_ref=producer_sha,population_inputs=inputs)
+                relation_source_names=json.loads(gold.relation_source_names_json(str(c.MAIN_ROOT/'programs/arclog'),task,member['case'])),producer_ref=producer_sha,population_inputs=inputs)
             row,timings,_=c.observe_constructed(row,ev,gold,point,mutant,len(task_data['train']),dep,relations,store,observations,filter_cache,payload_cache)
             row['timings']=timings
             store.pack.flush();os.fsync(store.pack.fileno())

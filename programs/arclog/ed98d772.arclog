@@ -1,0 +1,120 @@
+;; inputs f7337b48f86dd8fe3c81801aae29fedb15c8f100db22a8205d5f3c8df2bd4862 programs/solvers/ed98d772.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ed98d772
+
+(INPUT square-input "every input is a square grid of side 3, so each turn of it fits the same square.")
+
+(OUTPUT quadrant-copies "the output is twice the input's side on each axis, cut into 2 by 2 quadrants, and each quadrant holds the input under the transform `quadrant_transform` gives that quadrant's corner, cell colors copied unchanged."
+
+  (DET &order_corner DiagDirDomain)
+
+  (DET &order_axis AxisDomain)
+
+  (DET &turn_sense SenseDomain)
+
+  (RULE_OR_DET &side "The input's side, the same on both axes."
+    (input *P)
+    (axis_elem *A)
+    (axis_extents P A (:N1 *N) (:N2 N)))
+
+  (RULE &quadrant
+    (&side *N)
+    (diag_opposite *D (:Opp *D_opp))
+    (corner_inset (:Diag D_opp) (:K N) *B))
+
+  (DET &ex_side
+    (ex_input *E *P)
+    (axis_extents P *A (:N1 *N) (:N2 N)))
+
+  (DET &clash
+    (&ex_side *E *N)
+    (diag_opposite *D (:Opp *D_opp))
+    (corner_inset (:Diag D_opp) (:K N) *B)
+    (ex_input E *P *Col)
+    (apply (:D *T) P (:P_out *P_img))
+    (compose (:A B) (:B P_img) (:C *P_out))
+    (ex_output E (:P P_out) (:Col *Col2))
+    (!= Col Col2))
+
+  (DET &quadrant_transform
+    (diag_dir_elem (:D *C))
+    (d4_elem *D)
+    (NOT (&clash (:D C) (:T D))))
+
+  (INIT &quadrant_order Order
+    (member ((:t B))
+      (&quadrant *B))
+    (score ((:t B) (:S K1))
+      (&quadrant *B)
+      (&order_corner *D)
+      (&order_axis *A)
+      (diag_dist (:P B) (:Diag D) A *K1 *K2))
+    (secondary_score ((:t B) (:S K2))
+      (&quadrant *B)
+      (&order_corner *D)
+      (&order_axis *A)
+      (diag_dist (:P B) (:Diag D) A *K1 *K2)))
+
+  ;; One quarter turn in the turn sense after each transform.
+  (INIT &turns Walk
+    (successor ((:p T) (:p_next T2))
+      (&turn_sense *S)
+      (c4_turn S (:T *R))
+      (d4_compose (:A R) (:B *T) (:C *T2)))
+    (steps ((:N K))
+      (&quadrant_order.rank (:R *K)))))
+
+(ALTS $choice "How each quadrant's transform is given." $Table
+  (ALT $SuccessiveTurns
+    (OUTPUT quadrant-copies "the quadrants, taken in the lexicographic order that starts at corner `order_corner` with primary axis `order_axis` (reading order), hold the input turned one more quarter turn in sense `turn_sense` than the quadrant before, the first as it is.")
+    (RULE &transform
+      (&quadrant *D *B)
+      (&quadrant_order.rank (:t B) (:R *K))
+      (d4_compose (:A *I) (:B I) (:C I))
+      (&turns.walk (:p0 I) (:N K) (:p *T))))
+  (ALT $StepProduct
+    (OUTPUT quadrant-copies "the quadrant at corner `anchor` holds the input as it is, a quadrant across from it on one axis holds the input under that axis's step in `axis_step`, and the diagonal quadrant under the composition of the two steps; undefined where the two orders of composition disagree."
+      (DET &anchor DiagDirDomain)
+
+      (RULE &across
+        (&anchor (:D *D0))
+        (corner_dir (:C D0) *A (:D *X0))
+        (corner_dir (:C *D) A (:D *X))
+        (opposite (:D X0) (:Opp X)))
+
+      (RULE &step_corner
+        (&anchor (:D *D0))
+        (corner_dir (:C D0) *A (:D *X0))
+        (corner_dir (:C *D) A (:D *X))
+        (opposite (:D X0) (:Opp X))
+        (perp A *A2)
+        (corner_dir (:C D0) (:A A2) (:D *Y))
+        (corner_dir (:C D) (:A A2) (:D Y)))
+
+      (DET &axis_step
+        (&step_corner *A (:D *D2))
+        (&quadrant_transform (:C D2) *D)))
+    (RULE &transform
+      (OR ((&anchor *D)
+           (d4_compose (:A *T) (:B T) (:C T)))
+          ((&across D *A)
+           (perp A *A2)
+           (OR ((NOT (&across D (:A A2)))
+                (&axis_step A (:D T)))
+               ((&across D (:A A2))
+                (&axis_step A (:D *T1))
+                (&axis_step (:A A2) (:D *T2))
+                (d4_compose (:A T1) (:B T2) (:C T))
+                (d4_compose (:A T2) (:B T1) (:C T)))))))))
+
+(RULE &transform
+  (&quadrant_transform (:C *D) (:D *T)))
+
+(RULE &output
+  (&transform *D *T)
+  (&quadrant D *B)
+  (input (:P *P2) *Col)
+  (apply (:D T) (:P P2) (:P_out *P_img))
+  (compose (:A B) (:B P_img) (:C *P)))
+
+(OUT (&output ^P ^Col))

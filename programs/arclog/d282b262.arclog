@@ -1,0 +1,145 @@
+;; inputs 72dcdf0eedf5b7892835f41021a47eba92293c055251ddbf312c0e5d4e01d71b programs/solvers/d282b262.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d282b262
+
+(INPUT objects "every input holds several objects on a background of color &bg; an object is a 4-connected group of non-background cells, and it can hold more than one color"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest colors of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &outnumbered
+    (&commonest.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&outnumbered (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &objects8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT apart "no two objects touch in the input, at a side or at a corner")
+
+(OUTPUT slide "each object moves as a rigid piece toward &heading, by the least distance that brings one of its cells against the frame edge or against a cell of another object at that object's resting place"
+
+  (INIT &objects4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &object
+    (&objects4.component *P *Id))
+
+  (RULE &body
+    (&object *Id *P))
+
+  (INIT &out_commonest_count Cardinality
+    (key ((ex_output ^E *P ^Col))
+      (member ((:m P))
+        (ex_output E *P Col))))
+
+  ;; The commonest colors of each train output.
+  (INIT &out_commonest Order
+    (key ((&out_commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&out_commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&out_commonest_count.size (:key E *Col) *N))))
+
+  (DET &inked_edge
+    (ex_output *E *P *Col)
+    (NOT (&out_commonest.maximal (:key E) (:t Col)))
+    (margin (:B P) *D (:K 0)))
+
+  (DET &bare
+    (ex_output *E)
+    (dir_elem *D)
+    (NOT (&inked_edge E D)))
+
+  (DET &heading
+    (dir_elem *D)
+    (NOT (&bare D)))
+
+  ;; The objects slide together toward the heading as rigid bodies.
+  (INIT &slide Distance
+    (weight ((:a Id2) (:b Id) (:W K))
+      (&body *Id *P)
+      (&heading *D)
+      (&body (:Id *Id2) (:P *P2))
+      (!= Id Id2)
+      (gap D P (:Q P2) *K))
+    (source_distance ((:n Id) K)
+      (&body *Id *P)
+      (&heading *D)
+      (margin (:B P) D *K)))
+
+  (INIT &box BoundingBox
+    (key ((&object ^Id *P))
+      (cell (P)
+        (&object Id *P)))))
+
+(OUTPUT keep "each object keeps its shape and its colors; every cell no object covers after the slide is background")
+
+(ALTS $adj "which cells join into one object" $Adjacent4
+  (ALT $Diagonal8Bodies
+    (INPUT objects "cells that touch at a corner also join one object"
+      (RULE &object
+        (&objects8.component *P *Id)))))
+
+(ALTS $foot "which cells of an object block the other objects" $OwnCells
+  (ALT $BoxBodies
+    (OUTPUT slide "every cell of an object's bounding box moves with it and blocks the other objects; undefined on an input where an object's box covers a cell of another object"
+      (RULE &body
+        (&box.box (:key *Id) *B)
+        (input *P)
+        (inside (:A P) B))
+
+      (RULE &overlap
+        (&body *Id *P)
+        (&object (:Id *Id2) P)
+        (!= Id Id2)))
+    (RULE &output
+      (NOT (&overlap))
+      (input *P)
+      (OR ((&moved P *Col))
+          ((NOT (&moved P))
+           (&bg (:C Col)))))))
+
+(RULE &slide_travel_full
+  (&slide.distance (:n *V1) *K)
+  (&heading *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &moved
+  (&slide_travel_full (:V1 *Id) (:V2 *V))
+  (&object Id (:P *P2))
+  (input (:P P2) *Col)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,7 @@
+;; inputs 7007bfd0982a54a7bff34dcc00b15aca3ab5ed33821dd71f5a4ff9a74f8bd7b7 programs/solvers/8fff9e47.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8fff9e47
+
+(param &block_size number (2))
+(param &corner DiagDir (DIAG_BR))
+(param &axis Axis (AXIS_V))

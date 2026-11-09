@@ -1,0 +1,126 @@
+;; inputs 69c513e0f8305d48825713b8df4ad6efee168444717f005cf00b22e2fa47cb5d programs/solvers/3618c87e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3618c87e
+
+(DET &fall_to
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *C_out))
+  (!= C_out Col)
+  (ex_output E (:P *Q) Col)
+  (ex_input E (:P Q) (:Col *C_in))
+  (!= C_in Col)
+  (axis_of *D *A)
+  (same_line A P Q)
+  (nearer D (:P Q) (:Q P)))
+
+(DET &cell_split2
+  (ex_input *E *P *Col)
+  (&fall_to *D)
+  (axis_of D *A)
+  (split P A (:Along *P_inner) (:Across *P_across)))
+
+(DET &out_slice
+  (&cell_split2 *E *P *P_inner *P_across)
+  (ex_output E P *Col))
+
+(DET &replaced
+  (&cell_split2 *E *Col *P_inner *P_across)
+  (ex_output E)
+  (NOT (&out_slice E P_across P_inner Col)))
+
+(DET &input
+  (&replaced *E *P_across)
+  (&cell_split2 E *Col (:P_inner *P) P_across))
+
+(DET &output2
+  (&replaced *E *P_across)
+  (&out_slice E P_across (:P_inner *P) *Col))
+
+(DET &pose2
+  (d4_compose (:A *D) (:B D) (:C D)))
+
+;; The fall and the slice it changes, in one frame, with the pose of the
+;; training slices.
+(RIGID_DET &slice
+  (&fall_to *D)
+  (&pose2 *D)
+  (&input *P *Col)
+  (&output2 *P *Col))
+
+(RULE &stance
+  (&slice.pose (:Pose *D0))
+  (pose_difference (:A D0) (:B *D) (:D *R))
+  (d4_compose (:A R) (:B R) (:C R)))
+
+(RULE &fall_dir
+  (&stance (:D *D2))
+  (&slice.fall_to (:Pose D2) *D))
+
+(RULE &cell_split
+  (input *P *Col)
+  (&fall_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *P_inner) (:Across *P_across)))
+
+(DET &marker ChangedColor)
+
+(RULE &cleared
+  (&cell_split *P *Col)
+  (&marker (:C Col)))
+
+;; Each marker cell falls on its own to the fall edge of its slice.
+(INIT &fall3 Distance
+  (key ((&cleared ^P))
+    (source_distance (K)
+      (&fall_dir *D)
+      (margin (:B P) D *K))))
+
+(RULE &fall_dir2
+  (&cleared)
+  (&fall_dir *D))
+
+(RULE &fall_travel_full
+  (&fall3.distance (:key (:P *V0)) *K)
+  (&fall_dir2 *D)
+  (&cleared (:P V0))
+  (jump_offset D K (:V *V2)))
+
+(DET &bg DominantColor)
+
+(RULE &landed
+  (&fall_travel_full (:V0 *P2) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(ALTS $choice "two models of the fall" $PerCell
+  (ALT $SliceMap
+    (RULE &slice_before
+      (&stance *D)
+      (&slice.input (:Pose D) *P *Col))
+
+    (RULE &slice_after
+      (&stance *D)
+      (&slice.output2 (:Pose D) *P *Col))
+
+    (INIT &slice_match Inclusion
+      (pattern ((:m P Col))
+        (&slice_before *P *Col))
+      (observed ((:observed P_across) (:m (:P P_inner) Col))
+        (&cell_split *Col *P_inner *P_across)))
+
+    (RULE &output
+      (&cell_split *P (:Col *Col_in) *P_inner *P_across)
+      (IF ((&slice_match.equal (:observed P_across)))
+          ((&slice_after (:P P_inner) *Col))
+          ((= Col Col_in))))))
+
+(RULE &output
+  (&cell_split *P (:Col *Col_in))
+  (OR ((&cleared P)
+       (&bg (:C *Col)))
+      ((&landed P)
+       (&marker (:C Col)))
+      ((NOT (&cleared P))
+       (NOT (&landed P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

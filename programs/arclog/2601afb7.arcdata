@@ -1,0 +1,7 @@
+;; inputs 9b618a7b33203737e43481152a223ad5595705793a453c14a2dd010e0c5e52f7 programs/solvers/2601afb7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2601afb7
+
+(param &bg Color (7))
+(param &color_dir Dir (DIR_R))
+(param &anchor_sense Sense (SENSE_CW))

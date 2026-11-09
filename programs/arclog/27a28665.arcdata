@@ -1,0 +1,32 @@
+;; inputs af5245908fe7a5cbf2a6160828461d05e694aa51787a4afb0f438f7b36c5b128 programs/solvers/27a28665.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 27a28665
+
+(param &bg Color (0))
+(param &out_dim (Axis number) (AXIS_V 1) (AXIS_H 1))
+(param &pattern_member (Ident Position)
+  (0 (grid
+    (1 1 _)
+    (1 _ 1)
+    (_ 1 _)))
+  (1 (grid
+    (1 _ 1)
+    (_ 1 _)
+    (1 _ 1)))
+  (2 (grid
+    (_ 1 1)
+    (_ 1 1)
+    (1 _ _)))
+  (3 (grid
+    (_ 1 _)
+    (1 1 1)
+    (_ 1 _))))
+(param &pattern_out (Ident Color) (0 1) (1 2) (2 3) (3 6))
+(param &center_pos Position
+  (grid
+    (_ _ _)
+    (_ 1 _)
+    (_ _ _)))
+(param &in_dim number (3))
+(param &center_off_out Color (1))
+(param &center_on_out (Color number) (6 0) (3 2) (2 4))

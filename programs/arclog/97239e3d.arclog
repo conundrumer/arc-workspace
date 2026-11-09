@@ -1,0 +1,133 @@
+;; inputs 77870ef8c8bafd0eca297b2a37b44f2c88454b7cec8082fb96b1a7f4584f1357 programs/solvers/97239e3d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97239e3d
+
+(DET &bg DominantColor)
+
+(DET &wall SharedColor)
+
+(RULE &wall_line
+  (input *P *Col)
+  (&wall (:C Col))
+  (split P *A (:Along *L)))
+
+(RULE &street
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&wall_line A L)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall (:C Col))))
+
+(RULE &crossing
+  (input *P)
+  (perp *A *A2)
+  (split P A (:Along *L))
+  (&street A L)
+  (split P (:A A2) (:Along *L2))
+  (&street (:A A2) (:L L2)))
+
+(RULE &anchor
+  (&mark (:P *M) *Col)
+  (&crossing *P)
+  (OR ((= P M))
+      ((dir_elem *D)
+       (neighbor (:P M) D (:Q P)))))
+
+;; A ring's hole is the bg it closes off from the grid edge.
+(INIT &closed Enclosure
+  (cell (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col)))))
+
+(ALTS $choice "how the marks of a color delimit their box" $Touch
+  (ALT $Nearest
+    ;; Each mark casts along its four directions, reaching the crossings of its
+    ;; street at their distances.
+    (INIT &reach Ray
+      (source (P)
+        (&mark *P))
+      (node (P)
+        (input *P))
+      (dir (D)
+        (dir_elem *D)))
+
+    (INIT &closest Order
+      (key ((&reach.ray *P *K (:Origin ^M))
+            (&crossing P))
+        (member ((:t (:V P) (:S K)))
+          (&reach.ray *P *K (:Origin M))
+          (&crossing P))
+        (score ((:t (:V P) (:S K)) (:S K))
+          (&reach.ray *P *K (:Origin M))
+          (&crossing P))))
+
+    (RULE &anchor
+      (&mark (:P *M) *Col)
+      (&closest.minimal (:key M) (:t (:V *P)))))
+  (ALT $Contain
+    (RULE &beyond
+      (&mark (:P *M) *Col)
+      (axis_of *D *A)
+      (&street A *L)
+      (nearer D (:P M) (:Q L)))
+
+    ;; The d side is the innermost street that no mark of the color lies beyond.
+    (INIT &inset Order
+      (key ((&mark ^Col)
+            (axis_of ^D *A)
+            (&street A *L)
+            (margin (:B L) D *K)
+            (NOT (&beyond Col D L)))
+        (member ((:t K))
+          (&mark Col)
+          (axis_of D *A)
+          (&street A *L)
+          (margin (:B L) D *K)
+          (NOT (&beyond Col D L)))
+        (score ((:t K) (:S K))
+          (&mark Col)
+          (axis_of D *A)
+          (&street A *L)
+          (margin (:B L) D *K)
+          (NOT (&beyond Col D L)))))
+
+    (RULE &frame_axis
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&inset.maximal (:key (:Col *Key) D) (:t *K))
+      (&inset.maximal (:key (:Col Key) (:D D2)) (:t *K2))
+      (axis_inset D (:K1 K) K2 *B))
+
+    (RULE &frame
+      (&frame_axis *Key *A (:B *B1))
+      (perp A *A2)
+      (&frame_axis Key (:A A2) (:B *B2))
+      (compose (:A B1) (:B B2) (:C *B)))
+
+    (RULE &span_box
+      (&frame (:Key *Col) *B))))
+
+(INIT &span BoundingBox
+  (key ((&anchor ^Col *P))
+    (cell (P)
+      (&anchor Col *P))))
+
+(RULE &span_box
+  (&span.box (:key *Col) *B))
+
+(RULE &painted
+  (&span_box *Col *B)
+  (input *P)
+  (inside (:A P) B)
+  (OR ((NOT (interior (:A P) B)))
+      ((&closed.enclosed P))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

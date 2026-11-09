@@ -1,0 +1,150 @@
+;; inputs 82d978c765a0489bed65613a998a7aa89490d09c9470ba1c8a58b80a9ea22910 programs/solvers/800d221b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 800d221b
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The colors by role: the background, the wire, and the region colors.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &wire_mode_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col))))))
+
+(INIT &wire_mode Order
+  (member ((:t Col))
+    (&wire_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&wire_mode_count.size (:key *Col) *N)))
+
+(RULE &region_cell
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col)))
+  (NOT (&wire_mode.maximal (:t Col))))
+
+(INIT &regions Connectivity
+  (node (P)
+    (&region_cell *P)))
+
+(INIT &region_mode_count Cardinality
+  (key ((&regions.component *P ^Id)
+        (&region_cell P ^Col))
+    (member ((:m P))
+      (&regions.component *P Id)
+      (&region_cell P Col))))
+
+(RULE &wire_cell
+  (input *P *Col)
+  (&wire_mode.maximal (:t Col)))
+
+;; The hub: the one wire cell the wire does not expose (the wire is one
+;; cell thick everywhere else), with its ring.
+(INIT &rim Boundary
+  (cell (P)
+    (&wire_cell *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &hub_center
+  (&wire_cell *P)
+  (NOT (&rim.boundary P)))
+
+(RULE &hub
+  (OR ((&hub_center *P))
+      ((&hub_center (:P *P2))
+       (neighbor (:P P2) *D (:Q P)))))
+
+(INIT &region_mode Order
+  (key ((&region_mode_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&region_mode_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&region_mode_count.size (:key Id *Col) *N))))
+
+;; The wires: the wire cells outside the hub, by connected component.
+(INIT &wires Connectivity
+  (node (P)
+    (&wire_cell *P)
+    (NOT (&hub P))))
+
+(RULE &touch
+  (&wires.node *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&region_cell (:P Q) *Col))
+
+(RULE &fill
+  (&wires.component *P *Id)
+  (&touch P *Q)
+  (&regions.component (:P Q) (:Id *Id_r))
+  (&region_mode.maximal (:key (:Id Id_r)) (:t *Col)))
+
+(ALTS $f "a wire component's color" $Region
+  (ALT $Touch
+    (INIT &touch_mode_count Cardinality
+      (key ((&wires.component *P ^Id)
+            (&touch P *Q ^Col))
+        (member ((:m Q))
+          (&wires.component *P Id)
+          (&touch P *Q Col))))
+
+    (INIT &touch_mode Order
+      (key ((&touch_mode_count.size (:key ^Id *Col)))
+        (member ((:t Col))
+          (&touch_mode_count.size (:key Id *Col)))
+        (score ((:t Col) (:S N))
+          (&touch_mode_count.size (:key Id *Col) *N))))
+
+    (RULE &fill
+      (&touch_mode.maximal (:key *Id) (:t *Col)))))
+
+(ALTS $c "the hub center's color" $Contact
+  (ALT $Extent
+    (INIT &center_mode_count Cardinality
+      (key ((&wire_color *P ^Col))
+        (member ((:m P))
+          (&wire_color *P Col))))))
+
+(RULE &wire_color
+  (&wires.component *P *Id)
+  (&fill Id *Col))
+
+(INIT &center_mode_count Cardinality
+  (key ((&wire_color *P ^Col)
+        (&hub (:P *Q))
+        (dir_elem *D)
+        (neighbor P D Q))
+    (member ((:m P))
+      (&wire_color *P Col)
+      (&hub (:P *Q))
+      (dir_elem *D)
+      (neighbor P D Q))))
+
+(INIT &center_mode Order
+  (member ((:t Col))
+    (&center_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&center_mode_count.size (:key *Col) *N)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&hub_center P)
+       (&center_mode.maximal (:t *Col)))
+      ((&hub P)
+       (NOT (&hub_center P))
+       (= Col Col_in))
+      ((&wire_color P Col))
+      ((NOT (&wire_cell P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

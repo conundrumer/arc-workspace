@@ -1,0 +1,8 @@
+;; inputs 4522f660f35ab3ed2ab885da9c15b283a26009e7a2fbab1e153d6da49b67753a programs/solvers/37d3e8b2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 37d3e8b2
+
+(param &bg Color (0))
+(param &joint_count_color (number Color) (1 1) (2 2) (3 3) (4 7))
+(param &own_count_color (number Color) (1 1) (2 2) (3 3) (4 7))
+(param &box_count_color (number Color) (1 1) (2 2) (3 3) (4 7))

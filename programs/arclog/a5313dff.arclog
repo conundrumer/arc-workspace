@@ -1,0 +1,91 @@
+;; inputs df43dc4417d397a49437d74e7013fbf88d2e6a8e15b67e7eeec93c747ad964ce programs/solvers/a5313dff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a5313dff
+
+(INPUT walls "cells of one color other than &background are drawn as lines and closed outlines, and some outlines close off regions of background cells from the grid edge."
+
+  (DET_OR_RULE &background DominantColor))
+
+(OUTPUT enclosed-fill "a &background cell that has no 4-connected path of &background cells to the grid edge takes &fill"
+
+  (DET &fill AnyOutNewColor)
+
+  (RULE &on_edge
+    (input *P)
+    (margin (:B P) *D (:K 0)))
+
+  (RULE &blocks
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &open
+    (input *P)
+    (NOT (&blocks P)))
+
+  (INIT &flood Flood
+    (node (P)
+      (&open *P))
+    (source (P)
+      (&open *P)
+      (&on_edge P)))
+
+  (INIT &leak Flood
+    (node (P)
+      (&open *P))
+    (source (P)
+      (&open *P)
+      (&on_edge P))
+    (step ((:Delta V))
+      (step_offset *V)))
+
+  (INIT &walls Connectivity
+    (node (P)
+      (&blocks *P)))
+
+  ;; Each wall alone: every cell outside it is open.
+  (INIT &holes Enclosure
+    (key ((&walls.component ^Id))
+      (cell (P)
+        (input *P)
+        (NOT (&walls.component P Id))))))
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &bg_cell
+    (input *P *Col)
+    (&background (:C Col))))
+
+(ALTS $barrier "which cells stop a background path to the edge" $AnyInk
+  (ALT $WallColor
+    (OUTPUT enclosed-fill "only cells of &wall block the path"
+      (DET_OR_RULE &wall RarestColor)
+
+      (RULE &blocks
+        (input *P *Col)
+        (&wall (:C Col))))))
+
+(ALTS $conn "the neighbor relation of a background path to the edge" $FourPath
+  (ALT $FourPath
+    (ALTS $e "what closes a region off from the edge" $AllWalls
+      (ALT $ComponentHoles
+        (OUTPUT enclosed-fill "each 4-connected component of blocking cells is taken alone, and a background cell takes &fill when one such component alone closes it off from the edge")
+        (RULE &enclosed
+          (&bg_cell *P)
+          (&holes.enclosed P)))))
+  (ALT $DiagonalLeak
+    (OUTPUT enclosed-fill "the path may also step diagonally")
+    (RULE &enclosed
+      (&bg_cell *P)
+      (NOT (&leak.reached P)))))
+
+(RULE &enclosed
+  (&bg_cell *P)
+  (NOT (&flood.reached P)))
+
+(RULE &output
+  (OR ((&enclosed *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&enclosed P)))))
+
+(OUT (&output ^P ^Col))

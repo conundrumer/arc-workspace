@@ -1,0 +1,7 @@
+;; inputs 7479ed6f239466942ac8d210b73734f1d8e12f54898f96d784d50a03e8659ff4 programs/solvers/79fb03f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 79fb03f4
+
+(param &bg Color (0))
+(param &flow Color (1))
+(param &flow_dir Dir (DIR_R))

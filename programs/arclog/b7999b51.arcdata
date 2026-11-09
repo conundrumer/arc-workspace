@@ -1,0 +1,70 @@
+;; inputs ba8f6b02c3288f129a64e2d7383fe988116f5bc9386853ac0937877ee9426939 programs/solvers/b7999b51.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7999b51
+
+(param &background Color (0))
+(param &anchor Dir (DIR_T))
+(param &order_edge Dir (DIR_L))
+
+(alts $choice
+  (alt $TieByPlace
+    (witness tied-extents borderline any
+      (relaxed distinct-extents)
+      (separates "the 2 and 3 rectangles are both 3 tall; the concept is undefined, TieByPlace puts the bar of the rectangle nearer the left edge first, and TieBothOrders gives both orders")
+      (input (grid
+        (0 0 0 4 4 0 0 0 0)
+        (2 2 0 4 4 0 0 0 0)
+        (2 2 0 4 4 0 3 3 0)
+        (2 2 0 4 4 0 3 3 0)
+        (0 0 0 4 4 0 3 3 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $TieBothOrders
+        (grid
+          (4 3 2)
+          (4 3 2)
+          (4 3 2)
+          (4 0 0)
+          (4 0 0))
+        (grid
+          (4 2 3)
+          (4 2 3)
+          (4 2 3)
+          (4 0 0)
+          (4 0 0)))
+      (output $TieByPlace (grid
+        (4 2 3)
+        (4 2 3)
+        (4 2 3)
+        (4 0 0)
+        (4 0 0)))))
+  (alt $TieBothOrders
+    (witness tied-extents borderline any)))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "the 6 rectangle covers more cells than 0; the concept draws bars of 6, 2 and 1 on 0, and the derived background 6 makes 0 a bar color and draws on 6")
+      (input (grid
+        (6 6 6 6 6 0 0)
+        (6 6 6 6 6 0 2)
+        (6 6 6 6 6 0 2)
+        (6 6 6 6 6 0 0)
+        (6 6 6 6 6 0 0)
+        (6 6 6 6 6 0 0)
+        (1 1 0 0 0 0 0)))
+      (output &background=$Stored (grid
+        (6 2 1)
+        (6 2 0)
+        (6 0 0)
+        (6 0 0)
+        (6 0 0)
+        (6 0 0)))
+      (output &background=$Derived (grid
+        (0 2 1)
+        (0 2 6)
+        (0 6 6)
+        (0 6 6)
+        (0 6 6)
+        (0 6 6)
+        (0 6 6))))))

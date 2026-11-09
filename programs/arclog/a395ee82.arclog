@@ -1,0 +1,423 @@
+;; inputs 77bd7792ae355632ab201a0e4ec0a2dda8af64cfa7720051c98c9c66d4134b87 programs/solvers/a395ee82.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a395ee82
+
+(INPUT background "one color fills most of the grid")
+
+(INPUT objects "cells of one color that touch at an edge or a corner form one object"
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (RULE &fg
+    (input *Col)
+    (NOT (&palette.maximal (:t Col))))
+
+  (INIT &joined4 Connectivity
+    (key ((&fg ^Col))
+      (node (P)
+        (input *P Col)))))
+
+(INPUT shape "one object has more than one cell, in one color S; its bounding box is h rows by w columns"
+
+  (INIT &joined8 Connectivity
+    (key ((&fg ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &object
+    (&joined8.component (:key *Col) *P *Id))
+
+  (INIT &size Cardinality
+    (key ((&object ^Id *P))
+      (member ((:m P))
+        (&object Id *P))))
+
+  (INIT &largest Order
+    (member ((:t (:V Id) (:S N)))
+      (&size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&size.size (:key *Id) *N)))
+
+  (INIT &biggest Singleton
+    (member ((:v Id))
+      (&largest.maximal (:t (:V *Id))))))
+
+(INPUT dots "every other object is a single cell, a dot, and the dots sit on a periodic pattern with a step of &dot_step on both axes; exactly one dot has the color S, and that dot is the anchor; all the other dots are the markers, in one color C, which is neither S nor the background"
+
+  (DET &dot_step TileCount)
+
+  (RULE &multi
+    (&object *Id *P)
+    (&object Id (:P *Q))
+    (!= P Q))
+
+  (RULE &dot
+    (&object *Id *Col *P)
+    (NOT (&multi Id)))
+
+  (RULE &repeated
+    (&dot *P *Col)
+    (&dot (:P *Q) Col)
+    (!= P Q))
+
+  (INIT &lone Singleton
+    (member ((:v Col))
+      (&dot *Col)
+      (NOT (&repeated Col)))))
+
+(OUTPUT period "each dot takes the period offset (di, dj): its row and column distances from the anchor, counted in steps of &dot_step"
+
+  (INIT &sole Singleton
+    (member ((:v Id))
+      (&multi *Id)))
+
+  (RULE &shape
+    (&sole.value (:v *Id))
+    (&object Id (:Col *S)))
+
+  (RULE &markers_of)
+
+  (RULE &read
+    (&shape))
+
+  (RULE &reserved
+    (&read)
+    (&shape (:S *Col)))
+
+  (INIT &ink Singleton
+    (member ((:v C))
+      (&read)
+      (&markers_of)
+      (&dot (:Col *C))
+      (NOT (&reserved (:Col C)))))
+
+  (INIT &anchor Singleton
+    (member ((:v P))
+      (&shape *S)
+      (&dot *P (:Col S))))
+
+  (RULE &marker
+    (&markers_of)
+    (&ink.value (:v *C))
+    (&dot *P (:Col C)))
+
+  (RULE &paint
+    (OR ((&anchor.value (:v *Q))
+         (&ink.value (:v *Col)))
+        ((&marker (:P Q))
+         (&shape (:S Col)))))
+
+  ;; The dot lines past the anchor's line toward d, up to the dot's own.
+  (INIT &rungs Cardinality
+    (key ((OR ((&anchor.value (:v *P))
+               (&paint ^Q)
+               (dir_elem ^D)
+               (opposite D (:Opp *O))
+               (NOT (nearer (:D O) (:P Q) (:Q P))))
+              ((&anchor.value (:v P))
+               (&paint Q)
+               (&paint (:Q *Q2))
+               (axis_of D *A)
+               (split (:P Q2) A (:Along *L))
+               (split P A (:Along *L_p))
+               (split (:P Q) A (:Along *L_q))
+               (nearer D (:P L) (:Q L_p))
+               (NOT (nearer D (:P L) (:Q L_q))))))
+      (member ((:m L))
+        (&anchor.value (:v *P))
+        (&paint Q)
+        (&paint (:Q *Q2))
+        (axis_of D *A)
+        (split (:P Q2) A (:Along *L))
+        (split P A (:Along *L_p))
+        (split (:P Q) A (:Along *L_q))
+        (nearer D (:P L) (:Q L_p))
+        (NOT (nearer D (:P L) (:Q L_q))))
+      (domain ()
+        (&anchor.value (:v *P))
+        (&paint Q)
+        (opposite D (:Opp *O))
+        (NOT (nearer (:D O) (:P Q) (:Q P)))))))
+
+(OUTPUT stamp "for each dot, the output draws the shape's cells moved by di · (h + &stamp_gap) rows and dj · (w + &stamp_gap) columns, clipped at the grid edge; the anchor's stamp covers the shape's own place"
+
+  (DET &multi2
+    (&joined8.component *E *Id *P)
+    (&joined8.component E Id (:P *Q))
+    (!= P Q))
+
+  (INIT &box BoundingBox
+    (key ((&object ^Id *P))
+      (cell (P)
+        (&object Id *P))))
+
+  (INIT &box2 BoundingBox
+    (key ((&joined8.component (:E ^Ky) ^Id *P))
+      (cell (P)
+        (&joined8.component (:E Ky) Id *P))))
+
+  (INIT &sole2 Singleton
+    (key ((&multi2 (:E ^Ky) *Id))
+      (member ((:v Id))
+        (&multi2 (:E Ky) *Id))))
+
+  (DET &shape_cell
+    (&sole2.value (:key (:Ky *E)) (:v *Id))
+    (&joined8.component E Id (:key (:Col *S)) *P))
+
+  (DET &gap
+    (&shape_cell *E)
+    (ex_input E *P)
+    (margin (:B P) *D (:K *G)))
+
+  (DET &covered
+    (&gap *E *G)
+    (&sole2.value (:key (:Ky E)) (:v *Id))
+    (&box2.box (:key (:Ky E) Id) *B)
+    (&shape_cell E *P)
+    (diag_dirs *A *D1 *D2)
+    (perp A *A2)
+    (opposite (:D D1) (:Opp *O1))
+    (opposite (:D D2) (:Opp *O2))
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) (:D O1) (:K *K1))
+    (margin (:B P_rel) (:D O2) (:K *K2))
+    (ex_input E (:P *Q))
+    (relative (:Base B) (:X Q) (:X_rel *Q_rel))
+    (margin (:B Q_rel) (:D O1) (:K *T1))
+    (margin (:B Q_rel) (:D O2) (:K *T2))
+    (box_extent B (:P Q) A (:N *N1))
+    (box_extent B (:P Q) (:A A2) (:N *N2))
+    (divide (:T T1) (:Side N1) (:Gap G) (:Remainder K1))
+    (divide (:T T2) (:Side N2) (:Gap G) (:Remainder K2)))
+
+  (DET &gap_defect
+    (ex_output *E (:P *Q) (:Col *S))
+    (&shape_cell E S)
+    (&gap E *G)
+    (NOT (&covered E G Q)))
+
+  (DET &stamp_gap
+    (&gap *E (:G *K))
+    (ex_output E)
+    (NOT (&gap_defect (:G K)))))
+
+(OUTPUT stamp-color "the anchor's stamp is drawn in C, and each marker's stamp in S")
+
+(OUTPUT erase "every other cell of the output is the background"
+
+  (RULE &pitch
+    (&read)
+    (&dot_step (:N *K)))
+
+  (RULE &on_step
+    (&pitch *K)
+    (&anchor.value (:v *P))
+    (&paint *Q)
+    (relative (:Base P) (:X Q) (:X_rel *V))
+    (diag_dirs *D1 *D2)
+    (opposite (:D D1) (:Opp *O1))
+    (opposite (:D D2) (:Opp *O2))
+    (margin (:B V) (:D O1) (:K *T1))
+    (margin (:B V) (:D O2) (:K *T2))
+    (divide (:T T1) (:Side K) (:Gap 0) (:Part *N1) (:Remainder 0))
+    (divide (:T T2) (:Side K) (:Gap 0) (:Part *N2) (:Remainder 0))
+    (jump (:P 0) (:D D1) (:K N1) (:Q *I1))
+    (jump (:P I1) (:D D2) (:K N2) (:Q *I))))
+
+(ALTS $objects "which cells join into one object" $CornerJoin
+  (ALT $EdgeAdjacency
+    (INPUT objects "cells of one color that share an edge form one object"
+      (RULE &object
+        (&joined4.component (:key *Col) *P *Id)))))
+
+(ALTS $shape "which object is the shape" $OnePiece
+  (ALT $LargestPiece
+    (INPUT shape "the largest object is the shape, in its color S, and the other objects of more than one cell are erased; undefined when two objects tie for largest"
+      (RULE &shape
+        (&biggest.value (:v *Id))
+        (&object Id (:Col *S))))
+    (ALTS $markers "which cells are the markers" $SingleDots
+      (ALT $MarkersByColor
+        (INPUT dots "every cell of the one non-background color other than S is a marker, and that color is C; undefined when there is more than one such color"
+          (INIT &ink Singleton
+            (member ((:v C))
+              (&read)
+              (&markers_of)
+              (&fg (:Col *C))
+              (NOT (&reserved (:Col C)))))
+          (RULE &marker
+            (&markers_of)
+            (&ink.value (:v *C))
+            (input *P (:Col C))))
+        (ALT $AnchorMinority
+          (INPUT dots "the anchor is the dot whose color no other dot has, and the markers are the other dots, all in one color C; undefined when no color, or more than one, occurs on one dot alone"
+            (RULE &reserved
+              (OR ((&read)
+                   (&lone.value (:v *Col)))
+                  ((&read)
+                   (&markers_of)
+                   (&shape (:S Col)))))))))))
+
+(ALTS $anchor "which dot is the anchor" $ShapeColorDot
+  (ALT $AnchorNearest
+    (INPUT dots "of the dots in S, the anchor is the one whose summed taxicab distance to the markers is least, and the other dots in S are erased; undefined at a tie"
+      (RULE_OR_DET &line "The lines of the grid on each axis, axis-only."
+        (input *P)
+        (axis_elem *A)
+        (split P A (:Along *L)))
+
+      ;; Each dot in S, scored by its summed taxicab distance to the markers: each
+      ;; marker counts the lines past the dot up to its own, on both axes.
+      (INIT &span Cardinality
+        (key ((&shape *S)
+              (&dot ^P (:Col S))
+              (&marker (:P *M))
+              (&line *A *L)
+              (axis_of *D A)
+              (nearer D (:P M) (:Q P))
+              (nearer D (:P L) (:Q P))
+              (NOT (nearer D (:P L) (:Q M))))
+          (member ((:m M A L))
+            (&shape *S)
+            (&dot P (:Col S))
+            (&marker (:P *M))
+            (&line *A *L)
+            (axis_of *D A)
+            (nearer D (:P M) (:Q P))
+            (nearer D (:P L) (:Q P))
+            (NOT (nearer D (:P L) (:Q M))))))
+
+      (INIT &nearest Order
+        (member ((:t (:V P) (:S N)))
+          (&span.size (:key *P) *N))
+        (score ((:t (:V P) (:S N)) (:S N))
+          (&span.size (:key *P) *N)))
+
+      (INIT &anchor Singleton
+        (member ((:v P))
+          (&nearest.minimal (:t (:V *P)))))))
+  (ALT $AnchorMinority
+    (INPUT dots "the anchor is the dot whose color no other dot has, and the markers are the other dots, all in one color C; undefined when no color, or more than one, occurs on one dot alone"
+      (INIT &anchor Singleton
+        (member ((:v P))
+          (&read)
+          (&lone.value (:v *A))
+          (&dot *P (:Col A))))
+
+      (RULE &reserved
+        (&read)
+        (&lone.value (:v *Col))))))
+
+(ALTS $period "how a dot's place gives the block of its stamp" $StoredStep
+  (ALT $StepGcd
+    (OUTPUT period "the step is the largest at which every marker lies in the anchor's period class"
+      (RULE &pitch
+        (&anchor.value (:v *P))
+        (sub_extent P *A *K))
+
+      (RULE &off_step
+        (&pitch *K)
+        (&marker (:P *M))
+        (NOT (&on_step K (:Q M))))
+
+      (INIT &steps Order
+        (member ((:t K))
+          (&pitch *K)
+          (NOT (&off_step K)))
+        (score ((:t K) (:S K))
+          (&pitch *K)
+          (NOT (&off_step K)))))
+    (RULE &place
+      (&steps.maximal (:t *K))
+      (&on_step K *Q *I)))
+  (ALT $PeriodRank
+    (OUTPUT period "on each axis, a dot's offset is its line's rank among the dots' distinct lines, less the anchor's")
+    (RULE &place
+      (diag_dirs *D1 *D2)
+      (&rungs.size (:key *Q (:D D1)) (:N *N1))
+      (&rungs.size (:key Q (:D D2)) (:N *N2))
+      (jump (:P 0) (:D D1) (:K N1) (:Q *I1))
+      (jump (:P I1) (:D D2) (:K N2) (:Q *I)))))
+
+(ALTS $content "what one stamp copies" $ShapeCells
+  (ALT $BoxStamp
+    (OUTPUT stamp "each stamp copies the shape's bounding box; a cell in S takes the stamp's color, and a cell of any other color keeps its color")
+    (RULE &source
+      (&shape *Id)
+      (&box.box (:key Id) *B)
+      (input *P *Col)
+      (inside (:A P) B))))
+
+(RULE &place
+  (&on_step *Q *I))
+
+(RULE &astray
+  (&marker (:P *M))
+  (NOT (&place (:Q M))))
+
+(RULE &block
+  (&shape *Id)
+  (&box.box (:key Id) *B)
+  (&stamp_gap (:K *G))
+  (diag_dirs *A *D1 *D2)
+  (perp A *A2)
+  (opposite (:D D1) (:Opp *O1))
+  (opposite (:D D2) (:Opp *O2))
+  (input (:P *X))
+  (relative (:Base B) X *X_rel)
+  (margin (:B X_rel) (:D O1) (:K *T1))
+  (margin (:B X_rel) (:D O2) (:K *T2))
+  (box_extent B (:P X) A (:N *N1))
+  (box_extent B (:P X) (:A A2) (:N *N2))
+  (divide (:T T1) (:Side N1) (:Gap G) (:Part *K1) (:Remainder 0))
+  (divide (:T T2) (:Side N2) (:Gap G) (:Part *K2) (:Remainder 0))
+  (jump (:P 0) (:D D1) (:K K1) (:Q *I1))
+  (jump (:P I1) (:D D2) (:K K2) (:Q *I))
+  (jump (:P 0) (:D D1) (:K T1) (:Q *V1))
+  (jump (:P V1) (:D D2) (:K T2) (:Q *V)))
+
+(RULE &source
+  (&shape *Id (:S *Col))
+  (&object Id Col *P))
+
+(RULE &stamped
+  (&paint *Q (:Col *C_stamp))
+  (&place Q *I)
+  (&block I *V)
+  (&source (:P *P3) (:Col *C_own))
+  (compose (:A P3) (:B V) (:C *P))
+  (input P)
+  (&shape *S)
+  (OR ((= C_own S)
+       (= *Col C_stamp))
+      ((!= C_own S)
+       (= Col C_own))))
+
+(RULE &ready
+  (&anchor.value)
+  (&marker)
+  (NOT (&astray)))
+
+(RULE &output
+  (&ready)
+  (OR ((&stamped *P *Col))
+      ((input P)
+       (&palette.maximal (:t Col))
+       (NOT (&stamped P)))))
+
+(OUT (&output ^P ^Col))

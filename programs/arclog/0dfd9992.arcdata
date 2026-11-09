@@ -1,0 +1,5 @@
+;; inputs 82555ab2fcaa120e246bfd13882e22f7d3a35a8c2acea4b174169e9faf3373c4 programs/solvers/0dfd9992.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0dfd9992
+
+(param &hole Color (0))

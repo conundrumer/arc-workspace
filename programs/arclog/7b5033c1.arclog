@@ -1,0 +1,72 @@
+;; inputs 3f8d3ebf9a3f8903265d3f7b3f2e84e2e80be0318275876c982b919e35b3da63 programs/solvers/7b5033c1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b5033c1
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(DET &line_axis AxisDomain)
+
+;; Bg is the commonest color.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(RULE &link
+  (&ink *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&ink (:P Q)))
+
+(RULE &fork
+  (&link *P *Q)
+  (&link P (:Q *Q2))
+  (!= Q Q2))
+
+(RULE &end
+  (&link *P)
+  (NOT (&fork P)))
+
+(RULE &head
+  (&line_axis *A)
+  (axis_of *D A)
+  (&end *P)
+  (&end (:P *Q))
+  (nearer D P Q))
+
+;; Each path cell's place along the walk from the head: its hop count.
+(INIT &path Distance
+  (key ((OR ((&head ^D)
+             (&link *P *Q))
+            ((&head D P))))
+    (edge ((:a P) (:b Q))
+      (&head D)
+      (&link *P *Q))
+    (source ((:n P))
+      (&head D *P))))
+
+;; The output line: one cell per path cell.
+(INIT &total Cardinality
+  (member ((:m P))
+    (&ink *P)))
+
+(INIT &line Frame
+  (key ((&line_axis ^A))
+    (extent (A N)
+      (&total.size *N))))
+
+(RULE &output
+  (&path.distance (:key *D) (:n *P2) *K)
+  (input (:P P2) *Col)
+  (&line.cell *P)
+  (margin (:B P) D K))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,8 @@
+;; inputs 88d0c177017b02061379225190d87c1d69717a6db2fa86e9469dfefc183a207a programs/solvers/ca8f78db.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ca8f78db
+
+(param &noise Color (0))
+(param &period (Axis number) (AXIS_V 2))
+(param &bg Color (1))
+(param &axis Axis (AXIS_H))

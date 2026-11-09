@@ -1,0 +1,79 @@
+;; inputs d6dbbaeab16f1f4b7a9f642111c08b2c032f3fcc899a88858613e9f2396f9bd9 programs/solvers/7ed72f31.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7ed72f31
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(DET &mirror UnchangedColor)
+
+;; The field is the commonest color; everything else is ink.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+;; An object is a shape with its mirror, 8-connected.
+(INIT &obj Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &mirror2
+  (&obj.component *P *Id)
+  (input P *Col)
+  (&mirror (:C Col)))
+
+(RULE &shape
+  (&obj.component *P *Id)
+  (&ink P *Col)
+  (NOT (&mirror (:C Col))))
+
+(INIT &mirror_line Singleton
+  (key ((&mirror2 ^Id *P)
+        (axis_elem ^A)
+        (split P A (:Along *L)))
+    (member ((:v L))
+      (&mirror2 Id *P)
+      (split P A (:Along *L)))))
+
+(RULE &image_along
+  (&shape *Id *P)
+  (split P *A (:Along *Al2))
+  (OR ((&mirror_line.value (:key Id A) (:v *L))
+       (relative (:Base L) (:X Al2) (:X_rel *Off))
+       (axis_inversion A (:T *D))
+       (apply D (:P Off) (:P_out *Off_img))
+       (compose (:A L) (:B Off_img) (:C *Al)))
+      ((NOT (&mirror_line.value (:key Id A)))
+       (= Al Al2))))
+
+(RULE &image
+  (&shape (:P *P2) *Col)
+  (&image_along (:P P2) *A *Al)
+  (perp A *A2)
+  (&image_along (:P P2) (:A A2) (:Al *Al2))
+  (compose (:A Al) (:B Al2) (:C *P)))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (OR ((NOT (&ink P))
+       (&image P *Col))
+      ((&ink P)
+       (= Col Col2))
+      ((NOT (&ink P))
+       (NOT (&image P))
+       (= Col Col2))))
+
+(OUT (&output ^P ^Col))

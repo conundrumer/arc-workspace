@@ -1,0 +1,10 @@
+;; inputs ebde0428b80427ada45a8ed3146b865af6a8faa0b13202cff83f90c8298d55b1 programs/solvers/759f3fd3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 759f3fd3
+
+(param &cross Color (3))
+(param &first_ring Color (0))
+(param &ring_cycle (Color Color) (0 4) (4 0))
+(param &bg Color (0))
+(param &fill Color (4))
+(param &period number (2))

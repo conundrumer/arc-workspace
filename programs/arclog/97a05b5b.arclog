@@ -1,0 +1,146 @@
+;; inputs 28fdf420ad825ac56e1bfb41ada15439ddde9609c35f867fd9476717b4de2158 programs/solvers/97a05b5b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97a05b5b
+
+(DET &bg DominantColor)
+
+(DET &board_color SharedColor)
+
+(RULE &flood_node
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &flood Flood
+  (node (P)
+    (&flood_node *P))
+  (source (P)
+    (&flood_node *P)
+    (margin (:B P) *D (:K 0))))
+
+(RULE &hole
+  (&flood_node *P)
+  (NOT (&flood.reached P)))
+
+(INIT &obj Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &obj_cell
+  (&obj.component *P (:Id *O))
+  (input P *Col))
+
+(RULE &board
+  (&obj_cell *O *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&hole (:P Q)))
+
+(RULE &piece
+  (&obj_cell *O)
+  (NOT (&board O)))
+
+(INIT &patch_box BoundingBox
+  (key ((&piece ^O))
+    (cell (P)
+      (&obj_cell O *P *Col)
+      (&board_color (:C Col)))))
+
+(RULE &piece_cell
+  (&obj_cell *O *P *Col)
+  (&patch_box.box (:key O) *B)
+  (relative (:Base B) (:X P) (:X_rel *P_rel))
+  (c4_elem *D)
+  (apply D (:P P_rel) (:P_out *P_turn)))
+
+(RULE &patch_cell
+  (&piece_cell *O *D *P_turn *Col)
+  (&board_color (:C Col)))
+
+;; Every spot at which a turned patch falls on holes alone.
+(INIT &occ Occurrences
+  (key ((OR ((&patch_cell ^O ^D *P_turn))
+            ((&piece O)
+             (c4_elem D)
+             (&hole *P))))
+    (cell (P)
+      (&piece O)
+      (c4_elem D)
+      (&hole *P))
+    (shape ((:P P_turn))
+      (&patch_cell O D *P_turn))))
+
+(RULE &fills
+  (&occ.occurrence (:key *O *D) (:P *B))
+  (&patch_cell O D *P_turn)
+  (compose (:A B) (:B P_turn) (:C *P)))
+
+;; One spot per piece, and no two pieces over one hole.
+(CHOOSE &pruning
+  (for ((&occ.occurrence (:key ^O)))
+    (from (&occ.occurrence (:key O *D) (:P *B))))
+  (never
+    (&occ.occurrence (:key *O *D) (:P *B))
+    (&occ.occurrence (:key (:O *O2) (:D *D2)) (:P *B2))
+    (&fills O D B *P)
+    (&fills (:O O2) (:D D2) (:B B2) P)))
+
+(RULE &place
+  (&pruning *O *D *B))
+
+(INIT &board_box BoundingBox
+  (cell (P)
+    (&board *O)
+    (&obj_cell O *P)))
+
+(ALTS $choice "what settles where a piece lands" $Pack
+  (ALT $Match
+    ;; The holes grouped into regions. A hole joins its neighbors at a corner as
+    ;; well as at a side, as the cells of a patch do.
+    (INIT &hole_region Connectivity
+      (node (P)
+        (&hole *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (INIT &region_box BoundingBox
+      (key ((&hole_region.component *P (:Id ^R)))
+        (cell (P)
+          (&hole_region.component *P (:Id R)))))
+
+    ;; A turned patch against a region, each read in its own box.
+    (INIT &congruent Inclusion
+      (pattern ((:pattern R) (:m P_rel))
+        (&hole_region.component *P (:Id *R))
+        (&region_box.box (:key R) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel)))
+      (observed ((:observed O D) (:m P_turn))
+        (&patch_cell *O *D *P_turn)))
+
+    (RULE &place
+      (&congruent.equal (:observed *O *D) (:pattern *R))
+      (&region_box.box (:key R) *B))))
+
+(RULE &paints
+  (&place *O *D *B)
+  (&piece_cell O D *P_turn *Col)
+  (compose (:A B) (:B P_turn) (:C *P)))
+
+(RULE &output
+  (&board_box.box *B)
+  (OR ((&paints (:P *P2) *Col))
+      ((input (:P P2) Col)
+       (NOT (&paints (:P P2)))))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

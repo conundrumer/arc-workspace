@@ -1,0 +1,62 @@
+;; inputs 9772e3d5e12429c240b493eac5ba04dc9c8c91762036c9089b42bec69103bb9e programs/solvers/662c240a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 662c240a
+
+(DET &tile_axis AxisDomain)
+
+(DET &tile_count ConstOutDim)
+
+(INIT &tile_val_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (&tile_axis *A)
+    (&tile_count *N)))
+
+(DET &sym D4Domain)
+
+(RULE &tile_val
+  (input (:P *P_grid) *Col)
+  (&tile_val_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(ALTS $d "find the tiles" $Count
+  (ALT $Size
+    (DET &tile_size ConstOutDim)
+
+    (INIT &tile_val_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (&tile_axis *A)
+        (&tile_size (:N *K))))
+
+    (RULE &tile_val
+      (input (:P *P_grid) *Col)
+      (&tile_val_division2.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+(ALTS $s "which tile is the odd one" $Shared
+  (ALT $Asym
+
+    (RULE &inv_has_sym_full
+      (&tile_val (:P_tile *V0))
+      (d4_elem *D)
+      (NOT (d4_identity D))
+      (NOT (&inv.mismatch (:key (:T V0)) D)))
+
+    (RULE &output
+      (&tile_val (:P_tile *T) (:P_intile *P) *Col)
+      (NOT (&inv_has_sym_full (:V0 T))))))
+
+(INIT &inv Agreement
+  (key ((&tile_val (:P_tile ^T) (:P_intile *P) *Col))
+    (source (P (:v Col))
+      (&tile_val (:P_tile T) (:P_intile *P) *Col))
+    (target (P (:v Col))
+      (&tile_val (:P_tile T) (:P_intile *P) *Col))))
+
+(RULE &output
+  (&tile_val (:P_tile *T) (:P_intile *P) *Col)
+  (&sym (:D *F))
+  (&inv.mismatch (:key T) (:D F)))
+
+(OUT (&output ^P ^Col))

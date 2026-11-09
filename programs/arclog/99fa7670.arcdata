@@ -1,0 +1,7 @@
+;; inputs 020ecd20a6fec7b3dac6d977c3651b64532a51e3820fc26640f6f3bfb0a35f7e programs/solvers/99fa7670.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 99fa7670
+
+(param &bg Color (0))
+(param &dir Dir (DIR_R))
+(param &sense Sense (SENSE_CW))

@@ -1,0 +1,38 @@
+;; inputs 4ff01caa315f0b6c9a07f759eedfd44efa89a8e0085eb55d017e83df982015a0 programs/solvers/3befdf3e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3befdf3e
+
+(param &bg Color (0))
+(param &fig_wall (number Position)
+  (1 (grid
+    (_ 1 1 1 _)
+    (1 _ _ _ 1)
+    (1 _ 1 _ 1)
+    (1 _ _ _ 1)
+    (_ 1 1 1 _)))
+  (2 (grid
+    (_ _ 1 1 1 1 _ _)
+    (_ _ 1 1 1 1 _ _)
+    (1 1 _ _ _ _ 1 1)
+    (1 1 _ 1 1 _ 1 1)
+    (1 1 _ 1 1 _ 1 1)
+    (1 1 _ _ _ _ 1 1)
+    (_ _ 1 1 1 1 _ _)
+    (_ _ 1 1 1 1 _ _))))
+(param &fig_core (number Position)
+  (1 (grid
+    (_ _ _ _ _)
+    (_ 1 1 1 _)
+    (_ 1 _ 1 _)
+    (_ 1 1 1 _)
+    (_ _ _ _ _)))
+  (2 (grid
+    (_ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _)
+    (_ _ 1 1 1 1 _ _)
+    (_ _ 1 _ _ 1 _ _)
+    (_ _ 1 _ _ 1 _ _)
+    (_ _ 1 1 1 1 _ _)
+    (_ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _))))
+(param &fig_core_box (number Box) (1 (2 2 2 2)) (2 (3 3 3 3)))

@@ -1,0 +1,65 @@
+;; inputs 0c62e66b9d630eacde30bc6d200dc2fb9e7a6bcea38e64f9e0a8fded79dd94ba programs/solvers/9c56f360.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9c56f360
+
+(DET &mover RarestColor)
+
+(RULE &mover2
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(DET &wall UnchangedColor)
+
+(RULE &pack_blocked
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(DET &dir DirDomain)
+
+(DET &bg DominantColor)
+
+(ALTS $choice "what blocks the pack" $Wall
+  (ALT $Solid
+    (RULE &pack_blocked
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&mover (:C Col))))))
+
+;; Each mover cell travels toward the dir edge and stops against what blocks
+;; the pack or against the movers already packed ahead of it.
+(INIT &pack Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (&mover2 *P)
+    (&dir *D)
+    (&mover2 (:P *P2))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (OR ((&mover2 *P)
+         (&dir *D)
+         (margin (:B P) D *K))
+        ((&mover2 P)
+         (&dir (:D *D2))
+         (&pack_blocked (:P *Q))
+         (gap (:D D2) P Q K)))))
+
+(RULE &pack_travel_full
+  (&pack.distance (:n *V1) *K)
+  (&dir *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &moved
+  (&pack_travel_full (:V1 *P3) (:V2 *V))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&mover (:C *Col))
+       (&moved *P))
+      ((&bg (:C Col))
+       (&mover2 P)
+       (NOT (&moved P)))
+      ((input P Col)
+       (NOT (&mover2 P))
+       (NOT (&moved P)))))
+
+(OUT (&output ^P ^Col))

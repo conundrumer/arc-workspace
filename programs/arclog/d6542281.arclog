@@ -1,0 +1,238 @@
+;; inputs ba76e5dfbd6de03bddc29ce2529806a86f1cb2e82ee4b97290a97e24005c4e49 programs/solvers/d6542281.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d6542281
+
+(INPUT background "the commonest color of the input fills the field.")
+
+(INPUT shapes "some 8-connected objects of non-background cells hold more than one color; these are the whole shapes."
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&commonest.maximal (:t Col))))
+
+  (INIT &objects Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &obj_cell
+    (&objects.component *P (:Id *O))
+    (&ink P *Col))
+
+  (INIT &size Cardinality
+    (key ((&obj_cell ^O *P))
+      (member ((:m P))
+        (&obj_cell O *P))))
+
+  (RULE &larger
+    (&size.size (:key (:O *Id)) *N)
+    (&size.size (:key (:O *Id2)) (:N *N2))
+    (< N N2))
+
+  (INIT &within Occurrences
+    (key ((&larger ^Id ^Id2))
+      (cell (P (:v Col))
+        (&obj_cell (:O Id2) *P *Col))
+      (shape (P (:v Col))
+        (&obj_cell (:O Id) *P *Col)))))
+
+(INPUT dots "every other 8-connected object holds one color, and none touches a shape.")
+
+(INPUT dots-from-one-shape "the dots fall in groups, and each group is a translated copy of a subset of one shape's cells, color for color, at one placement of that shape alone.")
+
+(INPUT copies-fit "at that placement the shape's cells land on the group's dots or on background, and inside the grid.")
+
+(OUTPUT placement "a placement of a shape is a translation that takes some shape cell onto a dot of its color, where every shape cell lands inside the grid on background or on a dot of its color.")
+
+(OUTPUT largest-match "a placement is kept when the set of dots it covers is not a proper subset of the set another placement covers."
+
+  (INIT &palette Singleton
+    (key ((&obj_cell ^O *Col))
+      (member ((:v Col))
+        (&obj_cell O *Col))))
+
+  (RULE &shape_obj
+    (&palette.plural (:key *O)))
+
+  (RULE &shape_cell
+    (&shape_obj (:O *Id))
+    (&obj_cell (:O Id) *P *Col))
+
+  (RULE &dots_obj
+    (&palette.value (:key *O)))
+
+  (RULE &dot
+    (&dots_obj (:O *Id))
+    (&obj_cell (:O Id) *P *Col))
+
+  (RULE &seat
+    (OR ((&dot *P *Col))
+        ((input P (:Col *C0))
+         (&commonest.maximal (:t C0))
+         (&shape_cell Col))))
+
+  (RULE &candidate
+    (&shape_cell *Id (:P *S) *Col)
+    (&dot *P Col)
+    (relative (:Base S) (:X P) (:X_rel *M)))
+
+  (RULE &landing
+    (&candidate *Id *M)
+    (&shape_cell Id (:P *S) *Col)
+    (compose (:A M) (:B S) (:C *P)))
+
+  (RULE &misfit
+    (OR ((&landing *Id *M *P)
+         (NOT (input P)))
+        ((&landing Id M (:P *P2) *Col)
+         (input (:P P2))
+         (NOT (&seat (:P P2) Col)))))
+
+  (RULE &placement
+    (&candidate *Id *M)
+    (NOT (&misfit Id M)))
+
+  (RULE &covers
+    (&placement *Id *M)
+    (&landing Id M *P *Col)
+    (&dot P Col))
+
+  (INIT &coverer Singleton
+    (key ((&covers (:Id *C_id) (:M *C_m) ^P))
+      (member ((:v (:Id C_id) (:M C_m)))
+        (&covers (:Id *C_id) (:M *C_m) P))))
+
+  (INIT &coverage Cardinality
+    (key ((&covers ^Id ^M *P))
+      (member ((:m P))
+        (&covers Id M *P))))
+
+  (INIT &widest Order
+    (key ((&covers (:Id *C_id) (:M *C_m) ^P)
+          (&coverage.size (:key (:Id C_id) (:M C_m)) *N))
+      (member ((:t (:Id C_id) (:M C_m) (:S N)))
+        (&covers (:Id *C_id) (:M *C_m) P)
+        (&coverage.size (:key (:Id C_id) (:M C_m)) *N))
+      (score ((:t (:Id C_id) (:M C_m) (:S N)) (:S N))
+        (&covers (:Id *C_id) (:M *C_m) P)
+        (&coverage.size (:key (:Id C_id) (:M C_m)) *N)))))
+
+(OUTPUT stamp "each kept placement draws the whole shape, cell for cell, over the input; every other cell keeps its input color."
+
+  (RULE &overlap
+    (&covers (:Id *C_id) (:M *C_m) *P)
+    (&covers (:Id *C2_id) (:M *C2_m) P))
+
+  (RULE &escapes
+    (&overlap *C_id *C_m *C2_id *C2_m)
+    (&covers (:Id C_id) (:M C_m) *P)
+    (NOT (&covers (:Id C2_id) (:M C2_m) P)))
+
+  (RULE &dominated
+    (&overlap (:C_id *Id) (:C_m *M) *C2_id *C2_m)
+    (NOT (&escapes (:C_id Id) (:C_m M) C2_id C2_m))
+    (&escapes (:C_id C2_id) (:C_m C2_m) (:C2_id Id) (:C2_m M)))
+
+  (RULE &kept
+    (&placement *Id *M)
+    (NOT (&dominated Id M))))
+
+(ALTS $shape_test "which objects are whole shapes and which are dots" $MultiColor
+  (ALT $ShapeByContainment
+    (INPUT shapes "an object whose translate lies on no larger object's cells, color for color, is a shape; undefined where kept copies conflict."
+
+      (RULE &shape_obj
+        (&size.size (:key *O))
+        (NOT (&within.occurrence (:key (:Id O)))))
+
+      (RULE &dots_obj
+        (&within.occurrence (:key (:Id *O)))))
+    (INPUT dots "an object whose translate lies on a larger object's cells, color for color, is dots.")))
+
+(ALTS $kept_placements "which placements are completed" $LargestMatch
+  (ALT $UniqueDotPlacement
+    (OUTPUT largest-match "a dot that exactly one placement covers keeps that placement; undefined where kept copies conflict."
+      (RULE &kept
+        (&coverer.value (:v *Id *M)))))
+  (ALT $MostDotsPerDot
+    (OUTPUT largest-match "each dot keeps the placements that cover it and cover the most dots; undefined where kept copies conflict."
+      (RULE &kept
+        (&widest.maximal (:t *Id *M))))))
+
+(ALTS $copy_past_edge "whether a copy may reach past the grid edge" $InsideGrid
+  (ALT $PlaceOffGrid
+    (OUTPUT placement "a placement may reach past the grid edge, and its copy draws only its cells inside the grid; undefined where kept copies conflict."
+      (RULE &misfit
+        (&landing *Id *M *P *Col)
+        (input P)
+        (NOT (&seat P Col))))
+    (INPUT copies-fit "the shape's cells land on the group's dots or on background, wherever they land inside the grid.")
+    (ALT $PlaceOverAny
+      (OUTPUT placement "a placed shape's cells may land on any cell, they cover the dots of their color they land on, and the copy draws only on background; undefined where kept copies conflict."
+        (RULE &misfit
+          (OR ((&landing *Id *M *P)
+               (NOT (input P)))
+              ((&landing Id M (:P *P2) *Col)
+               (input (:P P2))
+               (NOT (&seat (:P P2) Col)))))
+
+        (RULE &placement
+          (&candidate *Id *M))))))
+
+(ALTS $copy_over_cells "what a copy's cells may land on" $OverBackground
+  (ALT $PlaceOverAny
+    (OUTPUT placement "a placed shape's cells may land on any cell, they cover the dots of their color they land on, and the copy draws only on background; undefined where kept copies conflict."
+      (RULE &misfit
+        (&landing *Id *M *P)
+        (NOT (input P))))
+    (INPUT copies-fit "the shape's cells land inside the grid.")
+    (RULE &paint
+      (&kept (:Id *C_id) (:M *C_m))
+      (&landing (:Id C_id) (:M C_m) *P *Col)
+      (input P (:Col *C0))
+      (&commonest.maximal (:t C0)))))
+
+(ALTS $uncovered_dots "what becomes of a dot no kept copy covers" $KeepUncovered
+  (ALT $EraseUncovered
+    (OUTPUT stamp "also, a dot that no kept copy covers turns to background; undefined where kept copies conflict."
+      (RULE &covered
+        (&kept (:Id *C_id) (:M *C_m))
+        (&covers (:Id C_id) (:M C_m) *P))
+
+      (RULE &erased
+        (&dot *P)
+        (NOT (&covered P))))
+    (RULE &output
+      (OR ((&erased *P)
+           (&commonest.maximal (:t *Col)))
+          ((&paint P Col))
+          ((input P Col)
+           (NOT (&paint P))
+           (NOT (&erased P)))))))
+
+(RULE &paint
+  (&kept (:Id *C_id) (:M *C_m))
+  (&landing (:Id C_id) (:M C_m) *P *Col)
+  (input P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

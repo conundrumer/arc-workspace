@@ -1,0 +1,74 @@
+;; inputs 38ca8e4bf94428d00ac6cb809cd4a8052cb3f4a74ed701fc3b1e235776d9ec49 programs/solvers/753ea09b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 753ea09b
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &ink_mode_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col))))))
+
+(INIT &ink_mode Order
+  (member ((:t Col))
+    (&ink_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&ink_mode_count.size (:key *Col) *N)))
+
+(RULE &rail_cell
+  (input *P *Col)
+  (&ink_mode.maximal (:t Col)))
+
+(INIT &rails Connectivity
+  (node (P)
+    (&rail_cell *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &rail
+  (&rails.component *P *Id)
+  (margin (:B P) *D (:K 0)))
+
+(INIT &regions Connectivity
+  (node (P)
+    (input *P)
+    (NOT (&rail_cell P))))
+
+(RULE &beside
+  (&regions.component *P (:Id *Region))
+  (neighbor P *Q)
+  (&rails.component (:P Q) (:Id *Rail))
+  (&rail (:Id Rail)))
+
+(RULE &between
+  (&beside *Region (:Rail *Id))
+  (&beside Region (:Rail *Id2))
+  (!= Id Id2))
+
+(RULE &fill
+  (input *P *Col)
+  (&bg_mode.maximal (:t Col))
+  (&regions.component P (:Id *R))
+  (&between (:Region R)))
+
+(RULE &output
+  (OR ((&fill *P)
+       (&ink_mode.maximal (:t *Col)))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

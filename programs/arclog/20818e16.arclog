@@ -1,0 +1,60 @@
+;; inputs e9029a28fdebc5f17d5427d1922c67c646e1e7294943a2c1850ff7fc2d610846 programs/solvers/20818e16.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20818e16
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&field.maximal (:t Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&field.maximal (:t Col))))))
+
+(RULE &rect_cell
+  (input (:P *P_grid))
+  (&bbox.box (:key *Col) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+(INIT &size_count Cardinality
+  (key ((&rect_cell ^Col *P_inner))
+    (member ((:m P_inner))
+      (&rect_cell Col *P_inner))))
+
+;; The corner the rectangles align to.
+(DET &corner DiagDirDomain)
+
+(INIT &size Order
+  (member ((:t Col))
+    (&size_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&size_count.size (:key *Col) *N)))
+
+(RULE &cover
+  (&rect_cell *Col *P_inner)
+  (&corner *D)
+  (&size.maximal (:t *C_big))
+  (&rect_cell (:Col C_big) (:P_inner *P))
+  (same_corner D (:P1 P_inner) (:P2 P)))
+
+(INIT &top Order
+  (key ((&cover *Col ^P)
+        (&size_count.size (:key Col) *N))
+    (member ((:t (:V Col) (:S N)))
+      (&cover *Col P)
+      (&size_count.size (:key Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&cover *Col P)
+      (&size_count.size (:key Col) *N))))
+
+(OUT (&top.minimal (:key ^P) (:t ^V)))

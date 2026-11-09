@@ -1,0 +1,76 @@
+;; inputs 31cbccb29453e1357587e7e0577f8945cb52835fe81783f70629225dd4bd3015 programs/solvers/508bd3b6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 508bd3b6
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(DET &wall UnchangedColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &aim
+  (&mark_cell *P)
+  (diag_dir_elem *D)
+  (neighbor P D *Q)
+  (&mark_cell (:P Q)))
+
+(RULE &side_wall
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&wall (:C Col)))
+
+(RULE &deflect
+  (&side_wall *P *D))
+
+(ALTS $choice "which walls turn the beam" $Surface
+  (ALT $Side
+    (RULE &open_edge
+      (input *P *Col)
+      (margin (:B P) *D (:K 0))
+      (NOT (&wall (:C Col))))
+
+    ;; The wall covers the whole side toward d.
+    (RULE &deflect
+      (&side_wall *P *D)
+      (NOT (&open_edge D)))))
+
+;; The beam reaches p heading d: from a mark along the aim, it leaves each
+;; cell with the heading the walls there turn it to, into the open cell ahead.
+(INIT &beam Propagation
+  (source ((:n (:P P0) (:D D0)))
+    (&mark_cell (:P *P0))
+    (&aim (:D *D0)))
+  (edge ((:a P D) (:b (:P Q) (:D D_out)))
+    (input *P)
+    (diag_dirs *D *D1 *D2)
+    (IF ((&deflect P (:D D1)))
+        ((opposite (:D D1) (:Opp *E1)))
+        ((= E1 D1)))
+    (IF ((&deflect P (:D D2)))
+        ((opposite (:D D2) (:Opp *E2)))
+        ((= E2 D2)))
+    (diag_dirs (:D *D_out) (:D1 E1) (:D2 E2))
+    (neighbor P (:D D_out) *Q)
+    (input (:P Q) (:Col *Bg))
+    (&bg (:C Bg))))
+
+(RULE &painted
+  (&beam.reached (:n *P))
+  (input P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

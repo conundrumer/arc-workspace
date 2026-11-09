@@ -1,0 +1,7 @@
+;; inputs 31df5133be99af13e48b46323ad094c84de3cb31f1bae74a775b10e4b8099df8 programs/solvers/36a08778.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 36a08778
+
+(param &water Color (6))
+(param &block Color (2))
+(param &fall Dir (DIR_B))

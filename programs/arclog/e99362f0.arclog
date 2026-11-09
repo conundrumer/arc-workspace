@@ -1,0 +1,322 @@
+;; inputs 4239b32db03b45db8b2111cfd8b193a25ebbafb48fec598a959f7c1bcdf01606 programs/solvers/e99362f0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e99362f0
+
+(INPUT divider-cross "one full row and one full column of the divider color 4 cross and cut the grid into four panels of one size.")
+
+(INPUT one-color-per-panel "each panel holds marks of one color on the background color 0, and the four panels have four different colors: 7 top-left, 9 top-right, 2 bottom-left, 8 bottom-right.")
+
+(OUTPUT stack-by-priority "the output has the size of one panel, and each output cell takes, of the colors that the four panels have at that cell, the one highest in the priority, and the background color where no panel has a mark."
+
+  (RULE &line_break
+    (input *P (:Col *C))
+    (axis_elem *A)
+    (input (:P *Q) (:Col *C2))
+    (same_line A P Q)
+    (!= C2 C))
+
+  (RULE &full_cut
+    (input *P (:Col *C))
+    (perp *A (:A2 *A_cut))
+    (NOT (&line_break P A))
+    (split P (:A A_cut) (:Along *L)))
+
+  (DET &uncut
+    (&full_cut *C)
+    (ex_input *E)
+    (NOT (&full_cut E C)))
+
+  (DET &divider
+    (&full_cut *C)
+    (NOT (&uncut C)))
+
+  (DET &panels_divider
+    (&full_cut (:E *Key) (:A_cut *A) *L *C)
+    (&divider C))
+
+  (DET &panels_on_divider
+    (ex_input (:E *Key) *P)
+    (&panels_divider Key *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &panels_rank Order
+    (key ((OR ((&panels_divider (:Key ^Ky) *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((ex_input (:E Ky) *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&panels_divider (:Key Ky) *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&panels_divider (:Key Ky) *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((ex_input (:E Ky) *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (ex_input (:E Ky) *P)
+        (margin (:B P) D *K))))
+
+  (DET &panels_part_idx
+    (ex_input (:E *Key) *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider Key P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key (:Ky Key) D) (:t K) (:R *N)))
+
+  (DET &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *Key *P D (:N *N1))
+    (&panels_part_idx Key P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (DET &panels_tile_of
+    (&panels_part_of *Key *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of Key P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  ;; a full line of one divider color cuts the axis across it
+  (RULE_OR_DET &cut "the lines that cut the grid into panels, each axis-only on the axis it cuts"
+    (&full_cut (:A_cut *A) *L *C)
+    (&divider C))
+
+  (RULE &panels_cell
+    (&cut)
+    (input *P))
+
+  (RULE &panels_on_divider2
+    (&panels_cell *P)
+    (&cut *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &panels_rank2 Order
+    (key ((OR ((&cut *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&panels_cell *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&cut *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&cut *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&panels_cell *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&panels_cell *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx2
+    (&panels_cell *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider2 P A))
+    (margin (:B P) D *K)
+    (&panels_rank2.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of2
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx2 *P D (:N *N1))
+    (&panels_part_idx2 P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &panels_tile_of2
+    (&panels_part_of2 *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of2 P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &panel_box2 BoundingBox
+    (key ((&panels_tile_of2 *P (:P_tile ^T)))
+      (cell (P)
+        (&panels_tile_of2 *P (:P_tile T)))))
+
+  (RULE &panel_cell
+    (input *P *Col)
+    (&panel_box2.box (:key (:T *P_tile)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (RULE &mark2
+    (&panel_cell *P_tile (:P_intile *P) *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &panel_box BoundingBox
+    (key ((&panels_tile_of (:Key ^E) *P (:P_tile ^T)))
+      (cell (P)
+        (&panels_tile_of (:Key E) *P (:P_tile T)))))
+
+  (DET &mark
+    (ex_input *E (:P *P2) *Col)
+    (NOT (&background (:C Col)))
+    (&panel_box.box (:key E (:T *P_tile)) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (DET &beats
+    (&mark *E *P_tile *P *Col)
+    (&mark E (:P_tile *P_tile2) P (:Col *Col2))
+    (!= Col Col2)
+    (ex_output E P Col))
+
+  (INIT &color_order Order
+    (member ((:t Col))
+      (&mark *Col))
+    (before ((:a Col) (:b Col2))
+      (&beats *Col *Col2)))
+
+  (DET &priority
+    (&color_order.rank (:t *C) *R))
+
+  ;; the highest-priority mark color at each cell
+  (INIT &front_color Order
+    (key ((&mark2 ^P *Col)
+          (&priority (:C Col) *R))
+      (member ((:t (:V Col) (:S R)))
+        (&mark2 P *Col)
+        (&priority (:C Col) *R))
+      (score ((:t (:V Col) (:S R)) (:S R))
+        (&mark2 P *Col)
+        (&priority (:C Col) *R))))
+
+  (INIT &panel_rank Order
+    (member ((:t T))
+      (&mark (:P_tile *T)))
+    (before ((:a T) (:b T2))
+      (&beats (:P_tile *T) (:P_tile2 *T2))))
+
+  (DET &panel_order
+    (&panel_rank.rank (:t *P_tile) *R))
+
+  ;; the highest-ranked panel marked at each cell
+  (INIT &front_panel Order
+    (key ((&mark2 (:P_tile *T) ^P)
+          (&panel_order (:P_tile T) *R))
+      (member ((:t (:V T) (:S R)))
+        (&mark2 (:P_tile *T) P)
+        (&panel_order (:P_tile T) *R))
+      (score ((:t (:V T) (:S R)) (:S R))
+        (&mark2 (:P_tile *T) P)
+        (&panel_order (:P_tile T) *R))))
+
+  ;; the output cells of each train example whose sets of mark colors are equal
+  (INIT &color_set Inclusion
+    (pattern ((:pattern E P) (:m Col))
+      (&mark *E *P *Col)
+      (ex_output E P))
+    (observed ((:observed E P) (:m Col))
+      (&mark *E *P *Col)
+      (ex_output E P)))
+
+  ;; one id per set of mark colors
+  (INIT &color_entry Quotient
+    (equivalent ((:a (:E X_e) (:P X_p)) (:b (:E Y_e) (:P Y_p)))
+      (&color_set.equal (:observed (:E *X_e) (:P *X_p)) (:pattern (:E *Y_e) (:P *Y_p)))))
+
+  (DET &stack_member
+    (&color_entry.class (:a *E *P) *Id)
+    (&mark E P (:Col *C)))
+
+  (INIT &color_table Inclusion
+    (pattern ((:pattern Id) (:m Col))
+      (&stack_member *Id (:C *Col)))
+    (observed ((:observed P) (:m Col))
+      (&mark2 *P *Col)))
+
+  ;; the output cells of each train example whose sets of marked panels are equal
+  (INIT &panel_set Inclusion
+    (pattern ((:pattern E P) (:m T))
+      (&mark *E (:P_tile *T) *P)
+      (ex_output E P))
+    (observed ((:observed E P) (:m T))
+      (&mark *E (:P_tile *T) *P)
+      (ex_output E P)))
+
+  ;; one id per set of marked panels
+  (INIT &panel_entry Quotient
+    (equivalent ((:a (:E X_e) (:P X_p)) (:b (:E Y_e) (:P Y_p)))
+      (&panel_set.equal (:observed (:E *X_e) (:P *X_p)) (:pattern (:E *Y_e) (:P *Y_p)))))
+
+  (DET &panel_stack_member
+    (&panel_entry.class (:a *E *P) *Id)
+    (&mark E *P_tile P))
+
+  (INIT &panel_table Inclusion
+    (pattern ((:pattern Id) (:m T))
+      (&panel_stack_member *Id (:P_tile *T)))
+    (observed ((:observed P) (:m T))
+      (&mark2 (:P_tile *T) *P))))
+
+(ALTS $k "what the stacking order ranks" $ByColor
+  (ALT $OrderByPanel
+    (OUTPUT stack-by-priority "a stored order of the four panels ranks them, and each output cell shows the mark of the highest-ranked panel that has a mark there."
+      (RULE &unranked_panel
+        (&mark2 (:P_tile *T) *P)
+        (NOT (&panel_order (:P_tile T)))))
+    (RULE &output
+      (OR ((&front_panel.minimal (:key *P) (:t (:V *T)))
+           (NOT (&unranked_panel P))
+           (&mark2 (:P_tile T) P *Col))
+          ((&panel_cell (:P_intile P))
+           (NOT (&mark2 P))
+           (&background (:C Col)))))
+    (ALT $CombinationTable
+      (OUTPUT stack-by-priority "a stored table maps the set of marks at a cell to the one the cell shows; it is undefined where a cell's set is not a key of the table."
+        (DET &panel_stack_out
+          (&panel_entry.class (:a *E *P) *Id)
+          (&mark E *P_tile P *Col)
+          (ex_output E P Col)))
+      (RULE &output
+        (OR ((&panel_table.equal (:observed *P) (:pattern *Id))
+             (&panel_stack_out Id (:P_tile *T))
+             (&mark2 (:P_tile T) P *Col))
+            ((&panel_cell (:P_intile P))
+             (NOT (&mark2 P))
+             (&background (:C Col))))))))
+
+(ALTS $f "how the marks at a cell resolve to one" $TotalOrder
+  (ALT $CombinationTable
+    (OUTPUT stack-by-priority "a stored table maps the set of marks at a cell to the one the cell shows; it is undefined where a cell's set is not a key of the table."
+      (DET &stack_out
+        (&color_entry.class (:a *E *P) *Id)
+        (ex_output E P (:Col *C))))
+    (RULE &output
+      (OR ((&color_table.equal (:observed *P) (:pattern *Id))
+           (&stack_out Id (:C *Col)))
+          ((&panel_cell (:P_intile P))
+           (NOT (&mark2 P))
+           (&background (:C Col)))))))
+
+(ALTS $pa "how the four panels are found" $DividerCross
+  (ALT $CenterHalves
+    (INPUT divider-cross "the panels are the four quadrants around the center row and the center column, whatever their color; undefined where a grid dimension is even."
+      ;; the center line of each axis cuts it
+      (RULE &cut
+        (input *P)
+        (axis_of *D *A)
+        (dist_pair P D *K (:K2 K))
+        (split P A (:Along *L))))))
+
+(RULE &unranked_color
+  (&mark2 *P *Col)
+  (NOT (&priority (:C Col))))
+
+(RULE &output
+  (OR ((&panel_cell (:P_intile *P))
+       (NOT (&mark2 P))
+       (&background (:C *Col)))
+      ((&front_color.minimal (:key P) (:t (:V Col)))
+       (NOT (&unranked_color P)))))
+
+(OUT (&output ^P ^Col))

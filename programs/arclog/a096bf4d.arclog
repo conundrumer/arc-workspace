@@ -1,0 +1,217 @@
+;; inputs 296363fe05045790744784dc4bf220e9eed1fb32e71b1fe7ddf6736520687a0d programs/solvers/a096bf4d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a096bf4d
+
+(INPUT tiling "full rows and full columns of &separator cut the grid into a tiling of equal tiles, with a separator line along each grid edge"
+
+  (DET &separator SharedColor)
+
+  (INIT &border Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) *D (:K 0)))))
+
+(INPUT common-tile "at each tile position, most tiles hold the same color; together those colors form the common tile (a frame of one color around a 2×2 interior of the frame color and a pattern color)")
+
+(INPUT marks "a mark is a tile cell whose color differs from the common tile's color at that position"
+
+  (RULE &separator2
+    (&separator (:C *Col)))
+
+  (RULE &tiling_cell
+    (&separator2)
+    (input *P))
+
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &tiling_divider
+    (&line_color.value (:key *A *L) (:v *Col))
+    (&separator2 Col))
+
+  (RULE &tiling_on_divider
+    (&tiling_cell *P)
+    (&tiling_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank Order
+    (key ((OR ((&tiling_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&tiling_cell *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiling_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiling_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&tiling_cell *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&tiling_cell *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiling_part_idx
+    (&tiling_cell *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiling_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx *P D (:N *N1))
+    (&tiling_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &tiling_tile_of
+    (&tiling_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiling_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiling_tile_of (:P *P_grid) ^P_tile))
+      (cell ((:P P_grid))
+        (&tiling_tile_of (:P *P_grid) P_tile))))
+
+  (RULE &tile_cell
+    (input (:P *P_grid) *Col)
+    (&tile_box.box (:key *P_tile) *B)
+    (inside (:A P_grid) B)
+    (relative (:Base B) (:X P_grid) (:X_rel *P_intile)))
+
+  (INIT &common_count Cardinality
+    (key ((&tile_cell *P_tile ^P_intile ^Col))
+      (member ((:m P_tile))
+        (&tile_cell *P_tile P_intile Col))))
+
+  (INIT &common Order
+    (key ((&common_count.size (:key ^P_intile *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key P_intile *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key P_intile *Col) *N))))
+
+  ;; The number of tile positions where the common tile holds each color.
+  (INIT &palette Cardinality
+    (key ((&common.maximal (:key *P_intile) (:t ^Col)))
+      (member ((:m P_intile))
+        (&common.maximal (:key *P_intile) (:t Col)))))
+
+  (INIT &pattern Order
+    (member ((:t (:V Col) (:S N)))
+      (&palette.size (:key *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&palette.size (:key *Col) *N))))
+
+(INPUT every-mark-paired "each mark has at least one other mark of the same color at the same tile position, in a tile of the same tile row or the same tile column")
+
+(OUTPUT span-fill "for two marks of the same color at the same tile position, in tiles of the same tile row or tile column, each tile from one of those tiles to the other, both included, takes that color at that position")
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &in_scope
+    (&common.maximal (:key *P_intile)))
+
+  (RULE &mark
+    (&in_scope *P_intile)
+    (&tile_cell *P_tile P_intile *Col)
+    (NOT (&common.maximal (:key P_intile) (:t Col))))
+
+  (INIT &span_frame Frame
+    (key ((&mark *P_tile ^P_intile ^Col)
+          (frame_extent (:P P_tile) *A *N))
+      (extent (A N)
+        (&mark *P_tile P_intile Col)
+        (frame_extent (:P P_tile) *A *N))))
+
+  (INIT &span Ray
+    (key ((OR ((&mark *P_tile ^P_intile ^Col))
+              ((&mark P_intile Col)
+               (axis_elem *A)
+               (axis4_of *D A))
+              ((&span_frame.cell (:key P_intile Col) *P))))
+      (source ((:P P_tile))
+        (&mark *P_tile P_intile Col))
+      (node (P)
+        (&span_frame.cell (:key P_intile Col) *P))
+      (dir (D)
+        (&mark P_intile Col)
+        (axis_elem *A)
+        (axis4_of *D A))))
+
+  (RULE &span_between
+    (&mark *P_intile *Col)
+    (&tile_box.box (:key (:P_tile *P)))
+    (axis_elem *A)
+    (axis4_of *D A)
+    (dir8_opposite D (:D2 *O))
+    (&span.ray (:key P_intile Col) P D)
+    (&span.ray (:key P_intile Col) P (:D O)))
+
+  (RULE &span_cell
+    (&span_between *P_intile *Col (:P *P_tile))
+    (NOT (&mark P_tile P_intile Col))))
+
+(ALTS $scope "which tile cells can be marks" $WholeTile
+  (ALT $Interior
+    (INPUT marks "a mark is a cell inside the tile's outer ring whose color differs from the common tile's color at that position"
+      (RULE &in_scope
+        (&common.maximal (:key *P_intile))
+        (interior (:A P_intile) (:B 0)))))
+  (ALT $PatternPositions
+    (INPUT marks "a mark is a tile cell at a position where the common tile holds its less frequent color, and whose color differs from that color"
+      (RULE &in_scope
+        (&common.maximal (:key *P_intile) (:t *Col))
+        (&pattern.minimal (:t (:V Col)))))))
+
+(ALTS $base "what a mark differs from" $CommonColor
+  (ALT $OffPalette
+    (INPUT marks "a mark is a tile cell whose color is none of the common tile's colors"
+      (RULE &mark
+        (&in_scope *P_intile)
+        (&tile_cell *P_tile P_intile *Col)
+        (NOT (&palette.size (:key Col)))))))
+
+(ALTS $target "which tiles a span paints" $EveryTile
+  (ALT $KeepMarks
+    (OUTPUT span-fill "for two marks of the same color at the same tile position, in tiles of the same tile row or tile column, each tile from one of those tiles to the other whose cell at that position is not a mark takes that color at that position")
+    (RULE &paint
+      (&span_cell *P_tile *P_intile *Col)
+      (NOT (&mark P_tile P_intile))
+      (&tile_cell P_tile P_intile (:P_grid *P)))))
+
+(ALTS $sep "where the separator color comes from" $StoredSeparator
+  (ALT $DerivedSeparator
+    (INPUT tiling "full rows and full columns of the one color of the grid's border ring cut the grid into a tiling of equal tiles, with a separator line along each grid edge; the branch is undefined where the border ring is not one color"
+      (RULE &separator2
+        (&border.value (:v *Col))))))
+
+(RULE &open_edge
+  (&tiling_tile_of *P)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &paint
+  (&span_cell *P_tile *P_intile *Col)
+  (&tile_cell P_tile P_intile (:P_grid *P)))
+
+(RULE &output
+  (&separator2)
+  (NOT (&open_edge))
+  (input *P (:Col *Col_in))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

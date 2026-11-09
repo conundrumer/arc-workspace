@@ -1,0 +1,400 @@
+;; inputs e627b7b148a1ba8cb690b6e137306efaa27b4e5d115f149c26fd58ede4fcea35 programs/solvers/de493100.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; de493100
+
+(INPUT square-picture "the grid shows the corner `picture_corner` (top-left) of a square picture of side `picture_size` (32), which the grid crops at the other two edges."
+
+  (DET &not_in_every
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET &mask_color
+    (ex_input (:Col *C))
+    (NOT (&not_in_every C))
+    (NOT (ex_output (:Col C))))
+
+  (DET &cell
+    (ex_input *E *P *Col)
+    (NOT (&mask_color (:C Col))))
+
+  (DET &apos
+    (ex_input *P)
+    (split P *A (:Along *L)))
+
+  (DET &ext_cand
+    (&apos *A *L)
+    (sub_extent (:P L) A *K)
+    (axis_of *D A)
+    (edge_inset D K *B))
+
+  (DET &ext_map
+    (&ext_cand *A *D *B)
+    (&apos A *L)
+    (axis_inversion A (:T *F))
+    (compose (:A L) B (:C *Lm))
+    (apply (:D F) (:P Lm) (:P_out *Li))
+    (relative (:Base B) (:X Li) (:X_rel *L2))
+    (&apos A (:L L2)))
+
+  (DET &ext_mismatch
+    (&ext_map *A *D *B (:L *L1) *L2)
+    (&cell *E (:P *P1) (:Col *C1))
+    (split (:P P1) A (:Along L1) (:Across *X))
+    (&cell E (:P *P2) (:Col *C2))
+    (split (:P P2) A (:Along L2) (:Across X))
+    (!= C1 C2))
+
+  (DET &ext_pair
+    (&ext_map *A *D *B (:L *L1) *L2)
+    (!= L1 L2)
+    (&cell *E (:P *P1))
+    (split (:P P1) A (:Along L1) (:Across *X))
+    (&cell E (:P *P2))
+    (split (:P P2) A (:Along L2) (:Across X)))
+
+  (DET &axis_ext
+    (&ext_pair *A *D *B)
+    (NOT (&ext_mismatch A D B)))
+
+  (RULE &mask_cand
+    (&mask_color *C))
+
+  (RULE &grid_line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  (DET &picture_size
+    (&axis_ext *A *B)
+    (&apos A *L)
+    (compose (:A L) B (:C *Lm))
+    (frame_extent (:P Lm) A *N))
+
+  (INIT &picture_line Frame
+    (key ((axis_elem ^A))
+      (extent (A N)
+        (&picture_size *N))))
+
+  (RULE &margin_cand
+    (&grid_line *A *L)
+    (&picture_line.cell (:key A) (:P *Lp))
+    (relative (:Base L) (:X Lp) (:X_rel *B))
+    (inside (:A B) (:B 0)))
+
+  (RULE &axis_pair
+    (&mask_cand *C)
+    (&margin_cand *A *B)
+    (axis_inversion A (:T *F))
+    (input *P *Col)
+    (!= Col C)
+    (compose (:A P) B (:C *Pm))
+    (apply (:D F) (:P Pm) (:P_out *Qm))
+    (relative (:Base B) (:X Qm) (:X_rel *Q))
+    (input (:P Q) (:Col *Col2))
+    (!= Col2 C)
+    (!= P Q))
+
+  (RULE &axis_mismatch
+    (&axis_pair *C *A *B *P *Q)
+    (input P *Col)
+    (input (:P Q) (:Col *Col2))
+    (!= Col Col2))
+
+  (INIT &pair_tally Cardinality
+    (key ((&axis_pair ^C ^A ^B *P))
+      (member ((:m P))
+        (&axis_pair C A B *P))))
+
+  ;; Per mask color and axis, the unbroken placement with the most pairs.
+  (INIT &found Order
+    (key ((&pair_tally.size (:key ^C ^A *B) *N)
+          (NOT (&axis_mismatch C A B)))
+      (member ((:t (:V B) (:S N)))
+        (&pair_tally.size (:key C A *B) *N)
+        (NOT (&axis_mismatch C A B)))
+      (score ((:t (:V B) (:S N)) (:S N))
+        (&pair_tally.size (:key C A *B) *N)
+        (NOT (&axis_mismatch C A B))))))
+
+(INPUT tiled-picture "the picture cuts into `tile_size` × `tile_size` tiles, and each tile of the quarter at `picture_corner`, with its images in the other quarters, carries the group of the picture's mirrors and turns that `tile_groups` gives it.")
+
+(INPUT side-mirrors "every tile's group holds the mirrors across the picture's vertical and horizontal center lines.")
+
+(INPUT diagonal-mirrors "a tile off the quarter's diagonal also holds the mirrors across the picture's two diagonals.")
+
+(INPUT mask-block "one solid rectangle of `mask_color` covers part of the picture, and `mask_color` occurs nowhere else."
+
+  ;; The bounding box of each color's cells.
+  (INIT &color_box BoundingBox
+    (key ((input *P (:Col ^C)))
+      (cell (P)
+        (input *P (:Col C)))))
+
+  (RULE &gap
+    (&color_box.box (:key *C) *B)
+    (input *P (:Col *C2))
+    (!= C2 C)
+    (inside (:A P) B))
+
+  (INIT &shape_color Singleton
+    (member ((:v C))
+      (&color_box.box (:key *C))
+      (NOT (&gap C)))))
+
+(INPUT mask-recoverable "each masked cell has an image, under a member of its tile's group, that is in the grid and outside the mask.")
+
+(OUTPUT crop-to-mask "the output is the mask's bounding box.")
+
+(OUTPUT fill-from-mirror "each output cell takes the color of an image of its masked cell, under a member of its tile's group, that is in the grid and outside the mask."
+
+  (DET &pcell
+    (&cell *E *P *Col)
+    (&axis_ext (:A *A1) (:B *B1))
+    (perp (:A A1) *A2)
+    (&axis_ext (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B))
+    (compose (:A P) B (:C *Q)))
+
+  (DET &broken
+    (&pcell *E *Q (:Col *V))
+    (apply *D (:P Q) (:P_out *Q2))
+    (&pcell E (:Q Q2) (:Col *V2))
+    (!= V2 V))
+
+  (DET &cand_size
+    (&pcell *Q)
+    (sub_extent (:P Q) *A *K))
+
+  (INIT &cand_tile_division Division
+    (key ((&cand_size ^K))
+      (side (A K)
+        (axis_elem *A)))
+    (cell ((:P Q))
+      (&pcell *Q)))
+
+  (DET &cand_broken
+    (&cand_tile_division.tile (:key *K) (:P *Q) (:P_outer *P_tile))
+    (&broken Q *D))
+
+  (DET &cand_sym
+    (&cand_tile_division.tile (:key *K) (:P_outer *P_tile))
+    (d4_elem *D)
+    (NOT (&cand_broken K P_tile D)))
+
+  ;; The tile size is the largest at which the tiles' groups differ.
+  (INIT &nonuniform Order
+    (member ((:t K))
+      (&cand_sym *K (:P_tile *T1) *D)
+      (&cand_tile_division.tile (:key K) (:P_outer *T2))
+      (NOT (&cand_sym K (:P_tile T2) D)))
+    (score ((:t K) (:S K))
+      (&cand_sym *K (:P_tile *T1) *D)
+      (&cand_tile_division.tile (:key K) (:P_outer *T2))
+      (NOT (&cand_sym K (:P_tile T2) D))))
+
+  (DET &tile_size
+    (&nonuniform.maximal (:t *K)))
+
+  (DET &picture_corner
+    (&axis_ext (:A *A1) (:D *D1))
+    (perp (:A A1) *A2)
+    (&axis_ext (:A A2) (:D *D2))
+    (opposite (:D D1) (:Opp *O1))
+    (opposite (:D D2) (:Opp *O2))
+    (diag_dirs *D (:A A1) (:D1 O1) (:D2 O2)))
+
+  (RULE &stored_margin
+    (&margin_cand *A *B)
+    (&picture_corner (:D *Cr))
+    (corner_dir (:C Cr) A *D)
+    (margin B D (:K 0)))
+
+  (RULE &margin
+    (&mask_cand *C)
+    (&stored_margin (:A *A1) (:B *B1))
+    (perp (:A A1) *A2)
+    (&stored_margin (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B)))
+
+  (RULE &mask_color2
+    (&mask_color *C))
+
+  (RULE &visible
+    (&mask_color2 *C)
+    (&margin C *B)
+    (input *P *Col)
+    (!= Col C)
+    (compose (:A P) B (:C *Q)))
+
+  (INIT &tile_division Division
+    (cell ((:P Q))
+      (&visible *Q))
+    (side (A K)
+      (axis_elem *A)
+      (&tile_size *K)))
+
+  (RULE &hidden
+    (&mask_color2 *C)
+    (&margin C *B)
+    (input *P (:Col C))
+    (compose (:A P) B (:C *Q)))
+
+  (INIT &tile_division2 Division
+    (cell ((:P Q))
+      (&hidden *Q))
+    (side (A K)
+      (axis_elem *A)
+      (&tile_size *K)))
+
+  (RULE &image
+    (&hidden *Q)
+    (apply *D (:P Q) (:P_out *Q2))
+    (&visible (:Q Q2) *Col))
+
+  (RULE &tile
+    (OR ((&visible *Q)
+         (&tile_division.tile (:P Q) (:P_outer *P_tile)))
+        ((&hidden Q)
+         (&tile_division2.tile (:P Q) (:P_outer P_tile)))))
+
+  ;; The group that holds on the whole picture.
+  (INIT &whole Inclusion
+    (pattern ((:pattern S) (:m D))
+      (sym_member *S *D))
+    (observed ((:m D))
+      (d4_elem *D)
+      (NOT (&broken D))))
+
+  (DET &side_group
+    (&whole.equal (:pattern *S))))
+
+(ALTS $t "The mirrors that restore a hidden cell" $StoredGroups
+  (ALT $DiagonalFallback
+    (INPUT tiled-picture "no tiles; the picture holds the side mirrors everywhere and the diagonal mirrors and turns where they serve.")
+    (OUTPUT fill-from-mirror "a hidden cell takes the color of a visible side-mirror image, and where it has none, of a visible image under the diagonal mirrors and turns; undefined where it has no visible image, or where its images differ."
+      (RULE &side_image
+        (&image *Q *D *Col)
+        (&side_group *S)
+        (sym_member S D)))
+    (RULE &fill
+      (&hidden *Q *P)
+      (OR ((&side_image Q *Col))
+          ((&image Q *D Col)
+           (NOT (&side_image Q))
+           (&side_group *S)
+           (NOT (sym_member S D))))))
+  (ALT $DerivedTileGroups
+    (INPUT tiled-picture "each tile's group is the members of D4 about the picture's center that hold on the tile's visible cells in that input; undefined where a hidden cell has no visible image under that group, or where its images differ."
+      (RULE &tile_broken
+        (&tile *Q *P_tile)
+        (&visible Q *Col)
+        (apply *D (:P Q) (:P_out *Q2))
+        (&visible (:Q Q2) (:Col *Col2))
+        (!= Col2 Col)))
+    (RULE &fill
+      (&hidden *Q *P)
+      (&tile Q (:P_tile *T))
+      (&image Q *D *Col)
+      (NOT (&tile_broken (:P_tile T) D)))))
+
+(ALTS $a "Where the picture's center lines sit" $StoredCorner
+  (ALT $FoundAxes
+    (INPUT square-picture "on each axis, the center line is the one, among the placements of a `picture_size` picture that holds the grid, at which no visible pair of side-mirror images disagrees and the most visible pairs stand; undefined where no such line exists."
+      (INIT &pair_tally Cardinality
+        (key ((OR ((&mask_cand ^C)
+                   (&margin_cand ^A ^B))
+                  ((&axis_pair C A B *P))))
+          (member ((:m P))
+            (&axis_pair C A B *P))
+          (domain ()
+            (&mask_cand C)
+            (&margin_cand A B))))
+
+      (RULE &margin
+        (&found.maximal (:key *C (:A *A1)) (:t (:V *B1)))
+        (perp (:A A1) *A2)
+        (&found.maximal (:key C (:A A2)) (:t (:V *B2)))
+        (compose (:A B1) (:B B2) (:C *B))))))
+
+(ALTS $m "The color of the mask" $StoredMask
+  (ALT $MaskFromAsymmetry
+    (INPUT mask-block "the mask's color is the one color that a cell of every side-mirror mismatch carries; undefined where more than one color, or none, qualifies."
+      (RULE &mask_cand
+        (input (:Col *C)))
+
+      (RULE &mismatch_outside
+        (&margin *C *B)
+        (axis_elem *A)
+        (&margin_cand A (:B *B_a))
+        (split (:P B) A (:Along B_a))
+        (&axis_mismatch C A (:B B_a)))
+
+      ;; The colors that a cell of every side-mirror mismatch carries.
+      (INIT &asym_color Singleton
+        (member ((:v C))
+          (&margin *C)
+          (NOT (&mismatch_outside C))))
+
+      (RULE &mask_color2
+        (&asym_color.value (:v *C)))))
+  (ALT $MaskByShape
+    (INPUT mask-block "the mask's color is the one color whose cells form one solid rectangle; undefined where no color, or more than one, qualifies."
+      (RULE &mask_cand
+        (&shape_color.value (:v *C)))
+
+      (RULE &mask_color2
+        (&shape_color.value (:v *C))))))
+
+(DET &quarter_tile
+  (&tile_size *K)
+  (&cand_tile_division.tile (:key K) (:P_outer *P_tile))
+  (&picture_corner (:D *C))
+  (diag_dirs (:D C) *D1 *D2)
+  (dist_pair (:P P_tile) (:D D1) (:K *K1) *K2)
+  (< K1 K2)
+  (dist_pair (:P P_tile) (:D D2) (:K *K3) (:K2 *K4))
+  (< K3 K4))
+
+(INIT &quarter BoundingBox
+  (cell ((:P T))
+    (&quarter_tile (:P_tile *T))))
+
+(INIT &symid Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:observed T) (:m D))
+    (&tile_size *K)
+    (&cand_sym K (:P_tile *T) *D)))
+
+(DET &tile_groups
+  (&quarter_tile (:P_tile *T))
+  (&quarter.box *B)
+  (inside (:A T) B)
+  (relative (:Base B) (:X T) (:X_rel *P_tile))
+  (&symid.equal (:observed T) (:pattern *S)))
+
+(RULE &tile_key
+  (&tile *P_tile)
+  (&side_group *S)
+  (sym_member S *D)
+  (apply D (:P P_tile) (:P_out *T2))
+  (&picture_corner (:D *Cr))
+  (&tile_groups (:P_tile *K))
+  (same_corner (:D Cr) (:P1 T2) (:P2 K)))
+
+(RULE &fill
+  (&hidden *Q *P)
+  (&tile Q (:P_tile *T))
+  (&tile_key (:P_tile T) *K)
+  (&tile_groups (:P_tile K) *S)
+  (sym_member S *D)
+  (&image Q D *Col))
+
+(RULE &output
+  (&fill (:P *P2) *Col)
+  (&mask_color2 *C)
+  (&color_box.box (:key C) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

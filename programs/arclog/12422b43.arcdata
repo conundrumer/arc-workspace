@@ -1,0 +1,7 @@
+;; inputs 4a25e953bbfed81d81778bd421dd0333cdf2f7514517a96d40a73355c88f570a programs/solvers/12422b43.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 12422b43
+
+(param &bg Color (0))
+(param &marker Color (5))
+(param &flow Dir (DIR_B))

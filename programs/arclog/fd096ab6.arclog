@@ -1,0 +1,210 @@
+;; inputs b4649206d9d5e9561488288140b54ac5c3eee7cf9c22fa36de55632a4743b689 programs/solvers/fd096ab6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fd096ab6
+
+(INPUT background-field "the grid is a field of background (1).")
+
+(INPUT one-template "exactly one shape is drawn in template_color (4), and it is the whole shape."
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_commonest
+    (&commonest.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&not_commonest (:Col C))))
+
+  (INIT &objects Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &object_size Cardinality
+    (key ((&objects.component *P ^Id))
+      (member ((:m P))
+        (&objects.component *P Id))))
+
+  (INIT &largest_object Order
+    (member ((:t (:V Id) (:S N)))
+      (&object_size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&object_size.size (:key *Id) *N)))
+
+  (INIT &sole_largest_object Singleton
+    (member ((:v Id))
+      (&largest_object.maximal (:t (:V *Id)))))
+
+  (INIT &color_size Cardinality
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (INIT &largest_color Order
+    (member ((:t (:V Col) (:S N)))
+      (&color_size.size (:key *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&color_size.size (:key *Col) *N)))
+
+  (INIT &sole_largest_color Singleton
+    (member ((:v Col))
+      (&largest_color.maximal (:t (:V *Col))))))
+
+(INPUT fragments "every other non-background cell belongs to a fragment, a set of cells of one color that lie on one translated copy of the template and are a proper part of it; no other translated copy of the template holds every cell of the fragment.")
+
+(INPUT one-split "the cells of each fragment color split into fragments in one way.")
+
+(INPUT copies-clear "each fragment's completed copy lies inside the grid, on background cells apart from the fragment's own cells, and meets no other copy.")
+
+(OUTPUT keep-input "every input cell keeps its color.")
+
+(OUTPUT complete-fragment "for each fragment color, among the translated copies of the template whose cells of that color no other copy's cells of that color strictly contain, a copy is drawn in that color when it is the only one left on some cell of that color, where a copy that shares a cell of that color with a drawn copy is out."
+
+  (DET &absent
+    (ex_input *Col)
+    (ex_input *E)
+    (NOT (ex_input E Col)))
+
+  (DET &bg_determined
+    (&commonest.maximal (:t *C))
+    (NOT (&not_commonest (:Col C))))
+
+  (DET &grown
+    (ex_output *E *P *Col)
+    (NOT (ex_input E P Col)))
+
+  (DET &template_color
+    (ex_input (:Col *C))
+    (NOT (&bg_determined C))
+    (NOT (&absent (:Col C)))
+    (NOT (&grown (:Col C))))
+
+  (RULE &template_cell
+    (input *P *Col)
+    (&template_color (:C Col)))
+
+  (RULE &fragment_cell
+    (&template_cell)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&template_cell Col)))
+
+  (RULE &held
+    (&fragment_cell *P *Col)
+    (&template_cell (:P *Q))
+    (relative (:Base Q) (:X P) (:X_rel *V)))
+
+  (RULE &not_within
+    (&held *Col *V *P)
+    (&held Col (:V *V2))
+    (NOT (&held Col (:V V2) P)))
+
+  (RULE &dominated
+    (&held *Col *V)
+    (&held Col (:V *V2) *P)
+    (NOT (&held Col V P))
+    (NOT (&not_within Col V V2)))
+
+  (RULE &copy_cover_item
+    (&held *Col *V *P)
+    (NOT (&dominated Col V)))
+
+  ;; A copy is out once it shares a cell with a copy that alone holds some cell.
+  (CHOOSE &copy_cover
+    (for ((&copy_cover_item ^Col ^P))
+      (from (&copy_cover_item Col P *V)))
+    (never
+      (&copy_cover_item *Col *V)
+      (&copy_cover_item Col (:P *P2) (:V *V2))
+      (&copy_cover_item Col (:P P2) V)
+      (!= V V2)))
+
+  (RULE &paint
+    (&copy_cover *Col *V)
+    (&template_cell (:P *Q))
+    (compose (:A Q) (:B V) (:C *P))))
+
+(ALTS $t "which shape is the template" $TemplateStored
+  (ALT $TemplateLargestObject
+    (INPUT one-template "the template is the largest one-colored 8-connected non-background object, and its color is the template's color; undefined where two objects tie for largest."
+      (RULE &template_cell
+        (&sole_largest_object.value (:v *Id))
+        (&objects.component (:key *Col) *P Id))))
+  (ALT $TemplateLargestColor
+    (INPUT one-template "the template is the cells of the non-background color with the most cells; undefined where two colors tie."
+      (RULE &template_cell
+        (&sole_largest_color.value (:v *Col))
+        (input *P Col)))))
+
+(ALTS $o "what a copy does on a cell of another color" $CopiesClear
+  (ALT $CopyOverwrites
+    (INPUT copies-clear "each fragment's completed copy lies inside the grid and meets no other copy.")
+    (OUTPUT keep-input "a cell a copy covers takes the copy's color, and every other input cell keeps its color.")
+    (RULE &output
+      ;; A copy on a non-background cell replaces it.
+      (OR ((&paint *P *Col)
+           (input P (:Col *Col0))
+           (NOT (&bg (:C Col0))))
+          ;; A cell no copy covers keeps its color.
+          ((&template_cell)
+           (input P Col)
+           (NOT (&paint P)))
+          ;; A copy on a background cell.
+          ((&paint P Col)
+           (input P (:Col *Col02))
+           (&bg (:C Col02))))))
+  (ALT $InputKept
+    (INPUT copies-clear "each fragment's completed copy lies inside the grid and meets no other copy.")
+    (OUTPUT complete-fragment "a copy is drawn only on background cells.")
+    (RULE &output
+      ;; A non-background cell under a copy keeps its color.
+      (OR ((&paint *P)
+           (input P *Col)
+           (NOT (&bg (:C Col))))
+          ;; A cell no copy covers keeps its color.
+          ((&template_cell)
+           (input P Col)
+           (NOT (&paint P)))
+          ;; A copy on a background cell.
+          ((&paint P Col)
+           (input P (:Col *Col0))
+           (&bg (:C Col0)))))))
+
+(RULE &output
+  ;; A cell no copy covers keeps its color.
+  (OR ((&template_cell)
+       (input *P *Col)
+       (NOT (&paint P)))
+      ;; A copy on a background cell.
+      ((&paint P Col)
+       (input P (:Col *Col0))
+       (&bg (:C Col0)))
+      ;; A copy on a cell of another color leaves both colors there, so no grid.
+      ((&paint P (:Col *Col1))
+       (input P (:Col *Col02))
+       (NOT (&bg (:C Col02)))
+       (OR ((= Col Col02))
+           ((= Col Col1))))))
+
+(OUT (&output ^P ^Col))

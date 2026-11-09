@@ -1,0 +1,62 @@
+;; inputs 45a05b0c0d58f33e1d99134039312bf83b675437a0881fbdc57f6f99e61b06c1 programs/solvers/4852f2fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4852f2fa
+
+(DET &ink ColorDomain)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink_cell *P)))
+
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&ink (:C Col))))
+
+(INIT &mark_count Cardinality
+  (member ((:m P))
+    (&mark *P)))
+
+(INIT &reps Frame
+  (key ((&axis ^A))
+    (extent (A N)
+      (&mark_count.size *N))))
+
+(INIT &place_tiling Tiling
+  (outer ((:P P_tile))
+    (&reps.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&bbox.box *B)
+    (input (:P *P_grid_in))
+    (inside (:A P_grid_in) B)
+    (relative (:Base B) (:X P_grid_in) (:X_rel *P_intile))))
+
+(RULE &place
+  (&reps.cell (:P *P_tile))
+  (&bbox.box *B)
+  (input (:P *P_grid_in))
+  (inside (:A P_grid_in) B)
+  (relative (:Base B) (:X P_grid_in) (:X_rel *P_intile))
+  (&place_tiling.cell (:P_outer P_tile) (:P_inner P_intile) (:P *P_grid_out)))
+
+(ALTS $choice "what a copy paints where the box's own content would appear — no marker falls inside the box, so the pairs do not show what the copies carry there" $Copy
+  (ALT $Stamp
+    (RULE &output
+      (&place (:P_grid_out *P) *P_grid_in)
+      (IF ((&ink_cell (:P P_grid_in)))
+          ((&ink (:C *Col)))
+          ((&bg (:C Col)))))))
+
+(RULE &output
+  (&place (:P_grid_out *P) *P_grid_in)
+  (input (:P P_grid_in) *Col))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,83 @@
+;; inputs c56a45b701a0605aeba8db676345ddd1666e30c1face62055b96029b431022e3 programs/solvers/0e671a1a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0e671a1a
+
+(DET &bg DominantColor)
+
+;; The axis the half leaving the source runs along.
+(DET &axis AxisDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &elbow
+  (&mark (:Col *Src) (:P *P_src))
+  (&mark (:Col *Dst) (:P *P_dst))
+  (!= Src Dst)
+  (&axis *A)
+  (split (:P P_dst) A *Along)
+  (split (:P P_src) A *Across)
+  (compose (:A Along) (:B Across) (:C *P)))
+
+(DET &path AnyOutNewColor)
+
+(DET &refuted
+  (&elbow *E *Src *Dst *P)
+  (ex_output E P *Col)
+  (NOT (&path (:C Col))))
+
+(DET &leg
+  (&elbow *E *Src *Dst)
+  (ex_output E)
+  (NOT (&refuted Src Dst)))
+
+(INIT &span_frame Frame
+  (key ((&leg (:Src ^S) (:Dst ^D)))
+    (extent (A N)
+      (OR ((&mark (:Col S) *P))
+          ((&mark (:Col D) P))
+          ((&elbow (:Src S) (:Dst D) P)))
+      (frame_extent P *A *N))))
+
+;; Each half of a leg spans two of its three points: source to elbow down one
+;; line, elbow to destination along the other. The domain is background only,
+;; so every mark keeps its own color.
+(INIT &span Ray
+  (key ((OR ((&leg (:Src ^S) (:Dst ^D))
+             (OR ((&mark (:Col S) *P))
+                 ((&mark (:Col D) P))
+                 ((&elbow (:Src S) (:Dst D) P))))
+            ((&leg (:Src S) (:Dst D))
+             (axis_elem *A)
+             (axis4_of (:D *D2) A))
+            ((&span_frame.cell (:key S D) P))))
+    (source (P)
+      (&leg (:Src S) (:Dst D))
+      (OR ((&mark (:Col S) *P))
+          ((&mark (:Col D) P))
+          ((&elbow (:Src S) (:Dst D) P))))
+    (node (P)
+      (&span_frame.cell (:key S D) *P))
+    (dir ((:D D2))
+      (&leg (:Src S) (:Dst D))
+      (axis_elem *A)
+      (axis4_of (:D *D2) A))))
+
+(RULE &span_between
+  (&leg *Src *Dst)
+  (input *P *Col)
+  (&bg (:C Col))
+  (axis_elem *A)
+  (axis4_of (:D *D2) A)
+  (dir8_opposite (:D D2) (:D2 *O))
+  (&span.ray (:key (:S Src) (:D Dst)) P (:D D2))
+  (&span.ray (:key (:S Src) (:D Dst)) P (:D O)))
+
+(RULE &output
+  (OR ((&span_between *P)
+       (&path (:C *Col)))
+      ((input P Col)
+       (NOT (&span_between P)))))
+
+(OUT (&output ^P ^Col))

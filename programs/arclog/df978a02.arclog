@@ -1,0 +1,200 @@
+;; inputs afd99aff67989b374acbe0d471a6baca3beef34ef860945cd383509d7c0a62b7 programs/solvers/df978a02.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; df978a02
+
+(INPUT four-pointers "on a field of `background` 8, four shapes of one color each, one on each side of a center cell; each shape's line nearest the center, across the row or column through the center, holds a single cell, its tip, which lies on that row or column.")
+
+(INPUT one-largest "one shape has more cells than each of the others.")
+
+(OUTPUT others-lose-tip "each shape other than the one with the most cells loses its tip cell, which becomes `background`."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &shape
+    (input *P (:Col *S))
+    (NOT (&background (:C S))))
+
+  (RULE &behind
+    (&shape *P *S)
+    (&shape (:P *Q) S)
+    (dir_elem *D)
+    (nearer D (:P Q) (:Q P)))
+
+  (RULE &front
+    (&shape *P *S)
+    (dir_elem *D)
+    (NOT (&behind D P)))
+
+  ;; Each front cell looks toward its edge across the background.
+  (INIT &facing Ray
+    (source (P)
+      (&front *P))
+    (node (P)
+      (input *P)
+      (NOT (&shape P)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &facing_full Ray
+    (source (P)
+      (&front *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &facing_stop_full
+    (&facing.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&facing_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &tip
+    (&front *S *D *P)
+    (&facing_stop_full (:V1 *Q) (:V2 D) (:V4 P))
+    (opposite D (:Opp *D_back))
+    (&front (:D D_back) (:P Q)))
+
+  (INIT &back Cardinality
+    (key ((&tip ^S *D)
+          (opposite D (:Opp *D_back))
+          (&front S (:D D_back) *P))
+      (member ((:m P))
+        (&tip S *D)
+        (opposite D (:Opp *D_back))
+        (&front S (:D D_back) *P)))))
+
+(OUTPUT largest-grows-back "the shape with the most cells gains one cell per tip taken, laid as a line across its axis, centered on the line through the center, one step beyond its far edge."
+
+  (INIT &size Cardinality
+    (key ((&shape *P ^S))
+      (member ((:m P))
+        (&shape *P S))))
+
+  ;; The shapes with the highest score of the winner's measure.
+  (INIT &pick Order
+    (member ((:t (:V S) (:S N)))
+      (&size.size (:key *S) *N))
+    (score ((:t (:V S) (:S N)) (:S N))
+      (&size.size (:key *S) *N)))
+
+  (INIT &sole Singleton
+    (member ((:v S))
+      (&pick.maximal (:t (:V *S)))))
+
+  (RULE &lead
+    (&sole.value (:v *S))
+    (&tip S *D *P))
+
+  (RULE &bitten
+    (&sole.value (:v *S_win))
+    (&tip *S *D *P)
+    (!= S S_win))
+
+  (INIT &taken Cardinality
+    (member ((:m P))
+      (&bitten *P)))
+
+  (RULE &anchor
+    (&lead *S *D (:P *T))
+    (opposite D (:Opp *D_back))
+    (&front S (:D D_back) (:P *Q))
+    (neighbor (:P Q) (:D D_back) (:Q *Q_past))
+    (axis_of D *A)
+    (input *P)
+    (same_line A (:P T) (:Q P))
+    (same_dist (:D D_back) (:P1 Q_past) (:P2 P)))
+
+  ;; The cells of the grown line: the run across the winner's axis, centered on the anchor, whose
+  ;; size is the line's length.
+  (INIT &spread Ray
+    (source ((:P B))
+      (&anchor (:P *B)))
+    (node (P)
+      (&lead *D)
+      (perp_dir D (:D2 *D_across))
+      (input *P))
+    (dir ((:D D_across))
+      (&anchor)
+      (&lead *D)
+      (perp_dir D (:D2 *D_across))))
+
+  (RULE &reach
+    (&spread.ray *D *K)
+    (&spread.ray (:D *D_opp) K)
+    (opposite D (:Opp D_opp)))
+
+  (INIT &run Cardinality
+    (key ((&reach ^K)
+          (&spread.ray *P (:K *K_p))
+          (<= K_p K))
+      (member ((:m P))
+        (&reach K)
+        (&spread.ray *P (:K *K_p))
+        (<= K_p K)))))
+
+(OUTPUT rest-unchanged "every other cell keeps its input color.")
+
+(ALTS $w "Which shape grows" $MostCells
+  (ALT $WidestBack
+    (OUTPUT others-lose-tip "the winner is the shape whose back line, its line farthest from the center, holds the most cells; undefined where two back lines tie."
+      ;; The shapes with the highest score of the winner's measure.
+      (INIT &pick Order
+        (member ((:t (:V S) (:S N)))
+          (&back.size (:key *S) *N))
+        (score ((:t (:V S) (:S N)) (:S N))
+          (&back.size (:key *S) *N))))))
+
+(ALTS $b "What a bitten shape loses" $BiteTip
+  (ALT $BiteFrontLine
+    (OUTPUT others-lose-tip "each bitten shape loses its whole front line, its line nearest the center.")
+    (RULE &bite
+      (&bitten *S *D)
+      (&front S D *P))))
+
+(ALTS $a "Where the grown line goes" $GrowPastBack
+  (ALT $GrowPastAxisEnd
+    (OUTPUT largest-grows-back "the line goes one step beyond the winner's farthest cell on the line through the center."
+      (RULE &axis_cell
+        (&lead *S *D (:P *T))
+        (axis_of D *A)
+        (&shape *P S)
+        (same_line A (:P T) (:Q P)))
+
+      (RULE &axis_inner
+        (&axis_cell *P)
+        (&axis_cell (:P *Q2))
+        (&lead *D)
+        (opposite D (:Opp *D_back))
+        (nearer (:D D_back) (:P Q2) (:Q P)))
+
+      (RULE &anchor
+        (&axis_cell (:P *Q))
+        (NOT (&axis_inner (:P Q)))
+        (&lead *D)
+        (opposite D (:Opp *D_back))
+        (neighbor (:P Q) (:D D_back) (:Q *P))))))
+
+(RULE_OR_DET &grow_width "The length of the grown line."
+  (&taken.size *N))
+
+(RULE &line
+  (&run.size (:key *K) *N)
+  (&grow_width N)
+  (&run.member (:key K) (:m *P)))
+
+(RULE &bite
+  (&bitten *P))
+
+(RULE &output
+  (&line)
+  (input *P (:Col *C_in))
+  (OR ((&line P)
+       (&sole.value (:v *Col)))
+      ((&bite P)
+       (NOT (&line P))
+       (&background (:C Col)))
+      ((NOT (&line P))
+       (NOT (&bite P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

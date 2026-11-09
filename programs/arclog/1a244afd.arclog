@@ -1,0 +1,93 @@
+;; inputs 68ace59dbe88df93a49b3a0f2bde2bd5abd41995da95d6d7ff63b074e82b84c0 programs/solvers/1a244afd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1a244afd
+
+(DET &bg DominantColor)
+
+(DET &pivot UnchangedColor)
+
+(DET &pointer ChangedColor)
+
+(DET &mark AnyOutNewColor)
+
+(DET &sense SenseDomain)
+
+(RULE &sight_dir
+  (input)
+  (dir_elem *D))
+
+;; Each pivot looks along its row and column for pointers.
+(INIT &sight Ray
+  (source (P)
+    (input *P *Col)
+    (&pivot (:C Col)))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&sight_dir *D)))
+
+(RULE &sight_cell
+  (input *P *Col)
+  (&pointer (:C Col)))
+
+(RULE &cand
+  (dir_elem *D)
+  (&sight.ray (:P *Pointer) D *K (:Origin *Pivot))
+  (&sight_cell (:P Pointer)))
+
+(RULE &forcing_item
+  (&cand (:Pivot *P) (:Pointer *Q))
+  (OR ((= *P_cell P))
+      ((= P_cell Q))))
+
+;; The unique pairing: a candidate is kept when using every pivot and
+;; pointer exactly once forces it — an exact cover of the cells by
+;; two-cell pieces.
+(CHOOSE &forcing
+  (for ((&forcing_item ^P_cell))
+    (from (&forcing_item P_cell *P *Q)))
+  (never
+    (&forcing_item *P *Q)
+    (&forcing_item (:P_cell *P_cell2) (:P *P2) (:Q *Q2))
+    (&forcing_item (:P_cell P_cell2) P Q)
+    (OR ((!= P P2))
+        ((!= Q Q2)))))
+
+(RULE &pair
+  (&forcing (:P *Pivot) (:Q *Pointer))
+  (&cand Pivot Pointer *D *K))
+
+(RULE &mark_dir
+  (&sense *S)
+  (turn S *D (:D2 *D_out)))
+
+(ALTS $choice "what turns it" $Turn
+  (ALT $Table
+    (DET &turn_map
+      (&pair *E (:Pivot *P) *D *K)
+      (ex_output E (:P *Q) *Col)
+      (&mark (:C Col))
+      (relative (:Base P) (:X Q) (:X_rel *V))
+      (dir_elem (:D *D_out))
+      (jump_offset (:D D_out) K V))
+
+    (RULE &mark_dir
+      (&turn_map *D *D_out))))
+
+(RULE &mark2
+  (&pair (:Pivot *P2) *D *K)
+  (&mark_dir D *D_out)
+  (jump (:P P2) (:D D_out) K (:Q *P))
+  (input P))
+
+(RULE &output
+  (OR ((&mark2 *P)
+       (&mark (:C *Col)))
+      ((input P (:Col *Col_in))
+       (NOT (&mark2 P))
+       (OR ((&pointer (:C Col_in))
+            (&bg (:C Col)))
+           ((NOT (&pointer (:C Col_in)))
+            (= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

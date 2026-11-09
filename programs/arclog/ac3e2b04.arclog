@@ -1,0 +1,236 @@
+;; inputs ef03ad7fe9759a979772d64ebb5ed650736a44baaa761b565818f97be88b060f programs/solvers/ac3e2b04.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac3e2b04
+
+(INPUT parallel-lines "the input holds one or more straight lines of &line_color on a field of &background, each running the full length or width of the grid, all on one axis, with at least one background row or column between two lines"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &line_color SharedColor)
+
+  (DET_OR_RULE &mark_color RarestColor)
+
+  (RULE &roles
+    (&line_color (:C *C_line))
+    (&mark_color (:C *C_mark)))
+
+  (RULE &line_gap
+    (&roles (:C_line *L) (:C_mark *M))
+    (input (:P *Q))
+    (axis_elem *A)
+    (input (:P *R) *Col)
+    (same_line A (:P Q) (:Q R))
+    (!= Col L)
+    (!= Col M))
+
+  (RULE &line_cell
+    (&roles)
+    (input (:P *Q))
+    (axis_elem *A)
+    (NOT (&line_gap A Q)))
+
+  (INIT &line_axis Singleton
+    (member ((:v A))
+      (&line_cell *A))))
+
+(INPUT marks "at least one line carries a mark: a 3×3 frame of &mark_color around one cell of that line, the center cell keeping &line_color, the whole frame inside the grid and touching no other line")
+
+(INPUT one-mark-per-line "a line carries at most one mark, and no two marks lie on one perpendicular line")
+
+(OUTPUT cross-line "through the center of each mark, a line of &draw_color runs across the whole grid at right angles to the marked line, painting the &background cells on it"
+
+  (DET &draw_color AnyOutNewColor))
+
+(OUTPUT cross-frame "where that new line crosses another line at a cell no mark surrounds, the eight cells around the crossing take &draw_color, the crossing cell keeping &line_color"
+
+  (INIT &mark_ink Connectivity
+    (node ((:P S))
+      (&roles (:C_mark *M))
+      (input (:P *S) (:Col M)))))
+
+(OUTPUT keep "every other cell keeps its input color, the marks included"
+
+  (RULE &around
+    (input *P)
+    (neighbor P *Q)
+    (input (:P Q)))
+
+  (RULE &whole
+    (input *P)
+    (interior (:A P) (:B 0)))
+
+  (INIT &ring_color Singleton
+    (key ((&whole ^P))
+      (member ((:v Col))
+        (&around P *Q)
+        (input (:P Q) *Col))))
+
+  (RULE &ring
+    (&whole *P)
+    (&ring_color.value (:key P) (:v *Col)))
+
+  (RULE &mark
+    (&roles (:C_line *L) (:C_mark *M))
+    (&ring *P (:Col M))
+    (input P (:Col L)))
+
+  (RULE &cross_axis
+    (&mark *P)
+    (&line_cell (:A *A2) (:Q P))
+    (perp (:A A2) (:A2 *A)))
+
+  (RULE &new_line
+    (&cross_axis *P *A)
+    (input (:P *Q))
+    (same_line A P Q))
+
+  (RULE &crossing
+    (&new_line *P *Q)
+    (!= Q P)
+    (&line_cell Q))
+
+  (RULE &framed
+    (&crossing *P *Q)
+    (NOT (&mark (:P Q)))))
+
+(ALTS $shape "the cells a frame at a crossing covers" $EightAround
+  (ALT $CopyMark
+    (OUTPUT cross-frame "where that new line crosses another line at a cell no mark surrounds, &draw_color goes on the cells at the offsets, from the mark's center, of the &mark_color cells joined to the mark's ring, the crossing cell keeping &line_color")
+    (RULE &paint
+      (OR ((&framed (:P *P2) *Q)
+           (&around (:P P2) (:Q *S_ring))
+           (&mark_ink.component (:P S_ring) *Id)
+           (&mark_ink.component (:P *S) Id)
+           (relative (:Base P2) (:X S) (:X_rel *V))
+           (compose (:A Q) (:B V) (:C *P))
+           (input P))
+          ((&new_line (:Q P))
+           (input P *Col)
+           (&background (:C Col)))))))
+
+(ALTS $marked "what a crossing that a mark surrounds takes" $KeepMarks
+  (ALT $RepaintMarks
+    (OUTPUT cross-frame "where that new line crosses another line, the eight cells around the crossing take &draw_color, over a mark that surrounds the crossing, the crossing cell keeping &line_color")
+    (OUTPUT keep "every other cell keeps its input color"
+      (RULE &framed
+        (&crossing *P *Q)))))
+
+(ALTS $crossed "the cells the new line frames" $FullLine
+  (ALT $AnyLineCell
+    (OUTPUT cross-frame "at each &line_color cell that new line meets, other than the mark's own center, where no mark surrounds that cell, the eight cells around it take &draw_color, the cell keeping &line_color, whether or not a full-length line holds it"
+      (RULE &crossing
+        (&new_line *P *Q)
+        (!= Q P)
+        (&roles (:C_line *L))
+        (input (:P Q) (:Col L))))))
+
+(ALTS $center "the cell a mark surrounds" $LineCenter
+  (ALT $AnyCenterMark
+    (INPUT marks "a mark is a 3×3 frame of &mark_color around a cell of any other color; a mark on no line sends its new line across the axis of the input's lines; undefined on an input with a mark on no line whose lines lie on no axis or on both"
+      (RULE &mark
+        (&roles (:C_mark *M))
+        (&ring *P (:Col M))
+        (input P *Col)
+        (!= Col M))
+
+      (RULE &cross_axis
+        ;; A mark on no line crosses the input's lines.
+        (OR ((&mark *P)
+             (NOT (&line_cell (:Q P)))
+             (&line_axis.value (:v *A2))
+             (perp (:A A2) (:A2 *A)))
+            ((&mark P)
+             (&line_cell (:A *A22) (:Q P))
+             (perp (:A A22) (:A2 A))))))
+    (ALTS $off "the axis of the new line through a mark on no line" $AcrossLines
+      (ALT $BothAxes
+        (INPUT marks "a mark on no line sends new lines along both axes"
+          (RULE &cross_axis
+            (OR ((&mark *P)
+                 (NOT (&line_cell (:Q P)))
+                 (axis_elem *A))
+                ((&mark P)
+                 (&line_cell (:A *A2) (:Q P))
+                 (perp (:A A2) (:A2 A))))))))))
+
+(ALTS $size "the size of a mark and of a frame" $ThreeByThree
+  (ALT $MarkRadius
+    (INPUT marks "a mark is a square frame of &mark_color that reaches &mark_radius cells from its center on each side")
+    (OUTPUT cross-frame "where that new line crosses another line at a cell no mark surrounds, the square that reaches &mark_radius cells from the crossing takes &draw_color, the crossing cell keeping &line_color"
+      (DET &mark_radius DivisorRatio)
+
+      (RULE &square
+        (input *P)
+        (&mark_radius *K)
+        (uniform_outset K (:B *B_out))
+        (compose (:A P) (:B B_out) (:C *B)))
+
+      (RULE &around
+        (&square *P *B)
+        (input (:P *Q))
+        (inside (:A Q) B)
+        (!= Q P))
+
+      (RULE &whole
+        (&square *P *B)
+        (inside (:A B) (:B 0))))))
+
+(ALTS $line "where the line color comes from" $StoredLineColor
+  (ALT $DerivedLineColor
+    (INPUT parallel-lines "the line color is the color of each cell whose eight neighbors are all the mark color; undefined on an input where those cells hold no color or more than one"
+      (INIT &role_vote Singleton
+        (member ((:v (:Line L) (:Mark M)))
+          (&mark_color (:C *M))
+          (&ring *P (:Col M))
+          (input P (:Col *L))))
+
+      (RULE &roles
+        (&role_vote.value (:v (:Line *C_line) (:Mark *C_mark)))))
+    (ALT $DerivedMarkColor
+      (INPUT marks "the mark color is the one color, other than the line color and &background, of all eight neighbors of a line-color cell; undefined on an input where that gives no color or more than one"
+        (INIT &role_vote Singleton
+          (member ((:v (:Line L) (:Mark M)))
+            (&ring *P (:Col *M))
+            (input P (:Col *L))
+            (!= L M)
+            (NOT (&background (:C M)))))))))
+
+(ALTS $mark "where the mark color comes from" $StoredMarkColor
+  (ALT $DerivedMarkColor
+    (INPUT marks "the mark color is the one color, other than the line color and &background, of all eight neighbors of a line-color cell; undefined on an input where that gives no color or more than one"
+      (INIT &role_vote Singleton
+        (member ((:v (:Line L) (:Mark M)))
+          (&line_color (:C *L))
+          (input *P (:Col L))
+          (&ring P (:Col *M))
+          (!= M L)
+          (NOT (&background (:C M)))))
+
+      (RULE &roles
+        (&role_vote.value (:v (:Line *C_line) (:Mark *C_mark)))))))
+
+(RULE &undefined
+  (OR ((&mark *P)
+       (NOT (&cross_axis P)))
+      ((&mark (:P *P2))
+       (&line_cell (:A *A1) (:Q P2))
+       (&line_cell (:A *A2) (:Q P2))
+       (perp (:A A1) A2))))
+
+(RULE &paint
+  (OR ((&new_line (:Q *P))
+       (input P *Col)
+       (&background (:C Col)))
+      ((&framed *Q)
+       (&around (:P Q) (:Q P)))))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&draw_color (:C *Col))
+       (NOT (&undefined)))
+      ((&roles)
+       (NOT (&undefined))
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,118 @@
+;; inputs 517da6dc52db320898dd6ba3ca8dc436d5c2b33837a659236deb285f47569c57 programs/solvers/75b8110e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 75b8110e
+
+(DET &tiles DivisorRatio)
+
+(INIT &tile_cell_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tiles (:K *N))))
+
+(INIT &tile_ink_division Division
+  (cell ((:P P_grid))
+    (ex_input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tiles (:K *N))))
+
+(DET &bg DominantColor)
+
+(RULE &tile_cell
+  (input (:P *P_grid) *Col)
+  (&tile_cell_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(DET &tile_ink
+  (ex_input *E (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&tile_ink_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P)))
+
+(DET &beats
+  (&tile_ink *E *P_tile *P *Col)
+  (&tile_ink E (:P_tile *P_tile2) P (:Col *Col2))
+  (!= Col Col2)
+  (ex_output E P Col))
+
+;; The tiles each tile beats, directly or through others: a tile pair
+;; need not overlap directly.
+(INIT &beaten Propagation
+  (key ((OR ((&beats (:P_tile ^T) (:P_tile2 *T2)))
+            ((&beats (:P_tile T))
+             (&beats (:P_tile T2) (:P_tile2 *T3)))))
+    (source ((:n T2))
+      (&beats (:P_tile T) (:P_tile2 *T2)))
+    (edge ((:a T2) (:b T3))
+      (&beats (:P_tile T))
+      (&beats (:P_tile *T2) (:P_tile2 *T3)))))
+
+(INIT &order Order
+  (member ((:t T))
+    (&tile_ink (:P_tile *T)))
+  (before ((:a T) (:b T2))
+    (&beaten.reached (:key *T) (:n *T2))))
+
+(DET &prio
+  (&order.rank (:t *P) *R))
+
+(ALTS $choice "whether precedence ranks tiles or inks" $Order
+  (ALT $Ink
+    (DET &ink_rank
+      (&tile_ink (:P_tile *T) (:Col *C))
+      (&prio (:P T) *R))
+
+    ;; The foremost ink at each cell, per division.
+    (INIT &front_ink Order
+      (key ((&tile_ink2 ^P *Col)
+            (&ink_rank (:C Col) *R))
+        (member ((:t (:V Col) (:S R)))
+          (&tile_ink2 P *Col)
+          (&ink_rank (:C Col) *R))
+        (score ((:t (:V Col) (:S R)) (:S R))
+          (&tile_ink2 P *Col)
+          (&ink_rank (:C Col) *R))))
+
+    (RULE &output
+      (OR ((&front_ink.minimal (:key *P) (:t (:V *Col))))
+          ((&tile_cell (:P_intile P))
+           (NOT (&tile_ink2 P))
+           (&bg (:C Col)))))
+    (ALTS $d "how the grid divides into tiles" $Count
+      (ALT $Size
+        (DET &tile_dim
+          (ex_output *P)
+          (frame_extent P *A (:N *K)))
+        (INIT &tile_cell_division2 Division
+          (cell ((:P P_grid))
+            (input (:P *P_grid)))
+          (side (A K)
+            (axis_elem *A)
+            (&tile_dim *K)))
+        (RULE &tile_cell
+          (input (:P *P_grid) *Col)
+          (&tile_cell_division2.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))))))
+
+(RULE &tile_ink2
+  (&tile_cell *P_tile (:P_intile *P) *Col)
+  (NOT (&bg (:C Col))))
+
+;; The foremost tile inking each cell.
+(INIT &front_tile Order
+  (key ((&tile_ink2 (:P_tile *T) ^P)
+        (&prio (:P T) *R))
+    (member ((:t (:V T) (:S R)))
+      (&tile_ink2 (:P_tile *T) P)
+      (&prio (:P T) *R))
+    (score ((:t (:V T) (:S R)) (:S R))
+      (&tile_ink2 (:P_tile *T) P)
+      (&prio (:P T) *R))))
+
+(RULE &output
+  (OR ((&tile_cell (:P_intile *P))
+       (NOT (&tile_ink2 P))
+       (&bg (:C *Col)))
+      ((&front_tile.minimal (:key P) (:t (:V *T)))
+       (&tile_ink2 (:P_tile T) P Col))))
+
+(OUT (&output ^P ^Col))

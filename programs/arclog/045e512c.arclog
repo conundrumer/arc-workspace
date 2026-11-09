@@ -1,0 +1,126 @@
+;; inputs 2b3737eeb5940bc13c037f51fbaf96a1553dccb13e72aaa8169c50732f887af4 programs/solvers/045e512c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 045e512c
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &biggest_count Cardinality
+  (key ((&objs.component ^Id *P))
+    (member ((:m P))
+      (&objs.component Id *P))))
+
+;; The template is the largest object.
+(INIT &biggest Order
+  (member ((:t Id))
+    (&biggest_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&biggest_count.size (:key *Id) *N)))
+
+(RULE &shape
+  (&biggest.maximal (:t *Id))
+  (&objs.component Id *P))
+
+(INIT &march_frame Frame
+  (extent (A N)
+    (&shape *P)
+    (frame_extent P *A *N)))
+
+(RULE &span
+  (input *P)
+  (corner_dist P (:Diag *C) (:K 0))
+  (sub_extent P *A *K))
+
+(RULE &toward
+  (&span *K)
+  (jump_offset *D K (:V *Delta)))
+
+;; Where each object seats on the template: the translations that carry
+;; every cell of the object onto a template cell.
+(INIT &seating Occurrences
+  (key ((OR ((&objs.component ^Id *P))
+            ((&objs.component Id)
+             (&shape P))))
+    (cell (P)
+      (&objs.component Id)
+      (&shape *P))
+    (shape (P)
+      (&objs.component Id *P))))
+
+(RULE &fits
+  (&seating.occurrence (:key *Id) (:P *M))
+  (relative (:Base M) (:X 0) (:X_rel *Delta))
+  (&toward *K Delta))
+
+(INIT &reach Order
+  (key ((&fits ^Id *Delta *K))
+    (member ((:t (:V Delta) (:S K)))
+      (&fits Id *Delta *K))
+    (score ((:t (:V Delta) (:S K)) (:S K))
+      (&fits Id *Delta *K))))
+
+(RULE &step
+  (&reach.maximal (:key *Id) (:t (:V *Delta))))
+
+(ALTS $choice "what fixes the step's length" $Reach
+  (ALT $Stride
+    (DET &stride TileCount)
+
+    (RULE &step
+      (&fits *Id *Delta *K)
+      (&stride (:N K))))
+  (ALT $Abut
+    (DET &gap DivisorRatio)
+
+    (INIT &sbox BoundingBox
+      (cell (P)
+        (&shape *P)))
+
+    (RULE &step
+      (&fits *Id *Delta)
+      (&sbox.box *B)
+      (&shape *P)
+      (perp *A *A2)
+      (box_extent B P A *N)
+      (box_extent B P (:A A2) N)
+      (&toward *D (:K N) (:Delta *S1))
+      (&gap (:K *G))
+      (&toward D (:K G) (:Delta *S2))
+      (compose (:A S1) (:B S2) (:C Delta)))))
+
+;; The template's cells, cast along each step's direction.
+(INIT &march Ray
+  (source (P)
+    (&shape *P))
+  (node (P)
+    (&march_frame.cell *P))
+  (dir (D)
+    (&step *Delta)
+    (&toward *D Delta)))
+
+(RULE &copy
+  (&step *Id *Delta)
+  (&toward *D *K Delta)
+  (&march.ray *P D (:K *J))
+  (input P)
+  (> J 0)
+  (divide (:T J) (:Side K) (:Gap 0) (:Remainder 0)))
+
+(RULE &output
+  (OR ((&copy *Id *P)
+       (&objs.component Id (:key *Col)))
+      ((input P Col)
+       (NOT (&copy P)))))
+
+(OUT (&output ^P ^Col))

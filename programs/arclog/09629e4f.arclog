@@ -1,0 +1,60 @@
+;; inputs c33ea1ba776a7f4972bd41ec56b0b7b3e1215eb5a2927e73bf9c67af8e5fff11 programs/solvers/09629e4f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 09629e4f
+
+(DET &bg ColorDomain)
+
+(DET &gap DivisorRatio)
+
+(DET &tile_dim SepTileCount)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (axis_elem *A)
+    (&tile_dim (:N *K)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(INIT &sparse_count Cardinality
+  (key ((&tile_division.tile *P (:P_outer ^T))
+        (input P *Col)
+        (&bg (:C Col)))
+    (member ((:m P))
+      (&tile_division.tile *P (:P_outer T))
+      (input P *Col)
+      (&bg (:C Col)))))
+
+(INIT &sparse Order
+  (member ((:t T))
+    (&sparse_count.size (:key *T)))
+  (score ((:t T) (:S N))
+    (&sparse_count.size (:key *T) *N)))
+
+(RULE &template
+  (&sparse.maximal (:t *P_tile)))
+
+(ALTS $choice "what tells the template apart" $Sparse
+  (ALT $Marker
+    (DET &marker ChangedColor)
+
+    (RULE &has_marker
+      (&tile_division.tile *P (:P_outer *P_tile))
+      (input P *Col)
+      (&marker (:C Col)))
+
+    (RULE &template
+      (&tile_division.tile (:P_outer *P_tile))
+      (NOT (&has_marker P_tile)))))
+
+(RULE &output
+  (OR ((&tile_division.tile *P (:P_outer *P_tile))
+       (&template (:P_tile *Q))
+       (&tile_division.tile (:P *P_src) (:P_outer Q) (:P_inner P_tile))
+       (input (:P P_src) *Col))
+      ((input P Col)
+       (NOT (&tile_division.tile P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,140 @@
+;; inputs 25c260f0d96a15374dbe6a0ee7a49e9b7672348e57d40f17ea87480945aa8aac programs/solvers/6350f1f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6350f1f4
+
+(DET &noise ChangedColor)
+
+(DET &sep SharedColor)
+
+(RULE &content
+  (input *P *Col)
+  (NOT (&sep (:C Col)))
+  (NOT (&noise (:C Col))))
+
+(RULE &content_line
+  (&content *P)
+  (split P *A (:Along *L)))
+
+(RULE &tiling_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&content_line L)))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&tiling_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &tiling_rank Order
+  (key ((OR ((&tiling_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiling_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiling_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &block BoundingBox
+  (key ((&tiling_tile_of *P ^P_tile))
+    (cell (P)
+      (&tiling_tile_of *P P_tile))))
+
+(RULE &block_cell
+  (&tiling_tile_of *P *P_tile)
+  (&block.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &cell
+  (&block_cell *P *P_tile *P_intile)
+  (&content P *Col))
+
+;; A block showing two colors is a copy of the template; a solid field
+;; shows one.
+(INIT &block_color Singleton
+  (key ((&cell ^P_tile *Col))
+    (member ((:v Col))
+      (&cell P_tile *Col))))
+
+(RULE &template
+  (&block_color.plural (:key *P_tile))
+  (&cell P_tile *P_intile *Col))
+
+(INIT &dominant_count Cardinality
+  (key ((&template *P_intile ^Col))
+    (member ((:m P_intile))
+      (&template *P_intile Col))))
+
+(INIT &dominant Order
+  (member ((:t Col))
+    (&dominant_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&dominant_count.size (:key *Col) *N)))
+
+(RULE &minor_cell
+  (&template (:P_intile *P) *Col)
+  (NOT (&dominant.maximal (:t Col))))
+
+(ALTS $choice "what each block becomes" $Expand
+  (ALT $Invert
+    (RULE &solid
+      (&cell *P_tile *P_intile *Col)
+      (&template P_intile (:Col *C2))
+      (!= Col C2))
+
+    (RULE &solid_color
+      (&solid *P_tile)
+      (&cell P_tile *Col))
+
+    (RULE &output
+      (OR ((&block_cell *P *P_tile *P_intile)
+           (IF ((&solid P_tile))
+               ((&template P_intile *Col))
+               ((&template Col)
+                (NOT (&solid_color Col)))))
+          ((input P)
+           (NOT (&tiling_tile_of P))
+           (&sep (:C Col)))))))
+
+(RULE &output
+  (OR ((input *P)
+       (NOT (&tiling_tile_of P))
+       (&sep (:C *Col)))
+      ((&block_cell P *P_tile *P_intile)
+       (IF ((&minor_cell (:P P_tile)))
+           ((&template P_intile Col))
+           ((&dominant.maximal (:t Col)))))))
+
+(OUT (&output ^P ^Col))

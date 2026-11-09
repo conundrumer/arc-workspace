@@ -1,11 +1,11 @@
-"""The arclog and arcdata files of `gen/` as plain trees: a list per list
+"""The arclog and arcdata files of the converted solvers (`programs/arclog/`) as plain trees: a list per list
 node, a `str` per symbol, a `Quoted` per string, as `arclog_convert.lint_read`
-reads them; and the solvers of `gen/` a section reads."""
+reads them; and the solvers a section reads."""
 
 from collections.abc import Iterator
 from pathlib import Path
 
-from arclog_convert import lint_read, out
+from arclog_convert import corpus, lint_read, out
 from arclog_convert.readback import read_checked
 
 
@@ -17,8 +17,8 @@ type Node = str | list["Node"]
 
 
 def gen_dir() -> Path:
-    """`gen/` under the directory the converter writes."""
-    return out() / "gen"
+    """The directory the converter writes the converted solvers to."""
+    return corpus(out())
 
 
 def _plain(node: object) -> Node:

@@ -1,0 +1,89 @@
+;; inputs 023925b229c01e91189a16d364290a03a41b76561e1d244fcb810f73fc7fce44 programs/solvers/1efba499.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1efba499
+
+(DET &bg DominantColor)
+
+(INIT &dom_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &dom Order
+  (member ((:t Col))
+    (&dom_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&dom_count.size (:key *Col) *N)))
+
+(RULE &wall
+  (input *P *Col)
+  (&dom.maximal (:t Col)))
+
+(INIT &wbox BoundingBox
+  (cell (P)
+    (&wall *P)))
+
+(RULE &cross_axis
+  (&wall *P)
+  (&wbox.box *B)
+  (perp *A *A2)
+  (box_extent B P A (:N *N1))
+  (box_extent B P (:A A2) (:N *N2))
+  (< N1 N2))
+
+(RULE &cross_dir
+  (&cross_axis *A)
+  (axis_of *D A))
+
+(INIT &reach Ray
+  (source (P)
+    (&wall *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&cross_dir *D)))
+
+(RULE &beyond
+  (&cross_dir *D)
+  (&reach.ray *P D))
+
+(RULE &touch
+  (input *P)
+  (&cross_dir *D)
+  (neighbor P D *Q)
+  (&wall (:P Q))
+  (NOT (&beyond P D)))
+
+(RULE &loose
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&dom.maximal (:t Col))))
+
+(RULE &crossing
+  (&loose *P *Col)
+  (&beyond P *D)
+  (opposite D (:Opp *D2))
+  (&loose (:P *P2))
+  (&beyond (:P P2) (:D D2))
+  (&cross_axis *A)
+  (same_line A P (:Q P2)))
+
+(RULE &ink
+  (OR ((&wall *P)
+       (&dom.maximal (:t *Col)))
+      ((&crossing (:P *P2) Col *D)
+       (&cross_axis *A)
+       (&touch P D)
+       (same_line A (:P P2) (:Q P)))
+      ((&loose P Col)
+       (NOT (&crossing P)))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

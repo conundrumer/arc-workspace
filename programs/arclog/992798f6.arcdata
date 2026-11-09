@@ -1,0 +1,8 @@
+;; inputs 76c6e6450eab5bc7b14eb7404b51504511f69eab1064e52b2c77e1df760bc5c8 programs/solvers/992798f6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 992798f6
+
+(param &bg Color (0))
+(param &path Color (3))
+(param &diag_mark Color (1))
+(param &straight_mark Color (2))

@@ -1,0 +1,61 @@
+;; inputs 638577d35153e040b59450f0f982dee034b203393675c3bed0b1c403bf9aacd8 programs/solvers/4ff4c9da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4ff4c9da
+
+(DET &mark RarestColor)
+
+(RULE &touched
+  (input *P (:Col *Col_mark))
+  (&mark (:C Col_mark))
+  (neighbor P *D *Q)
+  (input (:P Q) *Col))
+
+(RULE &covered
+  (input *Col)
+  (NOT (&mark (:C Col)))
+  (NOT (&touched Col)))
+
+(INIT &blobs Connectivity
+  (key ((input *P ^Col)
+        (OR ((&mark (:C Col)))
+            ((&covered Col))))
+    (node (P)
+      (input *P Col)
+      (OR ((&mark (:C Col)))
+          ((&covered Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &bbox BoundingBox
+  (key ((&blobs.component *P ^Id))
+    (cell (P)
+      (&blobs.component *P Id))))
+
+(INIT &footprint Inclusion
+  (pattern ((:pattern Id) (:m P_inner))
+    (&blobs.component (:key *Col) *P *Id)
+    (&mark (:C Col))
+    (&bbox.box (:key Id) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed Id) (:m P_inner))
+    (&blobs.component (:key *Col) *P *Id)
+    (&covered Col)
+    (&bbox.box (:key Id) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(RULE &copy_cell
+  (&footprint.equal (:observed *Id))
+  (&blobs.component *P Id))
+
+(RULE &output
+  (OR ((&copy_cell *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&copy_cell P)))))
+
+(OUT (&output ^P ^Col))

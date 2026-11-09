@@ -1,0 +1,165 @@
+;; inputs 243bbc7a6147ee764fc0a1d02b4ff3708f7a3daf08d0071bc58eb3b7f04dee57 programs/solvers/caa06a1f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; caa06a1f
+
+(INPUT periodic-block "a rectangular block at the `block_corner` corner of the grid holds a pattern of two or more colors that repeats along each axis, with at least two full periods along each axis."
+
+  (RULE &off_band
+    (input *P *Col)
+    (diag_opposite (:D *C) (:Opp *O))
+    (input (:P *Q) (:Col *Bg))
+    (corner_dist (:P Q) (:Diag O) (:K 0))
+    (!= Col Bg))
+
+  (RULE &far_edge
+    (&off_band *C *P)
+    (diag_opposite (:D C) (:Opp *O))
+    (corner_dir (:C O) *A *D)
+    (margin (:B P) D (:K 0)))
+
+  (RULE_OR_DET &block_at
+    (&off_band *C *P)
+    (corner_dist P (:Diag C) (:K 0))
+    (axis_elem *A)
+    (NOT (&far_edge C A)))
+
+  (INIT &corner_pick Singleton
+    (member ((:v C))
+      (&block_at *C))))
+
+(INPUT background-band "every cell outside the block holds one color that the pattern does not use, so the band lies along the two edges away from `block_corner`.")
+
+(OUTPUT extend-pattern "the output has the input's size, and each output cell takes the color that the block's pattern, continued without end, has at that cell after the shift.")
+
+(OUTPUT shift-one "the continued pattern moves `shift_step` cells toward the block's corner on the axis `shift_axis` gives: for the top-left corner, on the horizontal axis output cell (r, c) takes the pattern's color at (r, c + 1), and on the vertical axis, at (r + 1, c)."
+
+  (INIT &period Periods
+    (key ((&off_band ^C *P *Col))
+      (cell (P (:v Col))
+        (&off_band C *P *Col))))
+
+  (RULE &place
+    (&block_at *C)
+    (input *P)
+    (axis_of *D *A)
+    (margin (:B P) D (:K *T))
+    (OR ((&period.fundamental_period (:key C) A *K)
+         (divide T (:Side K) (:Gap 0) (:Remainder *R)))
+        ((NOT (&period.fundamental_period (:key C) A))
+         (= R T))))
+
+  (RULE &orbit
+    (&place *C *P *D *R)
+    (axis_of D *A)
+    (perp A *A2)
+    (axis_of (:D *D2) (:A A2))
+    (&place C P (:D D2) (:R *R2)))
+
+  (DET &corner_defect
+    (diag_dir_elem (:D *C))
+    (ex_input *E)
+    (NOT (&block_at E C)))
+
+  (DET &block_corner
+    (diag_dir_elem *D)
+    (NOT (&corner_defect (:C D))))
+
+  (RULE &corner
+    (&block_corner *D)
+    (&block_at (:C D)))
+
+  (DET &follow_defect
+    (&block_corner (:D *C))
+    (dir_elem *D)
+    (&off_band *E C (:P *P1) *Col)
+    (neighbor (:P P1) D (:Q *Q1))
+    (&off_band E C (:P Q1) (:Col *Col1))
+    (&off_band E C (:P *P2) Col)
+    (neighbor (:P P2) D (:Q *Q2))
+    (&off_band E C (:P Q2) (:Col *Col2))
+    (!= Col1 Col2))
+
+  (DET &follow_dir
+    (&block_corner (:D *C))
+    (corner_dir C (:D *D_corner))
+    (opposite (:D D_corner) (:Opp *D))
+    (NOT (&follow_defect D)))
+
+  ;; The color that follows each block color toward follow_dir.
+  (INIT &successor Singleton
+    (key ((&off_band ^C *P ^Col)
+          (&follow_dir (:D *F))
+          (neighbor P (:D F) *Q)
+          (&off_band C (:P Q) (:Col *Col2)))
+      (member ((:v Col2))
+        (&off_band C *P Col)
+        (&follow_dir (:D *F))
+        (neighbor P (:D F) *Q)
+        (&off_band C (:P Q) (:Col *Col2))))))
+
+(ALTS $r "how each output cell takes its color from the continued pattern" $Shift
+  (ALT $ColorSuccessor
+    (OUTPUT shift-one "each cell of the continued pattern takes the color that follows its own color toward `follow_dir` (right) in the block, derived per input; undefined where a color is followed by two different colors."
+      (RULE &class_color
+        (&orbit *C (:P *Q) *D *R *D2 *R2)
+        (&off_band C (:P Q) *Col)))
+    (RULE &output
+      (&corner (:D *C))
+      (&orbit C *P *D *R *D2 *R2)
+      (&class_color C D R D2 R2 (:Col *Col0))
+      (&successor.value (:key C (:Col Col0)) (:v *Col)))))
+
+(ALTS $c "where the block's corner comes from" $StoredCorner
+  (ALT $DeriveCorner
+    (INPUT periodic-block "the block's corner is derived per input as the one corner where the color at the opposite corner fills every cell outside a rectangle that holds that corner's cell; undefined where no corner, or more than one, gives that rectangle."
+      (RULE &corner
+        (&corner_pick.value (:v *D))))
+    (INPUT background-band "the band color is the color at the corner opposite the derived corner.")))
+
+(DET &shift_axis_set
+  (axis_elem *A))
+
+(DET &shift_axis
+  (&shift_axis_set *A)
+  (ONE))
+
+(RULE &shift
+  (&corner (:D *C))
+  (&shift_axis *A)
+  (corner_dir C A *D))
+
+(DET &step_defect
+  (&block_corner (:D *C))
+  (&off_band *E C (:P *S) *Col)
+  (&shift_axis_set *A)
+  (corner_dir C A *D)
+  (sub_extent (:P S) A *K)
+  (jump (:P S) D K *Q)
+  (ex_output E (:P Q) (:Col *Col2))
+  (!= Col2 Col))
+
+;; The least step that every train output agrees with.
+(INIT &steps Order
+  (member ((:t K))
+    (ex_output *P)
+    (sub_extent P *A *K)
+    (NOT (&step_defect K)))
+  (score ((:t K) (:S K))
+    (ex_output *P)
+    (sub_extent P *A *K)
+    (NOT (&step_defect K))))
+
+(DET &shift_step
+  (&steps.minimal (:t *K)))
+
+;; Each cell takes the color of a block cell whose move lands in its class.
+(RULE &output
+  (&corner (:D *C))
+  (&off_band C (:P *S) *Col)
+  (&shift *D)
+  (&shift_step *K)
+  (jump (:P S) D K *Q)
+  (&orbit C (:P Q) (:D *D1) (:R *R1) *D2 *R2)
+  (&orbit C *P (:D D1) (:R R1) D2 R2))
+
+(OUT (&output ^P ^Col))

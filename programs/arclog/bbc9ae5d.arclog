@@ -1,0 +1,110 @@
+;; inputs 4998241b80a5091fb4b4c27b525b36cb0f2db4b35ad69b715e298a4f03d79466 programs/solvers/bbc9ae5d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bbc9ae5d
+
+(DET &diag DiagDirDomain)
+
+(DET &divisor SepThickness)
+
+(RULE &long_axis
+  (input *P)
+  (axis_extents P *A *N1 *N2)
+  (> N1 N2))
+
+(INIT &frame_division Division
+  (key ((&long_axis ^A))
+    (parts (A (:N K))
+      (&divisor (:G *K))))
+  (cell (P)
+    (input *P)))
+
+;; Output frame: the line's extent along, line length / &divisor across.
+(INIT &frame Frame
+  (extent (A N)
+    (OR ((&long_axis *A)
+         (input *P)
+         (frame_extent P A *N))
+        ((&frame_division.tile (:key (:A *A3)) (:P_inner *P_slab))
+         (split (:P P_slab) (:A A3) (:Along *P_part))
+         (perp (:A A3) (:A2 A))
+         (frame_extent (:P P_part) (:A A3) N)))))
+
+(RULE &seated
+  (input (:P *P_in) *Col)
+  (&frame.cell *P)
+  (&diag (:D *Diag))
+  (&long_axis *A)
+  (diag_dirs (:D Diag) A (:D1 *D_adv) (:D2 *D_stack))
+  (same_dist (:D D_adv) (:P1 P_in) (:P2 P))
+  (opposite (:D D_stack) (:Opp *D_seed))
+  (margin (:B P) (:D D_seed) (:K 0)))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&seated *P)
+    (frame_extent P *A *N)))
+
+(DET &bg SharedColor)
+
+;; Each seated cell casts toward &diag.
+(INIT &rays Ray
+  (source (P)
+    (&seated *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir (D)
+    (&diag *D)))
+
+(RULE &ink_cast
+  (&rays.ray *P (:Origin *Q))
+  (&frame.cell P)
+  (&seated (:P Q) *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &fall_frame Frame
+  (extent (A N)
+    (&ink_cast *P)
+    (frame_extent P *A *N)))
+
+(INIT &fall Ray
+  (source (P)
+    (&ink_cast *P))
+  (node (P)
+    (&fall_frame.cell *P))
+  (dir ((:D D_stack))
+    (&diag (:D *Diag))
+    (&long_axis *A)
+    (diag_dirs (:D Diag) A (:D2 *D_stack))))
+
+(RULE &grown
+  (&fall.ray *P (:Origin *Q))
+  (&frame.cell P)
+  (&ink_cast (:P Q) *Col))
+
+(ALTS $choice "how each row continues from the one before it" $Grow
+  (ALT $Slide
+    (RULE &rays_ray
+      (&rays.ray *P *D *K (:Origin *Src))
+      (&frame.cell P))
+
+    (RULE &anchor_color
+      (&seated *P *Col)
+      (&diag (:D *Diag))
+      (diag_opposite (:D Diag) (:Opp *Anchor))
+      (corner_dist P (:Diag Anchor) (:K 0)))
+
+    (RULE &output
+      (OR ((&rays.ray *P (:Origin *Q))
+           (&frame.cell P)
+           (&seated (:P Q) *Col))
+          ((&frame.cell P)
+           (NOT (&rays_ray P))
+           (&anchor_color Col))))))
+
+(RULE &output
+  (OR ((&grown *P *Col))
+      ((&frame.cell P)
+       (NOT (&grown P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,339 @@
+;; inputs f72f3f555a9c680419ea145d560cfc846636a9af744ff1646249f3441ddb17e0 programs/solvers/b0f4d537.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0f4d537
+
+(INPUT two-panels "a full column of &divider cells, running top to bottom, splits the input into two panels."
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P (:Col ^C)))
+      (member ((:m P))
+        (input *P (:Col C)))))
+
+  (DET &divider VanishedColor)
+
+  (INIT &commonest Order
+    (member ((:t C))
+      (&commonest_count.size (:key *C)))
+    (score ((:t C) (:S N))
+      (&commonest_count.size (:key *C) *N)))
+
+  (INIT &full_line_color Singleton
+    (member ((:v C))
+      (input *P (:Col *C))
+      (split P *A (:Along *X))
+      (ALL ((input (:P *Pm) (:Col *Cm))
+            (split (:P Pm) A (:Along X))
+            (input (:P *Q) (:Col *C2))
+            (split (:P Q) A (:Along X)))
+           ((= Cm C2)))
+      (NOT (&commonest.maximal (:t C))))))
+
+(INPUT key-panel "one panel holds the key at its top end, and &divider cells fill the rest of that panel.")
+
+(INPUT key-grid "the key's rows and its columns each alternate between gaps and lines &key_band wide, with a gap at each end; each line row is a line of one color across the key, each line column is a line of one color down the key, each cell off both lines is 0, each crossing cell has the color of one of its two lines, and no key cell is &marker or &divider."
+
+  ;; The width of each line and each gap of the key.
+  (DET &key_band DivisorRatio)
+
+  (DET &marker VanishedColor))
+
+(INPUT field "the other panel is the field, of 0 cells and &marker cells, with no line at its border and no two lines adjacent.")
+
+(INPUT field-markers "the field has as many line rows and as many line columns as the key; a &marker cell sits at both ends of each line, on the field border, and at each crossing of a line row with a line column, and nowhere else.")
+
+(OUTPUT find-panels "the field is the panel that holds &marker cells; the key is the cells of the other panel that are not &divider."
+
+  (RULE &divider2
+    (&divider *C))
+
+  (RULE &broken_line
+    (&divider2)
+    (input *P (:Col *C))
+    (NOT (&divider2 C))
+    (split P *A (:Along *X)))
+
+  (RULE &cut_axis
+    (axis_elem *A))
+
+  (RULE &divider_line
+    (&divider2 *C)
+    (input *P (:Col C))
+    (&cut_axis *A)
+    (split P A (:Along *X))
+    (NOT (&broken_line A X)))
+
+  (INIT &panel Connectivity
+    (node (P)
+      (input *P)
+      (&divider2)
+      (NOT (&divider_line P))))
+
+  (INIT &filled Singleton
+    (member ((:v Id))
+      (&panel.component *P *Id)
+      (input P (:Col *C))
+      (&divider2 C))))
+
+(OUTPUT field-lines "a line row of the field is a row whose two border cells are &marker; a line column is a column whose two border cells are &marker.")
+
+(OUTPUT stretch-key "the output has the field's size. Counted from either end, the k-th line row of the field takes the key's k-th line row, and each other row takes the key row off the lines that has as many line rows before it as that row has; columns map the same way. Each output cell is the key cell at its mapped row and column. Undefined where the two ends give a cell different colors, or where a row or column takes no key row or column from one end."
+
+  (INIT &marked Singleton
+    (member ((:v Id))
+      (&panel.component *P *Id)
+      (input P (:Col *C))
+      (&marker C)))
+
+  (RULE &field_panel
+    (&marked.value (:v *Id)))
+
+  (RULE &field_cell
+    (&field_panel *Id)
+    (&panel.component *P Id)
+    (input P *Col))
+
+  (RULE &key_panel
+    (&marked.value (:v *Id0))
+    (&panel.component *Id)
+    (!= Id Id0))
+
+  (RULE &key_panel_cell
+    (&key_panel *Id)
+    (&panel.component *P Id)
+    (input P *Col))
+
+  (INIT &field_box BoundingBox
+    (cell (P)
+      (&field_cell *P)))
+
+  (RULE &field
+    (&field_cell (:P *P2) *Col)
+    (&field_box.box *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (RULE &line_end
+    (&field *P *Col)
+    (split P *A (:Along *X))
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (margin (:B P) D (:K 0)))
+
+  (RULE &marker2
+    (&marker *C))
+
+  (RULE &marked_end
+    (&line_end *A *X *D (:Col *C))
+    (&marker2 C))
+
+  (RULE &unmarked_end
+    (&line_end *A *X (:Col *C))
+    (NOT (&marker2 C)))
+
+  (RULE &key_cell
+    (&key_panel_cell *P *Col)
+    (NOT (&divider2 (:C Col))))
+
+  (INIT &key_box BoundingBox
+    (cell (P)
+      (&key_cell *P)))
+
+  (RULE &key
+    (&key_cell (:P *P2) *Col)
+    (&key_box.box *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (RULE &field_idx
+    (&field *P)
+    (&marker2)
+    (split P *A (:Along *X)))
+
+  (RULE &field_line
+    (&marked_end *A *X)
+    (NOT (&unmarked_end A X)))
+
+  (RULE &field_gap
+    (&field_idx *A *X)
+    (NOT (&field_line A X)))
+
+  ;; The field lines between each field index and edge d.
+  (INIT &before Cardinality
+    (key ((&field_idx *A ^X)
+               (axis_of ^D A))
+      (member ((:m X2))
+        (&field_line *A (:X *X2))
+        (&field_idx A X)
+        (axis_of D A)
+        (nearer D (:P X2) (:Q X)))
+      (domain ()
+        (&field_idx *A X)
+        (axis_of D A))))
+
+  (RULE &key_idx
+    (&key (:P *Q))
+    (split (:P Q) *A (:Along *X)))
+
+  (RULE &key_gap
+    (&key_idx *A *X)
+    (axis_of *D A)
+    (margin (:B X) D (:K *T))
+    (&key_band (:K *W))
+    (divide T (:Side W) (:Gap W) (:Part *N)))
+
+  (RULE &key_line
+    (&key_idx *A *X)
+    (axis_of *D A)
+    (NOT (&key_gap D X))
+    (neighbor (:P X) D (:Q *X2))
+    (&key_gap D (:X X2) *N))
+
+  (RULE &gap_takes
+    (&field_gap *X)
+    (&before.size (:key *D X) *N)
+    (&key_gap D (:X *X_key) N))
+
+  (RULE &takes
+    (OR ((&field_line *X)
+         (&before.size (:key *D X) *N)
+         (&key_line D (:X *X_key) N))
+        ((&gap_takes D X X_key))))
+
+  (RULE &untaken
+    (&field_idx *A *X)
+    (axis_of *D A)
+    (NOT (&takes D X)))
+
+  (RULE &takes_cell
+    (&field *P)
+    (split P *A (:Along *X1) (:Across *X2))
+    (&takes (:D *D1) (:X X1) (:X_key *K1))
+    (NOT (&untaken (:X X1)))
+    (NOT (&untaken (:X X2)))
+    (&takes (:D *D2) (:X X2) (:X_key *K2))
+    (&key (:P *Q))
+    (split (:P Q) A (:Along K1) (:Across K2)))
+
+  ;; The colors of a key line off its crossings.
+  (INIT &line_color Singleton
+    (key ((&key_line ^X))
+      (member ((:v C))
+        (&key (:P *Q) (:Col *C))
+        (split (:P Q) *A (:Along X) (:Across *X2))
+        (&key_gap (:X X2))))))
+
+(ALTS $l "how the field's line rows and line columns are found" $LineByBothEnds
+  (ALT $LineByEitherEnd
+    (OUTPUT field-lines "a line is a row or column with &marker at either of its border cells."
+      (RULE &field_line
+        (&marked_end *A *X))))
+  (ALT $LineByCrossing
+    (OUTPUT field-lines "the lines are the rows and the columns of the &marker cells off the field border."
+      (RULE &field_line
+        (&field *P (:Col *C))
+        (&marker2 C)
+        (interior (:A P) (:B 0))
+        (split P *A (:Along *X))))))
+
+(ALTS $d "what fills the output" $Stretch
+  (ALT $DrawLines
+    (OUTPUT stretch-key "rows and columns map as in the concept; a cell on one line takes that line's color, the one color its key line holds off the crossings, a crossing takes the key's crossing cell, and every other cell is &background. Undefined where a key line holds more than one color off the crossings."
+      (DET_OR_RULE &background DominantColor))
+    (RULE &output
+      (&takes_cell *P *Q *D1 *D2)
+      (axis_of (:D D1) *A)
+      (split (:P Q) A (:Along *K1) (:Across *K2))
+      (OR ((&key_line (:D D1) (:X K1))
+           (&key_line (:D D2) (:X K2))
+           (&key (:P Q) *Col))
+          ((&key_line (:D D1) (:X K1))
+           (&key_gap (:D D2) (:X K2))
+           (&line_color.value (:key (:X K1)) (:v Col)))
+          ((&key_gap (:D D1) (:X K1))
+           (&key_gap (:D D2) (:X K2))
+           (&background (:C Col)))))))
+
+(ALTS $g "which key gap row a field gap row takes" $GapByCount
+  (ALT $GapToEnd
+    (OUTPUT stretch-key "each row off the field's lines takes the key's gap row at the edge the lines are counted from, and columns likewise."
+      (RULE &gap_takes
+        (&field_gap *A *X)
+        (axis_of *D A)
+        (&key_gap D (:X *X_key) (:N 0))))))
+
+(ALTS $f "which panel is the field and which is the key" $FieldByMarker
+  (ALT $KeyByFill
+    (OUTPUT find-panels "the key is the cells, not &divider, of the panel that &divider cells partly fill, and the field is the other panel. Undefined where both panels or neither panel holds &divider cells."
+      (RULE &key_panel
+        (&filled.value (:v *Id)))
+
+      (RULE &field_panel
+        (&filled.value (:v *Id0))
+        (&panel.component *Id)
+        (!= Id Id0)))
+    (ALTS $m "how the marker color is found" $MarkerStored
+      (ALT $MarkerFromField
+        (OUTPUT field-lines "the marker is the field's color other than its commonest color. Undefined where the field holds more or fewer than two colors."
+          (INIT &field_ground_count Cardinality
+            (key ((&field_cell *P (:Col ^C)))
+              (member ((:m P))
+                (&field_cell *P (:Col C)))))
+          (INIT &field_ground Order
+            (member ((:t C))
+              (&field_ground_count.size (:key *C)))
+            (score ((:t C) (:S N))
+              (&field_ground_count.size (:key *C) *N)))
+          (INIT &field_mark Singleton
+            (member ((:v C))
+              (&field_cell (:Col *C))
+              (NOT (&field_ground.maximal (:t C)))))
+          (RULE &marker2
+            (&field_mark.value (:v *C))))))))
+
+(ALTS $v "how the divider color is found" $DividerStored
+  (ALT $DividerFromFullLine
+    (INPUT two-panels "a full row or column of one color other than the input's commonest color, the divider, splits the input into two panels. Undefined where no such color, or more than one, exists."
+      (RULE &divider2
+        (&full_line_color.value (:v *C))))))
+
+(ALTS $y "whether the panel layout is read from its stored orientation" $LayoutFree
+  (ALT $LayoutStored
+    (INPUT two-panels "the divider is a full line of &divider cells along the axis of &key_end.")
+    (OUTPUT find-panels "the key is the cells of the key panel nearer its &key_end edge than every line across the panel that holds only &divider cells."
+      ;; The end of the key panel, along the divider, where the key sits.
+      (DET &key_end DirDomain)
+
+      (RULE &cut_axis
+        (&key_end *D)
+        (axis_of D (:A *A2))
+        (perp (:A A2) (:A2 *A)))
+
+      (RULE &unfilled
+        (&key_panel_cell *P (:Col *C))
+        (NOT (&divider2 C))
+        (&key_end *D)
+        (axis_of D *A)
+        (split P A (:Along *X)))
+
+      (RULE &filled_line
+        (&key_panel_cell *P)
+        (&key_end *D)
+        (axis_of D *A)
+        (split P A (:Along *X))
+        (NOT (&unfilled X)))
+
+      (RULE &past_fill
+        (&key_panel_cell *P)
+        (&filled_line *X)
+        (&key_end *D)
+        (NOT (nearer D P (:Q X))))
+
+      (RULE &key_cell
+        (&key_panel_cell *P *Col)
+        (NOT (&past_fill P))))))
+
+(RULE &output
+  (&takes_cell *P *Q)
+  (&key (:P Q) *Col))
+
+(OUT (&output ^P ^Col))

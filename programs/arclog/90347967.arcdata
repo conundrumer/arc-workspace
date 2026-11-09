@@ -1,0 +1,7 @@
+;; inputs f514d8f9e7028dc9254ee86b1fe1be04b648a33026d65e34d560f4857b942e72 programs/solvers/90347967.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 90347967
+
+(param &bg Color (0))
+(param &marker Color (5))
+(param &transform D4 (D4_HT))

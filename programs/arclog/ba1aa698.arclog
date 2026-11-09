@@ -1,0 +1,511 @@
+;; inputs 4b960024c8c9900b66c311f61d46f2a7b60aab944616401b09b0fad686d4a2cc programs/solvers/ba1aa698.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ba1aa698
+
+(INPUT panel-row "the grid is a row of equal panels along the axis of &extend_dir, each panel bordered on every side by divider lines of one color."
+
+  ;; The end of the panel row past which the sequence continues.
+  (DET &extend_dir DirDomain))
+
+(INPUT one-shape-per-panel "each panel holds one copy of one shape on the panel's background, and the shape is the same in every panel."
+
+  ;; The color of a line all of one color.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &panels_on_divider
+    (input *P)
+    (&line_color.value (:key *A *L))
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  ;; The full lines cut the grid into the panels.
+  (INIT &panels_rank Order
+    (key ((OR ((&line_color.value (:key *A *L))
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&line_color.value (:key *A *L))
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&line_color.value (:key *A *L))
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *P D (:N *N1))
+    (&panels_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &panels_tile_of
+    (&panels_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &field_count Cardinality
+    (key ((&panels_tile_of *P)
+          (input P ^Col))
+      (member ((:m P))
+        (&panels_tile_of *P)
+        (input P Col))))
+
+  ;; Each panel's interior.
+  (INIT &panel_box BoundingBox
+    (key ((&panels_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&panels_tile_of *P (:P_tile T)))))
+
+  ;; Each panel with its border: the cells next to a panel cell.
+  (INIT &framed BoundingBox
+    (key ((&panels_tile_of (:P *P0) (:P_tile ^T))
+          (neighbor (:P P0) (:Q *P)))
+      (cell (P)
+        (&panels_tile_of (:P *P0) (:P_tile T))
+        (neighbor (:P P0) (:Q *P)))))
+
+  (RULE &panel_cell
+    (&framed.box (:key *T) *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  ;; The background: the commonest color inside the panels.
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&field_count.size (:key *Col) *N)))
+
+  (RULE &shape
+    (&panel_box.box (:key *T) *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))
+    (NOT (&field.maximal (:t Col))))
+
+  (RULE &next
+    (&extend_dir *D)
+    (&panel_box.box (:key *T))
+    (neighbor (:P T) D (:Q *T2))
+    (&panel_box.box (:key (:T T2))))
+
+  (RULE &last
+    (&next (:T2 *T))
+    (NOT (&next T)))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape ^T *P_inner))
+      (cell ((:P P_inner))
+        (&shape T *P_inner))))
+
+  (RULE &offset
+    (&next *T *T2)
+    (&shape_box.box (:key T) (:B *B1))
+    (&shape_box.box (:key (:T T2)) (:B *B2))
+    (relative (:Base B1) (:X B2) (:X_rel *V)))
+
+  (RULE &pair_step
+    (&offset *T *V)
+    (&extend_dir *D)
+    (axis_of D *A)
+    (split (:P V) A (:Along 0)))
+
+  (INIT &step Singleton
+    (member ((:v V))
+      (&pair_step *V)))
+
+  (RULE &step_at
+    (OR ((&pair_step *T *V))
+        ((&step.value (:v V))
+         (&last T))))
+
+  (DEMONSTRATED &catalog
+    (value ((:o T) (:i P_inner) (:v Col))
+      (&panel_cell *T *P_inner *Col))
+    (demonstration ((:o T) (:o2 T2))
+      (&next *T *T2))
+    (DEMO_RULE $Translate "The panel with its shape moved one step over the background."
+      (RULE &moved
+        (&step_at *T *V)
+        (&shape T (:P_inner *P) *Col)
+        (compose (:A P) (:B V) (:C *Q_inner)))
+
+      (RULE &leaves
+        (&moved *T (:Q_inner *Q))
+        (NOT (inside (:A Q) (:B 0))))
+
+      (RULE &drawn
+        (&step_at *T)
+        (NOT (&leaves T)))
+
+      (RULE &placed
+        (&moved *T (:Q_inner *Q2) *Col)
+        (&panel_box.box (:key T) *B)
+        (compose (:A B) (:B Q2) (:C *Q)))
+
+      (RULE &prediction
+        (&drawn *T)
+        (&panel_cell T *P *P_inner (:Col *Col0))
+        (OR ((&placed T (:Q P) *Col))
+            ((NOT (&panels_tile_of P (:P_tile T)))
+             (= Col Col0))
+            ((&panels_tile_of P (:P_tile T))
+             (NOT (&placed T (:Q P)))
+             (&field.maximal (:t Col))))))))
+
+(INPUT constant-step "from each panel to the next toward &extend_dir, the shape moves by the same number of cells across that axis."
+
+  ;; The change from each step to the next.
+  (INIT &change Singleton
+    (member ((:v W))
+      (&pair_step *T *V)
+      (&next T *T2)
+      (&pair_step (:T T2) (:V *V2))
+      (relative (:Base V) (:X V2) (:X_rel *W)))))
+
+(INPUT across-only "the shape keeps one place along that axis in every panel.")
+
+(INPUT next-fits "the shape moved by one more step still lies inside the panel."
+
+  (RULE &inner
+    (&panel_box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  ;; The lines of a panel's interior, each a cycle toward side d.
+  (INIT &wrap Walk
+    (key ((OR ((&step_at)
+               (&inner (:P_inner *P))
+               (dir_elem ^D)
+               (OR ((NOT (margin (:B P) D (:K 0)))
+                    (neighbor P D *Q))
+                   ((margin (:B P) D (:K 0))
+                    (opposite D (:Opp *O))
+                    (axis_of D *A)
+                    (&inner (:P_inner Q))
+                    (margin (:B Q) (:D O) (:K 0))
+                    (same_line A P Q))))
+              ((&step_at *V)
+               (opposite D (:Opp *O2))
+               (margin (:B V) (:D O2) *K)
+               (> K 0))))
+      (successor ((:p P) (:p_next Q))
+        (&step_at)
+        (&inner (:P_inner *P))
+        (dir_elem D)
+        (OR ((NOT (margin (:B P) D (:K 0)))
+             (neighbor P D *Q))
+            ((margin (:B P) D (:K 0))
+             (opposite D (:Opp *O))
+             (axis_of D *A)
+             (&inner (:P_inner Q))
+             (margin (:B Q) (:D O) (:K 0))
+             (same_line A P Q))))
+      (steps ((:N K))
+        (&step_at *V)
+        (opposite D (:Opp *O))
+        (margin (:B V) (:D O) *K)
+        (> K 0)))))
+
+(OUTPUT next-panel "the output is one panel with its border of divider lines, its background and divider colors as in the input, and the shape at the place one more step past the last panel toward &extend_dir gives.")
+
+(ALTS $s "whether the shape's place along the panel row also steps" $AcrossOnly
+  (ALT $Step2D
+    (INPUT across-only "the shape's place along the panel row may change too; the step is one offset on both axes, and the next panel's shape moves by it on both axes"
+      (RULE &pair_step
+        (&offset *T *V)))
+    (ALT $LastStep
+      (INPUT constant-step "the steps between panels may differ, and the next panel takes the step between the last two panels"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))
+
+        (RULE &drawn
+          (&step_at *T)
+          (NOT (&leaves T)))
+
+        (RULE &placed
+          (&moved *T (:Q_inner *Q2) *Col)
+          (&panel_box.box (:key T) *B)
+          (compose (:A B) (:B Q2) (:C *Q))))
+      (ALT $ClipAtEdge
+        (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+          (RULE &drawn
+            (&step_at *T))
+
+          (RULE &placed
+            (&moved *T (:Q_inner *Q2) *Col)
+            (inside (:A Q2) (:B 0))
+            (&panel_box.box (:key T) *B)
+            (compose (:A B) (:B Q2) (:C *Q)))))
+      (ALT $WrapAround
+        (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+          (RULE &drawn
+            (&step_at *T))
+
+          (RULE &placed
+            (&shape *T (:P_inner *P) *Col)
+            (perp *A *A2)
+            (&wrap_axis T A P (:Q *P1))
+            (&wrap_axis T (:A A2) (:P P1) (:Q *Q2))
+            (&panel_box.box (:key T) *B)
+            (compose (:A B) (:B Q2) (:C *Q))))))
+    (ALT $FirstStep
+      (INPUT constant-step "the steps between panels may differ, and the next panel takes the step between the first two panels"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))
+
+        (RULE &drawn
+          (&step_at *T)
+          (NOT (&leaves T)))
+
+        (RULE &placed
+          (&moved *T (:Q_inner *Q2) *Col)
+          (&panel_box.box (:key T) *B)
+          (compose (:A B) (:B Q2) (:C *Q))))
+      (ALT $ClipAtEdge
+        (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+          (RULE &drawn
+            (&step_at *T))
+
+          (RULE &placed
+            (&moved *T (:Q_inner *Q2) *Col)
+            (inside (:A Q2) (:B 0))
+            (&panel_box.box (:key T) *B)
+            (compose (:A B) (:B Q2) (:C *Q)))))
+      (ALT $WrapAround
+        (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+          (RULE &drawn
+            (&step_at *T))
+
+          (RULE &placed
+            (&shape *T (:P_inner *P) *Col)
+            (perp *A *A2)
+            (&wrap_axis T A P (:Q *P1))
+            (&wrap_axis T (:A A2) (:P P1) (:Q *Q2))
+            (&panel_box.box (:key T) *B)
+            (compose (:A B) (:B Q2) (:C *Q))))))
+    (ALT $SteadyChange
+      (INPUT constant-step "the step changes by the same offset from each pair of panels to the next, and the next panel takes the last step changed once more; undefined where the changes differ"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))
+
+        (RULE &drawn
+          (&step_at *T)
+          (NOT (&leaves T)))
+
+        (RULE &placed
+          (&moved *T (:Q_inner *Q2) *Col)
+          (&panel_box.box (:key T) *B)
+          (compose (:A B) (:B Q2) (:C *Q))))
+      (ALT $ClipAtEdge
+        (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+          (RULE &drawn
+            (&step_at *T))
+
+          (RULE &placed
+            (&moved *T (:Q_inner *Q2) *Col)
+            (inside (:A Q2) (:B 0))
+            (&panel_box.box (:key T) *B)
+            (compose (:A B) (:B Q2) (:C *Q)))))
+      (ALT $WrapAround
+        (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+          (RULE &drawn
+            (&step_at *T))
+
+          (RULE &placed
+            (&shape *T (:P_inner *P) *Col)
+            (perp *A *A2)
+            (&wrap_axis T A P (:Q *P1))
+            (&wrap_axis T (:A A2) (:P P1) (:Q *Q2))
+            (&panel_box.box (:key T) *B)
+            (compose (:A B) (:B Q2) (:C *Q))))))
+    (ALT $ClipAtEdge
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))))
+    (ALT $WrapAround
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))))))
+
+(ALTS $u "the step the next panel takes where the steps between panels differ" $EvenSteps
+  (ALT $LastStep
+    (INPUT constant-step "the steps between panels may differ, and the next panel takes the step between the last two panels"
+      (RULE &step_at
+        (OR ((&last *T)
+             (&next (:T *T0) (:T2 T))
+             (&pair_step (:T T0) *V))
+            ((&pair_step T V)))))
+    (ALT $ClipAtEdge
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))))
+    (ALT $WrapAround
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0)))))))
+  (ALT $FirstStep
+    (INPUT constant-step "the steps between panels may differ, and the next panel takes the step between the first two panels"
+      (RULE &step_at
+        (OR ((&last *T)
+             (&pair_step (:T *T0) *V)
+             (NOT (&next (:T2 T0))))
+            ((&pair_step T V)))))
+    (ALT $ClipAtEdge
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))))
+    (ALT $WrapAround
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0)))))))
+  (ALT $SteadyChange
+    (INPUT constant-step "the step changes by the same offset from each pair of panels to the next, and the next panel takes the last step changed once more; undefined where the changes differ"
+      (RULE &step_at
+        (OR ((&last *T)
+             (&next (:T *T0) (:T2 T))
+             (&pair_step (:T T0) (:V *V0))
+             (&change.value (:v *W))
+             (compose (:A V0) (:B W) (:C *V)))
+            ((&pair_step T V)))))
+    (ALT $ClipAtEdge
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))))
+    (ALT $WrapAround
+      (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+        (RULE &moved
+          (&step_at *T *V)
+          (&shape T (:P_inner *P) *Col)
+          (compose (:A P) (:B V) (:C *Q_inner)))
+
+        (RULE &leaves
+          (&moved *T (:Q_inner *Q))
+          (NOT (inside (:A Q) (:B 0))))))))
+
+(ALTS $e "what the next panel draws where one more step takes shape cells past the panel's edge" $InsidePanel
+  (ALT $ClipAtEdge
+    (INPUT next-fits "one more step may take shape cells past the panel's edge; those cells are dropped, and the panel is empty where none lands inside"
+      (RULE &drawn
+        (&step_at *T))
+
+      (RULE &placed
+        (&moved *T (:Q_inner *Q2) *Col)
+        (inside (:A Q2) (:B 0))
+        (&panel_box.box (:key T) *B)
+        (compose (:A B) (:B Q2) (:C *Q)))))
+  (ALT $WrapAround
+    (INPUT next-fits "one more step may take shape cells past the panel's edge; such a cell wraps around to the opposite side of the panel"
+      (RULE &wrap_axis
+        (&step_at *T *V)
+        (&inner (:P_inner *P))
+        (axis_elem *A)
+        (OR ((axis_of *D A)
+             (opposite D (:Opp *O))
+             (margin (:B V) (:D O) *K)
+             (> K 0)
+             (&wrap.walk (:key D) (:p0 P) (:N K) (:p *Q)))
+            ((split (:P V) A (:Along 0))
+             (= Q P))))
+
+      (RULE &drawn
+        (&step_at *T))
+
+      (RULE &placed
+        (&shape *T (:P_inner *P) *Col)
+        (perp *A *A2)
+        (&wrap_axis T A P (:Q *P1))
+        (&wrap_axis T (:A A2) (:P P1) (:Q *Q2))
+        (&panel_box.box (:key T) *B)
+        (compose (:A B) (:B Q2) (:C *Q))))))
+
+;; The panel after the last one.
+(RULE &output
+  (&catalog (:o *T) (:i *P) (:v *Col))
+  (&last T))
+
+(OUT (&output ^P ^Col))

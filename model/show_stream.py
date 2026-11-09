@@ -5,7 +5,7 @@ import arclog
 tid = sys.argv[1]
 task = arclog.Task.from_json(open(f"data/tasks/{tid}.json").read(), arclog.World.Closed)
 voc = arclog.Session(task).vocabulary
-out = subprocess.run(["engine/target/tool/arclog-cli", "stream", f"work/arclog/gen/{tid}.arclog"],
+out = subprocess.run(["engine/target/tool/arclog-cli", "stream", f"programs/arclog/{tid}.arclog"],
                      capture_output=True, text=True, check=True).stdout
 toks = json.loads(out)
 words = [voc.name(t["id"]) if t["emitter"] == "model" else f"[{voc.name(t['id'])}]" for t in toks]

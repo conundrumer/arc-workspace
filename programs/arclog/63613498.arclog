@@ -1,0 +1,107 @@
+;; inputs 441b27f1c520b3c6ff2ecb477b8128e6747709131481a1741269f8024330b24b programs/solvers/63613498.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 63613498
+
+(DET &bg DominantColor)
+
+(DET &mark
+  (ex_input *E *P (:Col *Col_in))
+  (ex_output E P (:Col *C))
+  (!= C Col_in))
+
+(INIT &shapes Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&mark (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component *P ^Id))
+    (cell (P)
+      (&shapes.component *P Id))))
+
+(RULE &shape_inner
+  (&shapes.component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &same Inclusion
+  (pattern ((:pattern Id) (:m P_inner))
+    (&shape_inner *Id *P_inner))
+  (observed ((:observed Id) (:m P_inner))
+    (&shape_inner *Id *P_inner)))
+
+;; The part the output paints in, of the parts the wall cuts each train
+;; grid into. The ex_out atom holds the test inputs out.
+(INIT &painted Flood
+  (key ((OR ((ex_input ^E *P *Col)
+             (NOT (&mark (:C Col)))
+             (ex_output E))
+            ((ex_input E P Col)
+             (ex_output E P (:Col *Col_out))
+             (!= Col Col_out))))
+    (node (P)
+      (ex_input E *P *Col)
+      (NOT (&mark (:C Col)))
+      (ex_output E))
+    (source (P)
+      (ex_input E *P *Col)
+      (ex_output E P (:Col *Col_out))
+      (!= Col Col_out))))
+
+;; The panel is the box of the part the output leaves alone.
+(INIT &panel_box BoundingBox
+  (key ((&painted.node (:key ^E) *P)
+        (NOT (&painted.reached (:key E) P)))
+    (cell (P)
+      (&painted.node (:key E) *P)
+      (NOT (&painted.reached (:key E) P)))))
+
+(DET &panel
+  (&panel_box.box *B))
+
+;; The key's box lies within the panel, so every cell of it does.
+(RULE &key
+  (&bbox.box (:key *Id) *B)
+  (&panel (:B *B_panel))
+  (inside (:A B) (:B B_panel)))
+
+(ALTS $choice "how the cut-off corner is delimited" $Panel
+  (ALT $Wall
+    ;; The corner the wall cuts off.
+    (DET &corner DiagDirDomain)
+
+    (RULE &walled_off_node
+      (input *P *Col)
+      (NOT (&mark (:C Col))))
+
+    ;; The part the wall cuts off: the grid apart from the wall, reached from the
+    ;; corner cell.
+    (INIT &walled_off Flood
+      (node (P)
+        (&walled_off_node *P))
+      (source (P)
+        (&walled_off_node *P)
+        (&corner *D)
+        (inside (:A P) (:B 0))
+        (same_corner D (:P1 P) (:P2 0))))
+
+    ;; The key is a shape in that part.
+    (RULE &key
+      (&shapes.component *P *Id)
+      (&walled_off.reached P))))
+
+(RULE &twin
+  (&key (:Id *K))
+  (&same.equal (:observed *Id) (:pattern K))
+  (NOT (&key Id))
+  (&shapes.component *P Id))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (IF ((&twin P))
+      ((&mark (:C *Col)))
+      ((= Col Col2))))
+
+(OUT (&output ^P ^Col))

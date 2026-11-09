@@ -1,0 +1,126 @@
+;; inputs 7c9f1828218ed3057341f0c4ac322ff8a3669b0aabce3071eece17798f333cef programs/solvers/2c0b0aff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2c0b0aff
+
+(DET &bg VanishedColor)
+
+(DET &mark RarestColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(INIT &panels Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &mark_rim Boundary
+  (cell (P)
+    (&mark_cell *P)))
+
+(RULE &cross
+  (&mark_cell (:P *Inst))
+  (NOT (&mark_rim.boundary (:P Inst)))
+  (&panels.component *Id (:P Inst)))
+
+(ALTS $choice "what identifies a cross" $Plus
+  (ALT $Shape
+    (INIT &objs Connectivity
+      (key ((ex_input ^E *P *Col)
+            (&mark (:C Col)))
+        (node (P)
+          (ex_input E *P *Col)
+          (&mark (:C Col)))))
+
+    (INIT &biggest_count Cardinality
+      (key ((&objs.component (:key ^E) *P ^Id))
+        (member ((:m P))
+          (&objs.component (:key E) *P Id))))
+
+    ;; A cross is the biggest thing the marks make.
+    (INIT &biggest Order
+      (member ((:t (:E M_e) (:Id M_id)))
+        (&biggest_count.size (:key (:E *M_e) (:Id *M_id))))
+      (score ((:t (:E M_e) (:Id M_id)) (:S N))
+        (&biggest_count.size (:key (:E *M_e) (:Id *M_id)) *N)))
+
+    (INIT &bbox BoundingBox
+      (key ((&biggest.maximal (:t ^E ^Id)))
+        (cell (P)
+          (&objs.component (:key E) *P Id))))
+
+    (DET &shape
+      (&bbox.cell (:key (:E *K_e) (:Id *K_id)) (:P *P2))
+      (&bbox.box (:key (:E K_e) (:Id K_id)) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (INIT &occ Occurrences
+      (cell (P)
+        (&mark_cell *P))
+      (shape ((:P S))
+        (&shape (:P *S))))
+
+    (RULE &cross
+      (&occ.occurrence (:P *Inst))
+      (&shape (:P *S))
+      (compose (:A Inst) (:B S) (:C *P))
+      (&panels.component *Id P)))
+  (ALT $Size
+    (DET &piece_size TileCount)
+
+    (INIT &marks Connectivity
+      (node (P)
+        (&mark_cell *P)))
+
+    (INIT &mark_size Cardinality
+      (key ((&marks.component *P (:Id ^Obj)))
+        (member ((:m P))
+          (&marks.component *P (:Id Obj)))))
+
+    ;; An instance here is a mark object, not a position, so the count runs over
+    ;; objects and joins the shared pipeline at the score.
+    (INIT &piece_count Cardinality
+      (key ((&mark_size.size (:key *Obj) *N)
+            (&piece_size N)
+            (&marks.component *P (:Id Obj))
+            (&panels.component ^Id P))
+        (member ((:m Obj))
+          (&mark_size.size (:key *Obj) *N)
+          (&piece_size N)
+          (&marks.component *P (:Id Obj))
+          (&panels.component Id P))))
+
+    ;; The panel holding the most crosses, scored per case.
+    (INIT &most Order
+      (member ((:t (:V Id) (:S N)))
+        (&piece_count.size (:key *Id) *N))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&piece_count.size (:key *Id) *N)))))
+
+(INIT &cross_count Cardinality
+  (key ((&cross ^Id *Inst))
+    (member ((:m Inst))
+      (&cross Id *Inst))))
+
+;; The panel holding the most crosses, scored per case.
+(INIT &most Order
+  (member ((:t (:V Id) (:S N)))
+    (&cross_count.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&cross_count.size (:key *Id) *N)))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&most.maximal (:t (:V *Id)))
+    (&panels.component Id *P)))
+
+(RULE &output
+  (&view.cell (:P *P2))
+  (&view.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (input (:P P2) *Col))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,214 @@
+;; inputs 19176155f24c927a71918a12fd3d6daab7eba4ede0f4bfd38bfc297b1d0ee952 programs/solvers/abc82100.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; abc82100
+
+(param &bg Color (0))
+(param &key Color (8))
+
+(exclude ($SameColorDomino $AnchorTouch) "Every combination of the branches, less the ones that fail a pair: under AnchorTouch, a same-color pair next to a shape keys it in train0.")
+
+(alts $colors
+  (alt $SameColorDomino
+    (witness same-color borderline concept
+      (relaxed legend-domino)
+      (separates "$SameColorDomino from the concept: a 3 3 pair touches the left end of a key line. The concept finds no key and keeps the input; $SameColorDomino reads the pair as a legend from 3 to 3, erases it with the line, and stamps the line in 3 at the lone 3 cell.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (3 3 8 8 8 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($TwoColors $KeepKeyless) (grid
+        (0 0 0 0 0 0 0)
+        (3 3 8 8 8 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $EraseKeyColor (grid
+        (0 0 0 0 0 0 0)
+        (3 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $SameColorDomino (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 3 3 3 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $site
+  (alt $AnchorTouch
+    (witness wide-mouth variant concept
+      (separates "$AnchorTouch from the concept: a U-shaped key shape opens upward three cells wide, and its domino points into the middle of the mouth. The anchor is a background cell of the box with no shape cell among its eight neighbors. The concept keys the U and stamps it in 2 at the 3 cell; $AnchorTouch finds no key and keeps the input.")
+      (input (grid
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0)
+        (0 0 0 0 8 0 0 0 8 0)
+        (0 0 0 0 8 0 0 0 8 0)
+        (0 0 0 0 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $BoxSide $CenterLine (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 2 0 0 0 0 0)
+        (2 0 0 0 2 0 0 0 0 0)
+        (2 2 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($AnchorTouch $EraseKeyColor) (grid
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($AnchorTouch $KeepKeyless) (grid
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0)
+        (0 0 0 0 8 0 0 0 8 0)
+        (0 0 0 0 8 0 0 0 8 0)
+        (0 0 0 0 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))))
+  (alt $CenterLine
+    (witness off-center variant concept
+      (relaxed legend-domino)
+      (separates "$CenterLine from the concept: the domino 3 2 meets a five-cell vertical key line one cell above the line's middle. The concept keys the line with its anchor on the second cell and stamps it in 2 at the 3 cell; $CenterLine finds no key and keeps the input.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 3 2 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $BoxSide $AnchorTouch (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 0)))
+      (output ($CenterLine $EraseKeyColor) (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 3 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output ($CenterLine $KeepKeyless) (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 3 2 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0))))))
+
+(alts $cover
+  (alt $KeepOnTop
+    (witness stamp-on-ink variant concept
+      (relaxed clear-stamps)
+      (separates "$KeepOnTop from the concept: the stamp of the 1 cell reaches an unkeyed 6 cell. The concept draws the stamp over the 6; $KeepOnTop keeps the 6.")
+      (input (grid
+        (1 2 8 8 8 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 1 6 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $StampOver (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $KeepOnTop (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 2 6 2 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $keyless
+  (alt $EraseKeyColor
+    (witness keyless-shape variant any
+      (relaxed legend-shape)
+      (separates "$EraseKeyColor from the concept: a second key-colored shape has no domino. The concept keeps that shape as other ink; $EraseKeyColor erases every key-colored cell.")
+      (input (grid
+        (1 2 8 8 8 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 0)
+        (0 0 0 0 8 8 8)
+        (0 0 0 0 0 8 0)
+        (0 1 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $KeepKeyless (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 0)
+        (0 0 0 0 8 8 8)
+        (0 0 0 0 0 8 0)
+        (0 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $EraseKeyColor (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed background)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 3 swapped")
+      (input (grid
+        (1 2 8 8 8)
+        (3 3 3 3 1)
+        (3 3 3 1 3)
+        (3 3 3 1 3)
+        (3 3 3 3 1)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (3 3 3 3 3)
+        (3 3 3 3 2)
+        (3 3 3 2 2)
+        (3 3 3 2 2)
+        (3 3 3 3 2))))))

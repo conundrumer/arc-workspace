@@ -1,0 +1,81 @@
+;; inputs 6a8fe66097c07cee3db9d2aa00f7a18712a19aeb18ccd97bda9a63f57df418b0 programs/solvers/834ec97d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 834ec97d
+
+(DET &period TileCount)
+
+(DET &dir DirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The marker's row, walked outward from the marker.
+(INIT &row Ray
+  (source (P)
+    (&marker *P))
+  (node (P)
+    (input *P))
+  (dir ((:D D2))
+    (&dir *D)
+    (perp_dir D *D2)))
+
+;; A whole number of jumps out.
+(RULE &beam
+  (&row.ray *P *K)
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &moved
+  (&marker (:P *P2))
+  (&dir *D)
+  (neighbor (:P P2) D (:Q *P)))
+
+(ALTS $choice "how the alternating columns are picked; coincide at period 2" $Period
+  (ALT $Parity
+    ;; An even distance out: a cell of the row lies midway.
+    (RULE &beam
+      (&row.ray (:P *M) (:D *D2) *K)
+      (jump (:P M) (:D D2) K (:Q *P))
+      (input P))))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&beam *P)
+    (frame_extent P *A *N)))
+
+;; The filled region: each beam cell and its column toward the edge opposite
+;; the move.
+(INIT &rays Ray
+  (source (P)
+    (&beam *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir ((:D O))
+    (&dir *D)
+    (opposite D (:Opp *O))))
+
+(RULE &rays_cell
+  (&beam)
+  (input *P))
+
+(RULE &rays_ray
+  (&rays.ray *P *D *K (:Origin *Src))
+  (&rays_cell P))
+
+(RULE &output
+  (OR ((&rays.ray *P)
+       (&rays_cell P)
+       (&fill (:C *Col)))
+      ((&moved P)
+       (&marker Col))
+      ((input P)
+       (NOT (&rays_ray P))
+       (NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

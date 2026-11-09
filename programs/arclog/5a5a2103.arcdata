@@ -1,0 +1,15 @@
+;; inputs ff9982a85dca1c7618aa6ab2024fc4b602aa189ceee95b1ee2f78d226466cb96 programs/solvers/5a5a2103.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5a5a2103
+
+(param &bg Color (0))
+(param &tile_dim number (4))
+(param &gap number (1))
+(param &legend_dir Dir (DIR_L))
+(param &spread_axis Axis (AXIS_H))
+(param &marker Position
+  (grid
+    (_ _ _ _)
+    (_ 1 1 _)
+    (_ 1 1 _)
+    (_ _ _ _)))

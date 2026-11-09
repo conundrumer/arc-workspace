@@ -1,0 +1,341 @@
+;; inputs cd146e4fdeb7fa43d178a0e787c66e9284a70331f5e2f96649ec26d475249cc4 programs/solvers/a57f2f04.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a57f2f04
+
+(INPUT panels "several solid rectangles of &blank stand apart on a field of &field"
+
+  (DET_OR_RULE &field DominantColor)
+
+  (DET &blank SharedColor)
+
+  (RULE &field2
+    (&field (:C *Col)))
+
+  (RULE &panel_cell
+    (&field2)
+    (input *P *Col)
+    (NOT (&field2 Col)))
+
+  (INIT &border Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) *D (:K 0))))
+
+  (INIT &diag Connectivity
+    (node (P)
+      (&panel_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT motif "each panel holds cells of one mark color, in one corner of that panel; panels may differ in mark color")
+
+(INPUT tile "the bounding box of a panel's mark cells is the motif tile; the tile's height divides the panel's height, and its width divides the panel's width"
+
+  ;; The concept's panels in each example.
+  (INIT &pieces Connectivity
+    (key ((ex_input ^E *P *Col)
+          (NOT (&field (:C Col))))
+      (node (P)
+        (ex_input E *P *Col)
+        (NOT (&field (:C Col))))))
+
+  (INIT &box2 BoundingBox
+    (key ((&pieces.component (:key ^E) (:Id ^X) *P))
+      (cell (P)
+        (&pieces.component (:key E) (:Id X) *P))))
+
+  (DET &blank3
+    (&box2.box (:key *E *X))
+    (&blank (:C *Col)))
+
+  (DET &color2
+    (&box2.box (:key *E *X) *B)
+    (ex_input E *P *Col)
+    (inside (:A P) B))
+
+  (DET &mark2
+    (&pieces.component (:key *E) (:Id *X) *P)
+    (&color2 E X P *Col)
+    (NOT (&blank3 E X Col)))
+
+  (INIT &marks_box2 BoundingBox
+    (key ((&mark2 ^E ^X *P))
+      (cell (P)
+        (&mark2 E X *P)))))
+
+(OUTPUT tile-panel "each panel is filled with copies of its motif tile, repeated along both axes on the grid of the tile's own position, so the copies cover the panel exactly; blank cells in the tile stay blank")
+
+(OUTPUT field-kept "every field cell keeps its color"
+
+  (INIT &orth Connectivity
+    (node (P)
+      (&panel_cell *P)))
+
+  (RULE &panel3
+    (&orth.component *P (:Id *Pn)))
+
+  (INIT &box BoundingBox
+    (key ((&panel3 (:Pn ^X) *P))
+      (cell (P)
+        (&panel3 (:Pn X) *P))))
+
+  (RULE &blank2
+    (&box.box (:key (:X *K)))
+    (&blank (:C *Col)))
+
+  (RULE &color
+    (&box.box (:key (:X *K)) *B)
+    (input *P *Col)
+    (inside (:A P) B))
+
+  (RULE &mark
+    (&panel3 (:Pn *K) *P)
+    (&color K P *Col)
+    (NOT (&blank2 K Col)))
+
+  (INIT &marks_box BoundingBox
+    (key ((&mark (:K ^X) *P))
+      (cell (P)
+        (&mark (:K X) *P))))
+
+  (RULE &marks_box3
+    (&marks_box.box (:key (:X *Pn)) *B)))
+
+(ALTS $field "where the field color comes from" $StoredField
+  (ALT $DeriveField
+    (INPUT panels "several solid rectangles of &blank stand apart on a field whose color is the one color of the grid's border ring"
+      (RULE &field2
+        (&border.value (:v *Col))))))
+
+(ALTS $conn "which non-field cells join into one panel" $Orthogonal
+  (ALT $DiagPanel
+    (INPUT panels "several solid rectangles of &blank stand apart on a field of &field; cells that touch at a corner join one panel"
+      (RULE &panel3
+        (&diag.component *P (:Id *Pn))))))
+
+(ALTS $blank "where a panel's blank color comes from" $StoredBlank
+  (ALT $DeriveBlank
+    (INPUT panels "several solid rectangles stand apart on a field of &field; each panel's blank is its one most frequent color"
+      (INIT &commonest_count Cardinality
+        (key ((&panel3 (:Pn ^Pn_x) *P)
+              (input P ^Col))
+          (member ((:m P))
+            (&panel3 (:Pn Pn_x) *P)
+            (input P Col))))
+
+      (INIT &commonest Order
+        (key ((&commonest_count.size (:key (:Pn_x ^X) *Col)))
+          (member ((:t Col))
+            (&commonest_count.size (:key (:Pn_x X) *Col)))
+          (score ((:t Col) (:S N))
+            (&commonest_count.size (:key (:Pn_x X) *Col) *N))))
+
+      (INIT &top Singleton
+        (key ((&commonest.maximal (:key ^X) (:t *Col)))
+          (member ((:v Col))
+            (&commonest.maximal (:key X) (:t *Col)))))
+
+      (RULE &blank2
+        (&top.value (:key (:X *K)) (:v *Col))))
+    (RULE &broken
+      (OR ((&paint *P *Col)
+           (&paint P (:Col *Col2))
+           (!= Col Col2))
+          ((&top.plural))))
+    (ALT $ColorBox
+      (RULE &broken
+        (OR ((&paint *P *Col)
+             (&paint P (:Col *Col2))
+             (!= Col Col2))
+            ((&top.plural))
+            ((&color_box.plural))))
+      (ALT $CornerBox
+        (RULE &broken
+          (OR ((&paint *P *Col)
+               (&paint P (:Col *Col2))
+               (!= Col Col2))
+              ((&top.plural))
+              ((&color_box.plural))
+              ((&gap *K (:K2 K)))))))
+    (ALT $CornerBox
+      (RULE &broken
+        (OR ((&paint *P *Col)
+             (&paint P (:Col *Col2))
+             (!= Col Col2))
+            ((&top.plural))
+            ((&gap *K (:K2 K))))))))
+
+(ALTS $marks "which marks the tile bounds" $AllMarks
+  (ALT $ColorBox
+    (INPUT tile "the motif tile is the bounding box of a panel's cells of one mark color, the color of the first mark met in each scan order of &scan; scan orders that give different boxes give no tile; the tile's height divides the panel's height, and its width divides the panel's width"
+      (DET &panel_scan
+        (&box2.box (:key *E *X))
+        (diag_dir_elem *D)
+        (axis_elem *A))
+
+      ;; The panel's marks in each scan order.
+      (INIT &scan_order Order
+        (key ((&panel_scan (:E ^Pn_e) (:X ^Pn_x) ^D ^A))
+          (member ((:t P))
+            (&mark2 (:E Pn_e) (:X Pn_x) *P))
+          (score ((:t P) (:S K1))
+            (&mark2 (:E Pn_e) (:X Pn_x) *P)
+            (diag_dist P (:Diag D) A *K1 *K2))
+          (secondary_score ((:t P) (:S K2))
+            (&mark2 (:E Pn_e) (:X Pn_x) *P)
+            (diag_dist P (:Diag D) A *K1 *K2))))
+
+      (DET &added
+        (&color2 *E *X *P (:Col *C_in))
+        (ex_output E P *Col)
+        (!= Col C_in))
+
+      (DET &scan_shown
+        (&scan_order.minimal (:key (:Pn_e *E) (:Pn_x *X) *D *A) (:t *P))
+        (&color2 E X P *Col)
+        (&added E X Col))
+
+      (DET &scan_missed
+        (&scan_shown *D *A)
+        (&scan_order.minimal (:key (:Pn_e *E) (:Pn_x *X) D A))
+        (ex_output E)
+        (NOT (&scan_shown E X D A)))
+
+      (DET &scan
+        (&scan_shown *D *A)
+        (NOT (&scan_missed D A)))
+
+      (RULE &scan2
+        (&box.box (:key (:X *K)))
+        (&scan *D *A))
+
+      (INIT &scan_order2 Order
+        (key ((&scan2 ^K ^D ^A))
+          (member ((:t P))
+            (&mark K *P))
+          (score ((:t P) (:S K1))
+            (&mark K *P)
+            (diag_dist P (:Diag D) A *K1 *K2))
+          (secondary_score ((:t P) (:S K2))
+            (&mark K *P)
+            (diag_dist P (:Diag D) A *K1 *K2))))
+
+      ;; The box of the cells of the first mark's color, in each scan order.
+      (INIT &first_color BoundingBox
+        (key ((&scan_order2.minimal (:key ^K ^D ^A) (:t *P))
+              (&color K P *Col)
+              (&mark K (:P *Q))
+              (&color K (:P Q) Col))
+          (cell ((:P Q))
+            (&scan_order2.minimal (:key K D A) (:t *P))
+            (&color K P *Col)
+            (&mark K (:P *Q))
+            (&color K (:P Q) Col))))
+
+      (INIT &color_box Singleton
+        (key ((&first_color.box (:key (:K ^X)) *B))
+          (member ((:v B))
+            (&first_color.box (:key (:K X)) *B))))
+
+      (RULE &marks_box3
+        (&color_box.value (:key (:X *Pn)) (:v *B))))
+    (RULE &broken
+      (OR ((&paint *P *Col)
+           (&paint P (:Col *Col2))
+           (!= Col Col2))
+          ((&color_box.plural))))
+    (ALT $CornerBox
+      (RULE &broken
+        (OR ((&paint *P *Col)
+             (&paint P (:Col *Col2))
+             (!= Col Col2))
+            ((&color_box.plural))
+            ((&gap *K (:K2 K))))))))
+
+(ALTS $tile "how far the tile reaches" $MarkBox
+  (ALT $CornerBox
+    (INPUT tile "the motif tile runs from the panel corner nearest the marks' bounding box to that box's far edges; a marks' box equally far from two opposite sides of the panel gives no tile; the tile's height divides the panel's height, and its width divides the panel's width"
+      (RULE &gap
+        (&marks_box3 *Pn *B)
+        (&box.box (:key (:X Pn)) (:B *B_p))
+        (relative (:Base B_p) (:X B) (:X_rel *B_rel))
+        (dist_pair (:P B_rel) *D *K *K2))
+
+      (RULE &near
+        (&gap *Pn *D *K *K2)
+        (< K K2)))
+    (RULE &tile
+      (&marks_box3 (:Pn *K) (:B *B_m))
+      (&near (:Pn K) (:D *D1) (:K *K1))
+      (&near (:Pn K) (:D *D2) (:K *K2))
+      (diag_dirs D1 D2)
+      (edge_outset (:D D1) (:K K1) (:B *O1))
+      (compose (:A B_m) (:B O1) (:C *B1))
+      (edge_outset (:D D2) (:K K2) (:B *O2))
+      (compose (:A B1) (:B O2) (:C *B)))
+
+    (RULE &broken
+      (OR ((&paint *P *Col)
+           (&paint P (:Col *Col2))
+           (!= Col Col2))
+          ((&gap *K (:K2 K)))))))
+
+(ALTS $extent "which cells the copies fill" $PanelCells
+  (ALT $ComponentBbox
+    (OUTPUT tile-panel "the whole bounding box of each panel is filled with copies of its motif tile, field cells included, repeated along both axes on the grid of the tile's own position")
+    (RULE &fill
+      (&box.box (:key (:X *Pn)) *B)
+      (input *P)
+      (inside (:A P) B))))
+
+(RULE &tile
+  (&marks_box3 (:Pn *K) *B))
+
+(RULE &copy
+  (&tile *K *B)
+  (&color K *P)
+  (diag_dirs *A *D1 *D2)
+  (perp A *A2)
+  (opposite (:D D1) (:Opp *O1))
+  (opposite (:D D2) (:Opp *O2))
+  (relative (:Base B) (:X P) (:X_rel *Q_rel))
+  (margin (:B Q_rel) (:D O1) (:K *T1))
+  (margin (:B Q_rel) (:D O2) (:K *T2))
+  (box_extent B P A (:N *N1))
+  (box_extent B P (:A A2) (:N *N2))
+  (divide (:T T1) (:Side N1) (:Gap 0) (:Remainder *K1))
+  (divide (:T T2) (:Side N2) (:Gap 0) (:Remainder *K2))
+  (jump P (:D O1) (:K T1) (:Q *P1))
+  (jump (:P P1) (:D D1) (:K K1) (:Q *P2))
+  (jump (:P P2) (:D O2) (:K T2) (:Q *P3))
+  (jump (:P P3) (:D D2) (:K K2) (:Q *P4))
+  (&color K (:P P4) *Col)
+  (inside (:A P4) B))
+
+(RULE &fill
+  (&panel3 *Pn *P))
+
+(RULE &paint
+  (&copy (:K *X) *P *Col)
+  (&fill (:Pn X) P))
+
+(RULE &broken
+  (&paint *P *Col)
+  (&paint P (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &live
+  (&field2)
+  (NOT (&broken)))
+
+(RULE &output
+  (OR ((&live)
+       (&paint *P *Col))
+      ((&live)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

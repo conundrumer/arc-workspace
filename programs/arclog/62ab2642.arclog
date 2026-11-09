@@ -1,0 +1,93 @@
+;; inputs 1d3a0aea0674348024079b1f91943f4d3fd06940c517a5ef5fc57e76e2ab4bd0 programs/solvers/62ab2642.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 62ab2642
+
+(DET &bg
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col2 Col))
+
+(RULE &blank
+  (input *P *Col)
+  (&bg Col))
+
+(INIT &orth Connectivity
+  (node (P)
+    (&blank *P)))
+
+(RULE &region
+  (&orth.component *P *Id))
+
+(INIT &size2 Cardinality
+  (key ((&orth.component (:E ^Ky) *P ^Id))
+    (member ((:m P))
+      (&orth.component (:E Ky) *P Id))))
+
+(INIT &extreme2 Order
+  (key ((&size2.size (:key ^Ky *Id) *N))
+    (member ((:t (:V Id) (:S N)))
+      (&size2.size (:key Ky *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&size2.size (:key Ky *Id) *N))))
+
+(DET &biggest2
+  (&extreme2.maximal (:key (:Ky *E)) (:t (:V *Id)))
+  (&orth.component E *P Id))
+
+(DET &smallest2
+  (&extreme2.minimal (:key (:Ky *E)) (:t (:V *Id)))
+  (&orth.component E *P Id))
+
+(DET &big_paint
+  (&biggest2 *E *P)
+  (ex_output E P *Col))
+
+(DET &small_paint
+  (&smallest2 *E *P)
+  (ex_output E P *Col))
+
+(ALTS $choice "what joins two blank cells into one region" $Orth
+  (ALT $Diag
+    (INIT &diag Connectivity
+      (node (P)
+        (&blank *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &region
+      (&diag.component *P *Id))))
+
+(INIT &size Cardinality
+  (key ((&region *P ^Id))
+    (member ((:m P))
+      (&region *P Id))))
+
+(INIT &extreme Order
+  (member ((:t (:V Id) (:S N)))
+    (&size.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&size.size (:key *Id) *N)))
+
+(RULE &biggest
+  (&extreme.maximal (:t (:V *Id)))
+  (&region *P Id))
+
+(RULE &smallest
+  (&extreme.minimal (:t (:V *Id)))
+  (&region *P Id))
+
+(RULE &paint
+  (OR ((&biggest *P)
+       (&big_paint *Col))
+      ((&smallest P)
+       (&small_paint Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

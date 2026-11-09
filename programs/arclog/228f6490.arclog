@@ -1,0 +1,84 @@
+;; inputs b34f1a5e867d00e4335398a3b5ad58511cf0c0ad3932137e4daa660c73d7543b programs/solvers/228f6490.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 228f6490
+
+(DET &bg DominantColor)
+
+(DET &wall SharedColor)
+
+;; The holes: the regions the walls close off from the grid edge.
+(INIT &closed Enclosure
+  (cell (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col)))))
+
+;; The shapes: the loose pieces. A wall is a container, not a piece.
+(INIT &shapes Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&wall (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&wall (:C Col))))))
+
+(INIT &hbox BoundingBox
+  (key ((&closed.enclosed (:Id ^H) *P))
+    (cell (P)
+      (&closed.enclosed (:Id H) *P))))
+
+(INIT &sbox BoundingBox
+  (key ((&shapes.component (:key ^Col) ^Id *P))
+    (cell (P)
+      (&shapes.component (:key Col) Id *P))))
+
+;; Same footprint: the two sets fill their boxes alike.
+(INIT &fits Inclusion
+  (pattern ((:pattern H) (:m P_inner))
+    (&closed.enclosed (:Id *H) *P)
+    (&hbox.box (:key H) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed (:Col S_col) (:Id S_id)) (:m P_inner))
+    (&shapes.component (:key (:Col *S_col)) (:Id *S_id) *P)
+    (&sbox.box (:key (:Col S_col) (:Id S_id)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+;; The shape a color carries.
+(INIT &color_shape Singleton
+  (key ((&shapes.component (:key ^Col) *Id))
+    (member ((:v Id))
+      (&shapes.component (:key Col) *Id))))
+
+(RULE &taken
+  (&fits.equal (:observed *Col *Id) (:pattern *H))
+  (NOT (&color_shape.plural (:key Col))))
+
+(ALTS $choice "which shape moves, when several fit one hole" $Unique
+  (ALT $AllFit
+    (RULE &stray
+      (&shapes.component (:key *Col) *Id)
+      (NOT (&fits.equal (:observed Col Id))))
+
+    (RULE &taken
+      (&fits.equal (:observed *Col *Id) (:pattern *H))
+      (NOT (&stray Col)))))
+
+(RULE &fill
+  (&taken *H *Col)
+  (&closed.enclosed (:Id H) *P))
+
+(RULE &erase
+  (&taken (:Col *S_col) (:Id *S_id))
+  (&shapes.component (:key (:Col S_col)) (:Id S_id) *P))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((&erase P)
+       (&bg (:C Col)))
+      ((input P Col)
+       (NOT (&fill P))
+       (NOT (&erase P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,113 @@
+;; inputs 88f452f8cfd6b8aef00e7a5126151489c4338dcab116130c730ccec90aa89493 programs/solvers/6cbe9eb8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6cbe9eb8
+
+(DET &bg ChangedColor)
+
+(DET &corner DiagDirDomain)
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col))
+    (cell (P)
+      (input *P Col))))
+
+(RULE &gap
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (input P Col)))
+
+(RULE &block
+  (input *Col)
+  (NOT (&gap Col)))
+
+(RULE &on_edge
+  (input *P *Col)
+  (&bbox.box (:key Col) *B)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(RULE &inward
+  (input *P *Col)
+  (NOT (&on_edge Col P)))
+
+(RULE &outline
+  (input *Col)
+  (NOT (&block Col))
+  (NOT (&inward Col)))
+
+(RULE &shape
+  (OR ((&outline *Col))
+      ((&block Col))))
+
+(RULE &box_size
+  (&bbox.cell (:key *Col) *P)
+  (&bbox.box (:key Col) *B)
+  (box_extent B P *A *N))
+
+(RULE &overflows
+  (&box_size *Col *A *N)
+  (&box_size (:Col *Col2) A (:N *N2))
+  (< N N2))
+
+;; Shapes from the largest inward: Col2 fits in Col.
+(INIT &nest Order
+  (member ((:t Col))
+    (&shape *Col))
+  (before ((:a Col) (:b Col2))
+    (&shape *Col)
+    (&shape (:Col *Col2))
+    (!= Col Col2)
+    (NOT (&overflows Col Col2))))
+
+(INIT &frame Frame
+  (extent (A N)
+    (&nest.minimal (:t *Col))
+    (&box_size Col *A *N)))
+
+;; Each outline a shape nests in takes it one step in from that outline's
+;; rim; a block takes it no step in.
+(INIT &rims Cardinality
+  (key ((OR ((&shape ^Col))
+            ((&nest.before (:a *Col3) (:b Col))
+             (&outline (:Col Col3)))))
+    (member ((:m Col3))
+      (&nest.before (:a *Col3) (:b Col))
+      (&outline (:Col Col3)))
+    (domain ()
+      (&shape Col))))
+
+(RULE &obox
+  (&rims.size (:key *Col) (:N *K))
+  (&corner (:D *Diag))
+  (corner_inset Diag K (:B *B_in))
+  (&frame.cell (:P *Q))
+  (inside (:A Q) (:B B_in))
+  (same_corner (:D Diag) (:P1 Q) (:P2 B_in))
+  (input *P)
+  (&bbox.box (:key Col) (:B *B2))
+  (inside (:A P) (:B B2))
+  (same_corner (:D Diag) (:P1 P) (:P2 B2))
+  (relative (:Base B2) (:X P) (:X_rel *P_inner))
+  (relative (:Base P_inner) (:X Q) (:X_rel *B)))
+
+(RULE &paint
+  (&obox *Col *B)
+  (&frame.cell *P)
+  (OR ((inside (:A P) B)
+       (same_dist (:P1 P) (:P2 B)))
+      ((&block Col)
+       (interior (:A P) B))))
+
+(RULE &covered
+  (&nest.before (:a *Col) (:b *Col2))
+  (&paint (:Col Col2) *P))
+
+(RULE &output
+  (OR ((&paint *Col *P)
+       (NOT (&covered Col P)))
+      ((&frame.cell P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

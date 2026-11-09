@@ -1,0 +1,72 @@
+;; inputs f9d75ec1ff5e1b0fded217cea565214e753e30520f9b294eb3f39ff3b7ff5a6e programs/solvers/310f3251.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 310f3251
+
+(DET &scale ScaleRatio)
+
+;; scale×scale tile arrangement.
+(INIT &arr Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&scale (:K *N))))
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Row and column index cycles — the torus wrap.
+(INIT &cyc Order
+  (key ((input *P)
+        (axis_of *D ^A)
+        (margin (:B P) D *K))
+    (member ((:t K))
+      (input *P)
+      (axis_of *D A)
+      (margin (:B P) D *K))
+    (score ((:t K) (:S K))
+      (input *P)
+      (axis_of *D A)
+      (margin (:B P) D *K))))
+
+(DET &mark_diag DiagDirDomain)
+
+(RULE &mark_at
+  (&ink (:P *P2))
+  (&mark_diag (:D *Diag))
+  (diag_dirs (:D Diag) (:A *A1) *D1 *D2)
+  (perp (:A A1) *A2)
+  (opposite (:D D1) (:Opp *O1))
+  (margin (:B P2) (:D O1) (:K *K1))
+  (&cyc.cyclic_successor (:key (:A A1)) (:a K1) (:b *K1b))
+  (opposite (:D D2) (:Opp *O2))
+  (margin (:B P2) (:D O2) (:K *K2))
+  (&cyc.cyclic_successor (:key (:A A2)) (:a K2) (:b *K2b))
+  (input *P)
+  (margin (:B P) (:D O1) (:K K1b))
+  (margin (:B P) (:D O2) (:K K2b)))
+
+(DET &mark_color AnyOutNewColor)
+
+(RULE &tile_content
+  (OR ((&ink *P *Col))
+      ((&mark_at P)
+       (NOT (&ink P))
+       (&mark_color (:C Col)))
+      ((input P)
+       (NOT (&ink P))
+       (NOT (&mark_at P))
+       (&bg (:C Col)))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&arr.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&tile_content (:P *P_intile))))
+
+(RULE &output
+  (&tile_content (:P *P_intile) *Col)
+  (&output_tiling.cell (:P_inner P_intile) *P))
+
+(OUT (&output ^P ^Col))

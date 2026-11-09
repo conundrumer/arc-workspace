@@ -1,0 +1,147 @@
+;; inputs ce6bc66b12c205e4169a3ec42989300eaa1d45fd902e5f1e031d1181c5c3cb44 programs/solvers/ff72ca3e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ff72ca3e
+
+(INPUT lone-cells "on a field of 0, every other cell is a lone cell of &center_color or of &blocker_color"
+
+  (DET &fill_color
+    (ex_output (:Col *C))
+    (NOT (ex_input (:Col C))))
+
+  (DET &unfilled_around
+    (&fill_color (:C *F))
+    (ex_output *E *P)
+    (neighbor P *D *Q)
+    (NOT (ex_output E (:P Q) (:Col F))))
+
+  (DET_OR_RULE &center_color RarestColor
+    (&fill_color (:C *F))
+    (ex_output *E *P (:Col *C))
+    (!= C F)
+    (NOT (&unfilled_around E P)))
+
+  (DET &center_color_determined
+    (&fill_color (:C *F))
+    (ex_output *E *P (:Col *C))
+    (!= C F)
+    (NOT (&unfilled_around E P)))
+
+  (DET &clumped
+    (ex_input *E *P (:Col *C))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col C)))
+
+  (DET &blocker_color
+    (ex_input (:Col *C))
+    (NOT (&clumped C))
+    (NOT (&center_color_determined C))))
+
+(INPUT square-fits "the square each center grows lies wholly inside the grid")
+
+(INPUT squares-apart "no two of the squares share a cell, and no square holds another center")
+
+(OUTPUT square-radius "a center's square has radius one less than the Chebyshev distance from the center to its nearest blocker cell"
+
+  (RULE &center
+    (input *P *Col)
+    (&center_color (:C Col)))
+
+  ;; The distance from each center to its nearest grid edge.
+  (INIT &frame Order
+    (key ((&center (:P ^C)))
+      (member ((:t K))
+        (margin (:B C) *D *K))
+      (score ((:t K) (:S K))
+        (margin (:B C) *D *K)))))
+
+(OUTPUT paint-square "every grid cell of a square that is not a center takes &fill_color; every center keeps its color")
+
+(OUTPUT keep-rest "every cell outside the squares keeps its input color"
+
+  (RULE &king_step
+    (input *P)
+    (neighbor P *D *Q)
+    (input (:P Q)))
+
+  ;; The Chebyshev distance from each center to each grid cell.
+  (INIT &reach Distance
+    (key ((&center (:P ^C)))
+      (source ((:n C))))
+    (edge ((:a P) (:b Q))
+      (&king_step *P *Q)))
+
+  (RULE &stop
+    (&center (:P *C))
+    (input (:P *Q) *Col)
+    (&blocker_color (:C Col)))
+
+  ;; The distance from each center to its nearest stop.
+  (INIT &nearest Order
+    (key ((&stop ^C *Q)
+          (&reach.distance (:key C) (:n Q) *K))
+      (member ((:t K))
+        (&stop C *Q)
+        (&reach.distance (:key C) (:n Q) *K))
+      (score ((:t K) (:S K))
+        (&stop C *Q)
+        (&reach.distance (:key C) (:n Q) *K))))
+
+  (RULE &beyond
+    (&nearest.minimal (:key *C) (:t *K_stop))
+    (&reach.distance (:key C) (:n *Q) *K)
+    (>= K K_stop))
+
+  (RULE &square
+    (&nearest.minimal (:key *C))
+    (&reach.distance (:key C) (:n *Q))
+    (NOT (&beyond C Q))))
+
+(ALTS $edge "whether the grid edge bounds the square" $Open
+  (ALT $EdgeBounds
+    (OUTPUT square-radius "the radius is the smaller of the nearest-blocker Chebyshev distance less one and the center's distance to the nearest grid edge; defined also where a center has no blocker"
+      (RULE &square
+        (&frame.minimal (:key *C) (:t *K_edge))
+        (&reach.distance (:key C) (:n *Q) *K)
+        (<= K K_edge)
+        (NOT (&beyond C Q))))
+    (RULE &output
+      (OR ((&paint *P)
+           (&fill_color (:C *Col)))
+          ((input P Col)
+           (NOT (&paint P)))))))
+
+(ALTS $block "which cells stop a square" $Gray
+  (ALT $CentersBlock
+    (OUTPUT square-radius "the other centers join the blocker cells; undefined where a center has neither a blocker nor another center"
+      (RULE &stop
+        (OR ((&center (:P *C))
+             (&center (:P *Q))
+             (!= C Q))
+            ((&center (:P C))
+             (input (:P Q) *Col)
+             (&blocker_color (:C Col))))))))
+
+(ALTS $cover "whether a center inside another center's square keeps its color" $Keep
+  (ALT $CoverCenters
+    (OUTPUT paint-square "every square cell but that square's own center takes &fill_color")
+    (RULE &paint
+      (&square *C (:Q *P))
+      (!= P C))))
+
+(RULE &paint
+  (&square (:Q *P))
+  (NOT (&center P)))
+
+(RULE &undefined
+  (&center (:P *C))
+  (NOT (&nearest.minimal (:key C))))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&fill_color (:C *Col)))
+      ((input P Col)
+       (NOT (&paint P))
+       (NOT (&undefined)))))
+
+(OUT (&output ^P ^Col))

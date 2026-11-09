@@ -1,0 +1,241 @@
+;; inputs 6beff2558007e8b0a6e61dc5eae929553678fdf37bfe0d498194f37bf9f741f8 programs/solvers/b6f77b65.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b6f77b65
+
+(INPUT marker "the line on the edge opposite &fall_dir holds a run of marker cells from the DIAG_TL corner, and nothing else; the line next to it is empty"
+
+  (DET &fall_dir DirDomain))
+
+(INPUT arches "the rest of the grid is a stack of arches, each a bar across the tops of two legs that run along the axis of &fall_dir")
+
+(INPUT sticks "each leg is one color for its whole length, its top corner cell included; each bar is one color over the cells strictly between its two legs")
+
+(INPUT stacked "each leg stands on the edge toward &fall_dir or on a stick of a lower arch; the two legs of one arch may differ in length"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  ;; The non-background cells on each frame edge.
+  (INIT &edge_tally Cardinality
+    (key ((input *P *Col)
+          (NOT (&bg (:C Col)))
+          (dir_elem ^D)
+          (margin (:B P) D (:K 0)))
+      (member ((:m P))
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (margin (:B P) D (:K 0)))))
+
+  (INIT &floor_edge Order
+    (member ((:t (:V D) (:S N)))
+      (&edge_tally.size (:key *D) *N))
+    (score ((:t (:V D) (:S N)) (:S N))
+      (&edge_tally.size (:key *D) *N))))
+
+(OUTPUT pull-marked "every stick whose color is a marker color becomes &bg")
+
+(OUTPUT legs-fall "each leg left moves toward &fall_dir until the cell past its end is the frame edge or a stick")
+
+(OUTPUT bar-hangs "a bar whose arch keeps both legs moves toward &fall_dir until it lies on the line of the lower of its legs' tops, or a cell past it is the frame edge or a stick")
+
+(OUTPUT bar-drops "a bar whose arch lost a leg moves toward &fall_dir until a cell past it is the frame edge or a stick")
+
+(OUTPUT marker-kept "the marker cells stay as they are"
+
+  (RULE &fall
+    (&fall_dir *D))
+
+  (RULE &marker_line
+    (input *P)
+    (&fall *D)
+    (opposite D (:Opp *O))
+    (margin (:B P) (:D O) (:K 0)))
+
+  (RULE &marker
+    (&marker_line *P)
+    (input P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &stick_cell
+    (&fall)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&marker_line P)))
+
+  (RULE &leg_cell
+    (&stick_cell *P *Col)
+    (&fall *D)
+    (OR ((margin (:B P) D (:K 0)))
+        ((neighbor P D *Q)
+         (&stick_cell (:P Q)))))
+
+  (RULE &bar_cell
+    (&stick_cell *P *Col)
+    (&fall *D)
+    (neighbor P D *Q)
+    (input (:P Q) (:Col *Bg))
+    (&bg (:C Bg)))
+
+  ;; Each stick: a leg runs along the fall's axis, a bar across it.
+  (INIT &stick Connectivity
+    (key ((&fall *D)
+          (axis_of D (:A *A_fall))
+          (OR ((&bar_cell *P ^Col)
+               (perp (:A A_fall) (:A2 ^A)))
+              ((&leg_cell P Col)
+               (= A A_fall))))
+      (node (P)
+        (&fall *D)
+        (axis_of D (:A *A_fall))
+        (OR ((&leg_cell *P Col)
+             (= A A_fall))
+            ((&bar_cell P Col)
+             (perp (:A A_fall) (:A2 A)))))))
+
+  (RULE &bar
+    (&bar_cell *P)
+    (&stick.component P *Id))
+
+  (RULE &arch_leg
+    (&bar (:Id *B))
+    (&stick.component *P (:Id B))
+    (&fall *D)
+    (perp_dir D (:D2 *S))
+    (neighbor P (:D S) (:Q *C))
+    (&stick.component (:P C) (:Id *L))
+    (NOT (&bar (:Id L))))
+
+  (RULE &pulled
+    (&stick.component *Id (:key *Col))
+    (&marker Col))
+
+  (RULE &broken
+    (&arch_leg *B *L)
+    (&pulled (:Id L)))
+
+  (RULE &whole
+    (&bar (:Id *B))
+    (NOT (&pulled (:Id B)))
+    (NOT (&broken B)))
+
+  (RULE &body
+    (&stick.component *P *Id)
+    (NOT (&pulled Id)))
+
+  (RULE &travel
+    (&fall *D)
+    (input *P)
+    (margin (:B P) D *K)
+    (jump_offset D K *V)))
+
+(ALTS $b "where the bar of an arch that lost a leg comes to rest" $BarDrops
+  (ALT $BarToFoot
+    (OUTPUT bar-drops "the bar moves toward &fall_dir until it lies beside the end of the leg it keeps, or a cell past it is the frame edge or a stick"
+      (RULE &leg_continues
+        (&stick.component (:P *Q) (:Id *L))
+        (&fall *D)
+        (neighbor (:P Q) D (:Q *Q2))
+        (&stick.component (:P Q2) (:Id L))))
+    ;; The sticks left settle toward the fall; each comes to rest at the least
+    ;; travel that `settle` reaches for it.
+    (INIT &settle Propagation
+      (source ((:n Id V))
+        (&body *Id *P)
+        (&fall *D)
+        (margin (:B P) D *K)
+        (jump_offset D K *V))
+      (edge ((:a Id V) (:b (:Id Id3) (:V V2)))
+        (OR ((&body (:Id *Id3) *P)
+             (&body *Id (:P *Q))
+             (!= Id3 Id)
+             (&fall *D)
+             (nearer D (:P Q) (:Q P))
+             (&travel *V)
+             (compose (:A Q) (:B V) (:C *Q2))
+             (opposite D (:Opp *O))
+             (neighbor (:P Q2) (:D O) (:Q *P2))
+             (relative (:Base P) (:X P2) (:X_rel *V2))
+             (&travel (:V V2)))
+            ((&body Id)
+             (&travel V)
+             (&fall (:D *D2))
+             (neighbor (:P V) (:D D2) (:Q V2))
+             (&travel (:V V2))
+             (= Id3 Id))
+            ((&broken (:B Id3))
+             (NOT (&pulled (:Id Id3)))
+             (&arch_leg (:B Id3) (:L Id) *C)
+             (NOT (&pulled Id))
+             (&stick.component (:P *Q3) Id)
+             (NOT (&leg_continues (:Q Q3)))
+             (relative (:Base C) (:X Q3) (:X_rel *U))
+             (&travel V)
+             (compose (:A V) (:B U) (:C V2)))))
+      (join ((:a (:Id L1) V) (:b (:Id L2) V) (:c (:Id Bar) V))
+        (&whole (:B *Bar))
+        (&arch_leg (:B Bar) (:L *L1))
+        (&arch_leg (:B Bar) (:L *L2))
+        (!= L1 L2)
+        (&travel *V)))))
+
+(ALTS $f "where the sticks fall" $StoredFall
+  (ALT $FallToFloorEdge
+    (INPUT stacked "each leg stands on the frame edge that the most non-background cells touch, or on a stick of a lower arch, and the sticks fall toward that edge; undefined where two edges tie for the most"
+      (RULE &fall
+        (&floor_edge.maximal (:t (:V *D)))))))
+
+;; The sticks left settle toward the fall; each comes to rest at the least
+;; travel that `settle` reaches for it.
+(INIT &settle Propagation
+  (source ((:n Id V))
+    (&body *Id *P)
+    (&fall *D)
+    (margin (:B P) D *K)
+    (jump_offset D K *V))
+  (edge ((:a Id V) (:b (:Id Id3) (:V V2)))
+    (OR ((&body (:Id *Id3) *P)
+         (&body *Id (:P *Q))
+         (!= Id3 Id)
+         (&fall *D)
+         (nearer D (:P Q) (:Q P))
+         (&travel *V)
+         (compose (:A Q) (:B V) (:C *Q2))
+         (opposite D (:Opp *O))
+         (neighbor (:P Q2) (:D O) (:Q *P2))
+         (relative (:Base P) (:X P2) (:X_rel *V2))
+         (&travel (:V V2)))
+        ((&body Id)
+         (&travel V)
+         (&fall (:D *D2))
+         (neighbor (:P V) (:D D2) (:Q V2))
+         (&travel (:V V2))
+         (= Id3 Id))))
+  (join ((:a (:Id L1) V) (:b (:Id L2) V) (:c (:Id Bar) V))
+    (&whole (:B *Bar))
+    (&arch_leg (:B Bar) (:L *L1))
+    (&arch_leg (:B Bar) (:L *L2))
+    (!= L1 L2)
+    (&travel *V)))
+
+(RULE &passed
+  (&settle.reached (:n *Id *V))
+  (&fall *D)
+  (opposite D (:Opp *O))
+  (neighbor (:P V) (:D O) (:Q *V0))
+  (&settle.reached (:n Id (:V V0))))
+
+(RULE &landed
+  (&settle.reached (:n *Id *V))
+  (NOT (&passed Id V))
+  (&stick.component (:P *P2) Id (:key *Col))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&marker_line *P)
+       (input P *Col))
+      ((&landed P Col))
+      ((input P)
+       (NOT (&marker_line P))
+       (NOT (&landed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

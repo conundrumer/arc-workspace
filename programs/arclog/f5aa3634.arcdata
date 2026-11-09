@@ -1,0 +1,214 @@
+;; inputs 568116891ac55cd798cfd48289badcc2d5396a9714b761cf4814b9acd2d12c3a programs/solvers/f5aa3634.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f5aa3634
+
+(param &bg Color (0))
+(param &copies number (2))
+
+(alts $adjacency
+  (alt $Adjacency8
+    (witness diagonal-joint variant $Adjacency8
+      (relaxed one-repeated-object)
+      (separates "a cell of color 4 meets each copy of the repeated object at a corner only: under 4-adjacency the cell is an object of its own that also occurs twice, so two objects repeat and the concept is undefined; under 8-adjacency it joins its copy, and the 4x4 crop with the cell is the one repeated object")
+      (input (grid
+        (0 0 5 8 8 0 0 0 0 0 0 0 0)
+        (0 3 5 3 8 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 0 0 0 0 0 7 0 0)
+        (0 4 0 0 0 0 0 0 0 7 7 2 0)
+        (0 0 0 0 0 0 0 0 0 0 2 2 0)
+        (0 0 3 5 2 0 0 0 0 0 0 0 0)
+        (0 0 2 2 0 0 0 0 0 5 8 8 0)
+        (0 0 3 2 0 0 0 0 3 5 3 8 0)
+        (0 0 0 0 0 0 0 0 0 3 3 0 0)
+        (0 0 0 0 0 0 0 0 4 0 0 0 0)))
+      (output $Adjacency4 undefined)
+      (output $Adjacency8 (grid
+        (0 5 8 8)
+        (3 5 3 8)
+        (0 3 3 0)
+        (4 0 0 0))))))
+
+(alts $color_match
+  (alt $ShapeOnly
+    (witness recolored-distractor variant concept
+      (separates "beside two exact copies of the repeated object stands one object of the same shape in other colors: the concept outputs the copy; matching by shape alone puts all three in one class and gives both colorings")
+      (input (grid
+        (0 0 5 8 8 0 0 0 0 0 0 0 0 0)
+        (0 3 5 3 8 0 0 0 0 0 7 0 0 0)
+        (0 0 3 3 0 0 0 0 0 7 7 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 5 8 8 0)
+        (0 0 6 1 1 0 0 0 0 3 5 3 8 0)
+        (0 4 6 4 1 0 0 0 0 0 3 3 0 0)
+        (0 0 4 4 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $WithColors (grid
+        (0 5 8 8)
+        (3 5 3 8)
+        (0 3 3 0)))
+      (output ($ShapeOnly $CopyCount) undefined)
+      (output ($ShapeOnly $Repeated)
+        (grid
+          (0 5 8 8)
+          (3 5 3 8)
+          (0 3 3 0))
+        (grid
+          (0 6 1 1)
+          (4 6 4 1)
+          (0 4 4 0))))))
+
+(alts $transform_match
+  (alt $Congruent
+    (witness mirrored-distractor variant concept
+      (separates "beside two exact copies of the repeated object stands one left-right mirror of it: the concept outputs the copy; matching up to D4 puts all three in one class and gives both the copy and its mirror")
+      (input (grid
+        (0 0 5 8 8 0 0 0 0 0 0 0 0 0)
+        (0 3 5 3 8 0 0 0 0 0 7 0 0 0)
+        (0 0 3 3 0 0 0 0 0 7 7 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 5 8 8 0)
+        (0 8 8 5 0 0 0 0 0 3 5 3 8 0)
+        (0 8 3 5 3 0 0 0 0 0 3 3 0 0)
+        (0 0 3 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Translation (grid
+        (0 5 8 8)
+        (3 5 3 8)
+        (0 3 3 0)))
+      (output ($Congruent $CopyCount) undefined)
+      (output ($Congruent $Repeated)
+        (grid
+          (0 5 8 8)
+          (3 5 3 8)
+          (0 3 3 0))
+        (grid
+          (8 8 5 0)
+          (8 3 5 3)
+          (0 3 3 0))))))
+
+(alts $selection
+  (alt $MostFrequent
+    (witness triple-and-pair variant $MostFrequent
+      (relaxed one-repeated-object)
+      (separates "one object occurs three times and another twice: the concept, which needs one repeated object, is undefined; the most frequent object is the triple; the object occurring exactly twice is the pair")
+      (input (grid
+        (0 5 8 8 0 0 0 5 8 8 0 0 0 0)
+        (3 5 3 8 0 0 3 5 3 8 0 0 0 0)
+        (0 3 3 0 0 0 0 3 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 7 0 0 0 0 0 7 0 0 0 0 0)
+        (0 7 7 2 0 0 0 7 7 2 0 0 0 0)
+        (0 0 2 2 0 0 0 0 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 5 2 0 0 0 0 0 5 8 8 0)
+        (0 0 2 2 0 0 0 0 0 3 5 3 8 0)
+        (0 0 3 2 0 0 0 0 0 0 3 3 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Repeated &copies=$Derived undefined)
+      (output ($CopyCount &copies=$Stored) (grid
+        (0 7 0)
+        (7 7 2)
+        (0 2 2)))
+      (output $MostFrequent (grid
+        (0 5 8 8)
+        (3 5 3 8)
+        (0 3 3 0)))))
+  (alt $CopyCount
+    (witness triple-and-pair variant $MostFrequent)))
+
+(alts $output_frame
+  (alt $CropRegion
+    (witness decoy-in-bbox variant concept
+      (separates "a one-cell object sits inside the bounding box of one copy of the repeated L, touching it at no side or corner: the concept crops the L alone; cropping the input's region at each copy's box gives the L and the L with the decoy cell")
+      (input (grid
+        (0 5 8 8 8 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 7 0 0 0)
+        (0 3 0 0 0 0 0 0 7 7 2 0 0)
+        (0 0 0 0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 5 2 0 0 0 0 5 8 8 8 0)
+        (0 2 2 0 0 0 0 0 3 0 0 0 0)
+        (0 3 2 0 0 0 0 0 3 0 0 6 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ObjectCells (grid
+        (5 8 8 8)
+        (3 0 0 0)
+        (3 0 0 0)))
+      (output $CropRegion
+        (grid
+          (5 8 8 8)
+          (3 0 0 0)
+          (3 0 0 0))
+        (grid
+          (5 8 8 8)
+          (3 0 0 0)
+          (3 0 0 6))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed scattered-objects)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 5 8 8 1 1 1 1 1 1 1 1)
+        (1 3 5 3 8 1 1 1 1 1 1 1 1)
+        (1 1 3 3 1 1 1 1 1 1 7 1 1)
+        (1 1 1 1 1 1 1 1 1 7 7 2 1)
+        (1 1 1 1 1 1 1 1 1 1 2 2 1)
+        (1 1 3 5 2 1 1 1 1 1 1 1 1)
+        (1 1 2 2 1 1 1 1 1 5 8 8 1)
+        (1 1 3 2 1 1 1 1 3 5 3 8 1)
+        (1 1 1 1 1 1 1 1 1 3 3 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1)))
+      (output $CopyCount ($Repeated &bg=$Stored) undefined)
+      (output $MostFrequent (grid
+        (1 1 5 8 8 1 1 1 1 1 1 1 1)
+        (1 3 5 3 8 1 1 1 1 1 1 1 1)
+        (1 1 3 3 1 1 1 1 1 1 7 1 1)
+        (1 1 1 1 1 1 1 1 1 7 7 2 1)
+        (1 1 1 1 1 1 1 1 1 1 2 2 1)
+        (1 1 3 5 2 1 1 1 1 1 1 1 1)
+        (1 1 2 2 1 1 1 1 1 5 8 8 1)
+        (1 1 3 2 1 1 1 1 3 5 3 8 1)
+        (1 1 1 1 1 1 1 1 1 3 3 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1)))
+      (output &bg=$Derived (grid
+        (1 5 8 8)
+        (3 5 3 8)
+        (1 3 3 1))))))
+
+(alts &copies
+  (alt &copies=$Derived
+    (witness copies=TileCount variant &copies=$Derived
+      (relaxed one-repeated-object)
+      (separates "the 3/8/4 object occurs three times and every other object once: no class has the stored two members, so a copy count of 2 shows nothing; the copy counts derived from the 15x15 grid's tilings include 3, and the triple is shown")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 8 8 0)
+        (0 0 0 5 5 5 0 0 0 0 8 5 5 8 0)
+        (0 0 0 5 9 5 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 9 0 0 0 0 0 0 3 8 3 0)
+        (0 0 0 0 0 0 0 3 8 3 0 3 4 3 0)
+        (0 0 0 0 0 0 0 3 4 3 0 0 4 0 0)
+        (0 0 0 0 0 0 0 0 4 0 0 0 4 0 0)
+        (0 2 2 0 0 0 0 0 4 0 0 0 0 0 0)
+        (0 7 2 0 0 0 0 0 0 0 0 3 8 3 0)
+        (0 0 7 7 0 0 0 0 0 0 0 3 4 3 0)
+        (0 0 0 7 0 0 0 0 2 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 1 2 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 1 1 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Repeated &copies=$Derived $MostFrequent (grid
+        (3 8 3)
+        (3 4 3)
+        (0 4 0)
+        (0 4 0)))
+      (output ($CopyCount &copies=$Stored) undefined))))

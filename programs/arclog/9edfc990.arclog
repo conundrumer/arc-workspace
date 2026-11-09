@@ -1,0 +1,29 @@
+;; inputs f700c57040735d5bc10e39a88c1f2221a52e936a20d2059f3b8cd8b426ad4c68 programs/solvers/9edfc990.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9edfc990
+
+(OUTPUT spread "a walk starts at a &ink cell and steps to cardinally adjacent &bg cells; every &bg cell it reaches takes &ink"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &ink UnchangedColor)
+
+  ;; The node set holds the ink as well as the field, since a seed must be a node.
+  (INIT &flood Flood
+    (node (P)
+      (input *P *Col)
+      (OR ((&bg (:C Col)))
+          ((&ink (:C Col)))))
+    (source (P)
+      (input *P *Col)
+      (&ink (:C Col)))))
+
+(OUTPUT keep "every other cell keeps its color")
+
+(RULE &output
+  (OR ((&flood.reached *P)
+       (&ink (:C *Col)))
+      ((input P Col)
+       (NOT (&flood.reached P)))))
+
+(OUT (&output ^P ^Col))

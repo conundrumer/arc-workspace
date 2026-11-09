@@ -1,0 +1,12 @@
+;; inputs be30d751b251e7578fa9775bb350ea1cb41ba8af4dbdc0aa4ab0d3a2bbff5ce3 programs/solvers/14754a24.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 14754a24
+
+(param &mark Color (4))
+(param &fill Color (5))
+(param &paint Color (2))
+(param &shape Position
+  (grid
+    (_ 1 _)
+    (1 1 1)
+    (_ 1 _)))

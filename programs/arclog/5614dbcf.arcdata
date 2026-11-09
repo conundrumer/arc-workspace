@@ -1,0 +1,7 @@
+;; inputs 3cfc7c730ea841699efd5b3da7a678466227f16efda4ddfa8079c7b6daad2668 programs/solvers/5614dbcf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5614dbcf
+
+(param &divisor number (3))
+(param &tile_size number (3))
+(param &noise Color (5))

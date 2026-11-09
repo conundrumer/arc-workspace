@@ -1,0 +1,361 @@
+;; inputs 01c3d04852969292dd330c367427d8f15fd906cde4305851dd7d308b42ca912b programs/solvers/faa9f03d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; faa9f03d
+
+(INPUT background "every cell no wire or marker takes holds `background` (0).")
+
+(INPUT wires "two or more wires, each of one color other than `corner_color` (2) and `turn_color` (4), each a path of horizontal and vertical straight runs whose two ends lie on the grid edge; two wires meet only where they cross at right angles.")
+
+(INPUT breaks "a wire may be missing single cells along a run, each a `background` cell between two cells of its run.")
+
+(INPUT corner-markers "some cells of a wire, at its corners and ends, hold `corner_color` in place of the wire's color.")
+
+(INPUT turn-marker "a wire may hold a `turn_color` cell just past one of its corners, on the side away from the run it turns from; the drawn wire there runs straight on through the corner to its own edge end.")
+
+(INPUT crossing-shown "at a crossing the input shows one of the two wires, or `background`.")
+
+(OUTPUT redraw-wires "the output is `background` with each wire drawn whole in its color, breaks filled and `corner_color` cells in the wire's color.")
+
+(OUTPUT reroute-at-turn "where a `turn_color` cell stands past a corner, the wire's strand that runs straight on from that corner, to its end, is erased, and the wire runs from the corner through the `turn_color` cell straight on to the grid edge.")
+
+(OUTPUT crossing-top "each crossing shows the wire on top. A wire that a `turn_color` cell extends across another lies on top there. Where the input shows one of the two wires, the shown wire is on top unless one of the two wires carries a `corner_color` marker, and then the other wire is on top. Where the input shows `background`, the wire on top at the two wires' other crossings is on top."
+
+  (INIT &common_count Cardinality
+    (key ((ex_output ^E *P (:Col ^C)))
+      (member ((:m P))
+        (ex_output E *P (:Col C)))))
+
+  ;; The commonest color of each train output.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *C)))
+      (member ((:t C))
+        (&common_count.size (:key E *C)))
+      (score ((:t C) (:S N))
+        (&common_count.size (:key E *C) *N))))
+
+  (DET &uncommon
+    (&common.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&common.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&uncommon C)))
+
+  (DET &background_determined
+    (&common.maximal (:t *C))
+    (NOT (&uncommon C)))
+
+  (DET &repainted
+    (ex_input (:Col *C))
+    (NOT (ex_output (:Col C))))
+
+  (DET &corner_color
+    (&repainted *C)
+    (ex_input *E *P (:Col C))
+    (perp_dir (:D *D1) *D2)
+    (neighbor P (:D D1) (:Q *Q1))
+    (ex_input E (:P Q1) (:Col *W))
+    (NOT (&repainted (:C W)))
+    (NOT (&background_determined (:C W)))
+    (neighbor P (:D D2) (:Q *Q2))
+    (ex_input E (:P Q2) (:Col W)))
+
+  (DET &turn_color
+    (&repainted *C)
+    (NOT (&corner_color C)))
+
+  (RULE &hue
+    (input (:Col *C))
+    (NOT (&background C))
+    (NOT (&corner_color C))
+    (NOT (&turn_color C)))
+
+  (RULE &marker
+    (input *P (:Col *M))
+    (&corner_color (:C M)))
+
+  (RULE &passing
+    (input *P (:Col *C))
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (neighbor P D (:Q *Q1))
+    (input (:P Q1) (:Col C))
+    (neighbor P (:D D2) (:Q *Q2))
+    (input (:P Q2) (:Col C)))
+
+  (RULE &ink
+    (&hue *C)
+    (OR ((input *P (:Col C)))
+        ((&marker P)
+         (axis_of *D *A)
+         (perp A *A2)
+         (neighbor P D *Q)
+         (input (:P Q) (:Col C))
+         (NOT (&passing C (:P Q) (:A A2))))))
+
+  (RULE &mid_run
+    (&ink *C *P)
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (neighbor P D (:Q *Q1))
+    (&ink C (:P Q1))
+    (neighbor P (:D D2) (:Q *Q2))
+    (&ink C (:P Q2)))
+
+  (RULE &span_dir
+    (&hue (:C *Key))
+    (dir_elem *D))
+
+  (RULE &span_mark
+    (&hue (:C *Key))
+    (input *P)
+    (NOT (&ink (:C Key) P)))
+
+  ;; The nearest ink cell of each wire from every other cell, toward each side.
+  (INIT &span Ray
+    (key ((OR ((&span_mark (:Key ^Ky) *P))
+              ((&span_dir (:Key Ky) *D))
+              ((&span_dir (:Key Ky))
+               (input P)
+               (NOT (&ink (:C Ky) P)))))
+      (source (P)
+        (&span_mark (:Key Ky) *P))
+      (node (P)
+        (&span_dir (:Key Ky))
+        (input *P)
+        (NOT (&ink (:C Ky) P)))
+      (dir (D)
+        (&span_dir (:Key Ky) *D))))
+
+  (RULE &base
+    (OR ((&ink *C *P))
+        ((&span.source (:key (:Ky C)) P)
+         (axis_of *D *A)
+         (opposite D (:Opp *D2))
+         (perp A *A2)
+         (neighbor P D (:Q *Q1))
+         (&ink C (:P Q1))
+         (NOT (&mid_run C (:P Q1) (:A A2)))
+         (neighbor P (:D D2) (:Q *Q2))
+         (&ink C (:P Q2))
+         (NOT (&mid_run C (:P Q2) (:A A2))))))
+
+  (RULE &pivot
+    (input (:P *T) (:Col *K))
+    (&turn_color (:C K))
+    (opposite *D (:Opp *D2))
+    (neighbor (:P T) (:D D2) (:Q *P_corner))
+    (&base *C (:P P_corner))
+    (neighbor (:P P_corner) (:D D2) (:Q *P_strand))
+    (&base C (:P P_strand)))
+
+  (INIT &strand Flood
+    (key ((OR ((&pivot *C ^T *P_corner)
+               (&base C *P)
+               (!= P P_corner))
+              ((&pivot T (:P_strand *S)))))
+      (node (P)
+        (&pivot *C T *P_corner)
+        (&base C *P)
+        (!= P P_corner))
+      (source ((:P S))
+        (&pivot T (:P_strand *S)))))
+
+  (RULE &erased
+    (&pivot *C *T)
+    (&strand.reached (:key T) *P))
+
+  ;; The cells on a line from each cell toward each side.
+  (INIT &line Ray
+    (source (P)
+      (input *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &arm
+    (&pivot *C *T *D)
+    (&line.ray *P D (:Origin T)))
+
+  (RULE &drawn
+    (OR ((&base *C *P)
+         (NOT (&erased C P)))
+        ((&arm C P))))
+
+  (RULE &lay
+    (&arm *C *P))
+
+  (RULE &wire
+    (OR ((&drawn *C *P))
+        ((&lay C P))))
+
+  (RULE &crossing
+    (&wire (:C *C1) *P)
+    (&wire (:C *C2) P)
+    (!= C1 C2))
+
+  (INIT &run_frame Frame
+    (key ((&crossing *P (:C1 ^C))
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&crossing *P (:C1 C))
+        (frame_extent P *A *N))))
+
+  (RULE &run_blocked
+    (&crossing (:C1 *Key))
+    (input *P)
+    (NOT (&wire (:C Key) P)))
+
+  (INIT &run Ray
+    (key ((OR ((&crossing *P (:C1 ^C)))
+              ((&crossing (:C1 C))
+               (dir_elem *D))
+              ((&run_frame.cell (:key C) P)
+               (NOT (&run_blocked (:Key C) P)))))
+      (source (P)
+        (&crossing *P (:C1 C)))
+      (node (P)
+        (&run_frame.cell (:key C) *P)
+        (NOT (&run_blocked (:Key C) P)))
+      (dir (D)
+        (&crossing (:C1 C))
+        (dir_elem *D)))))
+
+(ALTS $top "what inverts the shown wire at a crossing" $WireMarker
+  (ALT $FlipByGridMarker
+    (OUTPUT crossing-top "every shown crossing is inverted when the grid holds any `corner_color` cell.")
+    (RULE &flip
+      (&crossing *P *C1 *C2)
+      (&marker)))
+  (ALT $FlipBySegmentMarker
+    (OUTPUT crossing-top "a shown crossing is inverted when the straight run of either wire through it holds a `corner_color` cell."
+      (RULE &run_cell
+        (&crossing (:C1 *Key))
+        (input)))
+    (RULE &flip
+      (&crossing *P *C1 *C2)
+      (OR ((&run.ray (:key (:C C1)) (:P *Q) (:Origin P))
+           (&run_cell (:Key C1))
+           (input (:P Q)))
+          ((&run.ray (:key (:C C2)) (:P Q) (:Origin P))
+           (&run_cell (:Key C2))
+           (input (:P Q))))
+      (&marker (:P Q)))))
+
+(ALTS $gap "how wide a break is filled" $OneCell
+  (ALT $AnyWidthBreaks
+    (INPUT breaks "a break along a run may be any number of cells wide.")
+    (OUTPUT redraw-wires "a break of any width along a run is filled."
+      (INIT &span_full Ray
+        (key ((OR ((&span_mark (:Key ^Ky) *P))
+                  ((&span_dir (:Key Ky) *D))
+                  ((&span_dir (:Key Ky))
+                   (input P))))
+          (source (P)
+            (&span_mark (:Key Ky) *P))
+          (node (P)
+            (&span_dir (:Key Ky))
+            (input *P))
+          (dir (D)
+            (&span_dir (:Key Ky) *D))))
+
+      (RULE &span_stop_full
+        (&span.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&span_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &base
+        (OR ((axis_of *D *A)
+             (opposite D (:Opp *D2))
+             (perp A *A2)
+             (&span_stop_full (:V0 *C) (:V1 *Q1) (:V2 D) (:V4 *P))
+             (NOT (&mid_run C (:P Q1) (:A A2)))
+             (&span_stop_full (:V0 C) (:V1 *Q2) (:V2 D2) (:V4 P))
+             (NOT (&mid_run C (:P Q2) (:A A2)))
+             (OR ((neighbor P D (:Q Q1))
+                  (neighbor P (:D D2) (:Q Q2)))
+                 ((NOT (&marker (:P Q1)))
+                  (NOT (&marker (:P Q2)))
+                  (neighbor (:P Q1) D (:Q *R1))
+                  (&ink C (:P R1))
+                  (neighbor (:P Q2) (:D D2) (:Q *R2))
+                  (&ink C (:P R2)))))
+            ((&ink C P)))))))
+
+(ALTS $ends "what becomes of a wire end short of the edge" $StayFree
+  (ALT $ExtendAllEnds
+    (OUTPUT extend-all-ends "every free wire end runs straight on to the grid edge, on top at crossings."
+      (RULE &link
+        (&drawn *C *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&drawn C (:P Q)))
+
+      (RULE &through
+        (&link *C *P (:D *D1))
+        (&link C P (:D *D2))
+        (!= D1 D2))
+
+      (RULE &stretch
+        (&link *C (:P *P_end) *D)
+        (NOT (&through C (:P P_end)))
+        (opposite D (:Opp *D_out))
+        (neighbor (:P P_end) (:D D_out) (:Q *S))
+        (&line.ray *P (:D D_out) (:Origin S)))
+
+      (RULE &lay
+        (OR ((&arm *C *P))
+            ((&stretch C P)))))
+    (RULE &shown_top
+      (OR ((&crossing *P (:C1 *C) *C2)
+           (OR ((&stretch C P))
+               ((&arm C P)
+                (NOT (&stretch (:C C2) P)))))
+          ((&unlaid P *C1 (:C2 *C22))
+           (input P (:Col C1))
+           (IF ((&flip P C1 (:C2 C22)))
+               ((= C C22))
+               ((= C C1))))))))
+
+(RULE &marked
+  (&marker *P)
+  (&ink *C P))
+
+(RULE &flip
+  (&crossing *P *C1 *C2)
+  (OR ((&marked (:C C1)))
+      ((&marked (:C C2)))))
+
+(RULE &unlaid
+  (&crossing *P *C1 *C2)
+  (NOT (&lay (:C C1) P))
+  (NOT (&lay (:C C2) P)))
+
+(RULE &shown_top
+  (OR ((&crossing *P (:C1 *C) *C2)
+       (&arm C P))
+      ((&unlaid P *C1 (:C2 *C22))
+       (input P (:Col C1))
+       (IF ((&flip P C1 (:C2 C22)))
+           ((= C C22))
+           ((= C C1))))))
+
+(RULE &top
+  (OR ((&shown_top *P *C))
+      ((&unlaid P *C1 *C2)
+       (NOT (input P (:Col C1)))
+       (NOT (input P (:Col C2)))
+       (&crossing (:P *Q) C1 C2)
+       (&shown_top (:P Q) C))))
+
+(RULE &output
+  (OR ((&top *P (:C *Col)))
+      ((&wire (:C Col) P)
+       (NOT (&crossing P (:C1 Col))))
+      ((input P)
+       (NOT (&wire P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

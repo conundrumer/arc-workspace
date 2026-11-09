@@ -1,0 +1,136 @@
+;; inputs b0e4b2c6179e98a3f20e6893526cf100e5daec9fe8d0deea2a9b51f9226acc34 programs/solvers/234bbc79.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 234bbc79
+
+;; The chain runs toward this edge; the piece at the near end stays put.
+(DET &chain_dir DirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &inked_line
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&chain_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(INIT &packed Order
+  (key ((axis_of (:D ^D2) ^A))
+    (member ((:t L))
+      (&inked_line *L)
+      (&chain_dir *D)
+      (axis_of D A))
+    (before ((:a L) (:b L2))
+      (&inked_line *L)
+      (&inked_line (:L *L2))
+      (!= L L2)
+      (&chain_dir *D)
+      (axis_of D A)
+      (margin (:B L) (:D D2) (:K *K1))
+      (margin (:B L2) (:D D2) (:K *K2))
+      (< K1 K2))))
+
+(RULE &packed_pos
+  (&packed.rank (:key *A (:D2 *D)) (:t *M) (:R *R1))
+  (&packed.dual_rank (:key A (:D2 D)) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(DET &joint VanishedColor)
+
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&joint (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&joint (:C Col))))))
+
+(RULE &joint_of
+  (input *P *Col)
+  (&joint (:C Col))
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&obj.component (:P Q) *Id))
+
+(RULE &packed_axis
+  (&chain_dir *D)
+  (axis_of D *A))
+
+(RULE &remap
+  (input (:P *P_grid))
+  (&packed_axis *A)
+  (split (:P P_grid) A (:Along *L) *Across)
+  (&packed_pos (:M L) (:P_pos *L_pack))
+  (compose (:A L_pack) (:B Across) (:C *P_pack)))
+
+(RULE &piece_joint
+  (&joint_of *Id *P)
+  (&remap (:P_grid P) *P_pack))
+
+(RULE &piece_cell
+  (OR ((&obj.component *P *Id)
+       (&remap (:P_grid P) *P_pack))
+      ((&piece_joint Id P_pack))))
+
+;; A piece leads with the joint furthest along the chain and trails with the
+;; joint furthest back. An end piece carries one joint and does both with it.
+(INIT &ends Order
+  (key ((&piece_joint ^Id *P_pack)
+        (&chain_dir *D)
+        (opposite D (:Opp *D_back))
+        (margin (:B P_pack) (:D D_back) *K))
+    (member ((:t (:V P_pack) (:S K)))
+      (&piece_joint Id *P_pack)
+      (&chain_dir *D)
+      (opposite D (:Opp *D_back))
+      (margin (:B P_pack) (:D D_back) *K))
+    (score ((:t (:V P_pack) (:S K)) (:S K))
+      (&piece_joint Id *P_pack)
+      (&chain_dir *D)
+      (opposite D (:Opp *D_back))
+      (margin (:B P_pack) (:D D_back) *K))))
+
+(RULE &link
+  (&ends.maximal (:key *Id) (:t (:V *P_lead)))
+  (&chain_dir *D)
+  (neighbor (:P P_lead) D (:Q *P_next))
+  (&ends.minimal (:key (:Id *Id2)) (:t (:V *P_trail)))
+  (same_dist D (:P1 P_next) (:P2 P_trail)))
+
+;; Where each piece's trailing joint ends up, walked down the chain from the
+;; piece with nothing linking into it, which keeps its place. Once a piece is
+;; set down, the piece it links to sets its trailing joint beside the joint
+;; the first one leads with.
+(INIT &chain Propagation
+  (source ((:n Id (:P_dest P)))
+    (&ends.minimal (:key *Id) (:t (:V *P)))
+    (NOT (&link (:Id2 Id))))
+  (edge ((:a Id P_dest) (:b (:Id Id2) (:P_dest P_dest2)))
+    (&link *Id *Id2)
+    (&remap (:P_pack *P_dest))
+    (&ends.minimal (:key Id) (:t (:V *P_pack)))
+    (relative (:Base P_pack) (:X P_dest) (:X_rel *Delta))
+    (&ends.maximal (:key Id) (:t (:V *P_lead)))
+    (compose (:A P_lead) (:B Delta) (:C *P_lead_dest))
+    (&chain_dir *D)
+    (neighbor (:P P_lead_dest) D (:Q *P_dest2))))
+
+(RULE &slide
+  (&ends.minimal (:key *Id) (:t (:V *P_pack)))
+  (&chain.reached (:n Id *P_dest))
+  (relative (:Base P_pack) (:X P_dest) (:X_rel *Delta)))
+
+(RULE &place
+  (&slide *Id *Delta)
+  (&piece_cell Id *P_pack)
+  (compose (:A P_pack) (:B Delta) (:C *P_dest)))
+
+(RULE &output
+  (OR ((&place *Id (:P_dest *P))
+       (&obj.component (:key *Col) Id))
+      ((&remap (:P_pack P))
+       (NOT (&place (:P_dest P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

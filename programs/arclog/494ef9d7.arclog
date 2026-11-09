@@ -1,0 +1,74 @@
+;; inputs 25fc44e3ad7d6cd5c3d14942c530c1f935f1c1829d234de8db45d34b95d233d6 programs/solvers/494ef9d7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 494ef9d7
+
+(DET &bg DominantColor)
+
+;; The direction the far cell moves; the near cell holds.
+(DET &pull_dir DirDomain)
+
+(RULE &line_of
+  (input *P)
+  (&pull_dir *D)
+  (axis_of D *A)
+  (split P A (:Across *L)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&line_of P *L))
+
+(RULE &rest
+  (&mark *L (:P *P_near) (:Col *Col_near))
+  (&mark L (:P *P_far) (:Col *Col_far))
+  (&pull_dir *D)
+  (nearer D (:P P_near) (:Q P_far))
+  (OR ((= *Col Col_far)
+       (opposite D (:Opp *D_back))
+       (neighbor (:P P_near) (:D D_back) (:Q *P)))
+      ((= P P_near)
+       (= Col Col_near))))
+
+;; Lines holding the same colors share an entry.
+(INIT &same Inclusion
+  (pattern ((:pattern E L) (:m Col))
+    (&mark *E *L *Col)
+    (ex_output E))
+  (observed ((:observed E L) (:m Col))
+    (&mark *E *L *Col)
+    (ex_output E)))
+
+(INIT &entry Quotient
+  (equivalent ((:a (:E Ln_e) (:L Ln_l)) (:b (:E Ln2_e) (:L Ln2_l)))
+    (&same.equal (:observed (:E *Ln_e) (:L *Ln_l)) (:pattern (:E *Ln2_e) (:L *Ln2_l)))))
+
+(DET &moved
+  (&line_of *E *P *L)
+  (ex_input E P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(DET &attract
+  (&entry.class (:a *E *L) (:Id *Pair))
+  (ex_output E)
+  (&moved E L)
+  (&mark E L *Col))
+
+(INIT &pairs Inclusion
+  (pattern ((:pattern Pair) (:m Col))
+    (&attract *Pair *Col))
+  (observed ((:observed L) (:m Col))
+    (&mark *L *Col)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (&line_of P *L)
+  (OR ((&pairs.equal (:observed L))
+       (&rest L P *Col))
+      ((NOT (&pairs.equal (:observed L)))
+       (= Col C_in))
+      ((&pairs.equal (:observed L))
+       (NOT (&rest L P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

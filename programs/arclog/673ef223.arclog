@@ -1,0 +1,83 @@
+;; inputs e78fb79c40bb614a499dfaed2cc556235f8bf40f0eb1f4645d57913c8a07a695 programs/solvers/673ef223.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 673ef223
+
+(DET &axis AxisDomain)
+
+(DET &bar UnchangedColor)
+
+(INIT &bars Connectivity
+  (node (P)
+    (input *P *Col)
+    (&bar (:C Col))))
+
+(RULE &line
+  (input *P)
+  (&axis *A)
+  (split P A (:Along *P_along)))
+
+(RULE &bar_cell
+  (&bars.component *P *Id)
+  (&line P *P_along))
+
+;; Each bar's box over its lines, the frame a place in the bar is read in.
+(INIT &bar_box BoundingBox
+  (key ((&bar_cell ^Id *P_along))
+    (cell ((:P P_along))
+      (&bar_cell Id *P_along))))
+
+(RULE &bar_place
+  (&bar_box.cell (:key *Id) (:P *P_along))
+  (&bar_box.box (:key Id) *B)
+  (inside (:A P_along) B)
+  (relative (:Base B) (:X P_along) (:X_rel *P_inner)))
+
+(DET &bg DominantColor)
+
+(RULE &cast_blocked
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &mark ChangedColor)
+
+(RULE &flagged
+  (input *P *Col)
+  (&mark (:C Col))
+  (&line P *P_along)
+  (&bar_place P_along *P_inner))
+
+;; Flagged bar cells cast across &axis through bg; ink stops the cast.
+(INIT &cast Ray
+  (source (P)
+    (&bar_cell *Id *P *P_along)
+    (&bar_place Id P_along *P_inner)
+    (&flagged P_inner))
+  (node (P)
+    (input *P)
+    (NOT (&cast_blocked P)))
+  (dir (D)
+    (&axis *A)
+    (perp A *A2)
+    (axis_of *D (:A A2))))
+
+(RULE &cast_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &cast_clear
+  (&cast.ray *P *D *K (:Origin *Src))
+  (&cast_cell P))
+
+(DET &cap AnyOutNewColor)
+
+(RULE &output
+  (OR ((&cast.ray *P)
+       (&cast_cell P)
+       (&mark (:C *Col)))
+      ((input P (:Col *C_in))
+       (NOT (&cast_clear P))
+       (IF ((&mark (:C C_in)))
+           ((&cap (:C Col)))
+           ((= Col C_in))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,128 @@
+;; inputs 691ac66c1e1396522de3258de96c8853f6749ac2ae38239138576cef4ab37f07 programs/solvers/5e6bbc0b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5e6bbc0b
+
+(DET &block SharedColor)
+
+(DET &mark RarestColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+;; The mark covers a cell of the falling class, so its cell counts as one.
+(RULE &block_cell
+  (input *P *Col)
+  (OR ((&block (:C Col)))
+      ((&mark_cell P))))
+
+(RULE &fall
+  (&mark_cell *P)
+  (margin (:B P) *D (:K 0)))
+
+(DET &cast AnyOutNewColor)
+
+(DET &fill DominantColor)
+
+(RULE &line
+  (input *P)
+  (&fall *D)
+  (axis_of D *A)
+  (split P A (:Across *L)))
+
+(RULE &block_color
+  (&block (:C *Col)))
+
+(RULE &fill_color
+  (&fill (:C *Col)))
+
+(RULE &beam_dir
+  (&fall (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(ALTS $choice "which cells fall" $Stored
+  (ALT $Parity
+    (DET &period TileCount)
+
+    (RULE &block_cell
+      (input *P)
+      (&mark_cell (:P *M))
+      (&period *N)
+      (corner_dist (:P M) (:Diag *Dg) (:K *K_mark))
+      (divide (:T K_mark) (:Side N) (:Gap 0) (:Remainder *R))
+      (corner_dist P (:Diag Dg) *K)
+      (divide (:T K) (:Side N) (:Gap 0) (:Remainder R)))
+
+    (RULE &block_color
+      (&block_cell *P)
+      (NOT (&mark_cell P))
+      (input P *Col))
+
+    (RULE &fill_color
+      (input *P *Col)
+      (NOT (&block_cell P)))))
+
+;; Each cell of the falling class falls toward the edge and stacks on the
+;; cells ahead of it.
+(INIT &fall_cells Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (&block_cell *P)
+    (&fall *D)
+    (&block_cell (:P *P2))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (&block_cell *P)
+    (&fall *D)
+    (margin (:B P) D *K)))
+
+(RULE &fall_cells_travel_full
+  (&fall_cells.distance (:n *V1) *K)
+  (&fall *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &packed
+  (&fall_cells_travel_full (:V1 *P2) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(INIT &block_rim Boundary
+  (cell (P)
+    (&packed *P)))
+
+(RULE &far_end
+  (&mark_cell (:P *M))
+  (&line (:P M) *L)
+  (&line *P L)
+  (&fall *D)
+  (opposite D (:Opp *D_out))
+  (&block_rim.exposed P (:D D_out)))
+
+(INIT &beam Ray
+  (source (P)
+    (&far_end *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&beam_dir *D)))
+
+(RULE &cast_cell
+  (&beam.ray *P *K (:Origin *S))
+  (!= K 0)
+  (&fall *D)
+  (margin (:B S) D (:K *N))
+  (<= K N))
+
+(RULE &output
+  (input *P)
+  (OR ((&mark_cell P)
+       (&mark (:C *Col)))
+      ((&cast_cell P)
+       (&cast (:C Col)))
+      ((&packed P)
+       (NOT (&mark_cell P))
+       (&block_color Col))
+      ((&fill_color Col)
+       (NOT (&packed P))
+       (NOT (&cast_cell P)))))
+
+(OUT (&output ^P ^Col))

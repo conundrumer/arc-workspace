@@ -1,0 +1,7 @@
+;; inputs cfa56463ecbd869b1fe696e73009d900d53085dfe1ae3a32e08eb81f26768ebf programs/solvers/c8f0f002.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c8f0f002
+
+(representative 0d3d703e)
+
+(param &mapping (Color Color) (7 5))

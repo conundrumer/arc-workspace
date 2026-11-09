@@ -1,0 +1,131 @@
+;; inputs 784112ad5bc9f1c1675b90d792f88cf6974a9daae6c52bd9b89d840d5db3d626 programs/solvers/bda2d7a6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bda2d7a6
+
+(alts $order
+  (alt $CountOrder
+    (witness non-periodic-rings variant concept
+      (separates "The ring colors read 8 0 5 0 5 from outside in, so they do not repeat with period 3 and color 0 covers more cells than color 8. The concept and $EnclosingColor recolor 8 to 5, 0 to 8 and 5 to 0; $RingShift moves each ring's color one ring inward and gives the outermost ring the color of ring 2; $CountOrder cycles the colors in the order 0 8 5 of their cell counts.")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 0 0 0 0 0 0 0 0 8)
+        (8 0 5 5 5 5 5 5 0 8)
+        (8 0 5 0 0 0 0 5 0 8)
+        (8 0 5 0 5 5 0 5 0 8)
+        (8 0 5 0 5 5 0 5 0 8)
+        (8 0 5 0 0 0 0 5 0 8)
+        (8 0 5 5 5 5 5 5 0 8)
+        (8 0 0 0 0 0 0 0 0 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output concept $EnclosingColor (grid
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 8 8 8 8 8 8 8 8 5)
+        (5 8 0 0 0 0 0 0 8 5)
+        (5 8 0 8 8 8 8 0 8 5)
+        (5 8 0 8 0 0 8 0 8 5)
+        (5 8 0 8 0 0 8 0 8 5)
+        (5 8 0 8 8 8 8 0 8 5)
+        (5 8 0 0 0 0 0 0 8 5)
+        (5 8 8 8 8 8 8 8 8 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output $CountOrder (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 5 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 8 5 5 5 5 8 5 0)
+        (0 5 8 5 8 8 5 8 5 0)
+        (0 5 8 5 8 8 5 8 5 0)
+        (0 5 8 5 5 5 5 8 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 5 5 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RingShift (grid
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 8 8 8 8 8 8 8 8 5)
+        (5 8 0 0 0 0 0 0 8 5)
+        (5 8 0 5 5 5 5 0 8 5)
+        (5 8 0 5 0 0 5 0 8 5)
+        (5 8 0 5 0 0 5 0 8 5)
+        (5 8 0 5 5 5 5 0 8 5)
+        (5 8 0 0 0 0 0 0 8 5)
+        (5 8 8 8 8 8 8 8 8 5)
+        (5 5 5 5 5 5 5 5 5 5))))))
+
+(alts $pred
+  (alt $EnclosingColor
+    (witness repeat-before-new-color variant concept
+      (relaxed color-cycle)
+      (separates "The ring colors read 8 0 8 5 from outside in, so color 8 repeats before color 5 first appears. The concept and $CountOrder recolor 8 to 5, 0 to 8 and 5 to 0; $EnclosingColor recolors 5 to 8, the color of the ring just outside it; $RingShift moves each ring's color one ring inward and gives the outermost ring the color of ring 2.")
+      (input (grid
+        (8 8 8 8 8 8 8 8)
+        (8 0 0 0 0 0 0 8)
+        (8 0 8 8 8 8 0 8)
+        (8 0 8 5 5 8 0 8)
+        (8 0 8 5 5 8 0 8)
+        (8 0 8 8 8 8 0 8)
+        (8 0 0 0 0 0 0 8)
+        (8 8 8 8 8 8 8 8)))
+      (output $ListCycle (grid
+        (5 5 5 5 5 5 5 5)
+        (5 8 8 8 8 8 8 5)
+        (5 8 5 5 5 5 8 5)
+        (5 8 5 0 0 5 8 5)
+        (5 8 5 0 0 5 8 5)
+        (5 8 5 5 5 5 8 5)
+        (5 8 8 8 8 8 8 5)
+        (5 5 5 5 5 5 5 5)))
+      (output $EnclosingColor (grid
+        (5 5 5 5 5 5 5 5)
+        (5 8 8 8 8 8 8 5)
+        (5 8 5 5 5 5 8 5)
+        (5 8 5 8 8 5 8 5)
+        (5 8 5 8 8 5 8 5)
+        (5 8 5 5 5 5 8 5)
+        (5 8 8 8 8 8 8 5)
+        (5 5 5 5 5 5 5 5)))
+      (output $RingShift (grid
+        (8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8)
+        (8 8 0 0 0 0 8 8)
+        (8 8 0 8 8 0 8 8)
+        (8 8 0 8 8 0 8 8)
+        (8 8 0 0 0 0 8 8)
+        (8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8))))))
+
+(alts $choice
+  (alt $RingShift
+    (witness non-periodic-rings variant concept)))
+
+(alts &others.size
+  (alt &others.size=$Stored
+    (witness others.tally=stored variant concept
+      (relaxed color-cycle)
+      (separates "The ring colors read 8 0 5 2 from outside in: four colors, one new color in each ring. $RingShift with the count derived counts 3 colors other than the outermost ring's 8, and gives the outermost ring the color 2 of ring 3, as the concept does; with the count stored at 2, it gives the outermost ring the color 5 of ring 2.")
+      (input (grid
+        (8 8 8 8 8 8 8 8)
+        (8 0 0 0 0 0 0 8)
+        (8 0 5 5 5 5 0 8)
+        (8 0 5 2 2 5 0 8)
+        (8 0 5 2 2 5 0 8)
+        (8 0 5 5 5 5 0 8)
+        (8 0 0 0 0 0 0 8)
+        (8 8 8 8 8 8 8 8)))
+      (output &others.size=$Derived (grid
+        (2 2 2 2 2 2 2 2)
+        (2 8 8 8 8 8 8 2)
+        (2 8 0 0 0 0 8 2)
+        (2 8 0 5 5 0 8 2)
+        (2 8 0 5 5 0 8 2)
+        (2 8 0 0 0 0 8 2)
+        (2 8 8 8 8 8 8 2)
+        (2 2 2 2 2 2 2 2)))
+      (output &others.size=$Stored (grid
+        (5 5 5 5 5 5 5 5)
+        (5 8 8 8 8 8 8 5)
+        (5 8 0 0 0 0 8 5)
+        (5 8 0 5 5 0 8 5)
+        (5 8 0 5 5 0 8 5)
+        (5 8 0 0 0 0 8 5)
+        (5 8 8 8 8 8 8 5)
+        (5 5 5 5 5 5 5 5))))))

@@ -1,0 +1,10 @@
+;; inputs 1d55dc2f9d6de0b91ee0b53f65eb298974e0429bd1bb2e68c5de3d9b7ad3ec88 programs/solvers/87ab05b8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 87ab05b8
+
+(param &marker Color (2))
+(param &bg Color (6))
+(param &fill Color (2))
+(param &divisor number (2))
+(param &tile_dim number (2))
+(param &block_dim number (2))

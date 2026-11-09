@@ -1,0 +1,9 @@
+;; inputs 559a2c209ad1ea4d30adadac23d83ccc9e071c0c1f7fe48da92c56bc3429ab9c programs/solvers/f8b3ba0a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8b3ba0a
+
+(param &bg Color (0))
+(param &rank_dir Dir (DIR_T))
+(param &tile_dim (Axis number) (AXIS_V 1) (AXIS_H 2))
+(param &tile_gap number (1))
+(param &border_width number (1))

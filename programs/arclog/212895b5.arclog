@@ -1,0 +1,162 @@
+;; inputs 5ed1d2c8d002f7298f14f70626258b5d933044f50aae8c3c2b57dad25ec3ab8e programs/solvers/212895b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 212895b5
+
+(DET &block RarestColor)
+
+(RULE &block_cell
+  (input *P *Col)
+  (&block (:C Col)))
+
+;; The block's box, so its sides, middles, and corners can be named.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&block_cell *P)))
+
+(RULE &corner
+  (&block_cell *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B)))
+
+(INIT &cast_frame Frame
+  (extent (A N)
+    (&corner *P)
+    (frame_extent P *A *N)))
+
+;; Cells no arm can enter.
+(DET &stop UnchangedColor)
+
+(DET &diag_paint AnyOutNewColor)
+
+(DET &arm_paint AnyOutNewColor)
+
+(RULE &seed
+  (&block_cell *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B))
+  (relative (:Base B) (:X P) (:X_rel *P_rel))
+  (perp_dir D *D2)
+  (dist_pair (:P P_rel) (:D D2) *K (:K2 K)))
+
+(RULE &cast_blocked
+  (input *P *Col)
+  (&stop (:C Col)))
+
+(INIT &cast Ray
+  (source (P)
+    (&corner *P))
+  (node (P)
+    (&cast_frame.cell *P)
+    (NOT (&cast_blocked P)))
+  (dir (D)
+    (diag_dir_elem *D)))
+
+(RULE &diag_arm
+  (&cast.ray *P *D *K (:Origin *Src))
+  (input P)
+  (&corner (:P Src) (:Diag D))
+  (!= K 0))
+
+(DET &place
+  (ex_output *E *P *Col)
+  (&arm_paint (:C Col))
+  (&seed E (:P *P0) *D)
+  (relative (:Base P0) (:X P) (:X_rel *P_rel))
+  (opposite D (:Opp *D_back))
+  (diag_dirs (:D *Diag) *A (:D1 D_back))
+  (diag_dist (:P P_rel) Diag A (:K1 *O) (:K2 *S))
+  (> O 0)
+  (>= S 0)
+  (<= S O))
+
+;; The arm's path order: every step goes out or across, never back, so
+;; the cells order by steps out, then by steps across.
+(INIT &step_order Order
+  (key ((&place ^E ^D *P))
+    (member ((:t P))
+      (&place E D *P))
+    (score ((:t P) (:S O))
+      (&place E D *P *O))
+    (secondary_score ((:t P) S)
+      (&place E D *P *S))))
+
+(DET &entered
+  (&step_order.rank (:key *E *D) (:t *P) *R)
+  (opposite (:D *H) (:Opp *H_back))
+  (neighbor P (:D H_back) *Q)
+  (OR ((&step_order.rank (:key E D) (:t Q) (:R *R2))
+       (< R2 R))
+      ((&seed E (:P Q) D))))
+
+(DET &bend
+  (&entered *E *D *P *R *H)
+  (&entered E D (:P *Q) (:H *H2))
+  (neighbor P (:D H2) Q)
+  (c4_elem (:D *T))
+  (apply_dir (:D T) (:Dir H) (:Dir_out H2)))
+
+(DET &cand
+  (&bend (:R *N))
+  (!= N 0))
+
+;; The rotation an arm's bends show at one phase of a candidate cycle.
+(INIT &phase_turn Singleton
+  (key ((&cand ^N)
+        (&bend ^E ^D *R *T)
+        (divide (:T R) (:Side N) (:Gap 0) (:Remainder ^K)))
+    (member ((:v T))
+      (&cand N)
+      (&bend E D *R *T)
+      (divide (:T R) (:Side N) (:Gap 0) (:Remainder K)))))
+
+;; The gait is the shortest cycle the arms bear out.
+(INIT &cycle Order
+  (member ((:t N))
+    (&cand *N)
+    (NOT (&phase_turn.plural (:key N))))
+  (score ((:t N) (:S N))
+    (&cand *N)
+    (NOT (&phase_turn.plural (:key N)))))
+
+(DET &gait
+  (&cycle.minimal (:t *N))
+  (&phase_turn.value (:key N (:K *Phase)) (:v *T)))
+
+(INIT &cycle2 Order
+  (member ((:t K))
+    (&gait (:Phase *K)))
+  (score ((:t K) (:S K))
+    (&gait (:Phase *K))))
+
+;; The turtle: its cell, heading, and phase, from where it starts. Each step
+;; moves along the heading onto a cell it may enter, then turns by the phase's
+;; rotation.
+(INIT &turtle Propagation
+  (source ((:n P (:H D) Phase))
+    (&seed *P *D)
+    (= *Phase 0))
+  (edge ((:a P H (:Phase K)) (:b (:P Q) (:H H2) (:Phase K2)))
+    (input *P)
+    (&gait (:Phase *K) *T)
+    (apply_dir (:D T) (:Dir *H) (:Dir_out *H2))
+    (neighbor P (:D H) *Q)
+    (input (:P Q) *Col)
+    (NOT (&stop (:C Col)))
+    (&cycle2.cyclic_successor (:a K) (:b *K2))))
+
+(RULE &paint
+  (OR ((&diag_arm *P)
+       (&diag_paint (:C *Col)))
+      ((&turtle.reached (:n P))
+       (NOT (&block_cell P))
+       (&arm_paint (:C Col)))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

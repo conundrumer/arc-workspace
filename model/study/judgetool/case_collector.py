@@ -206,7 +206,7 @@ def acquire_case(ev,record,case_context,ntrain,ntest,*,include_bodies=True,acqui
     # separately decoded anonymous-slot AST with positional column headers.
     program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
     naming=json.dumps(names) if names is not None else program.relation_source_names_json(
-        str(MAIN_ROOT/'work/arclog/gen'),record['task'],case)
+        str(MAIN_ROOT/'programs/arclog'),record['task'],case)
     export=export_named_program(ev,program,naming)
     forms=L.split_forms(text);parsed=[L.parse(f) for f in forms]
     outs=[i for i,f in enumerate(parsed) if f[0]=='OUT']

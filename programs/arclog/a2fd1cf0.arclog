@@ -1,0 +1,128 @@
+;; inputs da7a22ad7e6fc9819283e3b9adffe36531803ff574c00c3ba36b9cb1b3c95453 programs/solvers/a2fd1cf0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a2fd1cf0
+
+(INPUT two-markers "a background of 0 holds exactly one &start_color cell and one &end_color cell, in different rows and different columns"
+
+  (DET &end_color RarestColor)
+
+  (DET &start_color RarestColor))
+
+(OUTPUT corner "the corner cell lies on the &start_axis line of the &start_color cell and on the other axis's line of the &end_color cell"
+
+  ;; The axis of the leg through the start_color cell; the leg through the end_color cell runs on the other axis.
+  (DET &start_axis AxisDomain))
+
+(OUTPUT l-path "the output paints &path_color on every cell strictly between the &start_color cell and the corner, on the corner, and on every cell strictly between the corner and the &end_color cell"
+
+  (INIT &field_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (DET &path_color AnyOutNewColor)
+
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&field_count.size (:key *Col) *N))))
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  ;; The one cell of each color.
+  (INIT &mark Singleton
+    (key ((input *P ^Col))
+      (member ((:v P))
+        (input *P Col))))
+
+  (RULE &leg
+    (&mark.value (:key *Col) (:v *P))
+    (&start_axis (:A *A2))
+    (OR ((&end_color (:C Col))
+         (perp (:A A2) (:A2 *A)))
+        ((&start_color (:C Col))
+         (= A A2))))
+
+  (RULE &corner
+    (input *P)
+    (&leg (:P *P1) (:A *A1))
+    (same_line (:A A1) P (:Q P1))
+    (&leg (:P *P2) (:A *A2))
+    (perp (:A A1) A2)
+    (same_line (:A A2) P (:Q P2)))
+
+  (RULE &span_mark
+    (OR ((&leg (:Col *Key) *P))
+        ((&leg (:Col Key))
+         (&corner P))))
+
+  (INIT &span_frame Frame
+    (key ((&span_mark (:Key ^Ky) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&span_mark (:Key Ky) *P)
+        (frame_extent P *A *N))))
+
+  ;; Each leg runs from its marker to the corner.
+  (INIT &span Ray
+    (key ((OR ((&span_mark (:Key ^Ky) *P))
+              ((&leg (:Col Ky) *A)
+               (axis4_of *D A))
+              ((&span_frame.cell (:key Ky) P))))
+      (source (P)
+        (&span_mark (:Key Ky) *P))
+      (node (P)
+        (&span_frame.cell (:key Ky) *P))
+      (dir (D)
+        (&leg (:Col Ky) *A)
+        (axis4_of *D A))))
+
+  (RULE &span_between
+    (&leg (:Col *Key))
+    (input *P)
+    (&leg (:Col Key) *A)
+    (axis4_of *D A)
+    (dir8_opposite D (:D2 *O))
+    (&span.ray (:key (:Ky Key)) P D)
+    (&span.ray (:key (:Ky Key)) P (:D O)))
+
+  (DET &bg DominantColor)
+
+  (RULE &path
+    (&span_between (:Key *Col) *P)
+    (&leg Col (:P *M))
+    (!= P M))
+
+  (RULE &background
+    (&bg *C)))
+
+(ALTS $choice "what the path does to a path cell that is not background" $PaintAll
+  (ALT $KeepMarkers
+    (OUTPUT l-path "the path paints the same cells, except that the &start_color and &end_color cells keep their color")
+    (RULE &painted
+      (&path *P)
+      (NOT (&leg P))))
+  (ALT $BackgroundOnly
+    (OUTPUT l-path "the path paints &path_color only on its cells that hold &bg")
+    (RULE &painted
+      (&path *P)
+      (input P (:Col *Bg))
+      (&background (:C Bg)))
+    (ALTS $bg "where the background color comes from" $StoredBg
+      (ALT $DominantBg
+        (OUTPUT l-path "the background the path paints over is the input's most frequent color"
+          (RULE &background
+            (&field.maximal (:t *C))))))))
+
+(RULE &painted
+  (&path *P))
+
+(RULE &output
+  (&corner)
+  (input *P (:Col *C_in))
+  (IF ((&painted P))
+      ((&path_color (:C *Col)))
+      ((= Col C_in))))
+
+(OUT (&output ^P ^Col))

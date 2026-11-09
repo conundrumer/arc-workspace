@@ -1,0 +1,216 @@
+;; inputs 71870ff7c25994cf5f84a04a8bd3034b28d5921f77ac5f6dcb1c79683fcb8b45 programs/solvers/98c475bf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 98c475bf
+
+(DET &bg DominantColor)
+
+;; An edge line of one ink color is border.
+(INIT &edge Singleton
+  (key ((ex_input ^E *P *Col)
+        (dir_elem ^D)
+        (margin (:B P) D (:K 0)))
+    (member ((:v Col))
+      (ex_input E *P *Col)
+      (margin (:B P) D (:K 0)))))
+
+(DET &border_dir
+  (&edge.value (:key *E *D) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(DET &border_cell
+  (ex_input *E *P)
+  (&border_dir E *D)
+  (margin (:B P) D (:K 0)))
+
+;; The canvas is what the border leaves.
+(INIT &cbox BoundingBox
+  (key ((ex_input ^E *P)
+        (NOT (&border_cell E P)))
+    (cell (P)
+      (ex_input E *P)
+      (NOT (&border_cell E P)))))
+
+(DET &border_width
+  (&cbox.box (:key *E) *B)
+  (&border_dir E *D)
+  (margin B D *K))
+
+(DET &line_axis
+  (&border_dir *D)
+  (axis_of D *A))
+
+(RULE &canvas
+  (&line_axis *A)
+  (axis_of *D A)
+  (&border_width *K)
+  (axis_inset D (:K1 K) (:K2 K) *B))
+
+(RULE &cell_split
+  (input *P)
+  (&canvas *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_c))
+  (&line_axis *A)
+  (split (:P P_c) A (:Along *P_col) (:Across *P_row)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&canvas *B)
+  (inside (:A P) B))
+
+(RULE &side
+  (input *P)
+  (&canvas *B)
+  (&line_axis *A)
+  (axis_of *D A)
+  (inside (:A P) B)
+  (same_dist D (:P1 P) (:P2 B)))
+
+(RULE &drawn
+  (&ink *P *Col)
+  (NOT (&side P)))
+
+(DET &fig
+  (&drawn *E *Col)
+  (&ink E *P Col)
+  (&cell_split E P *P_col *P_row))
+
+;; The figure's own frame: its rows, across the canvas.
+(INIT &fbox BoundingBox
+  (key ((&fig ^E ^Col *P_row))
+    (cell ((:P P_row))
+      (&fig E Col *P_row))))
+
+(DET &line_row
+  (&fig *E *Col *P_col (:P_row *B))
+  (&border_dir E *D)
+  (inside (:A P_col) (:B 0))
+  (same_dist D (:P1 P_col) (:P2 0)))
+
+(DET &mark_row
+  (&line_row *E (:Col *C) (:B *R))
+  (&fbox.box (:key E (:Col C)) (:B *F))
+  (relative (:Base F) (:X R) (:X_rel *B)))
+
+(DET &miss
+  (&line_row *E *Col (:B *R))
+  (&cell_split E *P_col (:P_row R))
+  (NOT (&fig E Col P_col (:P_row R))))
+
+(DET &shape_of
+  (OR ((&fig *E *Col *P_col *P_row)
+       (&line_row E Col (:B *R))
+       (!= P_row R))
+      ((&miss E Col (:P_col *Q_col))
+       (&line_row E Col (:B P_row))
+       (&border_dir E *D)
+       (neighbor (:P Q_col) D (:Q P_col))
+       (&fig E Col P_col P_row))))
+
+(DET &shape
+  (&shape_of *E (:Col *C) *P_col *P_row)
+  (compose (:A P_row) (:B P_col) (:C *P_c))
+  (&fbox.box (:key E (:Col C)) (:B *F))
+  (inside (:A P_c) (:B F))
+  (relative (:Base F) (:X P_c) (:X_rel *P)))
+
+(RULE &shape_at
+  (&shape *C *P)
+  (&line_axis *A)
+  (split P A (:Along *P_col) (:Across *P_row))
+  (&mark_row C (:B *L))
+  (relative (:Base L) (:X P_row) (:X_rel *V))
+  (compose (:A V) (:B P_col) (:C *B)))
+
+(RULE &mark
+  (&ink *P *Col)
+  (NOT (&drawn Col)))
+
+(RULE &pair_row
+  (&mark *Col (:P *M))
+  (&cell_split (:P M) (:P_row *B)))
+
+(RULE &shape_cell
+  (&pair_row *Col (:B *R))
+  (&shape_at (:C Col) (:B *G))
+  (compose (:A R) (:B G) (:C *Q))
+  (&canvas *B)
+  (compose (:A B) (:B Q) (:C *P))
+  (input P))
+
+(RULE &row_cell
+  (&pair_row *Col (:B *R))
+  (&cell_split *P *P_col (:P_row R)))
+
+(DET &line
+  (&fig *E (:Col *C) (:P_col *P) (:P_row *R))
+  (&line_row E (:Col C) (:B R)))
+
+(RULE &figure
+  (OR ((&shape_cell *Col *P))
+      ((&row_cell Col P *P_col)
+       (&line (:C Col) (:P P_col)))))
+
+(DET &gap
+  (&miss *E (:Col *C) (:P_col *P)))
+
+(RULE &lit
+  (&row_cell *Col *P *P_col)
+  (NOT (&gap (:C Col) (:P P_col))))
+
+(ALTS $choice "what a figure's line is" $Drawn
+  (ALT $Across
+    (RULE &figure
+      (OR ((&lit *Col *P))
+          ((&shape_cell Col P))))
+    (ALTS $g "what a figure's line misses" $Stored
+      (ALT $Sealed
+        ;; What the shape closes off from the frame edge.
+        (INIT &seal Enclosure
+          (key ((&pair_row ^Col))
+            (cell (P)
+              (input *P)
+              (NOT (&shape_cell Col P)))))
+        (RULE &lit
+          (&row_cell *Col *P)
+          (NOT (&seal.enclosed (:key Col) P))))
+      (ALT $Halted
+        (INIT &inward_frame Frame
+          (key ((&mark ^Col (:P *M))
+                (frame_extent (:P M) *A *N))
+            (extent (A N)
+              (&mark Col (:P *M))
+              (frame_extent (:P M) *A *N))))
+        ;; The line's run inward from each marker, stopped by the shape.
+        (INIT &inward Ray
+          (key ((OR ((&mark ^Col (:P *M)))
+                    ((&pair_row Col)
+                     (&line_axis *A)
+                     (axis_of *D A))
+                    ((&inward_frame.cell (:key Col) *P)
+                     (NOT (&shape_cell Col P)))))
+            (source ((:P M))
+              (&mark Col (:P *M)))
+            (node (P)
+              (&inward_frame.cell (:key Col) *P)
+              (NOT (&shape_cell Col P)))
+            (dir (D)
+              (&pair_row Col)
+              (&line_axis *A)
+              (axis_of *D A))))
+        (RULE &lit
+          (&inward.ray (:key *Col) *P)
+          (&row_cell Col P))))))
+
+(RULE &output
+  (OR ((&figure *P *Col))
+      ((input P (:Col *C_in))
+       (&canvas *B)
+       (OR ((inside (:A P) B)
+            (NOT (&figure P))
+            (&bg (:C Col)))
+           ((NOT (inside (:A P) B))
+            (= Col C_in))))))
+
+(OUT (&output ^P ^Col))

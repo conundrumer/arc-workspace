@@ -1,0 +1,296 @@
+;; inputs 96762ae698a3d92cd47ca60c1a2fd63fc7f1f4288fa0762056fdf7ffc49f46b9 programs/solvers/edb79dae.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; edb79dae
+
+(INPUT background "one background color, the commonest, fills the grid around every object")
+
+(INPUT frame "one rectangle outline of frame_color (5) encloses a field of background holding solid single-color squares, all of one size k, set apart by background")
+
+(INPUT keys "outside the frame stand color keys, each a two-color block of 3 by 4 cells, the source color filling the two columns of one side and the middle cell of the third, the target color the rest, so the source color's half pokes one cell into the target color's half"
+
+  (INIT &ground_count Cardinality
+    (key ((input *P (:Col ^C)))
+      (member ((:m P))
+        (input *P (:Col C)))))
+
+  (INIT &ground Order
+    (member ((:t C))
+      (&ground_count.size (:key *C)))
+    (score ((:t C) (:S N))
+      (&ground_count.size (:key *C) *N)))
+
+  ;; The objects: connected cells off the background, of one color or more.
+  (INIT &blob Connectivity
+    (node (P)
+      (input *P (:Col *C))
+      (NOT (&ground.maximal (:t C)))))
+
+  (RULE &blob_color
+    (&blob.component *P *Id)
+    (input P (:Col *C)))
+
+  (RULE &key
+    (&blob_color *Id (:C *C1))
+    (&blob_color Id (:C *C2))
+    (!= C1 C2))
+
+  (INIT &key_mass_count Cardinality
+    (key ((&key ^Id)
+          (&blob.component *P Id)
+          (input P (:Col ^C)))
+      (member ((:m P))
+        (&key Id)
+        (&blob.component *P Id)
+        (input P (:Col C)))))
+
+  (INIT &key_mass Order
+    (key ((&key_mass_count.size (:key ^Id *C)))
+      (member ((:t C))
+        (&key_mass_count.size (:key Id *C)))
+      (score ((:t C) (:S N))
+        (&key_mass_count.size (:key Id *C) *N)))))
+
+(INPUT stencils "outside the frame, each square color has one stencil: the cells of that color that belong to no key and lie outside the frame, whose bounding box is k by k"
+
+  (INIT &blob_box BoundingBox
+    (key ((&blob.component *P ^Id))
+      (cell (P)
+        (&blob.component *P Id))))
+
+  (DET &edge_color
+    (ex_output *E *P (:Col *C))
+    (margin (:B P) *D (:K 0)))
+
+  (DET &off_color
+    (&edge_color *C)
+    (&edge_color (:C *C2))
+    (!= C2 C))
+
+  (DET &frame_color
+    (&edge_color *C)
+    (NOT (&off_color C)))
+
+  (RULE &frame_box
+    (&frame_color *C)
+    (&blob_color *Id C)
+    (&blob_box.box (:key Id) *B))
+
+  (RULE &stencil
+    (&frame_box (:B *B_f))
+    (&blob.component *P *Id)
+    (NOT (&key Id))
+    (NOT (inside (:A P) (:B B_f)))
+    (input P (:Col *C)))
+
+  (INIT &stencil_box BoundingBox
+    (key ((&stencil ^C *P))
+      (cell (P)
+        (&stencil C *P)))))
+
+(INPUT one-key-per-color "each square color is the source color of exactly one key")
+
+(OUTPUT crop-frame "the output is the frame's box, outline included")
+
+(OUTPUT stamp-stencil "each square becomes its color's stencil, placed at the square by bounding box, with the stencil's cells in the target color of the key whose source is the square's color and the rest background")
+
+(OUTPUT keep-rest "every other cell of the frame's box keeps its input color"
+
+  (RULE &square
+    (&frame_box (:B *B_f))
+    (&blob.component *P *Id)
+    (interior (:A P) (:B B_f))
+    (&blob_color Id *C)
+    (&blob_box.box (:key Id) *B))
+
+  (RULE &poke
+    (&blob.component *P *Id)
+    (input P (:Col *S))
+    (&blob_color Id (:C *T))
+    (!= T S)
+    (perp_dir *D *D2)
+    (neighbor P D (:Q *Q1))
+    (input (:P Q1) (:Col T))
+    (neighbor P (:D D2) (:Q *Q2))
+    (input (:P Q2) (:Col T))
+    (opposite (:D D2) (:Opp *D3))
+    (neighbor P (:D D3) (:Q *Q3))
+    (input (:P Q3) (:Col T)))
+
+  (RULE &map
+    (&poke *Id *S *T)
+    (NOT (&poke Id (:S T) (:T S)))))
+
+(ALTS $k "which of a key's two colors is the source" $KeySourceByPoke
+  (ALT $KeySourceBySide
+    (INPUT keys "the source is the color of the key's column on the key_side side (L); undefined where that column holds both colors or two keys share a source with different targets"
+      ;; The side of a key whose column holds the source color.
+      (DET &key_side DirDomain)
+
+      (RULE &side_color
+        (&key *Id)
+        (&key_side *D)
+        (&blob_box.box (:key Id) *B)
+        (&blob.component *P Id)
+        (inside (:A P) B)
+        (same_dist D (:P1 P) (:P2 B))
+        (input P (:Col *C)))
+
+      (RULE &map
+        (&side_color *Id (:C *S))
+        (ALL ((&side_color Id (:C *C1))
+              (&side_color Id (:C *C2)))
+             ((= C1 C2)))
+        (&blob_color Id (:C *T))
+        (!= T S))))
+  (ALT $KeySourceByCount
+    (INPUT keys "the source is the key color with more cells; undefined where the counts tie"
+      (RULE &map
+        (&key_mass.maximal (:key *Id) (:t *S))
+        (&blob_color Id (:C *T))
+        (NOT (&key_mass.maximal (:key Id) (:t T)))))))
+
+(ALTS $z "a stencil whose bounding box is not the square's size" $StencilExact
+  (ALT $StencilScaled
+    (OUTPUT stamp-stencil "the stencil is scaled up by the whole quotient of the square's size by its bounding box; undefined where that quotient is not whole"
+      (INIT &source_division Division
+        (key ((OR ((&square ^C *B)
+                   (input (:P ^Q))
+                   (inside (:A Q) B)
+                   (relative (:Base B) (:X Q) (:X_rel *R))
+                   (&stencil_box.box (:key C) (:B ^B_s))
+                   (box_extent (:B B_s) (:P Q) ^A))
+                  ((input (:P Q))
+                   (&stencil_box.box (:key C) (:B B_s))
+                   (box_extent (:B B_s) (:P Q) A (:N *N1)))))
+          (cell ((:P R))
+            (&square C *B)
+            (input (:P Q))
+            (inside (:A Q) B)
+            (relative (:Base B) (:X Q) (:X_rel *R))
+            (&stencil_box.box (:key C) (:B B_s))
+            (box_extent (:B B_s) (:P Q) A))
+          (parts (A (:N N1))
+            (input (:P Q))
+            (&stencil_box.box (:key C) (:B B_s))
+            (box_extent (:B B_s) (:P Q) A (:N *N1)))))
+
+      (INIT &source_division2 Division
+        (key ((&source_division.tile (:key *Q *B_s ^A))
+              (perp A ^A2)
+              (box_extent (:B B_s) (:P Q) (:A A2) (:N ^N2)))
+          (cell ((:P R))
+            (&source_division.tile (:key *Q *B_s A) (:P *R))
+            (perp A A2)
+            (box_extent (:B B_s) (:P Q) (:A A2) (:N N2)))
+          (parts ((:A A2) (:N N2))
+            (&source_division.tile (:key *Q *B_s A))
+            (perp A A2)
+            (box_extent (:B B_s) (:P Q) (:A A2) (:N N2))))))
+    ;; Each stencil cell spans a block of the square, as many cells on each axis
+    ;; as the square's size holds the stencil's.
+    (RULE &source
+      (&source_division.tile (:key *Q *C *B_s *A) (:P *R3) (:P_outer *R1))
+      (&source_division2.tile (:key A *A2 *N2) (:P R3) (:P_outer *R2))
+      (box_extent (:B B_s) (:P Q) (:A A2) (:N N2))
+      (compose (:A R1) (:B R2) (:C *R)))))
+
+(ALTS $u "a square whose color sources no key or has no stencil" $UnkeyedUndefined
+  (ALT $KeepUnkeyed
+    (OUTPUT stamp-stencil "a square whose color sources no key or has no stencil keeps its input cells")
+    (RULE &output
+      ;; A square whose color sources no key or has no stencil keeps its cells.
+      (OR ((&frame_box (:B *B_f))
+           (&square *C *B)
+           (input (:P *Q) *Col)
+           (inside (:A Q) B)
+           (inside (:A Q) (:B B_f))
+           (relative (:Base B_f) (:X Q) (:X_rel *P))
+           (OR ((NOT (&map (:S C))))
+               ((NOT (&stencil_box.box (:key C))))))
+          ;; The frame's box, cut out.
+          ((&frame_box (:B *B_f2))
+           (OR ((&source (:Q *Q2) (:C *C2) *R)
+                (&paint (:C C2) *T)
+                (OR ((NOT (&stencil_at (:C C2) (:P R)))
+                     (&ground.maximal (:t Col)))
+                    ((&stencil_at (:C C2) (:P R))
+                     (= Col T))))
+               ((input (:P Q2) Col)
+                (NOT (&in_square (:P Q2)))))
+           (inside (:A Q2) (:B B_f2))
+           (relative (:Base B_f2) (:X Q2) (:X_rel P))))))
+  (ALT $IdentityUnkeyed
+    (OUTPUT stamp-stencil "a square whose color sources no key takes its stencil in its own color; undefined where the color has no stencil")
+    (RULE &paint
+      (OR ((&map (:S *C) *T))
+          ((input (:Col C))
+           (NOT (&map (:S C)))
+           (= T C))))))
+
+(ALTS $f "how the frame is found" $FrameByColor
+  (ALT $FrameByOutline
+    (INPUT frame "the frame is the one single-color object that is the outline of its bounding box, at least 3 by 3; undefined where there is none or more than one"
+      (RULE &off_edge
+        (&blob.component *P *Id)
+        (&blob_box.box (:key Id) *B)
+        (interior (:A P) B))
+
+      (RULE &edge_gap
+        (&blob_box.box (:key *Id) *B)
+        (input *P)
+        (inside (:A P) B)
+        (NOT (interior (:A P) B))
+        (NOT (&blob.component P Id)))
+
+      (RULE &frame_box
+        (&blob_box.box (:key *Id) *B)
+        (NOT (&key Id))
+        (NOT (&off_edge Id))
+        (NOT (&edge_gap Id))
+        (input *P)
+        (interior (:A P) B)))))
+
+(RULE &in_square
+  (&square *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &stencil_frame
+  (&stencil_box.box (:key *C) *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(RULE &stencil_at
+  (&stencil *C (:P *P2))
+  (&stencil_box.box (:key C) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(RULE &paint
+  (&map (:S *C) *T))
+
+;; The square's box and the stencil's box share a frame only where their
+;; sizes agree.
+(RULE &source
+  (&square *C *B)
+  (input (:P *Q))
+  (inside (:A Q) B)
+  (relative (:Base B) (:X Q) (:X_rel *R))
+  (&stencil_frame C (:P R)))
+
+;; The frame's box, cut out.
+(RULE &output
+  (&frame_box (:B *B_f))
+  (OR ((&source *Q *C *R)
+       (&paint C *T)
+       (OR ((NOT (&stencil_at C (:P R)))
+            (&ground.maximal (:t *Col)))
+           ((&stencil_at C (:P R))
+            (= Col T))))
+      ((input (:P Q) Col)
+       (NOT (&in_square (:P Q)))))
+  (inside (:A Q) (:B B_f))
+  (relative (:Base B_f) (:X Q) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

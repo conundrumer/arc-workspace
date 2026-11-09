@@ -1,0 +1,166 @@
+;; inputs a4f3675e5ca3e1448487a3d267c59f94f57dfe746abd99c933322e68c99e34c3 programs/solvers/195c6913.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 195c6913
+
+;; The strip is read toward this direction, and lies along its axis.
+(DET &read_dir DirDomain)
+
+(RULE &strip_axis
+  (&read_dir *D)
+  (axis_of D *A))
+
+(RULE &edge_color
+  (input *P *Col)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &field
+  (&edge_color *D *Col)
+  (&edge_color (:D *D2) Col)
+  (!= D D2))
+
+(RULE &legend_cell
+  (input *P *Col)
+  (NOT (&field Col)))
+
+(RULE &swatch_cell
+  (&legend_cell *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&legend_cell (:P Q)))
+
+(INIT &swatch Connectivity
+  (node (P)
+    (&swatch_cell *P)))
+
+(RULE &on_strip
+  (&swatch.component *P *Id)
+  (&swatch.component (:P *Q) (:Id *Id2))
+  (!= Id Id2)
+  (&strip_axis *A)
+  (same_line A P Q))
+
+(INIT &strip Order
+  (key ((&strip_axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (before ((:a Id) (:b Id2))
+      (&on_strip *Id)
+      (&swatch.component *P Id)
+      (&strip_axis *A)
+      (split P A (:Along *P_line))
+      (&on_strip (:Id *Id2))
+      (&swatch.component (:P *P2) (:Id Id2))
+      (&strip_axis (:A *A22))
+      (split (:P P2) (:A A22) (:Along *P_line2))
+      (!= Id Id2)
+      (margin (:B P_line) D (:K *K1))
+      (margin (:B P_line2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Id))
+    (&on_strip *Id)
+    (&swatch.component *P Id)
+    (&strip_axis *A)
+    (split P A (:Along *P_line))))
+
+(RULE &strip_pos
+  (&strip.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+  (&strip.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+;; The walk's second heading, as a quarter turn off its first.
+(DET &turn_sense SenseDomain)
+
+(RULE &wall
+  (&swatch_cell *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&field Col))
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall Col))
+
+(RULE &corridor_cell
+  (input *P *Col)
+  (&field Col)
+  (NOT (&wall Col)))
+
+(RULE &swatch_col
+  (&swatch.component *P *Id)
+  (input P *Col))
+
+(RULE &pattern
+  (&strip_pos (:M *Id) *P_pos)
+  (&swatch_col Id *Col)
+  (&read_dir *D)
+  (opposite (:D *D_start) (:Opp D))
+  (margin (:B P_pos) (:D D_start) *K))
+
+;; The pattern's length.
+(INIT &period Cardinality
+  (member ((:m K))
+    (&pattern *K)))
+
+(RULE &head
+  (&legend_cell *P)
+  (NOT (&swatch_cell P))
+  (opposite (:D *D_edge) (:Opp *D))
+  (margin (:B P) (:D D_edge) (:K 0)))
+
+(RULE &alt
+  (&head (:D *D0))
+  (&turn_sense *S)
+  (turn S (:D D0) (:D2 *D1))
+  (OR ((= *D D0)
+       (= *D2 D1))
+      ((= D D1)
+       (= D2 D0))))
+
+;; The walk: each hop is one step onto a corridor cell, and the heading flips
+;; where a run meets the wall.
+(INIT &walk Distance
+  (edge ((:a P D) (:b (:P Q) (:D D2)))
+    (input *P)
+    (&alt *D)
+    (neighbor P D *Q)
+    (&corridor_cell (:P Q))
+    (OR ((neighbor (:P Q) D (:Q *R))
+         (&wall_cell (:P R))
+         (&alt D *D2))
+        ((= D2 D))))
+  (source ((:n P D))
+    (OR ((&head *P *D))
+        ((&head P (:D *D3))
+         (neighbor P (:D D3) *Q)
+         (&wall_cell (:P Q))
+         (&alt (:D D3) (:D2 D))))))
+
+(RULE &step
+  (&walk.distance (:n *P *D))
+  (neighbor P D *Q)
+  (&corridor_cell (:P Q)))
+
+(RULE &stop
+  (&step *D (:Q *P2))
+  (neighbor (:P P2) D (:Q *P))
+  (&wall_cell P))
+
+(RULE &phase
+  (&walk.distance (:n *P) (:K *N))
+  (&period.size (:N *L))
+  (divide (:T N) (:Side L) (:Gap 0) (:Remainder *K)))
+
+(RULE &output
+  (OR ((&phase *P *K)
+       (&pattern K *Col))
+      ((&stop P)
+       (&swatch_col *Id Col)
+       (NOT (&on_strip Id)))
+      ((&swatch_cell P)
+       (&wall Col))
+      ((input P Col)
+       (NOT (&phase P))
+       (NOT (&stop P))
+       (NOT (&swatch_cell P)))))
+
+(OUT (&output ^P ^Col))

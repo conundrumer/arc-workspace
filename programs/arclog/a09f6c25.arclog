@@ -1,0 +1,403 @@
+;; inputs 5adca101816c6e91beec75c59a5e4ac0edf878c729ee3c5b3b05c0d212e18ff4 programs/solvers/a09f6c25.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a09f6c25
+
+(INPUT field "the grid is one background color, and every other cell has &figure_color"
+
+  ;; The input colors of the cells the output changes: every figure cell
+  ;; takes a class color or the background color, and every other cell
+  ;; keeps its color.
+  (INIT &changed Singleton
+    (member ((:v Col))
+      (ex_input *E *P *Col)
+      (ex_output E P (:Col *Col_out))
+      (!= Col Col_out)))
+
+  (DET_OR_RULE &figure_color RarestColor
+    (&changed.value (:v *C))))
+
+(INPUT figures "the figure cells form 8-connected components. Each component of two or more cells is a shape, and each shape has exactly one mirror class: a mirror across the horizontal axis of its bounding box, a mirror across the vertical axis of its bounding box, or a mirror across both diagonals of its square bounding box"
+
+  (DET &figure2
+    (ex_input *E *P *Col)
+    (&changed.value (:v Col)))
+
+  (RULE &figure
+    (input *P *Col)
+    (&figure_color (:C Col)))
+
+  (INIT &conn4 Connectivity
+    (node (P)
+      (&figure *P)))
+
+  (INIT &conn42 Connectivity
+    (key ((&figure2 ^E *P))
+      (node (P)
+        (&figure2 E *P)))))
+
+(OUTPUT recolor-by-symmetry "each shape keeps its cells and takes the color &class_color gives its mirror class"
+
+  (INIT &commonest_count2 Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count2.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count2.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count2.size (:key E *Col) *N))))
+
+  (INIT &conn82 Connectivity
+    (key ((&figure2 ^E *P))
+      (node (P)
+        (&figure2 E *P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (DET &kept
+    (&conn82.component (:key *E) *Id *P)
+    (ex_output E P *Col)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (INIT &bbox2 BoundingBox
+    (key ((&conn82.component (:key (:E ^K)) ^Id *P))
+      (cell (P)
+        (&conn82.component (:key (:E K)) Id *P))))
+
+  (DET &mirror_src2
+    (&bbox2.cell (:key *K *Id) (:P *P2))
+    (&bbox2.box (:key K Id) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  ;; The symmetries of each component's cells within its bounding box.
+  (INIT &mirror2 Agreement
+    (key ((OR ((&bbox2.cell (:key ^K ^Id) *P)
+               (&bbox2.box (:key K Id) *B)
+               (inside (:A P) B)
+               (relative (:Base B) (:X P) (:X_rel *P_inner)))
+              ((&mirror_src2 K Id (:P P_inner)))))
+      (source ((:P P_inner))
+        (&bbox2.cell (:key K Id) *P)
+        (&bbox2.box (:key K Id) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner)))
+      (target ((:P P_inner))
+        (&mirror_src2 K Id (:P *P_inner)))))
+
+  ;; The component's symmetries, named as a subgroup.
+  (INIT &named2 Inclusion
+    (pattern ((:pattern S) (:m D))
+      (sym_member *S *D))
+    (observed ((:observed (:K O_k) (:Id O_id)) (:m D))
+      (&mirror_src2 (:K *O_k) (:Id *O_id))
+      (d4_elem *D)
+      (NOT (&mirror2.mismatch (:key (:K O_k) (:Id O_id)) D))))
+
+  (DET &class_color
+    (&kept *E *Id (:Col *C))
+    (&named2.equal (:observed (:K E) Id) (:pattern *S))))
+
+(OUTPUT erase-noise "each component of at most &noise_size cells takes the background color, the most frequent color of the input; undefined when two colors tie for most frequent"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The largest component size that is erased.
+  (DET &noise_size DivisorRatio)
+
+  (INIT &conn8 Connectivity
+    (node (P)
+      (&figure *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &member
+    (&conn8.component *P *Id))
+
+  (INIT &size Cardinality
+    (key ((&member ^Id *P))
+      (member ((:m P))
+        (&member Id *P))))
+
+  (INIT &commonest2 Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  ;; The background color under each reading; undefined when the reading gives
+  ;; two colors.
+  (INIT &background Singleton
+    (member ((:v Col))
+      (&commonest2.maximal (:t *Col))))
+
+  (INIT &smallest Order
+    (member ((:t N))
+      (&size.size *N))
+    (score ((:t N) (:S N))
+      (&size.size *N)))
+
+  (RULE_OR_DET &smallest.minimal))
+
+(OUTPUT rest "every other cell keeps its input color"
+
+  (RULE &axis_class
+    (&class_color *S)
+    (sym_member S *D)
+    (axis_inversion (:A *A1) (:T D)) (axis_elem (:A A1)))
+
+  (RULE &third
+    (&class_color *S *C)
+    (NOT (&axis_class S)))
+
+  (INIT &bbox BoundingBox
+    (key ((&member ^Id *P))
+      (cell (P)
+        (&member Id *P))))
+
+  (RULE &mirror_src
+    (&bbox.cell (:key (:Id *Key)) (:P *P2))
+    (&bbox.box (:key (:Id Key)) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  ;; The symmetries of each component's cells within its bounding box.
+  (INIT &mirror Agreement
+    (key ((OR ((&bbox.cell (:key ^Id) *P)
+               (&bbox.box (:key Id) *B)
+               (inside (:A P) B)
+               (relative (:Base B) (:X P) (:X_rel *P_inner)))
+              ((&mirror_src (:Key Id) (:P P_inner)))))
+      (source ((:P P_inner))
+        (&bbox.cell (:key Id) *P)
+        (&bbox.box (:key Id) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner)))
+      (target ((:P P_inner))
+        (&mirror_src (:Key Id) (:P *P_inner)))))
+
+  ;; The component's symmetries, named as a subgroup.
+  (INIT &named Inclusion
+    (pattern ((:pattern S) (:m D))
+      (sym_member *S *D))
+    (observed ((:observed O) (:m D))
+      (&mirror_src (:Key *O))
+      (d4_elem *D)
+      (NOT (&mirror.mismatch (:key (:Id O)) D))))
+
+  (RULE &axis_mirrored
+    (&mirror_src (:Key *Id))
+    (axis_inversion (:A *A2) (:T *D))
+    (NOT (&mirror.mismatch (:key Id) D)) (axis_elem (:A A2)))
+
+  (RULE &unclassed
+    (&named.equal (:observed *Id) (:pattern *S))
+    (NOT (&class_color S)))
+
+  (RULE &no_axis
+    (&unclassed *Id)
+    (NOT (&axis_mirrored Id)))
+
+  (RULE &two_axis
+    (&unclassed *Id)
+    (&axis_mirrored Id)))
+
+(ALTS $conn "how figure cells group into components" $Conn8
+  (ALT $Conn4
+    (INPUT figures "the figure cells form 4-connected components"
+      (RULE &member
+        (&conn4.component *P *Id)))))
+
+(ALTS $bg "the color erased cells take" $Commonest
+  (ALT $CornerBg
+    (OUTPUT erase-noise "each component of at most &noise_size cells takes the background color, the color of the cells at the four grid corners; undefined when those cells differ"
+      ;; The background color under each reading; undefined when the reading gives
+      ;; two colors.
+      (INIT &background Singleton
+        (member ((:v Col))
+          (input *P *Col)
+          (inside (:A P) (:B 0))
+          (same_corner *D (:P1 P) (:P2 0)))))))
+
+(ALTS $fig "which cells are figure cells" $StoredFigure
+  (ALT $NonbgFigure
+    (INPUT field "the grid is one background color, and every other cell is a figure cell")
+    (OUTPUT rest "every background cell keeps its color"
+      (RULE &figure
+        (&background.value)
+        (input *P *Col)
+        (NOT (&background.value (:v Col)))))))
+
+(ALTS $noise "which components are erased" $SizeBound
+  (ALT $MinSizeNoise
+    (OUTPUT erase-noise "the components of the smallest size in the input take the background color")
+    (RULE &noise
+      (&size.size (:key *Id) *N)
+      (&smallest.minimal (:t N)))
+
+    (RULE &shape
+      (&size.size (:key *Id) *N)
+      (NOT (&smallest.minimal (:t N))))))
+
+(ALTS $no_axis "the color of a shape that is in no class and has no axis mirror: with the stored classes, one that is not mirrored across both diagonals" $NoAxisUndefined
+  (ALT $NoAxisThird
+    (OUTPUT recolor-by-symmetry "a shape that is in no class and has no axis mirror takes the color of the class with no axis mirror"
+      (RULE &no_axis_color
+        (&no_axis *Id)
+        (&third (:C *Col))))
+    (RULE &output
+      (&background.value (:v *BG))
+      (input *P (:Col *Col_in))
+      (OR ((&member *Id P)
+           (OR ((&shape Id)
+                (OR ((&named.equal (:observed Id) (:pattern *S))
+                     (&class_color S (:C *Col)))
+                    ((&no_axis_color Id Col))))
+               ((&noise Id)
+                (= Col BG))))
+          ((NOT (&figure P))
+           (= Col Col_in))))
+    (ALT $TwoAxisThird
+      (RULE &output
+        (&background.value (:v *BG))
+        (input *P (:Col *Col_in))
+        (OR ((&member *Id P)
+             (OR ((&shape Id)
+                  (OR ((&named.equal (:observed Id) (:pattern *S))
+                       (&class_color S (:C *Col)))
+                      ((&no_axis_color Id Col))
+                      ((&two_axis_color Id Col))))
+                 ((&noise Id)
+                  (= Col BG))))
+            ((NOT (&figure P))
+             (= Col Col_in)))))
+    (ALT $TwoAxisErased
+      (RULE &output
+        (&background.value (:v *BG))
+        (input *P (:Col *Col_in))
+        (OR ((&member *Id P)
+             (OR ((&shape Id)
+                  (OR ((&named.equal (:observed Id) (:pattern *S))
+                       (&class_color S (:C *Col)))
+                      ((&no_axis_color Id Col))
+                      ((&two_axis_color Id Col))))
+                 ((&noise Id)
+                  (= Col BG))))
+            ((NOT (&figure P))
+             (= Col Col_in))))))
+  (ALT $NoAxisErased
+    (OUTPUT recolor-by-symmetry "a shape that is in no class and has no axis mirror takes the background color"
+      (RULE &no_axis_color
+        (&no_axis *Id)
+        (&background.value (:v *Col))))
+    (RULE &output
+      (&background.value (:v *BG))
+      (input *P (:Col *Col_in))
+      (OR ((&member *Id P)
+           (OR ((&shape Id)
+                (OR ((&named.equal (:observed Id) (:pattern *S))
+                     (&class_color S (:C *Col)))
+                    ((&no_axis_color Id Col))))
+               ((&noise Id)
+                (= Col BG))))
+          ((NOT (&figure P))
+           (= Col Col_in))))
+    (ALT $TwoAxisThird
+      (RULE &output
+        (&background.value (:v *BG))
+        (input *P (:Col *Col_in))
+        (OR ((&member *Id P)
+             (OR ((&shape Id)
+                  (OR ((&named.equal (:observed Id) (:pattern *S))
+                       (&class_color S (:C *Col)))
+                      ((&no_axis_color Id Col))
+                      ((&two_axis_color Id Col))))
+                 ((&noise Id)
+                  (= Col BG))))
+            ((NOT (&figure P))
+             (= Col Col_in)))))
+    (ALT $TwoAxisErased
+      (RULE &output
+        (&background.value (:v *BG))
+        (input *P (:Col *Col_in))
+        (OR ((&member *Id P)
+             (OR ((&shape Id)
+                  (OR ((&named.equal (:observed Id) (:pattern *S))
+                       (&class_color S (:C *Col)))
+                      ((&no_axis_color Id Col))
+                      ((&two_axis_color Id Col))))
+                 ((&noise Id)
+                  (= Col BG))))
+            ((NOT (&figure P))
+             (= Col Col_in)))))))
+
+(ALTS $two_axis "the color of a shape that is in no class and has an axis mirror: with the stored classes, one mirrored across both axes" $TwoAxisUndefined
+  (ALT $TwoAxisThird
+    (OUTPUT recolor-by-symmetry "a shape that is in no class and has an axis mirror takes the color of the class with no axis mirror"
+      (RULE &two_axis_color
+        (&two_axis *Id)
+        (&third (:C *Col))))
+    (RULE &output
+      (&background.value (:v *BG))
+      (input *P (:Col *Col_in))
+      (OR ((&member *Id P)
+           (OR ((&shape Id)
+                (OR ((&named.equal (:observed Id) (:pattern *S))
+                     (&class_color S (:C *Col)))
+                    ((&two_axis_color Id Col))))
+               ((&noise Id)
+                (= Col BG))))
+          ((NOT (&figure P))
+           (= Col Col_in)))))
+  (ALT $TwoAxisErased
+    (OUTPUT recolor-by-symmetry "a shape that is in no class and has an axis mirror takes the background color"
+      (RULE &two_axis_color
+        (&two_axis *Id)
+        (&background.value (:v *Col))))
+    (RULE &output
+      (&background.value (:v *BG))
+      (input *P (:Col *Col_in))
+      (OR ((&member *Id P)
+           (OR ((&shape Id)
+                (OR ((&named.equal (:observed Id) (:pattern *S))
+                     (&class_color S (:C *Col)))
+                    ((&two_axis_color Id Col))))
+               ((&noise Id)
+                (= Col BG))))
+          ((NOT (&figure P))
+           (= Col Col_in))))))
+
+(RULE &noise
+  (&size.size (:key *Id) *N)
+  (&noise_size (:K *M))
+  (<= N M))
+
+(RULE &shape
+  (&size.size (:key *Id) *N)
+  (&noise_size (:K *M))
+  (> N M))
+
+(RULE &output
+  (&background.value (:v *BG))
+  (input *P (:Col *Col_in))
+  (OR ((&member *Id P)
+       (OR ((&shape Id)
+            (&named.equal (:observed Id) (:pattern *S))
+            (&class_color S (:C *Col)))
+           ((&noise Id)
+            (= Col BG))))
+      ((NOT (&figure P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

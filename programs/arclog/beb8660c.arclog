@@ -1,0 +1,173 @@
+;; inputs 39b16818ead946f7dd964dee9ab3092e4e3da1fac75e2763955da3346e6a7a4f programs/solvers/beb8660c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; beb8660c
+
+(INPUT bars "every non-bg cell belongs to a horizontal bar, a run of one color on one row, and each row holds at most one bar"
+
+  ;; The edge the units stack against.
+  (DET &fall_dir DirDomain)
+
+  (RULE &row_of
+    (input *P)
+    (&fall_dir *D)
+    (axis_of D *A)
+    (split P A (:Along *Row)))
+
+  (INIT &rows Quotient
+    (equivalent ((:a Row) (:b Row))
+      (&row_of *Row))))
+
+(INPUT lengths-one-to-width "the bar lengths are exactly 1 to the grid width, one bar of each length")
+
+(INPUT base-bar "the bottom row is a full-width bar of color 8")
+
+(OUTPUT sort-by-length "the output places the bars on consecutive rows, ordered by length, the longest on the row nearest the &fall_dir edge"
+
+  (DET &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &runs Connectivity
+    (key ((&ink *P ^Col)
+          (&row_of P ^Row))
+      (node (P)
+        (&ink *P Col)
+        (&row_of P Row))))
+
+  (RULE &unit_cell
+    (&runs.component *P (:Id *U))
+    (input P *Col))
+
+  (INIT &length Cardinality
+    (key ((&unit_cell ^U *P))
+      (member ((:m P))
+        (&unit_cell U *P))))
+
+  ;; The units in stacking order, from the &fall_dir edge.
+  (INIT &stack Order
+    (member ((:t U))
+      (&unit_cell *U))
+    (score ((:t U) (:S N))
+      (&length.size (:key *U) *N))))
+
+(OUTPUT stack-at-edge "the stack of bars touches the &fall_dir edge, with one bar per row and no gap rows"
+
+  ;; The cells of each unit's row that lie outside the unit.
+  (INIT &outside Cardinality
+    (key ((&unit_cell ^U))
+      (member ((:m P))
+        (&unit_cell U (:P *Q))
+        (&row_of (:P Q) *Row)
+        (&row_of *P Row)
+        (NOT (&unit_cell U P)))
+      (domain ()
+        (&unit_cell U)))))
+
+(OUTPUT align-to-side "each bar touches the &align_side edge"
+
+  ;; The edge each unit touches in the output.
+  (DET &align_side DirDomain)
+
+  ;; Each unit's cells, ranked from the &align_side edge: a cell's rank
+  ;; is its distance from that edge in the output.
+  (INIT &pack Order
+    (key ((&unit_cell ^U *P))
+      (member ((:t P))
+        (&unit_cell U *P))
+      (score ((:t P) (:S K))
+        (&unit_cell U *P)
+        (&align_side *D)
+        (margin (:B P) D *K)))))
+
+(OUTPUT keep-bar "each bar keeps its color and length")
+
+(OUTPUT clear-rest "every other cell is bg")
+
+(ALTS $item "what one moving unit is" $Bar
+  (ALT $RowUnit
+    (INPUT bars "each row that holds a non-bg cell is one unit, whose length is its count of non-bg cells and whose cells keep their order along the row; undefined where two units of different content have one length"
+      (RULE &unit_cell
+        (&ink *P *Col)
+        (&row_of P *Row)
+        (&rows.class (:a Row) (:Id *U))))))
+
+(ALTS $place "the row each unit lands on" $Stack
+  (ALT $RowByLength
+    (OUTPUT stack-at-edge "a unit lands as many rows from the &fall_dir edge as its row has cells outside it, in place of the stack by length; undefined where two units land on one row or a unit lands outside the frame")
+    (RULE &placed
+      (&outside.size (:key *U) (:N *R)))
+    (ALT $BaseStays
+      (RULE &placed
+        (OR ((&outside.size (:key *U) (:N *R))
+             (NOT (&base_unit U)))
+            ((&base_unit U)
+             (= R 0)))))))
+
+(ALTS $base "what happens to the base bar" $Ranked
+  (ALT $BaseStays
+    (INPUT base-bar "the one unit that holds &base_color takes the row on the &fall_dir edge, and the other units stack on it by length; undefined where the count of such units is not one"
+      (RULE &longer
+        (&length.size (:key (:U *U1)) (:N *N1))
+        (&length.size (:key (:U *U2)) (:N *N2))
+        (> N1 N2))
+
+      (DET &base_color
+        (ex_input *P (:Col *C))
+        (&fall_dir *D)
+        (margin (:B P) D (:K 0)))
+
+      (RULE &base_unit
+        (&unit_cell *U *Col)
+        (&base_color (:C Col)))
+
+      ;; The units in stacking order, from the &fall_dir edge.
+      (INIT &stack Order
+        (member ((:t U))
+          (&unit_cell *U))
+        (before ((:a U1) (:b U2))
+          (OR ((&base_unit (:U *U1))
+               (&unit_cell (:U *U2))
+               (NOT (&base_unit (:U U2))))
+              ((&longer U1 U2)
+               (NOT (&base_unit (:U U1)))
+               (NOT (&base_unit (:U U2))))))))
+    (RULE &undefined
+      (OR ((NOT (&base_unit)))
+          ((&placed *R)
+           (NOT (&fall_dist R)))))
+
+    (RULE &placed
+      (&stack.rank (:t *U) *R))))
+
+(RULE &fall_dist
+  (input *P)
+  (&fall_dir *D)
+  (margin (:B P) D (:K *R)))
+
+;; The longer units come first.
+(RULE &placed
+  (&stack.dual_rank (:t *U) *R))
+
+(RULE &undefined
+  (&placed *R)
+  (NOT (&fall_dist R)))
+
+(RULE &landed
+  (&placed *U *R)
+  (&unit_cell U (:P *Q) *Col)
+  (&pack.rank (:key U) (:t Q) (:R *K))
+  (&fall_dist *P R)
+  (&align_side *D)
+  (margin (:B P) D K))
+
+(RULE &output
+  (OR ((&landed *P *Col)
+       (NOT (&undefined)))
+      ((input P)
+       (NOT (&landed P))
+       (NOT (&undefined))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

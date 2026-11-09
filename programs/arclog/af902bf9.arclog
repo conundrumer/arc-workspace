@@ -1,0 +1,61 @@
+;; inputs 862c768eafa7004ada58229c3f79da716fa21f480ce53ad6d33bf9075a93e598 programs/solvers/af902bf9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; af902bf9
+
+(DET &marker RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &empty
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &quad_mark
+  (&empty *P)
+  (&mark (:P *Q))
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (nearer (:D D1) (:P Q) (:Q P))
+  (nearer (:D D2) (:P Q) (:Q P)))
+
+(RULE &opp_pair
+  (&quad_mark *P *Diag (:Q *A))
+  (diag_opposite (:D Diag) (:Opp *Dg2))
+  (&quad_mark P (:Diag Dg2) (:Q *D)))
+
+(RULE &open_pair
+  (&opp_pair *A *D)
+  (split (:P A) (:A *Ax) (:Along *A1))
+  (split (:P D) (:A Ax) (:Across *D1))
+  (compose (:A A1) (:B D1) (:C *Q))
+  (NOT (&mark (:P Q))))
+
+(RULE &rect_interior
+  (&opp_pair *P *A *D)
+  (NOT (&open_pair A D)))
+
+(ALTS $choice "what delimits an interior cell" $Rect
+  (ALT $Quad
+    (RULE &quad_interior
+      (&empty *P)
+      (ALL ((diag_dir_elem (:D *Diag)))
+           ((&quad_mark P Diag))))
+
+    (RULE &output
+      (OR ((&quad_interior *P)
+           (&fill (:C *Col)))
+          ((input P Col)
+           (NOT (&quad_interior P)))))))
+
+(RULE &output
+  (OR ((&rect_interior *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&rect_interior P)))))
+
+(OUT (&output ^P ^Col))

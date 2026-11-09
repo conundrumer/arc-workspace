@@ -1,0 +1,45 @@
+;; inputs 45134c2a6af55498ebf62f4825199ec901038293cbff250f1b751f67f0bf4373 programs/solvers/2a5f8217.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2a5f8217
+
+(DET &bg DominantColor)
+
+(DET &blank ChangedColor)
+
+(INIT &shapes Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component (:key ^Col) ^Id *P))
+    (cell (P)
+      (&shapes.component (:key Col) Id *P))))
+
+(RULE &footprint
+  (&shapes.component (:key *Col) *Id *P)
+  (&bbox.box (:key Col Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; The blank shapes against a catalog of the other shapes' footprints.
+(INIT &same Inclusion
+  (pattern ((:pattern Col Id) (:m P_inner))
+    (&footprint *Col *Id *P_inner)
+    (NOT (&blank (:C Col))))
+  (observed ((:observed Col Id) (:m P_inner))
+    (&footprint *Col *Id *P_inner)
+    (&blank (:C Col))))
+
+(RULE &paint
+  (&shapes.component (:key (:Col *S_col)) (:Id *S_id) *P)
+  (&same.equal (:observed (:Col S_col) (:Id S_id)) (:pattern *Col)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

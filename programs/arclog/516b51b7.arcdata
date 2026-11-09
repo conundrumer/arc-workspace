@@ -1,0 +1,7 @@
+;; inputs 1cec5746f55891320d98803260ff92b109e6c0342c8005bda29354e63152d980 programs/solvers/516b51b7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 516b51b7
+
+(param &bg Color (0))
+(param &ring (Color number) (3 0) (2 1))
+(param &ring_at (number Color) (1 2) (2 3) (3 2))

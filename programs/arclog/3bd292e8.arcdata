@@ -1,0 +1,7 @@
+;; inputs aada846ef98db118f1260875179e5a08d03a77e9dd1d6d70e98055b0d500586c programs/solvers/3bd292e8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3bd292e8
+
+(param &wall Color (2))
+(param &small_side Color (5))
+(param &other_side Color (3))

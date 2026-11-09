@@ -1,0 +1,81 @@
+;; inputs 5b2ace8c0bd302770364184cf569ed4ba9f5162783e28d0608a4ef38f9436035 programs/solvers/c920a713.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c920a713
+
+(param &background Color (0))
+
+(alts $c
+  (alt $Majority
+    (witness outvoted-crossing borderline $Majority
+      (relaxed one-stack)
+      (separates "Two outlines cross at four cells: three show 2 and one shows 3, and no third outline orders them. The concept drops the pair and is undefined; $Majority puts 2 on top; $EachExtension gives both stacks.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 3 3 3 3 0 0 0)
+        (0 0 0 3 0 0 0 3 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0)
+        (0 2 0 3 0 0 0 3 0 2 0)
+        (0 2 2 2 2 2 2 3 2 2 0)
+        (0 0 0 3 0 0 0 3 0 0 0)
+        (0 0 0 3 3 3 3 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $EachExtension
+        (grid
+          (2 2 2)
+          (2 3 2)
+          (2 2 2))
+        (grid
+          (3 3 3)
+          (3 2 3)
+          (3 3 3)))
+      (output $Majority (grid
+        (3 3 3)
+        (3 2 3)
+        (3 3 3))))))
+
+(alts $u
+  (alt $EachExtension
+    (witness apart borderline $EachExtension
+      (relaxed one-stack)
+      (separates "Two outlines share no cell, so nothing orders them. The concept and $Majority are undefined; $EachExtension gives both stacks.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0 0)
+        (0 2 0 0 2 0 0 0 0 0 0 0)
+        (0 2 0 0 2 0 0 3 3 3 3 0)
+        (0 2 2 2 2 0 0 3 0 0 3 0)
+        (0 0 0 0 0 0 0 3 0 0 3 0)
+        (0 0 0 0 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Total undefined)
+      (output $EachExtension
+        (grid
+          (2 2 2)
+          (2 3 2)
+          (2 2 2))
+        (grid
+          (3 3 3)
+          (3 2 3)
+          (3 3 3))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant concept
+      (separates "Three overlapping outlines cover 13 of 15 cells, so the commonest color is an outline color. The stored background stacks 2, 3, 4 from the bottom; the derived background takes 4 as background, finds 0 as an outline that 2 lies over, and stacks 0, 2, 3.")
+      (input (grid
+        (2 3 3 4 4)
+        (2 3 0 4 4)
+        (0 3 3 4 4)))
+      (output &background=$Stored (grid
+        (2 2 2 2 2)
+        (2 3 3 3 2)
+        (2 3 4 3 2)
+        (2 3 3 3 2)
+        (2 2 2 2 2)))
+      (output &background=$Derived (grid
+        (0 0 0 0 0)
+        (0 2 2 2 0)
+        (0 2 3 2 0)
+        (0 2 2 2 0)
+        (0 0 0 0 0))))))

@@ -1,0 +1,197 @@
+;; inputs 3b8475c5543531511dec222455b72465c2e6a006142f1b38dd5a274b586bc798 programs/solvers/5ecac7f7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5ecac7f7
+
+(DET &axis AxisDomain)
+
+;; The one color a line across the split axis holds.
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (&axis *A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (&axis *A)
+      (split P A (:Along L)))))
+
+(DET &sep VanishedColor)
+
+(RULE &frame_divider
+  (&axis *A)
+  (&line_color.value (:key *L) (:v *Col))
+  (&sep (:C Col)))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D (:K *K2)))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K2))
+      (input *P)
+      (margin (:B P) D (:K *K2)))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&frame_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &panel_box BoundingBox
+  (key ((&frame_tile_of *P ^P_tile))
+    (cell (P)
+      (&frame_tile_of *P P_tile))))
+
+(RULE &panel
+  (&frame_tile_of *P *P_tile)
+  (&panel_box.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(DET &bg DominantColor)
+
+(ALTS $cut "which lines cut the grid into panels" $Separator
+  (ALT $Divide
+    (DET &gap DivisorRatio)
+
+    (DET &panels SepTileCount)
+
+    (INIT &panel_division Division
+      (cell (P)
+        (input *P))
+      (parts (A N)
+        (&axis *A)
+        (&panels *N))
+      (gap (A G)
+        (&axis *A)
+        (&gap (:K *G))))
+
+    (RULE &panel
+      (input *P)
+      (&panel_division.tile P (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+(ALTS $pick "which shape a panel contributes" $Diagonal
+  (ALT $Lookup
+    (DET &shown
+      (&place *E *P_intile *Col *P_panel *P_shape)
+      (ex_output E (:P P_intile) Col))
+
+    (DET &refuted
+      (&shown *P_panel *P_shape)
+      (&place *E *P_intile *Col P_panel P_shape)
+      (ex_output E (:P P_intile) (:Col *Col2))
+      (!= Col2 Col))
+
+    (DET &pick
+      (&shown *P_panel *P_shape)
+      (NOT (&refuted P_panel P_shape)))
+
+    (RULE &picked
+      (&place *P_intile *Col *P_panel *P_shape)
+      (&pick P_panel P_shape))))
+
+(INIT &panel_order Order
+  (key ((&axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (before ((:a P_tile) (:b P_tile2))
+      (&panel *P *P_tile)
+      (&axis *A)
+      (split P A (:Along *L))
+      (&panel (:P *P2) (:P_tile *P_tile2))
+      (&axis (:A *A22))
+      (split (:P P2) (:A A22) (:Along *L2))
+      (!= P_tile P_tile2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t P_tile))
+    (&panel *P *P_tile)
+    (&axis *A)
+    (split P A (:Along *L))))
+
+(RULE &panel_order_pos
+  (&panel_order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+  (&panel_order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+;; A shape: connected cells of one color inside one panel.
+(INIT &shape Connectivity
+  (key ((&panel *P ^P_tile)
+        (input P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (&panel *P P_tile)
+      (input P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &shape_order Order
+  (key ((&panel ^P_tile)
+        (&axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (member ((:t Id))
+      (&shape.component (:key P_tile) *P *Id)
+      (&axis *A)
+      (split P A (:Along *L)))
+    (before ((:a Id) (:b Id2))
+      (&shape.component (:key P_tile) *P *Id)
+      (&axis *A)
+      (split P A (:Along *L))
+      (&shape.component (:key P_tile) (:P *P2) (:Id *Id2))
+      (&axis (:A *A22))
+      (split (:P P2) (:A A22) (:Along *L2))
+      (!= Id Id2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &shape_order_pos
+  (&shape_order.rank (:key (:P_tile *Key) (:A2 *A) *D) (:t *M) (:R *R1))
+  (&shape_order.dual_rank (:key (:P_tile Key) (:A2 A) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &place
+  (&panel *P *P_tile *P_intile)
+  (&shape.component (:key P_tile *Col) P *Id)
+  (&panel_order_pos (:M P_tile) (:P_pos *P_panel))
+  (&shape_order_pos (:Key P_tile) (:M Id) (:P_pos *P_shape)))
+
+(RULE &picked
+  (&place *P_intile *Col (:P_panel *P_place) (:P_shape P_place)))
+
+(RULE &output
+  (OR ((&picked (:P_intile *P) *Col))
+      ((&panel (:P_intile P))
+       (NOT (&picked (:P_intile P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

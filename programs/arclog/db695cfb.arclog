@@ -1,0 +1,160 @@
+;; inputs 78e6e8a34f4bbb7696a3eaf6cd21a84a654d9bfd6a8c2a532430bf6d3865d3a2 programs/solvers/db695cfb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db695cfb
+
+(INPUT clear-cross-lines "the full diagonal through each `cross_color` cell that lies between two diagonal `link_color` cells, square to their joining line, holds no other mark and no cell of another joining line.")
+
+(OUTPUT join-diagonal-pairs "each two `link_color` cells on one diagonal are joined by `link_color` on every cell between them on that diagonal.")
+
+(OUTPUT perpendicular-cross "each `cross_color` cell strictly between two joined `link_color` cells paints `cross_color` on its whole diagonal of the other diagonal axis, out to the grid edges in both directions."
+
+  (DET &absent
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET &link_color
+    (ex_input (:Col *C))
+    (NOT (&absent C)))
+
+  (DET &cross_color
+    (ex_output *E *P (:Col *C))
+    (NOT (ex_input E P (:Col C)))
+    (NOT (&link_color C)))
+
+  (RULE &cross_mark
+    (diag_axis_elem (:Da *Key))
+    (input *P *Col)
+    (&cross_color (:C Col)))
+
+  (RULE &cross_blocked
+    (diag_axis_elem (:Da *Key))
+    (input *P *Col)
+    (OR ((&link_color (:C Col)))
+        ((&cross_color (:C Col)))))
+
+  ;; The square lines, cast from every `cross_color` cell along each diagonal
+  ;; axis, and blocked by every input mark.
+  (INIT &cross Ray
+    (key ((OR ((&cross_mark (:Key ^Ky) *P))
+              ((diag_axis_of *D (:Da Ky)))))
+      (source (P)
+        (&cross_mark (:Key Ky) *P))
+      (node (P)
+        (diag_axis_of *D (:Da Ky))
+        (input *P)
+        (NOT (&cross_blocked (:Key Ky) P)))
+      (dir (D)
+        (diag_axis_of *D (:Da Ky))))))
+
+(OUTPUT cross-over-link "where a `cross_color` line and a `link_color` line meet, the cell is `cross_color`.")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color, so a `cross_color` cell off every joining line stays a single cell."
+
+  ;; The `link_color` marks, cast along each diagonal axis.
+  (INIT &link Ray
+    (key ((diag_axis_elem (:Da ^A)))
+      (dir (D)
+        (axis4_of *D A)))
+    (source (P)
+      (input *P *Col)
+      (&link_color (:C Col)))
+    (node (P)
+      (input *P)))
+
+  (RULE &link_between
+    (diag_axis_elem (:Da *Key))
+    (input *P)
+    (axis4_of *D (:A Key))
+    (dir8_opposite D (:D2 *O))
+    (&link.ray (:key (:A Key)) P D)
+    (&link.ray (:key (:A Key)) P (:D O)))
+
+  (INIT &cross_full Ray
+    (key ((OR ((&cross_mark (:Key ^Ky) *P))
+              ((diag_axis_of *D (:Da Ky)))))
+      (source (P)
+        (&cross_mark (:Key Ky) *P))
+      (node (P)
+        (diag_axis_of *D (:Da Ky))
+        (input *P))
+      (dir (D)
+        (diag_axis_of *D (:Da Ky)))))
+
+  (RULE &cross_cell
+    (diag_axis_elem (:Da *Key))
+    (input))
+
+  (RULE &emitter
+    (input *P *Col)
+    (&cross_color (:C Col))
+    (&link_between (:Key *A) P))
+
+  (RULE &cross_line
+    (&emitter (:P *Src) *A)
+    (diag_perp (:Da A) (:Da2 *A2))
+    (&cross_full.ray (:key (:Ky A2)) *P (:Origin Src))
+    (&cross_cell (:Key A2))
+    (input P)))
+
+(ALTS $e "which `cross_color` cells send a square line" $Inside
+  (ALT $ExtensionEmits
+    (OUTPUT extension-emits "a `cross_color` cell on the diagonal of a joined pair, beyond either end, also sends the square line."
+      (RULE &link_cell
+        (diag_axis_elem (:Da *Key))
+        (input))
+
+      (RULE &partnered
+        (&link.ray (:key *A) (:P *Q2) (:Origin *Q))
+        (&link_cell (:Key A))
+        (input (:P Q2))
+        (&link.source (:key A) (:P Q2))
+        (!= Q Q2))
+
+      (RULE &emitter
+        (input *P *Col)
+        (&cross_color (:C Col))
+        (&partnered *A *Q)
+        (&link.ray (:key A) P (:Origin Q))
+        (&link_cell (:Key A))))))
+
+(ALTS $x "where a square line ends" $ToEdge
+  (ALT $CrossStopsAtMark
+    (OUTPUT perpendicular-cross "in each direction the square line stops before the first input mark of either color."
+      (RULE &cross_line
+        (&emitter (:P *Src) *A)
+        (diag_perp (:Da A) (:Da2 *A2))
+        (&cross.ray (:key (:Ky A2)) *P (:Origin Src))
+        (&cross_cell (:Key A2))
+        (input P)))))
+
+(ALTS $r "the color of a cell where a square line meets `link_color`" $CrossOverLink
+  (ALT $LinkOverCross
+    (OUTPUT cross-over-link "a cell of a joining line, or a `link_color` mark, that a square line passes keeps `link_color`, and the emitting cell keeps `cross_color`."
+      (RULE &link_top
+        (&link_between *P)
+        (input P *Col)
+        (NOT (&cross_color (:C Col)))))
+    (RULE &output
+      (input *P (:Col *Col0))
+      (OR ((&link_top P)
+           (&link_color (:C *Col)))
+          ((NOT (&link_top P))
+           (&cross_line P)
+           (&cross_color (:C Col)))
+          ((NOT (&link_top P))
+           (NOT (&cross_line P))
+           (= Col Col0))))))
+
+(RULE &output
+  (input *P (:Col *Col0))
+  (OR ((&cross_line P)
+       (&cross_color (:C *Col)))
+      ((NOT (&cross_line P))
+       (&link_between P)
+       (&link_color (:C Col)))
+      ((NOT (&cross_line P))
+       (NOT (&link_between P))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

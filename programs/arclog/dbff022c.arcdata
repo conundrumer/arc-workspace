@@ -1,0 +1,74 @@
+;; inputs fc7c96952344567a857f1ffc0524d5da9184cd4319053db68d8f18b04cfe4ff9 programs/solvers/dbff022c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dbff022c
+
+(param &bg Color (0))
+
+(alts $k
+  (alt $KeyLineNearEdge
+    (witness legend-off-edge variant $KeyLineNearEdge
+      (relaxed legend)
+      (separates "The legend sits one row in from the top edge, so no legend line lies on the grid edge. The concept finds no key line and is undefined. $KeyLineNearEdge takes the line nearer the top edge as the key line and fills the 2 outline's hole with 7 and the 6 outline's hole with 1.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 6 3 0 0 0 0 0)
+        (0 7 1 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 6 6 6 0)
+        (0 2 0 2 0 6 0 6 0)
+        (0 2 2 2 0 6 6 6 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $OnEdge undefined)
+      (output $KeyLineNearEdge (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 6 3 0 0 0 0 0)
+        (0 7 1 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 6 6 6 0)
+        (0 2 7 2 0 6 1 6 0)
+        (0 2 2 2 0 6 6 6 0)
+        (0 0 0 0 0 0 0 0 0))))))
+
+(alts $h
+  (alt $PerColorWalls
+    (witness stray-cell-in-hole borderline $PerColorWalls
+      (relaxed hole-wall)
+      (separates "A lone 4 cell sits inside the 2 outline's hole, so the hole's bg cells meet two colors. The concept is undefined. $PerColorWalls finds the hole as the cells the 2 cells close off and paints its bg cells 7 around the 4 cell.")
+      (input (grid
+        (0 2 6 0 0 0 0)
+        (0 7 1 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 0)
+        (0 2 0 0 0 2 0)
+        (0 2 0 4 0 2 0)
+        (0 2 0 0 0 2 0)
+        (0 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0)))
+      (output $Enclosed undefined)
+      (output $PerColorWalls (grid
+        (0 2 6 0 0 0 0)
+        (0 7 1 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 0)
+        (0 2 7 7 7 2 0)
+        (0 2 7 4 7 2 0)
+        (0 2 7 7 7 2 0)
+        (0 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed outlines)
+      (separates "The field is 5, the commonest color of the input. At the stored bg 0, the concept finds every cell that is not 0 as one object of several colors and is undefined. bg=DominantColor takes 5 as bg and fills the 2 outline's holes with 7.")
+      (input (grid
+        (5 2 6 5 4 4 4 4 4 5 2 2 2 2 5)
+        (5 7 1 5 4 5 5 5 4 5 2 5 2 2 5)
+        (5 5 5 5 4 5 5 5 4 5 2 2 5 2 5)
+        (5 5 5 5 4 4 4 4 4 5 2 2 2 2 5)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (5 2 6 5 4 4 4 4 4 5 2 2 2 2 5)
+        (5 7 1 5 4 5 5 5 4 5 2 7 2 2 5)
+        (5 5 5 5 4 5 5 5 4 5 2 2 7 2 5)
+        (5 5 5 5 4 4 4 4 4 5 2 2 2 2 5))))))

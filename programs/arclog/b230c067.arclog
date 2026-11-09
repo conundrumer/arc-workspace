@@ -1,0 +1,256 @@
+;; inputs 4ca30f19192701fead5f9fc40dc2c85bf9fbdea147ad5b4daea9c9e5663ae1d5 programs/solvers/b230c067.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b230c067
+
+(INPUT objects-of-one-color "on a field of background (0), every other cell has object_color (8), and those cells form objects, each an 8-connected component of object_color cells"
+
+  (DET &kept
+    (ex_input *E *P *Col)
+    (ex_output E P Col))
+
+  (DET &recolored
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (DET_OR_RULE &object_color RarestColor
+    (&recolored (:Col *C))
+    (NOT (&kept (:Col C))))
+
+  (RULE &node
+    (input *P *Col)
+    (&object_color (:C Col)))
+
+  (INIT &comps4 Connectivity
+    (node (P)
+      (&node *P))))
+
+(INPUT copies-and-one-odd "copy_count (2) objects are translates of one shape, and one other object has a different shape")
+
+(OUTPUT copies-take-copy-color "each cell of an object whose shape, up to translation, another object has turns copy_color"
+
+  (INIT &comps8 Connectivity
+    (node (P)
+      (&node *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &label
+    (&comps8.component *P *Id))
+
+  (INIT &obox BoundingBox
+    (key ((&label *P ^Id))
+      (cell (P)
+        (&label *P Id))))
+
+  (RULE &shape_cell
+    (&obox.box (:key (:Id *O)) *B)
+    (&label *P (:Id O))
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &shapes Inclusion
+    (pattern ((:pattern O) (:m P_inner))
+      (&shape_cell *O *P_inner))
+    (observed ((:observed O) (:m P_inner))
+      (&shape_cell *O *P_inner)))
+
+  (RULE &same_shape
+    (&shapes.equal (:observed *Id) (:pattern *Id2)))
+
+  (INIT &commonest_count Cardinality
+    (key ((&same_shape ^Id *Id2))
+      (member ((:m Id2))
+        (&same_shape Id *Id2))))
+
+  (INIT &cell_count Cardinality
+    (key ((&label *P ^Id))
+      (member ((:m P))
+        (&label *P Id))))
+
+  (INIT &turned Inclusion
+    (pattern ((:pattern O) (:m P_inner))
+      (&shape_cell *O *P_inner))
+    (observed ((:observed (:Id O) D) (:m P_out))
+      (&shape_cell *O *P_inner)
+      (apply *D (:P P_inner) *P_out)))
+
+  (INIT &fewest Order
+    (member ((:t (:V Id) (:S N)))
+      (&cell_count.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&cell_count.size (:key *Id) *N)))
+
+  (INIT &box_area Cardinality
+    (key ((&obox.box (:key ^Id) *B)
+          (input *P)
+          (inside (:A P) B))
+      (member ((:m P))
+        (&obox.box (:key Id) *B)
+        (input *P)
+        (inside (:A P) B))))
+
+  (INIT &smallest Order
+    (member ((:t (:V Id) (:S N)))
+      (&box_area.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&box_area.size (:key *Id) *N)))
+
+  (INIT &commonest Order
+    (member ((:t Id))
+      (&commonest_count.size (:key *Id)))
+    (score ((:t Id) (:S N))
+      (&commonest_count.size (:key *Id) *N)))
+
+  (INIT &class_size Cardinality
+    (key ((&same_shape ^Id *Id2))
+      (member ((:m Id2))
+        (&same_shape Id *Id2)))))
+
+(OUTPUT odd-takes-odd-color "each cell of an object whose shape, up to translation, no other object has turns odd_color")
+
+(OUTPUT rest-kept "each cell that is in no object keeps its color")
+
+(ALTS $a "which cells join into one object" $EightAdjacent
+  (ALT $FourAdjacent
+    (INPUT objects-of-one-color "the objects are 4-connected components"
+      (RULE &label
+        (&comps4.component *P *Id)))))
+
+(ALTS $o "what makes an object the odd one" $UniqueShape
+  (ALT $UniqueCount
+    (OUTPUT copies-take-copy-color "each cell of an object whose cell count another object has turns copy_color"
+      (RULE &count_twin
+        (&cell_count.size (:key *Id) *N)
+        (&cell_count.size (:key (:Id *Id2)) N)
+        (!= Id Id2)))
+    (OUTPUT odd-takes-odd-color "each cell of an object whose cell count no other object has turns odd_color")
+    (RULE &odd
+      (&label *Id)
+      (NOT (&count_twin Id))))
+  (ALT $UniqueBbox
+    (OUTPUT copies-take-copy-color "each cell of an object whose bbox extent another object has turns copy_color"
+      (RULE &extent
+        (&shape_cell *O *P_inner)
+        (frame_extent (:P P_inner) *A *N))
+
+      (RULE &extent_differs
+        (&extent (:O *Id) (:A *Ax) *N)
+        (&extent (:O *Id2) (:A Ax) (:N *N2))
+        (!= N N2))
+
+      (RULE &extent_twin
+        (&label *Id)
+        (&label (:Id *Id2))
+        (!= Id Id2)
+        (NOT (&extent_differs Id Id2))))
+    (OUTPUT odd-takes-odd-color "each cell of an object whose bbox extent no other object has turns odd_color")
+    (RULE &odd
+      (&label *Id)
+      (NOT (&extent_twin Id))))
+  (ALT $UniqueCongruent
+    (OUTPUT copies-take-copy-color "each cell of an object whose shape, up to a D4 transform and translation, another object has turns copy_color"
+      (RULE &congruent
+        (&turned.equal (:observed *Id) (:pattern *Id2)))
+
+      (RULE &congruent_twin
+        (&congruent *Id *Id2)
+        (!= Id Id2)))
+    (OUTPUT odd-takes-odd-color "each cell of an object whose shape, up to a D4 transform and translation, no other object has turns odd_color")
+    (RULE &odd
+      (&label *Id)
+      (NOT (&congruent_twin Id)))
+    (ALT $NonBackgroundObjects
+      (ALT $ColoredShapes
+        (OUTPUT copies-take-copy-color "shapes compare by cell set and the color of each cell"
+          (RULE &congruent
+            (OR ((&turned_colored.equal (:observed *Id) (:pattern *Id2)))
+                ((&turned.equal (:observed Id) (:pattern Id2))
+                 (NOT (&colored)))))))))
+  (ALT $FewestCells
+    (OUTPUT copies-take-copy-color "each cell of an object with more cells than the fewest turns copy_color")
+    (OUTPUT odd-takes-odd-color "each cell of an object with the fewest cells, ties included, turns odd_color")
+    (RULE &odd
+      (&fewest.minimal (:t (:V *Id)))))
+  (ALT $SmallestBbox
+    (OUTPUT copies-take-copy-color "each cell of an object whose bbox area is more than the smallest turns copy_color")
+    (OUTPUT odd-takes-odd-color "each cell of an object with the smallest bbox area, ties included, turns odd_color")
+    (RULE &odd
+      (&smallest.minimal (:t (:V *Id)))))
+  (ALT $OutsideMajority
+    (OUTPUT copies-take-copy-color "each cell of an object of the commonest shape, up to translation, turns copy_color")
+    (OUTPUT odd-takes-odd-color "each cell of every other object turns odd_color")
+    (RULE &odd
+      (&label *Id)
+      (NOT (&commonest.maximal (:t Id)))))
+  (ALT $CopyCountClass
+    (OUTPUT copies-take-copy-color "each cell of an object whose shape, up to translation, exactly copy_count objects have turns copy_color"
+      (DET_OR_RULE &copy_count "The number of objects in the copies' shape class." TileCount))
+    (OUTPUT odd-takes-odd-color "each cell of every other object turns odd_color")
+    (RULE &odd
+      (&class_size.size (:key *Id) *N)
+      (NOT (&copy_count N)))))
+
+(ALTS $c "which cells make up the objects" $ColorCells
+  (ALT $NonBackgroundObjects
+    (INPUT objects-of-one-color "on a field of background (0), the objects are the components of the cells that are not background"
+      (DET_OR_RULE &background DominantColor)
+
+      (RULE &node
+        (input *P *Col)
+        (NOT (&background (:C Col)))))
+    (OUTPUT rest-kept "each background cell keeps its color")
+    (ALTS $s "whether a shape carries the color of each cell" $CellShapes
+      (ALT $ColoredShapes
+        (OUTPUT copies-take-copy-color "shapes compare by cell set and the color of each cell"
+          (RULE &colored)
+          (RULE &colored_cell
+            (&colored)
+            (&obox.box (:key (:Id *O)) *B)
+            (&label (:P *P2) (:Id O))
+            (inside (:A P2) B)
+            (relative (:Base B) (:X P2) (:X_rel *P))
+            (input (:P P2) *Col))
+          (INIT &colored_shapes Inclusion
+            (pattern ((:pattern O) (:m (:P M_p) (:Col M_col)))
+              (&colored_cell *O (:P *M_p) (:Col *M_col)))
+            (observed ((:observed O) (:m (:P M_p) (:Col M_col)))
+              (&colored_cell *O (:P *M_p) (:Col *M_col))))
+          (RULE &same_shape
+            (OR ((&colored_shapes.equal (:observed *Id) (:pattern *Id2)))
+                ((&shapes.equal (:observed Id) (:pattern Id2))
+                 (NOT (&colored)))))
+          (INIT &turned_colored Inclusion
+            (pattern ((:pattern O) (:m (:P M_p) (:Col M_col)))
+              (&colored_cell *O (:P *M_p) (:Col *M_col)))
+            (observed ((:observed (:Id O) D) (:m (:P P_out) Col))
+              (&colored_cell *O (:P *P_inner) *Col)
+              (apply *D (:P P_inner) *P_out)))
+          (RULE &congruent
+            (&turned_colored.equal (:observed *Id) (:pattern *Id2))))
+        (OUTPUT odd-takes-odd-color "shapes compare by cell set and the color of each cell")))))
+
+(DET &copy_color AnyOutNewColor)
+
+(DET &odd_color AnyOutNewColor)
+
+(RULE &has_copy
+  (&same_shape *Id *Id2)
+  (!= Id Id2))
+
+(RULE &odd
+  (&label *Id)
+  (NOT (&has_copy Id)))
+
+(RULE &output
+  (OR ((&label *P *Id)
+       (IF ((&odd Id))
+           ((&odd_color (:C *Col)))
+           ((&copy_color (:C Col)))))
+      ((input P Col)
+       (NOT (&label P)))))
+
+(OUT (&output ^P ^Col))

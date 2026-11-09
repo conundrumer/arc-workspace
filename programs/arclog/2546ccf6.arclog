@@ -1,0 +1,137 @@
+;; inputs 13f793ed63dda8f1cfa669d2fc9d94b2dbd7db674f9cb213667360fb74f55703 programs/solvers/2546ccf6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2546ccf6
+
+(DET &bg DominantColor)
+
+(INIT &line_color Singleton
+  (key ((axis_elem ^A)
+        (input *P *Col)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &tiling_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&tiling_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A cut: a line of one drawn color, all the way across.
+(INIT &tiling_rank Order
+  (key ((OR ((&tiling_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiling_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiling_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &tile_box BoundingBox
+  (key ((&tiling_tile_of *P ^P_tile))
+    (cell (P)
+      (&tiling_tile_of *P P_tile))))
+
+(RULE &tile_cell
+  (&tile_box.cell (:key *P_tile) *P)
+  (&tile_box.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &tile_holds
+  (&tiling_tile_of *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &block_dir
+  (OR ((corner_dir (:C *Diag) *D))
+      ((diag_dir_elem (:D Diag))
+       (= D Diag))))
+
+(RULE &block_tile
+  (&tiling_tile_of *P_tile)
+  (&block_dir *Diag *D)
+  (neighbor (:P P_tile) D (:Q *S))
+  (&tile_holds *Col (:P_tile S)))
+
+(RULE &block_broken
+  (&block_tile *Col *P_tile *Diag)
+  (&block_dir Diag *D)
+  (NOT (&block_tile Col P_tile Diag D)))
+
+(RULE &gap
+  (&block_tile *Col *P_tile *Diag)
+  (NOT (&tile_holds Col P_tile))
+  (NOT (&block_broken Col P_tile Diag)))
+
+(RULE &flip
+  (&tile_cell *P_intile)
+  (axis_of *D *A)
+  (axis_inversion A (:T *F))
+  (apply (:D F) (:P P_intile) *P_out))
+
+(RULE &reflect
+  (OR ((&flip *D *P_intile *P_out))
+      ((diag_dirs D *D1 *D2)
+       (&flip (:D D1) P_intile (:P_out *P_mid))
+       (&flip (:D D2) (:P_intile P_mid) P_out))))
+
+(RULE &mirror
+  (&gap *Col *P_tile (:Diag *G))
+  (&block_tile Col P_tile (:Diag G) *D *S)
+  (&tile_cell (:P_tile S) (:P *P_src) *P_intile)
+  (&reflect D P_intile *P_out)
+  (&tile_cell P_tile (:P *P_dst) (:P_intile P_out)))
+
+(RULE &paint
+  (&mirror *Col *P_src (:P_dst *P))
+  (input (:P P_src) Col))
+
+(ALTS $choice "what crosses into the missing tile" $Shape
+  (ALT $Tile
+    (RULE &paint
+      (&mirror *P_src (:P_dst *P))
+      (input (:P P_src) *Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

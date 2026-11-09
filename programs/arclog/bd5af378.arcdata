@@ -1,0 +1,39 @@
+;; inputs 86528a81587a839a07d1b05bc3bef767b40df59c7e2ec4b1ee211dbad2b98199 programs/solvers/bd5af378.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bd5af378
+
+(param &shift number (1))
+(param &fill_color Color (8))
+
+(alts $choice
+  (alt $MoveWholeL
+    (witness thick-l variant $MoveWholeL
+      (relaxed l-line)
+      (separates "an L two cells thick: the concept draws a one-cell L one step in and fills the rest with 8; $MoveWholeL moves the whole two-cell L one step in, with 8 on the diagonal through its corner cells")
+      (input (grid
+        (9 9 9 9 9 9 7 7)
+        (9 9 9 9 9 9 7 7)
+        (9 9 9 9 9 9 7 7)
+        (9 9 9 9 9 9 7 7)
+        (9 9 9 9 9 9 7 7)
+        (9 9 9 9 9 9 7 7)
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7)))
+      (output concept (grid
+        (9 8 8 8 8 8 7 9)
+        (8 9 8 8 8 8 7 9)
+        (8 8 9 8 8 8 7 9)
+        (8 8 8 9 8 8 7 9)
+        (8 8 8 8 9 8 7 9)
+        (8 8 8 8 8 9 7 9)
+        (7 7 7 7 7 7 8 9)
+        (9 9 9 9 9 9 9 8)))
+      (output $MoveWholeL (grid
+        (9 8 8 8 8 7 7 9)
+        (8 9 8 8 8 7 7 9)
+        (8 8 9 8 8 7 7 9)
+        (8 8 8 9 8 7 7 9)
+        (8 8 8 8 9 7 7 9)
+        (7 7 7 7 7 8 7 9)
+        (7 7 7 7 7 7 8 9)
+        (9 9 9 9 9 9 9 8))))))

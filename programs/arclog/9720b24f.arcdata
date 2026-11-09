@@ -1,0 +1,73 @@
+;; inputs bccf1eb83157f139bd537ad83f96939704135f6b235c6109f37b99f9736e21c2 programs/solvers/9720b24f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9720b24f
+
+(param &bg Color (0))
+
+(approximated inside
+  (witness two-gap-ring variant other
+    (relaxed outline-shape)
+    (separates "A ring of color 2 has a gap on each side of its middle row, with a 5 at its center. The color class surrounds the 5, so the generator erases it. The row of the 5 holds no 2, so the crossing test finds no side and both cases keep the 5.")
+    (input (grid
+      (2 2 2 2 2)
+      (2 0 0 0 2)
+      (0 0 5 0 0)
+      (2 0 0 0 2)
+      (2 2 2 2 2)))
+    (output (grid
+      (2 2 2 2 2)
+      (2 0 0 0 2)
+      (0 0 0 0 0)
+      (2 0 0 0 2)
+      (2 2 2 2 2)))))
+
+(alts $choice
+  (alt $Shape
+    (witness broken-ring variant concept
+      (relaxed outline-shape)
+      (separates "A ring of color 2 is broken into a top-left arc and a bottom-right arc, with a 5 at its center. The two arcs are not eight-connected, so no single shape has the 5 between its cells and $Shape keeps the 5. The color class holds both arcs, so $ColorClass erases the 5.")
+      (input (grid
+        (0 2 2 0 0)
+        (2 0 0 0 0)
+        (2 0 5 0 2)
+        (0 0 0 0 2)
+        (0 0 2 2 0)))
+      (output concept (grid
+        (0 2 2 0 0)
+        (2 0 0 0 0)
+        (2 0 0 0 2)
+        (0 0 0 0 2)
+        (0 0 2 2 0)))
+      (output $Shape (grid
+        (0 2 2 0 0)
+        (2 0 0 0 0)
+        (2 0 5 0 2)
+        (0 0 0 0 2)
+        (0 0 2 2 0))))
+    (witness far-marks variant $Shape
+      (relaxed outline-shape)
+      (separates "Three lone cells of color 2 sit far apart, and a 5 lands on the row between two of them with the third above it. Read as color classes, those three cells are one container and the 5 is inside it, so $ColorClass erases the 5. Read as shapes, each 2 is its own one-cell shape, no shape has cells on two sides of the 5, and $Shape keeps the whole grid.")
+      (input (grid
+        (0 0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 0 5 0 0 0 0 2)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept (grid
+        (0 0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 0 0 0 0 0 0 2)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Shape (grid
+        (0 0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 0 5 0 0 0 0 2)
+        (0 0 0 0 0 0 0 0 0 0 0))))))

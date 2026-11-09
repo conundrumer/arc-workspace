@@ -1,0 +1,256 @@
+;; inputs 2dd37ccd533577ffa35a2fe81509412bbb91ca416d8b6d54692f66c6a8d8db7f programs/solvers/aab50785.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aab50785
+
+(param &pair_axis Axis (AXIS_H))
+(param &block_shape Position
+  (grid
+    (1 1)
+    (1 1)))
+(param &marker_color Color (8))
+(param &bg Color (0))
+
+(exclude ($LoneUndefined $OuterSpan) "The cases. A case that is undefined where another case is defined, and agrees with it elsewhere, is subsumed; so each case besides the concept takes LoneSkip and OuterSpan.")
+(exclude ($LoneUndefined $DeriveMarker) "The cases. A case that is undefined where another case is defined, and agrees with it elsewhere, is subsumed; so each case besides the concept takes LoneSkip and OuterSpan.")
+(exclude ($LoneUndefined $ComponentBlocks) "The cases. A case that is undefined where another case is defined, and agrees with it elsewhere, is subsumed; so each case besides the concept takes LoneSkip and OuterSpan.")
+(exclude ($TwoPerBand $LoneSkip) "The cases. A case that is undefined where another case is defined, and agrees with it elsewhere, is subsumed; so each case besides the concept takes LoneSkip and OuterSpan.")
+(exclude ($TwoPerBand $DeriveMarker) "The cases. A case that is undefined where another case is defined, and agrees with it elsewhere, is subsumed; so each case besides the concept takes LoneSkip and OuterSpan.")
+(exclude ($TwoPerBand $ComponentBlocks) "The cases. A case that is undefined where another case is defined, and agrees with it elsewhere, is subsumed; so each case besides the concept takes LoneSkip and OuterSpan.")
+
+(alts $shape
+  (alt $DerivedShape
+    (witness big-blocks variant $DerivedShape
+      (relaxed marker-blocks)
+      (separates "train2 with 3x3 blocks of 8 at rows 5-7, cols 0-2 and 7-9. The 2x2 windows find four overlapping blocks on each of rows 5 and 6, and $ComponentBlocks finds no 2x2 square, so both are undefined; $DerivedShape takes rows 5-7, cols 3-6; $OuterSpan runs from the first window to the last and copies block columns.")
+      (input (grid
+        (9 0 0 5 0 0 0 0 4 4)
+        (9 4 0 0 0 0 0 0 5 0)
+        (2 2 0 6 0 0 5 0 5 3)
+        (2 9 0 2 6 4 0 1 0 0)
+        (0 0 2 9 0 4 9 1 1 3)
+        (8 8 8 0 9 7 7 8 8 8)
+        (8 8 8 0 0 5 6 8 8 8)
+        (8 8 8 0 0 0 0 8 8 8)
+        (0 0 0 1 0 5 0 0 3 0)
+        (0 9 0 0 0 0 0 7 0 9)
+        (0 0 5 1 7 0 0 0 9 9)
+        (0 0 9 0 0 1 0 0 0 7)))
+      (output concept $StoredShape undefined)
+      (output ($WindowBlocks $OuterSpan) (grid
+        (8 0 9 7 7 8)
+        (8 0 0 5 6 8)
+        (8 0 0 5 6 8)
+        (8 0 0 0 0 8)))
+      (output $DerivedShape (grid
+        (0 9 7 7)
+        (0 0 5 6)
+        (0 0 0 0))))
+    (witness wide-pair borderline $DerivedShape
+      (relaxed marker-blocks)
+      (separates "train0 with a third pair of 8 blocks, 2x3 each, at rows 11-12, cols 1-3 and 9-11, five columns apart. The stored 2x2 shape reads no block there and gives the train0 output; $DerivedShape reads the 2x3 pieces as a pair and adds their window, rows 11-12, cols 4-8, below the other two. The 2x2 windows find two overlapping blocks at each end of that band, so $OuterSpan takes a 7-wide window beside the 5-wide ones, and the widths differ, so it is undefined, as are the concept and the other crowded-band readings.")
+      (input (grid
+        (0 2 0 0 0 0 4 5 0 0 1 0 6 5 0 0 0)
+        (9 0 4 3 0 0 9 0 4 7 9 4 6 0 2 7 0)
+        (0 7 3 0 0 0 9 0 0 9 0 0 9 9 9 5 0)
+        (0 5 5 3 0 3 0 6 0 4 7 2 3 2 0 3 0)
+        (0 8 8 0 0 0 7 0 8 8 9 0 0 6 0 0 4)
+        (0 8 8 6 4 3 1 9 8 8 0 0 0 0 0 0 7)
+        (9 0 0 9 5 2 0 0 0 0 0 0 2 0 0 0 1)
+        (0 2 9 9 0 0 9 0 7 1 0 0 0 9 0 0 0)
+        (0 7 0 8 8 0 4 0 6 0 8 8 9 0 0 0 0)
+        (0 2 4 8 8 0 3 0 0 6 8 8 6 5 7 9 0)
+        (0 0 9 2 0 2 0 0 0 7 9 0 0 0 5 7 1)
+        (1 8 8 8 0 1 0 4 1 8 8 8 0 0 1 0 9)
+        (1 8 8 8 1 4 6 0 0 8 8 8 3 0 1 4 0)))
+      (output concept ($WindowBlocks $OuterSpan) undefined)
+      (output $StoredShape (grid
+        (0 0 0 7 0)
+        (6 4 3 1 9)
+        (0 4 0 6 0)
+        (0 3 0 0 6)))
+      (output $DerivedShape (grid
+        (0 0 0 7 0)
+        (6 4 3 1 9)
+        (0 4 0 6 0)
+        (0 3 0 0 6)
+        (0 1 0 4 1)
+        (1 4 6 0 0))))
+    (witness tall-pair borderline $DerivedShape
+      (relaxed marker-blocks)
+      (separates "train1 with a second pair of 8 blocks, 3x2 each, at rows 7-9, cols 2-3 and 8-9. $DerivedShape reads them as a pair and stacks its 3-row window, rows 7-9, cols 4-7, below the 2-row window of train1. The stored 2x2 shape finds no block in the 3x2 pieces; the 2x2 windows find two overlapping blocks at each end, rows 7-8 and 8-9, and stack both windows in full.")
+      (input (grid
+        (0 4 0 1 0 0 0 1 0 0 0 0 0 0 0)
+        (0 0 3 0 0 7 9 0 7 7 0 0 1 3 0)
+        (2 0 0 0 0 6 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 3 5 9 1 8 8 0 2 0)
+        (0 0 0 0 8 8 1 0 0 6 8 8 3 0 0)
+        (2 0 0 0 5 0 0 0 0 0 9 2 0 0 2)
+        (0 0 9 0 4 9 9 9 0 2 9 6 1 4 0)
+        (0 0 8 8 0 0 9 4 8 8 0 0 0 0 5)
+        (1 0 8 8 0 0 0 9 8 8 0 5 0 6 0)
+        (2 1 8 8 6 0 6 2 8 8 4 0 0 0 7)
+        (0 9 0 0 2 0 5 0 1 0 0 0 0 5 3)
+        (4 0 0 3 0 0 0 0 0 0 0 0 4 0 0)))
+      (output $WindowBlocks (grid
+        (3 5 9 1)
+        (1 0 0 6)
+        (0 0 9 4)
+        (0 0 0 9)
+        (0 0 0 9)
+        (6 0 6 2)))
+      (output $StoredShape (grid
+        (3 5 9 1)
+        (1 0 0 6)))
+      (output $DerivedShape (grid
+        (3 5 9 1)
+        (1 0 0 6)
+        (0 0 9 4)
+        (0 0 0 9)
+        (6 0 6 2))))))
+
+(alts $conn
+  (alt $Conn8
+    (witness corner-cell borderline concept
+      (relaxed marker-blocks)
+      (separates "train0 with an 8 at (6,3), which touches the top-left block only at its corner (5,2). The 2x2 windows, and edge-connected pieces, still find all four blocks and give the train0 output; under $Conn8 the corner cell joins that block into a 5-cell piece, so the top pair loses a block, and with $LoneSkip only the bottom window is left. Under $DerivedShape with edge-connected pieces the corner cell is a lone 1x1 block.")
+      (input (grid
+        (0 2 0 0 0 0 4 5 0 0 1 0 6 5 0 0 0)
+        (9 0 4 3 0 0 9 0 4 7 9 4 6 0 2 7 0)
+        (0 7 3 0 0 0 9 0 0 9 0 0 9 9 9 5 0)
+        (0 5 5 3 0 3 0 6 0 4 7 2 3 2 0 3 0)
+        (0 8 8 0 0 0 7 0 8 8 9 0 0 6 0 0 4)
+        (0 8 8 6 4 3 1 9 8 8 0 0 0 0 0 0 7)
+        (9 0 0 8 5 2 0 0 0 0 0 0 2 0 0 0 1)
+        (0 2 9 9 0 0 9 0 7 1 0 0 0 9 0 0 0)
+        (0 7 0 8 8 0 4 0 6 0 8 8 9 0 0 0 0)
+        (0 2 4 8 8 0 3 0 0 6 8 8 6 5 7 9 0)
+        (0 0 9 2 0 2 0 0 0 7 9 0 0 0 5 7 1)
+        (1 0 0 3 0 1 0 4 1 4 0 0 0 0 1 0 9)
+        (1 0 6 2 1 4 6 0 0 1 9 0 3 0 1 4 0)))
+      (output $WindowBlocks $Conn4 (grid
+        (0 0 0 7 0)
+        (6 4 3 1 9)
+        (0 4 0 6 0)
+        (0 3 0 0 6)))
+      (output $Conn8 (grid
+        (0 4 0 6 0)
+        (0 3 0 0 6))))))
+
+(alts $reading
+  (alt $ComponentBlocks
+    (witness bumped-blocks borderline concept
+      (relaxed marker-blocks)
+      (separates "train0 with one 8 cell below each block of the top pair, at (6,1) and (6,8). The 2x2 windows still find all four blocks, so the concept gives the train0 output; $ComponentBlocks and $DerivedShape see two 5-cell components that are not rectangles, drop that pair, and keep only the bottom window.")
+      (input (grid
+        (0 2 0 0 0 0 4 5 0 0 1 0 6 5 0 0 0)
+        (9 0 4 3 0 0 9 0 4 7 9 4 6 0 2 7 0)
+        (0 7 3 0 0 0 9 0 0 9 0 0 9 9 9 5 0)
+        (0 5 5 3 0 3 0 6 0 4 7 2 3 2 0 3 0)
+        (0 8 8 0 0 0 7 0 8 8 9 0 0 6 0 0 4)
+        (0 8 8 6 4 3 1 9 8 8 0 0 0 0 0 0 7)
+        (9 8 0 9 5 2 0 0 8 0 0 0 2 0 0 0 1)
+        (0 2 9 9 0 0 9 0 7 1 0 0 0 9 0 0 0)
+        (0 7 0 8 8 0 4 0 6 0 8 8 9 0 0 0 0)
+        (0 2 4 8 8 0 3 0 0 6 8 8 6 5 7 9 0)
+        (0 0 9 2 0 2 0 0 0 7 9 0 0 0 5 7 1)
+        (1 0 0 3 0 1 0 4 1 4 0 0 0 0 1 0 9)
+        (1 0 6 2 1 4 6 0 0 1 9 0 3 0 1 4 0)))
+      (output $WindowBlocks (grid
+        (0 0 0 7 0)
+        (6 4 3 1 9)
+        (0 4 0 6 0)
+        (0 3 0 0 6)))
+      (output $ComponentBlocks (grid
+        (0 4 0 6 0)
+        (0 3 0 0 6))))))
+
+(alts $marker
+  (alt $DeriveMarker
+    (witness noise-square borderline concept
+      (relaxed noise-field)
+      (separates "train4 with a solid 2x2 of 3 in the noise at rows 10-11, cols 14-15, away from both windows. The stored marker color gives the train4 output; $DeriveMarker finds two colors with a solid 2x2 block and is undefined.")
+      (input (grid
+        (0 7 2 7 0 2 0 0 0 4 0 0 1 0 0 0)
+        (0 1 0 0 0 0 0 6 0 0 2 0 0 7 3 1)
+        (0 0 8 8 6 5 2 8 8 1 0 2 4 5 0 0)
+        (0 0 8 8 0 0 2 8 8 0 0 7 1 0 0 7)
+        (0 0 0 0 4 0 0 0 9 0 7 0 0 0 0 0)
+        (8 8 1 3 0 8 8 0 0 0 0 9 0 3 0 1)
+        (8 8 0 0 9 8 8 0 0 0 0 0 3 0 9 2)
+        (0 0 7 0 0 0 0 0 0 9 3 4 0 0 0 0)
+        (4 0 0 9 0 9 0 0 7 3 0 6 0 4 0 5)
+        (6 0 0 0 4 0 0 3 0 0 2 0 5 0 0 0)
+        (0 0 0 0 3 0 0 0 1 2 0 4 0 0 3 3)
+        (4 5 0 0 6 0 4 0 0 0 0 0 5 2 3 3)
+        (0 9 0 6 0 0 0 7 2 0 9 3 0 0 0 6)))
+      (output $StoredMarker (grid
+        (6 5 2)
+        (0 0 2)
+        (1 3 0)
+        (0 0 9)))
+      (output $DeriveMarker undefined))
+    (witness new-marker-color variant $DeriveMarker
+      (relaxed marker-blocks)
+      (separates "train4 with every 8 recolored to 5, a color no other cell of the input touches. The stored marker color 8 finds no block, so the concept is undefined; $DeriveMarker takes 5 as the marker color and gives the train4 output.")
+      (input (grid
+        (0 7 2 7 0 2 0 0 0 4 0 0 1 0 0 0)
+        (0 1 0 0 0 0 0 6 0 0 2 0 0 7 3 1)
+        (0 0 5 5 6 5 2 5 5 1 0 2 4 5 0 0)
+        (0 0 5 5 0 0 2 5 5 0 0 7 1 0 0 7)
+        (0 0 0 0 4 0 0 0 9 0 7 0 0 0 0 0)
+        (5 5 1 3 0 5 5 0 0 0 0 9 0 3 0 1)
+        (5 5 0 0 9 5 5 0 0 0 0 0 3 0 9 2)
+        (0 0 7 0 0 0 0 0 0 9 3 4 0 0 0 0)
+        (4 0 0 9 0 9 0 0 7 3 0 6 0 4 0 5)
+        (6 0 0 0 4 0 0 3 0 0 2 0 5 0 0 0)
+        (0 0 0 0 3 0 0 0 1 2 0 4 0 0 0 0)
+        (4 5 0 0 6 0 4 0 0 0 0 0 5 2 0 2)
+        (0 9 0 6 0 0 0 7 2 0 9 3 0 0 0 6)))
+      (output $StoredMarker undefined)
+      (output $DeriveMarker (grid
+        (6 5 2)
+        (0 0 2)
+        (1 3 0)
+        (0 0 9))))))
+
+(alts $lone
+  (alt $LoneSkip
+    (witness decoy-block variant $LoneSkip
+      (relaxed block-pairs)
+      (separates "train1 with one more 2x2 block of 8 at rows 7-8, cols 1-2, on rows no other block shares. The concept has no partner for it and is undefined; $LoneSkip ignores the block and gives the train1 output.")
+      (input (grid
+        (0 4 0 1 0 0 0 1 0 0 0 0 0 0 0)
+        (0 0 3 0 0 7 9 0 7 7 0 0 1 3 0)
+        (2 0 0 0 0 6 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 3 5 9 1 8 8 0 2 0)
+        (0 0 0 0 8 8 1 0 0 6 8 8 3 0 0)
+        (2 0 0 0 5 0 0 0 0 0 9 2 0 0 2)
+        (0 0 9 0 4 9 9 9 0 2 9 6 1 4 0)
+        (0 8 8 0 0 0 9 4 0 0 0 0 0 0 5)
+        (1 8 8 0 0 0 0 9 0 0 0 5 0 6 0)
+        (2 1 0 0 6 0 6 2 7 0 4 0 0 0 7)
+        (0 9 0 0 2 0 5 0 1 0 0 0 0 5 3)
+        (4 0 0 3 0 0 0 0 0 0 0 0 4 0 0)))
+      (output concept undefined)
+      (output $LoneSkip (grid
+        (3 5 9 1)
+        (1 0 0 6))))))
+
+(alts $crowd
+  (alt $OuterSpan
+    (witness four-in-row foreign any
+      (relaxed block-pairs)
+      (relaxed disjoint-rows)
+      (separates "A 6x19 grid of noise with four 2x2 blocks of 8 on rows 2-3 at cols 0, 5, 10 and 15, three columns apart. The concept is undefined on more than two blocks on one band; $OuterSpan takes one 2x13 window through the middle blocks.")
+      (input (grid
+        (3 0 4 9 0 0 6 0 3 7 0 6 1 0 0 4 4 0 1)
+        (0 6 4 0 7 0 1 9 9 7 0 7 7 4 0 1 0 6 0)
+        (8 8 0 6 0 8 8 6 9 0 8 8 7 9 1 8 8 6 0)
+        (8 8 7 1 5 8 8 4 3 5 8 8 3 2 1 8 8 0 7)
+        (2 6 5 3 5 2 7 0 0 6 4 0 3 0 5 4 0 9 0)
+        (6 7 3 3 3 7 5 7 5 0 0 2 5 9 0 0 2 9 7)))
+      (output concept undefined)
+      (output $OuterSpan (grid
+        (0 6 0 8 8 6 9 0 8 8 7 9 1)
+        (7 1 5 8 8 4 3 5 8 8 3 2 1))))
+    (witness big-blocks variant $DerivedShape)))

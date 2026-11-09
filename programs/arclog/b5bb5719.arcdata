@@ -1,0 +1,97 @@
+;; inputs f7ee0892d2460dc55e73f7f3c9a6fad0b978b5fb23febabb0670f944da2fcfa2 programs/solvers/b5bb5719.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b5bb5719
+
+(param &background Color (7))
+(param &swap (Color Color) (2 5) (5 2))
+(param &read_sense Sense (SENSE_CW))
+(param &grow_dir Dir (DIR_B))
+
+(alts $s
+  (alt $SpanTriangle
+    (witness interior-gap ordinary concept
+      (separates "A background cell inside the seed's span with two filled cells to its left: the concept leaves the cell under the gap's left neighbor pair unfilled, and $SpanTriangle fills it.")
+      (input (grid
+        (5 2 5 7 5)
+        (7 7 7 7 7)
+        (7 7 7 7 7)))
+      (output $UnderPair (grid
+        (5 2 5 7 5)
+        (7 2 7 2 7)
+        (7 7 5 7 7)))
+      (output $SpanTriangle (grid
+        (5 2 5 7 5)
+        (7 2 5 2 7)
+        (7 7 5 7 7))))))
+
+(alts $pa
+  (alt $MixedTakesOtherSide
+    (witness third-seed-color foreign any
+      (relaxed seed-row)
+      (separates "A seed pair of 5 and a color outside swap: the concept gives the swap of the left cell, 2, and $MixedTakesOtherSide gives the right cell's color, 3.")
+      (input (grid
+        (7 5 7 3 7)
+        (7 7 7 7 7)
+        (7 7 7 7 7)))
+      (output $SwapSide $DiagonalHead (grid
+        (7 5 7 3 7)
+        (7 7 2 7 7)
+        (7 7 7 7 7)))
+      (output $MixedTakesOtherSide (grid
+        (7 5 7 3 7)
+        (7 7 3 7 7)
+        (7 7 7 7 7)))))
+  (alt $DiagonalHead
+    (witness inner-seed borderline concept
+      (relaxed seed-row)
+      (separates "The pair of 5s lies on row 1, and row 0 holds a 5 at the head of the filled cell's upper-left diagonal: the concept swaps the upper-left neighbor 5 to 2, and $DiagonalHead swaps the head 5 twice, once per row, back to 5.")
+      (input (grid
+        (5 7 7 7 7)
+        (7 5 7 5 7)
+        (7 7 7 7 7)))
+      (output ($SwapSide $StoredGrow) $MixedTakesOtherSide (grid
+        (5 7 7 7 7)
+        (7 5 7 5 7)
+        (7 7 2 7 7)))
+      (output $DiagonalHead (grid
+        (5 7 7 7 7)
+        (7 5 7 5 7)
+        (7 7 5 7 7)))
+      (output $GrowFromSeedEdge undefined))))
+
+(alts $h
+  (alt $GrowFromSeedEdge
+    (witness seed-at-bottom variant $GrowFromSeedEdge
+      (relaxed seed-row)
+      (separates "The seed on the bottom row: the stored grow direction grows nothing and returns the input, and the grow direction derived from the seed's edge grows the pyramid upward.")
+      (input (grid
+        (7 7 7 7 7)
+        (7 7 7 7 7)
+        (7 5 7 2 7)))
+      (output $StoredGrow (grid
+        (7 7 7 7 7)
+        (7 7 7 7 7)
+        (7 5 7 2 7)))
+      (output $GrowFromSeedEdge (grid
+        (7 7 7 7 7)
+        (7 7 5 7 7)
+        (7 5 7 2 7))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed seed-row)
+      (separates "A field of 0 in place of 7: the stored background finds no background cell and returns the input, and the derived background 0 grows the pyramid.")
+      (input (grid
+        (0 5 0 2 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output ($StoredGrow &background=$Stored) (grid
+        (0 5 0 2 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output $GrowFromSeedEdge undefined)
+      (output &background=$Derived (grid
+        (0 5 0 2 0)
+        (0 0 2 0 0)
+        (0 0 0 0 0))))))

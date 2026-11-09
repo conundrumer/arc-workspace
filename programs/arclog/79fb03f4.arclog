@@ -1,0 +1,162 @@
+;; inputs 7479ed6f239466942ac8d210b73734f1d8e12f54898f96d784d50a03e8659ff4 programs/solvers/79fb03f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 79fb03f4
+
+(DET &bg DominantColor)
+
+(DET &flow RarestColor)
+
+(DET &flow_dir DirDomain)
+
+(RULE &marker
+  (input *P (:Col *C))
+  (NOT (&bg C))
+  (NOT (&flow C)))
+
+(RULE &side
+  (&flow_dir *D)
+  (perp_dir D (:D2 *S)))
+
+(RULE &src_row
+  (input (:P *F) (:Col *C))
+  (&flow C)
+  (&flow_dir *D)
+  (axis_of D *A)
+  (input *P)
+  (same_line A P (:Q F)))
+
+(RULE &back
+  (&flow_dir (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &aside
+  (&marker (:P *Q))
+  (&side *S)
+  (neighbor (:P Q) (:D S) (:Q *M))
+  (&flow_dir *D)
+  (neighbor (:P M) D (:Q *X))
+  (&back (:D *D_back))
+  (neighbor (:P M) (:D D_back) (:Q *E1)))
+
+(RULE &detour
+  (&aside *Q *S (:E1 *E) *M *X)
+  (OR ((= *P E))
+      ((= P M))
+      ((= P X))))
+
+(RULE &rejoin
+  (&marker (:P *Q))
+  (&flow_dir *D)
+  (neighbor (:P Q) D (:Q *P)))
+
+(RULE &sends
+  (OR ((&src_row (:F *A) *P)
+       (&side *S))
+      ((&detour (:Q A) S P))
+      ((&rejoin (:Q A) P)
+       (NOT (&marker P))
+       (&side S))))
+
+(RULE &meeting
+  (&sends *A *S (:P *Q))
+  (&marker (:P Q))
+  (&aside Q S *E1))
+
+(RULE &barred
+  (&aside *Q *S *E1)
+  (&marker (:P E1))
+  (&back (:D *D_back))
+  (neighbor (:P E1) (:D D_back) (:Q *P))
+  (NOT (&marker P)))
+
+;; The flow cell's stream runs along its row. A met marker sends the stream
+;; around itself when the detour's entry is free, or when the stream runs up
+;; to the entry.
+(INIT &enter Propagation
+  (source ((:n (:A F) P))
+    (&src_row *F *P))
+  (edge ((:a A (:P Q)) (:b (:A Q) P))
+    (&meeting *A *S *Q (:E1 *E))
+    (NOT (&marker (:P E)))
+    (&sends (:A Q) S *P))
+  (join ((:a A (:P Q)) (:b (:A A2) (:P P2)) (:c (:A Q) P))
+    (&meeting *A *S *Q (:E1 *E))
+    (&barred Q S (:E1 E) (:P *P2))
+    (&sends (:A *A2) (:P P2))
+    (&sends (:A Q) S *P)))
+
+(RULE &stream
+  (input *P)
+  (NOT (&marker P))
+  (&enter.reached (:n P)))
+
+(ALTS $choice "what a marker inside a detour that cannot be passed does to the detour" $Enter
+  (ALT $Complete
+    (RULE &along
+      (&aside *Q *S (:E1 *E) *M *X)
+      (OR ((= *C E)
+           (= *C2 M))
+          ((= C M)
+           (= C2 X))))
+
+    (RULE &root
+      (&src_row (:P *Q))
+      (&marker (:P Q))
+      (&side *S))
+
+    ;; The markers under a root: it, and the markers inside the detours of those
+    ;; toward the root's side, in turn.
+    (INIT &under Propagation
+      (key ((&root ^Q ^S))
+        (source ((:n Q)))
+        (edge ((:a Q3) (:b Q2))
+          (&detour (:Q *Q3) S (:P *Q2))
+          (&marker (:P Q2)))))
+
+    ;; The stream the detour around Q would carry enters when the entry is free,
+    ;; or when the drawn stream runs up to the entry, and passes each cell of the
+    ;; detour in turn: a cell that holds no marker, or a marker whose own detour
+    ;; is traversable.
+    (INIT &traverse Propagation
+      (source ((:n (:A Q) (:P E)))
+        (&aside *Q (:E1 *E))
+        (NOT (&marker (:P E))))
+      (edge ((:a (:A E) (:P X2)) (:b (:A Q) (:P P2)))
+        (OR ((&barred *Q *S (:E1 *E) *P)
+             (&aside (:Q E) S (:X *X2))
+             (&src_row P)
+             (= *P2 E))
+            ((&along (:Q E) (:C X2) (:C2 P2))
+             (NOT (&marker (:P P2)))
+             (= Q E))))
+      (join ((:a (:A E) (:P X2)) (:b (:A Q0) (:P X0)) (:c (:A Q) (:P P2)))
+        (OR ((&barred *Q *S (:E1 *E) *P)
+             (&aside (:Q E) S (:X *X2))
+             (&sends (:A *Q2) (:S *S0) P)
+             (&under.reached (:key (:Q *Q0) (:S S0)) (:n Q2))
+             (&aside (:Q Q0) (:S S0) (:X *X0))
+             (= *P2 E))
+            ((&along (:Q E) (:S *S2) (:C X2) (:C2 Q0))
+             (&marker (:P Q0))
+             (&aside (:Q Q0) (:S S2) (:X X0))
+             (= Q E)
+             (= P2 Q0)))))
+
+    ;; A detour is drawn when it is under a root whose detour toward that side is
+    ;; traversable: the stream that detour would carry passes its end.
+    (RULE &stream
+      (input *P)
+      (NOT (&marker P))
+      (OR ((&src_row P))
+          ((&sends (:A *Q) *S P)
+           (&under.reached (:key (:Q *Q0) S) (:n Q))
+           (&traverse.reached (:n (:A Q0) (:P *X0)))
+           (&aside (:Q Q0) S (:X X0)))))))
+
+(RULE &output
+  (OR ((&stream *P)
+       (&flow (:C *Col)))
+      ((input P Col)
+       (NOT (&stream P)))))
+
+(OUT (&output ^P ^Col))

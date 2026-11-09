@@ -1,0 +1,7 @@
+;; inputs 83edbd92aea7dcaed94bcab1520cfd1da5e165e9f1e683b5006d222ec9308fe9 programs/solvers/4093f84a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4093f84a
+
+(param &bg Color (0))
+(param &stripe Color (5))
+(param &length (number number) (1 1) (2 2))

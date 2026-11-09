@@ -1,0 +1,84 @@
+;; inputs d06c8ab040836dce8924f1624acd3736cbdd53ff7c6fb023888f72b54136b921 programs/solvers/d90796e8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d90796e8
+
+(INPUT scattered-single-cells "on a background field, the input holds single cells of merge_color, absorbed_color and other colors, with no two cells of one color side by side")
+
+(INPUT pairs-disjoint "each merge_color cell touches at most one absorbed_color cell side by side, and each absorbed_color cell touches at most one merge_color cell side by side")
+
+(OUTPUT merge-pair "a merge_color cell that has an absorbed_color cell as a 4-neighbor takes result_color, and that absorbed_color cell takes background"
+
+  (DET &changed
+    (ex_input *E *P (:Col *Col_in))
+    (ex_output E P (:Col *Col_out))
+    (!= Col_in Col_out))
+
+  (DET &result_color
+    (&changed *E (:Col_out *C))
+    (NOT (ex_input E (:Col C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&changed (:Col_out *C))
+    (NOT (&result_color C)))
+
+  (INIT &objs Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color, a lone merge_color or absorbed_color cell included"
+
+  (DET &absorbed_color
+    (&changed (:Col_in *C) *Col_out)
+    (NOT (&result_color (:C Col_out))))
+
+  (DET &merge_color
+    (&changed (:Col_in *C) *Col_out)
+    (&result_color (:C Col_out)))
+
+  (RULE &partner
+    (input *P *Col)
+    (&merge_color (:C Col))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) (:Col *Col2))
+    (&absorbed_color (:C Col2))))
+
+(ALTS $choice "which merge_color cells with an absorbed_color 4-neighbor merge" $AnyPartner
+  (ALT $IsolatedPair
+    (OUTPUT merge-pair "a 4-connected object of non-background cells merges only when it is exactly one merge_color cell and one absorbed_color cell, and every other object is unchanged"
+      (RULE &crowded
+        (&partner *P *Q)
+        (&objs.component P *Id)
+        (&objs.component (:P *R) Id)
+        (!= R P)
+        (!= R Q)))
+    (RULE &merged
+      (&partner *P *Q)
+      (NOT (&crowded P Q))))
+  (ALT $ExclusivePair
+    (OUTPUT merge-pair "a merge_color cell and an absorbed_color cell merge only when each is the other's one 4-neighbor of the partner color, and a cell with two partners is unchanged")
+    (RULE &merged
+      (&partner *P *Q)
+      (ALL ((&partner P (:Q *Qm))
+            (&partner P (:Q *Q2)))
+           ((= Qm Q2)))
+      (ALL ((&partner (:P *Pm) Q)
+            (&partner (:P *P2) Q))
+           ((= Pm P2))))))
+
+(RULE &merged
+  (&partner *P *Q))
+
+(RULE &painted
+  (OR ((&merged *P)
+       (&result_color (:C *Col)))
+      ((&merged (:Q P))
+       (&background (:C Col)))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

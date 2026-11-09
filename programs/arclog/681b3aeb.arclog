@@ -1,0 +1,59 @@
+;; inputs b8a8c2cc9b6fe21c34319dc09b6305ee7cb2dc62d7fd09e10cc7aa20941f5def programs/solvers/681b3aeb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 681b3aeb
+
+(DET &bg DominantColor)
+
+;; The square the shapes fill.
+(DET &side ConstOutDim)
+
+;; Each color's cells and the box they bound.
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side *N)))
+
+;; A placement lands every cell of the shape in the square.
+(INIT &occ Occurrences
+  (key ((OR ((&bbox.cell (:key ^Col) *P)
+             (&bbox.box (:key Col) *B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel *P_inner)))
+            ((&bbox.cell (:key Col))
+             (&frame.cell P))))
+    (cell (P)
+      (&bbox.cell (:key Col))
+      (&frame.cell *P))
+    (shape ((:P P_inner))
+      (&bbox.cell (:key Col) *P)
+      (&bbox.box (:key Col) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &covers
+  (&occ.occurrence (:key *Col) (:P *B))
+  (&occ.shape (:key Col) (:P *P_inner))
+  (compose (:A B) (:B P_inner) (:C *P)))
+
+(CHOOSE &forcing
+  (for ((&covers ^P))
+    (from (&covers *Col *B P)))
+  (never
+    (&covers *Col *B)
+    (&covers (:Col *Col2) (:B *B2) (:P *P2))
+    (&covers Col B (:P P2))
+    (OR ((!= Col Col2))
+        ((!= B B2)))))
+
+(RULE &output
+  (&forcing *Col *B)
+  (&covers Col B *P))
+
+(OUT (&output ^P ^Col))

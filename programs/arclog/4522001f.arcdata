@@ -1,0 +1,41 @@
+;; inputs 245e940a219b7d335db337ac6e9876fb6cfe407a3b27e0d13b3e76efcd0dc777 programs/solvers/4522001f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4522001f
+
+(param &bg Color (0))
+(param &canvas_dim number (9))
+(param &mark Color (2))
+(param &ink Color (3))
+(param &box.anchor DiagDir (DIAG_TL))
+(param &box.margin (Dir number) (DIR_T 0) (DIR_B 5) (DIR_L 0) (DIR_R 5))
+(param &box.pose2 D4 (D4_ID) (D4_CW) (D4_HT) (D4_CC))
+(param &mask.corner DiagDir (DIAG_TL))
+(param &mask.cell Position
+  (grid
+    (1 1 1 1 _ _ _ _ _)
+    (1 1 1 1 _ _ _ _ _)
+    (1 1 1 1 _ _ _ _ _)
+    (1 1 1 1 _ _ _ _ _)
+    (_ _ _ _ 1 1 1 1 _)
+    (_ _ _ _ 1 1 1 1 _)
+    (_ _ _ _ 1 1 1 1 _)
+    (_ _ _ _ 1 1 1 1 _)
+    (_ _ _ _ _ _ _ _ _)))
+(param &mask.pose3 D4 (D4_ID) (D4_CW) (D4_HT) (D4_CC))
+(param &pair.input (Position Color)
+  (grid
+    (3 3 0)
+    (3 2 0)
+    (0 0 0)))
+(param &pair.output2 (Position Color)
+  (grid
+    (3 3 3 3 0 0 0 0 0)
+    (3 3 3 3 0 0 0 0 0)
+    (3 3 3 3 0 0 0 0 0)
+    (3 3 3 3 0 0 0 0 0)
+    (0 0 0 0 3 3 3 3 0)
+    (0 0 0 0 3 3 3 3 0)
+    (0 0 0 0 3 3 3 3 0)
+    (0 0 0 0 3 3 3 3 0)
+    (0 0 0 0 0 0 0 0 0)))
+(param &pair.pose4 D4 (D4_ID) (D4_CW) (D4_HT) (D4_CC))

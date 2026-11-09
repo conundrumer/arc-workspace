@@ -1,0 +1,15 @@
+;; inputs 4a46998e1fd4b9ba0100dea375878fd6a64cafe709d6afb95f7bfaba583fc538 programs/solvers/20fb2937.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20fb2937
+
+(param &bg Color (7))
+(param &header_dir Dir (DIR_T))
+(param &swatch_dir Dir (DIR_T))
+(param &band_gap number (1))
+(param &tile_count (Axis number) (AXIS_V 2) (AXIS_H 3))
+(param &tile_dim (Axis number) (AXIS_V 3) (AXIS_H 3))
+(param &shape Offset
+  (grid
+    (1 1 1)
+    (1 @1 1)
+    (1 1 1)))

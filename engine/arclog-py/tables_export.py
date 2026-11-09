@@ -10,7 +10,7 @@ under `tasks/` holds one slot; the check and the writes of a replayed task run i
 `.arcdata` file first, then the others by the one-thread seconds each took in that export (see `parts/<k>.tasks.txt`: the line's seconds times its units), longest first. A task whose one-thread seconds would end past half the mean load of a worker (the summed one-thread seconds of the
 tasks to replay over N) is replayed in `units` units on `units` engine threads, the least count (at most N and at most the cases the previous export
 holds for the task) at which its expected unit time, `1 + (units - 1) / 14` times its seconds over `units`, is under that bound; any other
-task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `work/arclog/gen` `.arclog` and `.arcdata`, its files under `work/arclog/gen/cases/<task>/` with their names, its task file, every file of
+task is replayed in one unit. The cut of a task into units is a function of the task and its count (see `arclog.corpus_tables`). With `--previous`, each task whose key (the sha256 of its `programs/arclog` `.arclog` and `.arcdata`, its files under `programs/arclog/cases/<task>/` with their names, its task file, every file of
 the installed `arclog` package, the versions of Python, numpy, pandas and pyarrow, `export_rows.py` and the text of `settings.json`) equals the key in that export's
 `tasks.txt` lines is not replayed: its rows, values (hard-linked) and fault lines are those of that export,
 written as parts of the out dir. Its check lines are those of that export where the sha256 of `export_checks.py` (the checks digest) equals the one in its `tasks.txt` line,
@@ -173,13 +173,14 @@ import pyarrow
 import arclog
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "src"))
 from arclog_convert.readback import read_checked
+from engine import checkout
 from engine.package_fingerprint import digest_files, package_files as installed_package_files
 import export_checks
 import export_rows
 from export_rows import PARTS
 
 ROOT = os.path.dirname(os.path.abspath(__file__)) + "/../.."
-CORPUS, TASKS = f"{ROOT}/work/arclog/gen", f"{ROOT}/data/tasks"
+CORPUS, TASKS = str(checkout.arclog()), f"{ROOT}/data/tasks"
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROWS, CHECKER = f"{HERE}/export_rows.py", f"{HERE}/export_checks.py"
 

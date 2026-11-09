@@ -1,0 +1,240 @@
+;; inputs aa9bb3e259af39b836c9cb8b99f0ad918c11db081cd26e6c4351dbfc192edab2 programs/solvers/db0c5428.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db0c5428
+
+(INPUT one-square "on a field of color bg (8), one square of side 3 × block (3), which holds no bg cell outside its center block.")
+
+(INPUT block-grid "the square divides into 3×3 blocks of side block, and its center block (the hole) is all bg.")
+
+(INPUT d4-symmetric "the square is unchanged under each element of D4.")
+
+(INPUT room "the square stands at least block cells from each edge of the grid.")
+
+(OUTPUT keep-square "the eight outer blocks of the square stay as they are.")
+
+(OUTPUT copy-across "for each of the eight directions d, a copy of the block at -d from the hole, unturned, is drawn at the block place 2d from the hole.")
+
+(OUTPUT fill-hole "each hole cell at offset d from the hole's center cell takes the color of the input cell at offset 2d from that center, and the center cell takes the color of the frame cells at offsets (±1, ±2) and (±2, ±1)."
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; the field: the commonest color of every train input
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &bg_defect
+    (&commonest.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET &bg_determined
+    (&commonest.maximal (:t *C))
+    (NOT (&bg_defect C)))
+
+  (DET_OR_RULE &bg DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&bg_defect C)))
+
+  (INIT &square BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (INIT &hole BoundingBox
+    (key ((ex_output ^E))
+      (cell (P)
+        (ex_input E *P *Col)
+        (&bg_determined (:C Col))
+        (&square.box E *B)
+        (inside (:A P) B))))
+
+  (DET &hole_side
+    (&hole.box (:key *E) (:B *H))
+    (ex_input E *P)
+    (box_extent (:B H) P *A (:N *K)))
+
+  (DET &block_defect
+    (&hole_side *K)
+    (ex_output *E)
+    (axis_elem *A)
+    (NOT (&hole_side E A K)))
+
+  (DET &block
+    (&hole_side *K)
+    (NOT (&block_defect K)))
+
+  (RULE &hole_box
+    (&square.box (:B *B2))
+    (&block *K)
+    (uniform_inset K (:B *I))
+    (compose (:A B2) (:B I) (:C *B)))
+
+  (RULE &hole2
+    (input *P)
+    (&hole_box (:B *H))
+    (inside (:A P) (:B H)))
+
+  (RULE &in_square
+    (input *P)
+    (&square.box *B)
+    (inside (:A P) B))
+
+  (RULE &outer
+    (input *P *Col)
+    (&in_square P)
+    (NOT (&hole2 P)))
+
+  (INIT &outer_mode_count Cardinality
+    (key ((&outer *P ^Col))
+      (member ((:m P))
+        (&outer *P Col))))
+
+  (INIT &outer_mode Order
+    (member ((:t Col))
+      (&outer_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&outer_mode_count.size (:key *Col) *N))))
+
+(OUTPUT rest-background "every other cell is bg."
+
+  (RULE &hole_center
+    (&hole_box (:B *H))
+    (&hole2 *P)
+    (inside (:A P) (:B H))
+    (relative (:Base H) (:X P) (:X_rel *P_rel))
+    (centered (:P P_rel)))
+
+  (RULE &block2
+    (&hole_box (:B *H))
+    (&block *K)
+    (jump_offset *D K *V)
+    (compose (:A H) (:B V) (:C *B1))
+    (compose (:A B1) (:B V) (:C *B2)))
+
+  (RULE &place
+    (&block2 *B1 *B2)
+    (input (:P *Q))
+    (inside (:A Q) (:B B1))
+    (relative (:Base B1) (:X Q) (:X_rel *P_rel))
+    (compose (:A B2) (:B P_rel) (:C *P)))
+
+  (RULE &hole_ring
+    (&hole_center (:P *C))
+    (neighbor (:P C) *D (:Q *P))
+    (neighbor P D *Q)
+    (input (:P Q) *Col))
+
+  (RULE &copy
+    (&block2 *D *B2)
+    (dir8_opposite D (:D2 *D_src))
+    (&block2 (:D D_src) *B1)
+    (input (:P *Q) *Col)
+    (inside (:A Q) (:B B1))
+    (relative (:Base B1) (:X Q) (:X_rel *P_rel))
+    (compose (:A B2) (:B P_rel) (:C *P)))
+
+  (RULE &half_turn
+    (perp (:A *A1) *A2)
+    (axis_inversion (:A A1) (:T *F1))
+    (axis_inversion (:A A2) (:T *F2))
+    (d4_compose (:A F1) (:B F2) (:C *M)))
+
+  (RULE &center_color
+    (&hole_center (:P *C))
+    (corner_dir (:C *Dg) *D)
+    (neighbor (:P C) (:D Dg) (:Q *P))
+    (neighbor P D *Q)
+    (input (:P Q) *Col))
+
+  (RULE &span_cell
+    (OR ((input *P))
+        ((&place P))))
+
+  (INIT &grown BoundingBox
+    (cell (P)
+      (&span_cell *P))))
+
+(ALTS $copy "what the block place at 2d from the hole receives" $Across
+  (ALT $MirrorOut
+    (OUTPUT copy-across "the block place at 2d receives the block at d mirrored across the side or the corner it faces: flipped on the axis of a cardinal d, on both axes for a corner d."
+      (RULE &mirror
+        (OR ((axis_of *D *A)
+             (axis_inversion A (:T *M)))
+            ((diag_dir_elem D)
+             (&half_turn M))))
+
+      (RULE &copy
+        (&block2 *D *B1 *B2)
+        (&mirror D *M)
+        (input (:P *Q) *Col)
+        (inside (:A Q) (:B B1))
+        (relative (:Base B1) (:X Q) (:X_rel *Q_rel))
+        (apply (:D M) (:P Q_rel) (:P_out *P_rel))
+        (compose (:A B2) (:B P_rel) (:C *P)))))
+  (ALT $HalfTurnOut
+    (OUTPUT copy-across "the block place at 2d receives the block at d turned a half turn."
+      (RULE &copy
+        (&block2 *B1 *B2)
+        (&half_turn *M)
+        (input (:P *Q) *Col)
+        (inside (:A Q) (:B B1))
+        (relative (:Base B1) (:X Q) (:X_rel *Q_rel))
+        (apply (:D M) (:P Q_rel) (:P_out *P_rel))
+        (compose (:A B2) (:B P_rel) (:C *P))))))
+
+(ALTS $center "the color of the hole's center cell" $KnightFrame
+  (ALT $CenterCommon
+    (OUTPUT fill-hole "the center cell takes the commonest color of the square's eight outer blocks; undefined where two colors tie for commonest."
+      (RULE &center_color
+        (&outer_mode.maximal (:t *Col))))))
+
+(ALTS $overhang "what happens to the cells of a copy that fall past the grid edge" $Clip
+  (ALT $GrowFrame
+    (OUTPUT grow-frame "the output frame extends past each edge by the copy rows or columns that fall past it, and the new cells take the rules' colors."
+      (RULE &grown_along
+        (&span_cell *P)
+        (split P *A *Along))
+
+      (RULE &grown_across
+        (&span_cell *P)
+        (split P *A *Across))
+
+      (RULE &frame_cell
+        (&grown_along *A (:Along *Al))
+        (&grown_across A (:Across *Ac))
+        (compose (:A Al) (:B Ac) (:C *P))
+        (&grown.box (:B *G))
+        (inside (:A P) (:B G))
+        (relative (:Base G) (:X P) (:X_rel *P_out))))
+    (RULE &output
+      (&frame_cell (:P *P2) (:P_out *P))
+      (OR ((&outer (:P P2) *Col))
+          ((&hole_ring (:P P2) Col))
+          ((&hole_center (:P P2))
+           (&center_color Col))
+          ((&copy (:P P2) Col))
+          ((NOT (&in_square (:P P2)))
+           (NOT (&place (:P P2)))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (input *P)
+  (OR ((&outer P *Col))
+      ((&hole_ring P Col))
+      ((&hole_center P)
+       (&center_color Col))
+      ((&copy P Col))
+      ((NOT (&in_square P))
+       (NOT (&place P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

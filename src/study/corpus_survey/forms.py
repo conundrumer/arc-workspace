@@ -217,7 +217,7 @@ def arcdata_section() -> str:
             ("top-level heads", named(tops.most_common())),
         ]),
         mctx("A `grid` value of a param counts one row per cell that is not `_`."),
-        ran(f"the {len(c.stems)} `.arcdata` files of `work/arclog/gen/`"))
+        ran(f"the {len(c.stems)} `.arcdata` files of `programs/arclog/`"))
 
 
 def starred(items_: list[Node]) -> frozenset[str]:

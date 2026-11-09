@@ -1,0 +1,185 @@
+;; inputs 568116891ac55cd798cfd48289badcc2d5396a9714b761cf4814b9acd2d12c3a programs/solvers/f5aa3634.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f5aa3634
+
+(INPUT scattered-objects "on a field of &bg, the non-bg cells form separate objects, each a 4-connected group of cells of several colors, with bg between any two objects."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &objects8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT one-repeated-object "exactly one object occurs twice, with the same cells and the same color at each cell up to translation; every other object occurs once."
+
+  (INIT &objects4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (RULE &obj
+    (&objects4.component *P (:Id *O)))
+
+  (INIT &obj_box BoundingBox
+    (key ((&obj ^O *P))
+      (cell (P)
+        (&obj O *P))))
+
+  (RULE &cell_rel
+    (&obj *O (:P *P2))
+    (input (:P P2) *Col)
+    (&obj_box.box (:key O) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &same_cells Inclusion
+    (pattern ((:pattern O) (:m P Col))
+      (&cell_rel *O *P *Col))
+    (observed ((:observed O) (:m P Col))
+      (&cell_rel *O *P *Col)))
+
+  (RULE &alike
+    (&same_cells.equal (:observed *O) (:pattern *O2)))
+
+  (INIT &class_size Cardinality
+    (key ((&alike (:O ^O1) *O2))
+      (member ((:m O2))
+        (&alike (:O O1) *O2)))))
+
+(OUTPUT crop-repeated "the output is the bounding box of the repeated object, with each of its cells in its color and every other cell of the box bg."
+
+  (RULE &candidate
+    (&alike *O *O2)
+    (!= O O2))
+
+  (RULE &ambiguous
+    (&candidate (:O *O1))
+    (&candidate (:O *O2))
+    (NOT (&alike (:O O1) O2)))
+
+  (RULE &shown
+    (&candidate *O)
+    (NOT (&ambiguous)))
+
+  (RULE &member
+    (&shown *O)
+    (ONE)))
+
+(ALTS $adjacency "how objects are connected" $Adjacency4
+  (ALT $Adjacency8
+    (INPUT scattered-objects "objects are 8-connected, so a cell that meets its object at a corner only belongs to it. Undefined where no class, or several classes, repeat."
+      (RULE &obj
+        (&objects8.component *P (:Id *O))))))
+
+(ALTS $color_match "what two objects must share to be the same" $WithColors
+  (ALT $ShapeOnly
+    (INPUT one-repeated-object "objects are classed by their cell set alone, whatever their colors."
+      (INIT &same_shape Inclusion
+        (pattern ((:pattern O) (:m P))
+          (&cell_rel *O *P))
+        (observed ((:observed O) (:m P))
+          (&cell_rel *O *P)))
+
+      (RULE &alike
+        (&same_shape.equal (:observed *O) (:pattern *O2))))
+    (OUTPUT crop-repeated "the output is the distinct crops of the repeated class's members. Undefined where no class, or several classes, repeat.")
+    (ALT $Congruent
+      (OUTPUT crop-repeated "the output is the distinct crops of the repeated class's members. Undefined where no class, or several classes, repeat."
+        (RULE &alike
+          (&congruent_shape.equal (:observed *O2) (:pattern *O)))
+        (INIT &congruent_shape Inclusion
+          (pattern ((:pattern O D) (:m Q))
+            (&posed *O *D (:P *Q)))
+          (observed ((:observed O) (:m P))
+            (&cell_rel *O *P)))))))
+
+(ALTS $transform_match "the moves under which two objects are the same" $Translation
+  (ALT $Congruent
+    (INPUT one-repeated-object "objects are classed up to a D4 transform and a translation."
+      (RULE &posed
+        (&cell_rel *O (:P *P2) *Col)
+        (apply *D (:P P2) (:P_out *P)))
+
+      (INIT &congruent_cells Inclusion
+        (pattern ((:pattern O D) (:m (:P Q) Col))
+          (&posed *O *D (:P *Q) *Col))
+        (observed ((:observed O) (:m P Col))
+          (&cell_rel *O *P *Col)))
+
+      ;; o1 in some pose is o2
+      (RULE &alike
+        (&congruent_cells.equal (:observed *O2) (:pattern *O))))
+    (OUTPUT crop-repeated "the output is the distinct crops of the repeated class's members. Undefined where no class, or several classes, repeat.")))
+
+(ALTS $selection "which class of objects the output shows" $Repeated
+  (ALT $MostFrequent
+    (INPUT one-repeated-object "the class with the most members is shown. Undefined on a tie for the most members."
+      (INIT &size_extremes Order
+        (member ((:t N))
+          (&class_size.size *N))
+        (score ((:t N) (:S N))
+          (&class_size.size *N)))
+
+      (RULE &candidate
+        (&class_size.size (:key (:O1 *O)) *N)
+        (&size_extremes.maximal (:t N)))))
+  (ALT $CopyCount
+    (INPUT one-repeated-object "the class of exactly &copies members is shown. Undefined where no class, or several classes, have that many members."
+      ;; the places where the train output stands in its input, background included
+      (INIT &copy_sites Occurrences
+        (key ((OR ((ex_output ^E)
+                   (ex_input E *P *Col))
+                  ((ex_output E P Col))))
+          (cell (P (:v Col))
+            (ex_output E)
+            (ex_input E *P *Col))
+          (shape (P (:v Col))
+            (ex_output E *P *Col))))
+
+      (INIT &copy_count Cardinality
+        (key ((OR ((&copy_sites.occurrence (:key ^E) *P))
+                  ((ex_output E))))
+          (member ((:m P))
+            (&copy_sites.occurrence (:key E) *P))
+          (domain ()
+            (ex_output E))))
+
+      (INIT &agreed Singleton
+        (member ((:v N))
+          (&copy_count.size *N)))
+
+      (DET_OR_RULE &copies "the member count of the shown class" TileCount
+        (&agreed.value (:v *N)))
+
+      (RULE &candidate
+        (&class_size.size (:key (:O1 *O)) *N)
+        (&copies N)))))
+
+(ALTS $output_frame "what fills the output box" $ObjectCells
+  (ALT $CropRegion
+    (OUTPUT crop-repeated "the output is the input's subgrid at each member's bounding box, as the set of distinct subgrids. Undefined where the concept is.")
+    (RULE &output
+      (&member *O)
+      (&obj_box.box (:key O) *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))))
+
+(RULE &output
+  (&member *O)
+  (&obj_box.box (:key O) *B)
+  (input (:P *P2) (:Col *C))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((NOT (&obj O (:P P2)))
+       (&bg (:C *Col)))
+      ((&obj O (:P P2))
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

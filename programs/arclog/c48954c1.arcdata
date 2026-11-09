@@ -1,0 +1,10 @@
+;; inputs 608d262e6c82b38eb3b48c0874f748edda69c0e84404a49193f237e8524a1a14 programs/solvers/c48954c1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c48954c1
+
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_HT D4_TB D4_HT)
+    (D4_LR D4_ID D4_LR)
+    (D4_HT D4_TB D4_HT)))
+(param &arr_dim number (3))

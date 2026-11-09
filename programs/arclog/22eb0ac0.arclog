@@ -1,0 +1,69 @@
+;; inputs d6c491456689eea4023640ca9d83047d9dcb4c7dc7931684cf4e8b1a5ffbfb33 programs/solvers/22eb0ac0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22eb0ac0
+
+(DET &axis AxisDomain)
+
+(RULE &edge_match
+  (&axis *A)
+  (axis_of *D A)
+  (opposite D (:Opp *D2))
+  (input (:P *P1) *Col)
+  (margin (:B P1) D (:K 0))
+  (split (:P P1) A (:Across *Ac))
+  (input (:P *P2) Col)
+  (margin (:B P2) (:D D2) (:K 0))
+  (same_line A (:P P1) (:Q P2)))
+
+(ALTS $choice "which pair of cells counts, and how far its color reaches" $Flood
+  (ALT $Span
+    (DET &bg DominantColor)
+
+    (RULE &spans_mark
+      (input *P (:Col *Key))
+      (NOT (&bg (:C Key))))
+
+    (RULE &spans_axis
+      (&spans_mark *Key)
+      (&axis *A))
+
+    (INIT &spans Ray
+      (key ((OR ((input (:P *Q) ^Col)
+                 (NOT (&bg (:C Col))))
+                ((&spans_axis (:Key Col) *A)
+                 (axis4_of *D A))
+                ((&spans_axis (:Key Col))
+                 (input *P))))
+        (source ((:P Q))
+          (input (:P *Q) Col)
+          (NOT (&bg (:C Col))))
+        (node (P)
+          (&spans_axis (:Key Col))
+          (input *P))
+        (dir (D)
+          (&spans_axis (:Key Col) *A)
+          (axis4_of *D A))))
+
+    (RULE &spans_between
+      (&spans_mark *Key)
+      (input *P)
+      (&spans_axis Key *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&spans.ray (:key (:Col Key)) P D)
+      (&spans.ray (:key (:Col Key)) P (:D O)))
+
+    (RULE &output
+      (OR ((&spans_between (:Key *Col) *P))
+          ((input P Col)
+           (NOT (&spans_between P)))))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (&axis *A)
+  (split P A (:Across *Ac))
+  (OR ((&edge_match Ac *Col))
+      ((NOT (&edge_match Ac))
+       (= Col Col2))))
+
+(OUT (&output ^P ^Col))

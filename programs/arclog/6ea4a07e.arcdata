@@ -1,0 +1,6 @@
+;; inputs 29859c0ec2677066a9250e67d40af6a007c3d1392ae1a027ec1e6b0e96821bd1 programs/solvers/6ea4a07e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ea4a07e
+
+(param &bg Color (0))
+(param &recolor (Color Color) (3 1) (5 4) (8 2))

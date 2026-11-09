@@ -1,0 +1,175 @@
+;; inputs f1fa9d91286e7119bdfe725f50bc5130b32739c1f997a47e4e43cad924c1a93b programs/solvers/f3e62deb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f3e62deb
+
+(INPUT one-object "the grid holds one object of a single color on a field of background (0), and nothing else."
+
+  (DET &partial
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&partial C)))
+
+  (RULE &content
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &objects Connectivity
+    (node (P)
+      (&content *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &object_color Singleton
+    (key ((&objects.component *P (:Id ^O))
+          (&content P *Col))
+      (member ((:v Col))
+        (&objects.component *P (:Id O))
+        (&content P *Col)))))
+
+(INPUT object-shape "the object is a 3×3 ring whose center is background, placed clear of every edge: 1 1 1 1 0 1 1 1 1")
+
+(OUTPUT slide-to-edge "the object moves rigidly, unchanged, toward the edge that direction_of_color gives its color, until it touches that edge; every other cell is background."
+
+  (DET &background_determined
+    (ex_input (:Col *C))
+    (NOT (&partial C)))
+
+  (DET &ink
+    (ex_input *E (:Col *C))
+    (NOT (&background_determined C)))
+
+  (DET &seen
+    (&ink *E *C)
+    (ex_output E *P (:Col C))
+    (margin (:B P) *D (:K 0)))
+
+  (DET &unseen
+    (&ink *C)
+    (NOT (&seen C)))
+
+  (DET &unseen_tie
+    (&unseen *C)
+    (&unseen (:C *Col2))
+    (!= C Col2))
+
+  (DET &unused
+    (dir_elem *D)
+    (NOT (&seen D)))
+
+  (DET &unused_tie
+    (&unused *D)
+    (&unused (:D *D2))
+    (!= D D2))
+
+  (DET &direction_of_color
+    (OR ((&seen *C *D))
+        ((&unseen C)
+         (NOT (&unseen_tie C))
+         (&unused D)
+         (NOT (&unused_tie D)))))
+
+  ;; Each color class under one id.
+  (INIT &class_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&content *Col)))
+
+  (INIT &one_color Singleton
+    (member ((:v Col))
+      (&content *Col)))
+
+  (RULE &body
+    (&one_color.value (:v *Col))
+    (&content *P Col)
+    (&class_id.class (:a Col) (:Id *B)))
+
+  (RULE &shape
+    (&body *Col *B *P))
+
+  (INIT &fall Distance
+    (key ((&shape ^Col))
+      (weight ((:a B2) (:b B) (:W K))
+        (&shape Col *B *P)
+        (&direction_of_color (:C Col) *D)
+        (&shape Col (:B *B2) (:P *P2))
+        (!= B B2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n B) K)
+        (&shape Col *B *P)
+        (&direction_of_color (:C Col) *D)
+        (margin (:B P) D *K))))
+
+  (INIT &box BoundingBox
+    (key ((&body ^B *P))
+      (cell (P)
+        (&body B *P)))))
+
+(ALTS $m "What moves as one rigid body." $Whole
+  (ALT $PerObject
+    (INPUT one-object "the grid holds objects of one color each, the 8-connected parts of the content; undefined where an object holds two colors.")
+    (OUTPUT slide-to-edge "each object slides toward its own color's heading; objects with one heading fall together, each stopping at the edge or at an object that has already stopped; undefined where objects with different headings land on a common cell."
+      (RULE &body
+        (&objects.component *P (:Id *B))
+        (&object_color.value (:key (:O B)) (:v *Col)))))
+  (ALT $PerColor
+    (INPUT one-object "each color class of the content is one body.")
+    (OUTPUT slide-to-edge "each color class slides toward its color's heading until it touches the edge; undefined where two classes land on a common cell."
+      (RULE &body
+        (&content *P *Col)
+        (&class_id.class (:a Col) (:Id *B))))))
+
+(ALTS $a "How the body arrives." $Unchanged
+  (ALT $Reflected
+    (OUTPUT slide-to-edge "the body arrives mirrored within its bounding box across the axis perpendicular to its heading."
+      (RULE &shape
+        (&body *Col *B (:P *P3))
+        (&box.box (:key B) (:B *Bx))
+        (&direction_of_color (:C Col) *D)
+        (axis_of D *A)
+        (axis_inversion A (:T *F))
+        (inside (:A P3) (:B Bx))
+        (relative (:Base Bx) (:X P3) (:X_rel *P_rel))
+        (apply (:D F) (:P P_rel) (:P_out *P_rel2))
+        (compose (:A Bx) (:B P_rel2) (:C *P))))))
+
+(RULE &fall_dir
+  (&shape (:Col *Key))
+  (&direction_of_color (:C Key) *D))
+
+(RULE &fall_travel_full
+  (&fall.distance (:key (:Col *V0)) (:n *V1) *K)
+  (&fall_dir (:Key V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &landed
+  (&fall_travel_full (:V0 *Col) (:V1 *B) (:V2 *V))
+  (&shape Col B (:P *P3))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &carried
+  (&body *Col *B *P)
+  (&fall_travel_full (:V0 Col) (:V1 B)))
+
+(RULE &lost
+  (&content *P)
+  (NOT (&carried P)))
+
+(RULE &moved
+  (&landed)
+  (NOT (&lost)))
+
+(RULE &output
+  (OR ((&moved)
+       (&landed *P *Col))
+      ((&moved)
+       (input P)
+       (NOT (&landed P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

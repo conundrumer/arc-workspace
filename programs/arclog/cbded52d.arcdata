@@ -1,0 +1,8 @@
+;; inputs 4ea9937f6fb429518bafa79597122fe8f469a49e7e4e1a8a2647a6c08e40b69a programs/solvers/cbded52d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cbded52d
+
+(param &gap number (1))
+(param &base Color (1))
+(param &arr number (3))
+(param &tile_dim number (2))

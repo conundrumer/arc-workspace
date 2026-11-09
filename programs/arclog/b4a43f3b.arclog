@@ -1,0 +1,213 @@
+;; inputs fa59edf44425557acde83d8c394fb91890ccb7326b671fd40f1dcb5a4c9f88b2 programs/solvers/b4a43f3b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b4a43f3b
+
+(INPUT two-halves "the input is two equal halves on one axis, on each side of its middle line, and that line is a full line of 5")
+
+(INPUT scaled-picture "the half on &pattern_side is a picture scaled up by &pattern_scale, so each picture cell is a block of one color, &background included, &pattern_scale cells on a side"
+
+  (DET_OR_RULE &pattern_scale "A block's side." SepTileCount)
+
+  ;; The side of the dividing line that holds the picture; the mask is on the opposite side.
+  (DET &pattern_side DirDomain)
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT mask "the other half is a mask: cells of 2 on &background, one input cell per mask cell")
+
+(INPUT half-extent "each half is 6×6, so the picture is 6 / &pattern_scale on a side")
+
+(OUTPUT picture-down "the picture is the half on &pattern_side, read at one cell per block of &pattern_scale cells on a side"
+
+  (RULE &divider
+    (input *P)
+    (split P *A (:Along *L))
+    (axis_of *D A)
+    (dist_pair (:P L) D *K (:K2 K)))
+
+  (RULE &half_cell
+    (&divider *A *L)
+    (axis_of (:D *H) A)
+    (input *P)
+    (nearer (:D H) P (:Q L)))
+
+  (INIT &half_box BoundingBox
+    (key ((&half_cell (:H ^D) *P))
+      (cell (P)
+        (&half_cell (:H D) *P))))
+
+  (RULE &half_px
+    (&half_box.box (:key (:D *H)) *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &block_division Division
+    (key ((&pattern_scale (:N ^K)))
+      (side (A K)
+        (axis_elem *A)))
+    (cell (P)
+      (&half_px (:P_inner *P))))
+
+  (RULE &block
+    (&half_px *H *P_inner)
+    (&block_division.tile (:key *K) (:P P_inner) (:P_outer *Q)))
+
+  (RULE &broken
+    (&block *K *H (:P_inner *P1) *Q)
+    (&half_px H (:P_inner P1) (:Col *C1))
+    (&block K H (:P_inner *P2) Q)
+    (&half_px H (:P_inner P2) (:Col *C2))
+    (!= C1 C2))
+
+  ;; The colors of each half's non-background cells.
+  (INIT &half_ink Singleton
+    (key ((&half_px (:H ^D) *Col)
+          (NOT (&background (:C Col))))
+      (member ((:v Col))
+        (&half_px (:H D) *Col)
+        (NOT (&background (:C Col)))))))
+
+(OUTPUT output-size "the output is the mask's extent times the picture's extent on each axis")
+
+(OUTPUT stamp-at-marks "the output is cut into a tile per mask cell, each the size of the picture; the tile of a marked mask cell holds the picture, and the tile of an unmarked mask cell is &background"
+
+  ;; The axis the two halves lie along.
+  (DET &halves_axis AxisDomain))
+
+(ALTS $side "which half holds the picture" $StoredSide
+  (ALT $PictureByBlocks
+    (OUTPUT picture-down "of the two halves along &halves_axis, the picture is the one in blocks of one color, more than one cell each, and the mask is the other; undefined where both halves or neither half is in blocks"
+      (RULE &blocky
+        (&block *K *H (:P_inner *P1) *Q)
+        (&block K H (:P_inner *P2) Q)
+        (!= P1 P2)
+        (NOT (&broken K H))))
+    (RULE &picture_side
+      (&halves_axis *A)
+      (axis_of *D A)
+      (opposite D (:Opp *D2))
+      (&blocky (:H D))
+      (NOT (&blocky (:H D2)))))
+  (ALT $PictureByColors
+    (OUTPUT picture-down "of the two halves along &halves_axis, the mask is the one whose non-background cells have one color, and the picture is the other; undefined where both halves or neither half has one color")
+    (RULE &picture_side
+      (&halves_axis *A)
+      (axis_of *D A)
+      (opposite D (:Opp *D2))
+      (&half_ink.value (:key (:D D2)))
+      (NOT (&half_ink.value (:key D))))))
+
+(ALTS $scale "what fixes the block side the picture is read at" $StoredScale
+  (ALT $ScaleFromBlocks
+    (OUTPUT picture-down "the block side is the largest side such that the picture's half is in aligned square blocks of one color with that side"
+      (RULE &side_cand
+        (&half_px *H (:P_inner *P))
+        (axis_elem *A)
+        (OR ((sub_extent P A *K))
+            ((frame_extent P A (:N K)))))
+
+      (INIT &block_division2 Division
+        (key ((&side_cand ^H ^K))
+          (cell (P)
+            (&half_px H (:P_inner *P)))
+          (side (A K)
+            (axis_elem *A))))
+
+      (RULE &block
+        (&block_division2.tile (:key *K *H) (:P *P_inner) (:P_outer *Q)))
+
+      ;; The largest block side whose cut is whole and puts one color in each block.
+      (INIT &sides Order
+        (key ((&block *K (:H ^D))
+              (NOT (&broken K (:H D))))
+          (member ((:t K))
+            (&block *K (:H D))
+            (NOT (&broken K (:H D))))
+          (score ((:t K) (:S K))
+            (&block *K (:H D))
+            (NOT (&broken K (:H D)))))))
+    (RULE &cut
+      (&sides.maximal (:key (:D *H)) (:t *K))))
+  (ALT $StoredPictureExtent
+    (OUTPUT picture-down "the picture is &picture_extent on a side, so a block's side is the half's extent over it; undefined where the half's extent is not a multiple of it"
+      ;; The picture's side.
+      (DET &picture_extent ScaleRatio)
+
+      (INIT &block_division3 Division
+        (key ((&picture_extent (:K ^N)))
+          (parts (A N)
+            (axis_elem *A)))
+        (cell (P)
+          (&half_px (:P_inner *P))))
+
+      (RULE &block
+        (&half_px *H *P_inner)
+        (&block_division3.tile (:key (:N *K)) (:P P_inner) (:P_outer *Q))))))
+
+(ALTS $mark "which mask cells take a copy of the picture" $NotBackground
+  (ALT $MarkByColor
+    (OUTPUT stamp-at-marks "a mask cell is marked when it is &mask_color"
+      (DET &mask_color SharedColor))
+    (RULE &marked
+      (&half_px *H *P_inner *Col)
+      (&mask_color (:C Col)))))
+
+(ALTS $split "where the input splits into its halves" $MiddleLine
+  (ALT $SplitAtSeparator
+    (INPUT two-halves "the input is two halves on one axis, on each side of the one full line of &separator_color; undefined where no such line or several exist"
+      (DET &separator_color VanishedColor)
+
+      (RULE &sep_line
+        (input *P *Col)
+        (&separator_color (:C Col))
+        (split P *A (:Along *L))
+        (ALL ((input (:P *Pm) (:Col *Colm))
+              (split (:P Pm) A (:Along L)))
+             ((&separator_color (:C Colm)))))
+
+      (RULE &divider
+        (&sep_line *A *L)
+        (ALL ((&sep_line A (:L *L1))
+              (&sep_line A (:L *L2)))
+             ((= L1 L2)))))))
+
+(RULE &cut
+  (&block *K *H))
+
+(RULE &picture
+  (&cut *K *H)
+  (&block K H (:P_inner *P) *Q)
+  (&half_px H (:P_inner P) *Col))
+
+(RULE &picture_side
+  (&pattern_side *D))
+
+(INIT &output_tiling Tiling
+  (outer ((:P M))
+    (&picture_side *D)
+    (opposite D (:Opp *D2))
+    (&half_px (:H D2) (:P_inner *M)))
+  (inner ((:P Q))
+    (&picture_side *D)
+    (opposite D)
+    (&picture (:H D) *Q)))
+
+(RULE &marked
+  (&half_px *H *P_inner *Col)
+  (NOT (&background (:C Col))))
+
+;; Each mask cell's tile: the picture where the cell is marked, and
+;; &background where it is not.
+(RULE &output
+  (&picture_side *D)
+  (opposite D (:Opp *D2))
+  (&half_px (:H D2) (:P_inner *M))
+  (&picture (:H D) *Q (:Col *Col_pic))
+  (&output_tiling.cell (:P_outer M) (:P_inner Q) *P)
+  (OR ((NOT (&marked (:H D2) (:P_inner M)))
+       (&background (:C *Col)))
+      ((&marked (:H D2) (:P_inner M))
+       (= Col Col_pic))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,177 @@
+;; inputs 98a86e162fc818da143322b92231cb4de99ca89b18210400083fda81dffaa9b2 programs/solvers/cd3c21df.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cd3c21df
+
+(INPUT objects-on-background "the input holds objects, each a 4-connected group of cells not of color background (0), and no two objects touch, even at a corner"
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (DET &outvoted
+    (ex_input *Col)
+    (ex_output *E)
+    (NOT (&palette.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&outvoted (:Col C))))
+
+  (INIT &comp8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT one-unique-object "exactly one object has no other object of the same shape and colors, up to translation"
+
+  (INIT &comp4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (RULE &obj
+    (&comp4.component *P (:Id *O))
+    (input P *Col))
+
+  (INIT &box BoundingBox
+    (key ((&obj (:O ^Id) *P))
+      (cell (P)
+        (&obj (:O Id) *P))))
+
+  (RULE &shape
+    (&obj *O (:P *P2) *Col)
+    (&box.box (:key (:Id O)) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &turned Inclusion
+    (pattern ((:pattern O) (:m P Col))
+      (&shape *O *P *Col))
+    (observed ((:observed (:Id O) D) (:m (:P Q) Col))
+      (&shape *O *P *Col)
+      (apply *D P (:P_out *Q))))
+
+  (INIT &palette2 Inclusion
+    (pattern ((:pattern O) (:m Col))
+      (&obj *O *Col))
+    (observed ((:observed O) (:m Col))
+      (&obj *O *Col)))
+
+  (INIT &footprint Inclusion
+    (pattern ((:pattern O) (:m P))
+      (&shape *O *P))
+    (observed ((:observed O) (:m P))
+      (&shape *O *P))))
+
+(INPUT others-repeat "each other object has at least one other object of the same shape and colors, up to translation")
+
+(OUTPUT crop-unique "the output is the bounding box of the unique object, with its cells in their colors and the other cells of the box in color background"
+
+  (RULE &peer
+    (&obj *O)
+    (&obj (:O *O2))
+    (!= O O2))
+
+  (INIT &same Inclusion
+    (pattern ((:pattern O) (:m P Col))
+      (&shape *O *P *Col))
+    (observed ((:observed O) (:m P Col))
+      (&shape *O *P *Col)))
+
+  (RULE &copy
+    (&same.equal (:observed *O) (:pattern *O2))
+    (&peer O O2))
+
+  (RULE &candidate
+    (&obj *O)
+    (NOT (&copy O)))
+
+  (RULE &rival
+    (&candidate *O)
+    (&peer O *O2)
+    (&candidate (:O O2)))
+
+  (RULE &odd
+    (&candidate *O)
+    (NOT (&rival O))))
+
+(ALTS $odd "which object is the odd one" $Unmatched
+  (ALT $Unmatched
+    (ALTS $copy "what makes two objects copies" $Translate
+      (ALT $CongruentCopy
+        (INPUT one-unique-object "copies are the same shape and colors up to a D4 transform; undefined where no object or more than one object is unmatched"
+          (RULE &copy
+            (&turned.equal (:observed (:Id *O)) (:pattern *O2))
+            (&peer O O2))))
+      (ALT $ColorSetCopy
+        (INPUT one-unique-object "copies hold the same set of colors, whatever the shape; undefined where no object or more than one object is unmatched"
+          (RULE &copy
+            (&palette2.equal (:observed *O) (:pattern *O2))
+            (&peer O O2))))
+      (ALT $RecolorCopy
+        (INPUT one-unique-object "copies are the same shape with the same color pattern up to a renaming of colors; undefined where no object or more than one object is unmatched"
+          (RULE &recolor_clash
+            (&shape *O *P (:Col *C))
+            (&shape (:O *O2) P (:Col *C2))
+            (OR ((&shape O (:P *Q) (:Col C))
+                 (&shape (:O O2) (:P Q) (:Col *C3))
+                 (!= C3 C2))
+                ((&shape (:O O2) (:P Q) (:Col C2))
+                 (&shape O (:P Q) (:Col C3))
+                 (!= C3 C))))
+          (RULE &copy
+            (&footprint.equal (:observed *O) (:pattern *O2))
+            (&peer O O2)
+            (NOT (&recolor_clash O O2)))))))
+  (ALT $OwnColor
+    (INPUT one-unique-object "exactly one object holds a color no other object holds; undefined where no object or more than one does"
+      (RULE &shared_color
+        (&peer *O (:O2 *I2))
+        (&obj (:O I2) *Col))
+
+      (RULE &candidate
+        (&obj *O *Col)
+        (NOT (&shared_color O Col))))
+    (INPUT others-repeat "the other objects need no copies")))
+
+(ALTS $adj "how objects connect" $Adjacency4
+  (ALT $Adjacency8
+    (INPUT objects-on-background "objects are 8-connected groups"
+      (RULE &obj
+        (&comp8.component *P (:Id *O))
+        (input P *Col)))))
+
+(ALTS $fill "what fills the box cells outside the object" $FillBackground
+  (ALT $CropInput
+    (OUTPUT crop-unique "the output is the input's cells under the unique object's bounding box")
+    (RULE &output
+      (&odd (:O *I))
+      (&box.box (:key (:Id I)) *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))))
+
+(RULE &output
+  (&odd (:O *I))
+  (&box.box (:key (:Id I)) *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&obj (:O I) (:P P2) *Col))
+      ((NOT (&obj (:O I) (:P P2)))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

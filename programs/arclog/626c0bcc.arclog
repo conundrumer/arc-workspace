@@ -1,0 +1,67 @@
+;; inputs badd4b98354a6ffcad7881a34da5aea1ca2f066c098f75fd9045b5535336513a programs/solvers/626c0bcc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 626c0bcc
+
+(DET &ink ChangedColor)
+
+;; A piece is one connected run of ink cells that the output paints alike.
+(INIT &region Connectivity
+  (key ((ex_output ^E *P ^Col)
+        (ex_input E P (:Col *Ink))
+        (&ink (:C Ink)))
+    (node (P)
+      (ex_output E *P Col)
+      (ex_input E P (:Col *Ink))
+      (&ink (:C Ink)))))
+
+;; Each piece read from its own box — the frame the catalog stores it in.
+(INIT &bbox BoundingBox
+  (key ((&region.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&region.component (:key E) *P Id))))
+
+(DET &piece
+  (&region.component (:key *E *Col) (:P *P2) *Id)
+  (&bbox.box (:key E Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+;; A placement lands every cell of a piece on ink.
+(INIT &occ Occurrences
+  (key ((OR ((&piece ^Col (:P *P_inner)))
+            ((&piece Col)
+             (input *P (:Col *Ink))
+             (&ink (:C Ink)))))
+    (cell (P)
+      (&piece Col)
+      (input *P (:Col *Ink))
+      (&ink (:C Ink)))
+    (shape ((:P P_inner))
+      (&piece Col (:P *P_inner)))))
+
+(RULE &covers
+  (&occ.occurrence (:key *Col) (:P *P_spot))
+  (&piece Col (:P *P_inner))
+  (compose (:A P_spot) (:B P_inner) (:C *P)))
+
+(RULE &clash
+  (&covers *Col *P_spot (:P *Q))
+  (&covers (:Col *Col2) (:P_spot *P_spot2) (:P Q))
+  (OR ((!= Col Col2))
+      ((!= P_spot P_spot2))))
+
+;; Every ink cell takes a fill, and no two cells take clashing placements.
+(CHOOSE &fill
+  (for ((&covers ^P))
+    (from (&covers *Col *P_spot P)))
+  (never
+    (&covers *Col *P_spot *P)
+    (&covers (:Col *Col2) (:P_spot *P_spot2) (:P *P2))
+    (&clash Col P_spot Col2 P_spot2)))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&ink (:C Col))))))
+
+(OUT (&output ^P ^Col))

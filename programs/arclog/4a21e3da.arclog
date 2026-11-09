@@ -1,0 +1,97 @@
+;; inputs 0f61b0c81b6857efb7f14a246be8d40b211e1cea2eb54ba5873212798ed79fda programs/solvers/4a21e3da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4a21e3da
+
+(DET &mark RarestColor)
+
+(RULE &marker
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &cut_dir
+  (&marker *P)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &cut_axis
+  (&cut_dir *D)
+  (axis_of D *A))
+
+(RULE &on_cut
+  (input *P)
+  (&marker (:P *M))
+  (&cut_axis *A)
+  (same_line A P (:Q M)))
+
+(DET &ink ColorDomain)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(RULE &cut_ink
+  (&ink_cell *P)
+  (&on_cut P))
+
+(RULE &span_mark
+  (OR ((&marker *P))
+      ((&cut_ink P))))
+
+;; The span from the marker to the farthest ink cell on the cut.
+(INIT &span Ray
+  (source (P)
+    (&span_mark *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&cut_axis *A)
+    (axis4_of *D A)))
+
+(RULE &span_between
+  (&on_cut *P)
+  (&cut_axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray P D)
+  (&span.ray P (:D O)))
+
+(DET &bg DominantColor)
+
+(RULE &side
+  (&ink_cell *P)
+  (&marker (:P *M))
+  (&cut_dir (:D *D_cut))
+  (perp_dir (:D D_cut) (:D2 *D))
+  (nearer D P (:Q M)))
+
+;; Each side, viewed from its own bounding box.
+(INIT &side_box BoundingBox
+  (key ((&side *P ^D))
+    (cell (P)
+      (&side *P D))))
+
+(RULE &moved
+  (&side (:P *P2) *D)
+  (&side_box.box (:key D) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P_inner))
+  (&cut_dir (:D *D_cut))
+  (diag_dirs (:D *Diag) (:D1 D_cut) (:D2 D))
+  (input *P)
+  (same_corner (:D Diag) (:P1 P_inner) (:P2 P)))
+
+(RULE &paint
+  (OR ((&cut_ink *P)
+       (&ink (:C *Col)))
+      ((&moved P)
+       (&ink (:C Col)))
+      ((&span_between P)
+       (NOT (&cut_ink P))
+       (&mark (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

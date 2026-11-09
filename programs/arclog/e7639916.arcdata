@@ -1,0 +1,121 @@
+;; inputs 9ff217f0c14f1fab56c70c9bbb4c70ecc69ade88b6b9e26b283b2616ef89e4d8 programs/solvers/e7639916.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e7639916
+
+(param &outline_color Color (1))
+(param &bg Color (0))
+(param &mark_color Color (8))
+
+(alts $choice
+  (alt $MarkColorStored
+    (witness mark-color-other variant concept
+      (relaxed scattered-marks)
+      (separates "the marks are 3, not 8: reading every non-background cell as a mark outlines their box; reading only cells of the stored mark color finds no mark and returns the input")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &mark_color=$Derived concept (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 3 1 1 1 1 1 1 0 0)
+        (0 0 1 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 3 0 0)
+        (0 0 1 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 1 0 0)
+        (0 0 3 1 1 1 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($MarkColorStored &mark_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed scattered-marks)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 2 swapped")
+      (input (grid
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 8 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 8 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 8 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)))
+      (output ($NonBg &bg=$Stored) (grid
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 8 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 8 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 8 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)))
+      (output $MarkColorStored &bg=$Derived (grid
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 8 1 1 1 1 1 1 1 1 1 1 1 1 1 2 2 2)
+        (2 2 2 1 2 2 2 2 2 2 2 2 2 2 2 2 8 2 2 2)
+        (2 2 2 1 2 2 2 2 2 2 2 2 2 2 2 2 1 2 2 2)
+        (2 2 2 1 2 2 2 2 2 2 2 2 2 2 2 2 1 2 2 2)
+        (2 2 2 1 2 2 2 2 2 2 2 2 2 2 2 2 1 2 2 2)
+        (2 2 2 1 2 2 2 2 2 2 2 2 2 2 2 2 1 2 2 2)
+        (2 2 2 1 2 2 2 2 2 2 2 2 2 2 2 2 1 2 2 2)
+        (2 2 2 1 1 1 1 1 1 1 8 1 1 1 1 1 1 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2))))))
+
+(alts &mark_color
+  (alt &mark_color=$Derived
+    (witness mark_color=RarestColor borderline $MarkColorStored
+      (relaxed scattered-marks)
+      (separates "a stray 2 sits outside the box of the 8 marks: the concept outlines the box that holds the 2 as well; a stored mark color outlines the box of the 8s and keeps the 2; the rarest color is 2, whose box is that one cell, so the input returns")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 8 1 1 1 1 1 1 0 0)
+        (1 0 0 0 0 0 0 0 0 1 0 0)
+        (1 0 0 0 0 0 0 0 0 8 0 0)
+        (1 0 0 0 0 0 0 0 0 1 0 0)
+        (1 0 0 0 0 0 0 0 0 1 0 0)
+        (1 0 8 0 0 0 0 0 0 1 0 0)
+        (2 1 1 1 1 1 1 1 1 1 0 0)))
+      (output ($MarkColorStored &mark_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 8 1 1 1 1 1 1 0 0)
+        (0 0 1 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 8 0 0)
+        (0 0 1 0 0 0 0 0 0 1 0 0)
+        (0 0 1 0 0 0 0 0 0 1 0 0)
+        (0 0 8 1 1 1 1 1 1 1 0 0)
+        (2 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &mark_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 0 0 0 0 0 0 0 0))))))

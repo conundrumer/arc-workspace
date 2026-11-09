@@ -1,0 +1,43 @@
+;; inputs 35c50de3773184cc3a4ab2e3705524739b479bf8618a58515cfbfc94fb453356 programs/solvers/1f876c06.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1f876c06
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The domain is the whole grid, so a span covers its own marks.
+(INIT &span Ray
+  (key ((OR ((&mark ^Col *P))
+            ((&mark Col)
+             (diag_axis_elem (:Da *A))
+             (axis4_of *D A))
+            ((&mark Col)
+             (input P))))
+    (source (P)
+      (&mark Col *P))
+    (node (P)
+      (&mark Col)
+      (input *P))
+    (dir (D)
+      (&mark Col)
+      (diag_axis_elem (:Da *A))
+      (axis4_of *D A))))
+
+(RULE &span_between
+  (&mark (:Col *Key))
+  (input *P)
+  (diag_axis_elem (:Da *A))
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray (:key (:Col Key)) P D)
+  (&span.ray (:key (:Col Key)) P (:D O)))
+
+(RULE &output
+  (OR ((&span_between (:Key *Col) *P))
+      ((input P Col)
+       (NOT (&span_between P)))))
+
+(OUT (&output ^P ^Col))

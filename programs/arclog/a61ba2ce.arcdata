@@ -1,0 +1,148 @@
+;; inputs 6ba18ba405046edaf263298375b7865367ec75ea7c671e1c7f7487a2de94f7aa programs/solvers/a61ba2ce.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a61ba2ce
+
+(param &bg Color (0))
+(param &side number (2))
+(param &corner_quadrant (DiagDir DiagDir)
+  (DIAG_TL DIAG_BR)
+  (DIAG_TR DIAG_BL)
+  (DIAG_BL DIAG_TR)
+  (DIAG_BR DIAG_TL))
+
+(exclude ($MulticolorObjects $StoredSide))
+(exclude ($StoredCornerMap $StoredSide))
+(exclude ($StoredSide &bg=$Derived) "subsumed by SizeFromBox & bg=DominantColor, which reads the same side wherever every box has the stored side")
+
+(alts $unit
+  (alt $MulticolorObjects
+    (witness two-color-l variant $MulticolorObjects
+      (relaxed four-corners)
+      (separates "$MulticolorObjects from the concept: the top L has cells of colors 8 and 4. The concept finds a 1x2 piece and a single cell, and is undefined; $MulticolorObjects places the whole L by its gap.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 8 8 0 0 0 0 0)
+        (0 0 0 0 0 0 4 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ColorComponent undefined)
+      (output $MulticolorObjects (grid
+        (8 8 2 2)
+        (4 0 0 2)
+        (3 0 0 1)
+        (3 3 1 1))))
+    (witness edge-touch variant concept
+      (separates "$MulticolorObjects from the concept: the 3 piece touches the 1 piece along an edge. The concept keeps the two one-color pieces apart; $MulticolorObjects joins them into one piece whose box is not a square, and is undefined.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 8 8 0 0 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ColorComponent (grid
+        (8 8 2 2)
+        (8 0 0 2)
+        (3 0 0 1)
+        (3 3 1 1)))
+      (output $MulticolorObjects undefined))))
+
+(alts $place
+  (alt $StoredCornerMap
+    (witness gap-outward variant $StoredCornerMap
+      (separates "$StoredCornerMap from the concept: the stored map sends each missing corner to the output quadrant at that same corner, so the gaps face outward. The concept always sends the gap to the opposite quadrant.")
+      (assign &corner_quadrant (DIAG_TL DIAG_TL) (DIAG_TR DIAG_TR) (DIAG_BL DIAG_BL) (DIAG_BR DIAG_BR))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 8 8 0 0 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $OppositeCorner (grid
+        (8 8 2 2)
+        (8 0 0 2)
+        (3 0 0 1)
+        (3 3 1 1)))
+      (output $StoredCornerMap (grid
+        (0 1 3 0)
+        (1 1 3 3)
+        (2 2 8 8)
+        (0 2 8 0))))))
+
+(alts $size
+  (alt $SizeFromBox
+    (witness big-boxes variant $SizeFromBox
+      (relaxed four-corners)
+      (separates "$SizeFromBox from the concept: the four pieces are 3x3 boxes, each with one corner cell missing. The concept reads only 2x2 boxes and is undefined; $SizeFromBox places the boxes in a 6x6 output.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 8 8 8 0 0 0 0)
+        (0 2 2 2 0 0 0 0 8 8 8 0 0 0 0)
+        (0 2 2 2 0 0 0 0 8 8 0 0 0 0 0)
+        (0 0 2 2 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 1 1 0 0 0)
+        (0 0 0 0 0 0 0 0 0 1 1 1 0 0 0)
+        (0 0 3 3 0 0 0 0 0 1 1 1 0 0 0)
+        (0 0 3 3 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $SizeFromBox (grid
+        (8 8 8 2 2 2)
+        (8 8 8 2 2 2)
+        (8 8 0 0 2 2)
+        (3 3 0 0 1 1)
+        (3 3 3 1 1 1)
+        (3 3 3 1 1 1))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 4 swapped")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 8 8 4 4 4 4 4)
+        (4 4 4 4 4 4 8 4 4 4 4 4 4)
+        (4 2 2 4 4 4 4 4 4 4 4 4 4)
+        (4 4 2 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 1 4 4 4 4)
+        (4 4 4 4 4 4 4 1 1 4 4 4 4)
+        (4 4 4 3 4 4 4 4 4 4 4 4 4)
+        (4 4 4 3 3 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (8 8 2 2)
+        (8 4 4 2)
+        (3 4 4 1)
+        (3 3 1 1))))))

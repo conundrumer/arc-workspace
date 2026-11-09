@@ -1,0 +1,145 @@
+;; inputs 6066f09a78a323cbf4f3020a28f3e295aa4aabd1efd618d3ca1f5dfcde0a479a programs/solvers/e69241bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e69241bd
+
+(INPUT floor-and-walls "every cell is a floor cell of color background or a wall cell of color wall, apart from a few seed cells."
+
+  ;; The cell count of each color.
+  (INIT &color_count Cardinality
+    (key ((input *P (:Col ^C)))
+      (member ((:m P))
+        (input *P (:Col C)))))
+
+  ;; The colors ordered by cell count.
+  (INIT &by_count Order
+    (member ((:t C))
+      (input (:Col *C)))
+    (score ((:t C) (:S N))
+      (&color_count.size (:key *C) *N))))
+
+(INPUT seeds "each seed is a single cell of a color other than background and wall, and no two seeds share a room.")
+
+(INPUT rooms "a room is a 4-connected component of the floor cells and seeds."
+
+  (DET &changed
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (NOT (ex_output E P (:Col C_in))))
+
+  (DET &absent
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET &wall
+    (ex_input (:Col *C))
+    (NOT (&absent C))
+    (NOT (&changed (:C_in C))))
+
+  (RULE &wall2
+    (&wall *C))
+
+  (RULE &room_cell
+    (&wall2)
+    (input *P (:Col *C))
+    (NOT (&wall2 C)))
+
+  (INIT &rooms Connectivity
+    (node (P)
+      (&room_cell *P))))
+
+(OUTPUT seed-fills-room "each floor cell of a room that holds a seed takes that seed's color."
+
+  (DET_OR_RULE &background DominantColor
+    (&changed (:C_in *C)))
+
+  (RULE &floor
+    (input *P (:Col *C))
+    (&background C))
+
+  (RULE &seed
+    (&room_cell *P)
+    (input P *Col)
+    (NOT (&background (:C Col))))
+
+  ;; The fewest steps through the room from a seed of each color.
+  (INIT &reach Distance
+    (key ((OR ((&seed *P ^Col))
+              ((&seed Col)
+               (&room_cell P)
+               (dir_elem *D)
+               (neighbor P D *Q)
+               (&room_cell (:P Q)))))
+      (edge ((:a P) (:b Q))
+        (&seed Col)
+        (&room_cell *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&room_cell (:P Q)))
+      (source ((:n P))
+        (&seed *P Col))))
+
+  ;; The seed colors nearest each floor cell.
+  (INIT &nearest Order
+    (key ((&floor ^P))
+      (member ((:t (:V Col) (:S K)))
+        (&reach.distance (:key *Col) (:n P) *K))
+      (score ((:t (:V Col) (:S K)) (:S K))
+        (&reach.distance (:key *Col) (:n P) *K)))))
+
+(OUTPUT rest-unchanged "every other cell keeps its input color.")
+
+(ALTS $r "What the floor of a room with seeds of two colors takes" $OneSeed
+  (ALT $NearestSeed
+    (INPUT seeds "a room may hold seeds of different colors.")
+    (OUTPUT seed-fills-room "each floor cell of a room takes the color of the seed that a fewest-step 4-adjacent walk through the room reaches first; undefined where seeds of two colors tie at a cell.")
+    (RULE &fill
+      (&nearest.minimal (:key *P) (:t (:V *Col))))))
+
+(ALTS $s "Which cells seed a room" $AnyColor
+  (ALT $StoredSeedColors
+    (INPUT seeds "a seed is a single cell of a color in the stored set seed_colors; a cell of any other color seeds nothing and keeps its color."
+      (DET_OR_RULE &seed_colors RarestColor
+        (&changed (:C_out *C)))
+
+      (RULE &seed
+        (&room_cell *P)
+        (input P *Col)
+        (&seed_colors (:C Col)))))
+  (ALT $SingleCell
+    (INPUT seeds "a seed is a cell of a color other than background and wall with no such cell beside it; a 4-connected piece of two or more such cells seeds nothing and keeps its colors."
+      (RULE &beside_mark
+        (&room_cell *P)
+        (input P (:Col *C))
+        (NOT (&background C))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&room_cell (:P Q))
+        (input (:P Q) (:Col *C2))
+        (NOT (&background (:C C2))))
+
+      (RULE &seed
+        (&room_cell *P)
+        (input P *Col)
+        (NOT (&background (:C Col)))
+        (NOT (&beside_mark P))))))
+
+(ALTS $w "Where the wall color comes from" $StoredWall
+  (ALT $SecondCommonest
+    (INPUT floor-and-walls "the wall color is the second commonest color of the input; undefined where two colors tie for that place."
+      (RULE &wall2
+        (&by_count.maximal (:t *C_top))
+        (&by_count.successor (:a *C) (:b C_top))))))
+
+(RULE &fill
+  (&floor *P)
+  (&rooms.component P *Id)
+  (&rooms.component (:P *Q) Id)
+  (&seed (:P Q) *Col))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

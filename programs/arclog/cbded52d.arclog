@@ -1,0 +1,100 @@
+;; inputs 4ea9937f6fb429518bafa79597122fe8f469a49e7e4e1a8a2647a6c08e40b69a programs/solvers/cbded52d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cbded52d
+
+(DET &base DominantColor)
+
+(DET &arr SepTileCount)
+
+(DET &gap DivisorRatio)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&arr *N))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(RULE &tile
+  (&tile_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(ALTS $d "the grid is 8×8, so its tile arrangement reads two ways" $Count
+  (ALT $Size
+    (DET &tile_dim SepTileDim)
+
+    (INIT &tile_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim (:D *K)))
+      (gap (A G)
+        (axis_elem *A)
+        (&gap (:K *G))))
+
+    (RULE &tile
+      (&tile_division2.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+(ALTS $f "how a marked line fills" $Span
+  (ALT $Line
+    (RULE &fill
+      (&tile *P_tile)
+      (&mark *Col *P_intile (:P_tile *Q1))
+      (&mark Col P_intile (:P_tile *Q2))
+      (!= Q1 Q2)
+      (axis_elem *A)
+      (same_line A (:P Q1) (:Q Q2))
+      (same_line A (:P Q1) (:Q P_tile)))))
+
+(RULE &mark
+  (input (:P *P_grid) *Col)
+  (NOT (&base (:C Col)))
+  (&tile P_grid *P_tile *P_intile))
+
+(INIT &btw_frame Frame
+  (key ((&mark ^Col ^P_intile *P_tile)
+        (frame_extent (:P P_tile) *A *N))
+    (extent (A N)
+      (&mark Col P_intile *P_tile)
+      (frame_extent (:P P_tile) *A *N))))
+
+(INIT &btw Ray
+  (key ((OR ((&mark ^Col ^P_intile *P_tile))
+            ((&mark Col P_intile)
+             (axis_elem *A)
+             (axis4_of *D A))
+            ((&btw_frame.cell (:key Col P_intile) *P))))
+    (source ((:P P_tile))
+      (&mark Col P_intile *P_tile))
+    (node (P)
+      (&btw_frame.cell (:key Col P_intile) *P))
+    (dir (D)
+      (&mark Col P_intile)
+      (axis_elem *A)
+      (axis4_of *D A))))
+
+(RULE &btw_between
+  (&mark *Col *P_intile)
+  (&tile (:P_tile *P))
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&btw.ray (:key Col P_intile) P D)
+  (&btw.ray (:key Col P_intile) P (:D O)))
+
+(RULE &fill
+  (&btw_between *Col *P_intile (:P *P_tile)))
+
+(RULE &filled
+  (&fill *P_tile *Col *P_intile)
+  (&tile *P_grid P_tile P_intile))
+
+(RULE &output
+  (OR ((&filled (:P_grid *P) *Col))
+      ((input P Col)
+       (NOT (&filled (:P_grid P))))))
+
+(OUT (&output ^P ^Col))

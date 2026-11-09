@@ -1,0 +1,113 @@
+;; inputs 991d4ee6f7302bbc05513021719596ef453fcf47f401973461f121462d70fa9f programs/solvers/230f2e48.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 230f2e48
+
+(DET &bg DominantColor)
+
+(DET &body ColorDomain)
+
+(DET &anchor RarestColor)
+
+(DET &joint RarestColor)
+
+(INIT &arms Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &joint2
+  (&arms.component *Id *P)
+  (input P *Col)
+  (&joint (:C Col)))
+
+(RULE &arm_dir
+  (input *P *Col)
+  (&anchor (:C Col))
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&arms.component *Id (:P Q)))
+
+(RULE &cross_dir
+  (&arm_dir *Id (:D *D3))
+  (perp_dir (:D D3) (:D2 *D)))
+
+;; The stretch beyond the joint, each cell with its distance from it.
+(INIT &from_joint Ray
+  (key ((OR ((&joint2 ^Id *P))
+            ((&arm_dir Id *D))))
+    (source (P)
+      (&joint2 Id *P))
+    (node (P)
+      (&arm_dir Id *D)
+      (input *P))
+    (dir (D)
+      (&arm_dir Id *D))))
+
+(RULE &tail
+  (&from_joint.ray (:key *Id) *P *K)
+  (&arms.component Id P)
+  (!= K 0))
+
+(RULE &fold_dir
+  (&joint2 *Id *P)
+  (&cross_dir Id *D)
+  (dist_pair P D *K *K2)
+  (> K K2))
+
+(ALTS $choice "which side of the arm the stretch turns toward" $Inward
+  (ALT $Roomy
+    (RULE &open_blocked
+      (&cross_dir)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+
+    ;; The unbroken background run leaving the joint across the arm.
+    (INIT &open Ray
+      (key ((&cross_dir ^Id (:D ^D2)))
+        (source (P)
+          (&joint2 Id *P))
+        (dir ((:D D2))))
+      (node (P)
+        (input *P)
+        (NOT (&open_blocked P))))
+
+    (RULE &open_cell
+      (&cross_dir *Id *D)
+      (input *P *Col)
+      (&bg (:C Col)))
+
+    ;; A side with no run at all still competes, at 0.
+    (INIT &room Cardinality
+      (key ((OR ((&open.ray (:key ^Id (:D2 ^D)) (:P *Q))
+                 (&open_cell Id D (:P Q)))
+                ((&cross_dir Id D))))
+        (member ((:m Q))
+          (&open.ray (:key Id (:D2 D)) (:P *Q))
+          (&open_cell Id D (:P Q)))
+        (domain ()
+          (&cross_dir Id D))))
+
+    (RULE &fold_dir
+      (opposite *D (:Opp *D3))
+      (&room.size (:key *Id D) *N)
+      (&room.size (:key Id (:D D3)) (:N *N2))
+      (> N N2))))
+
+(RULE &folded
+  (&tail *Id *K)
+  (&joint2 Id (:P *P2))
+  (&fold_dir Id (:D *D2))
+  (jump (:P P2) (:D D2) K (:Q *P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&folded P)
+       (&body (:C *Col)))
+      ((NOT (&folded P))
+       (&tail P)
+       (&bg (:C Col)))
+      ((NOT (&folded P))
+       (NOT (&tail P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

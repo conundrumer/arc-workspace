@@ -1,0 +1,77 @@
+;; inputs c6d569fd4a62d3536b2df578473359a659dcde77477e1262e1bd7e34e3179159 programs/solvers/e66aafb8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e66aafb8
+
+(INPUT symmetric-pattern "the input is a square pattern that every symmetry in `symmetry` maps onto itself, apart from the masked cells.")
+
+(INPUT one-mask "one solid rectangle of color `mask_color` covers part of the pattern, and no other cell has that color.")
+
+(INPUT mask-image-visible "some symmetry in `symmetry` maps the masked rectangle onto cells that the mask does not cover.")
+
+(OUTPUT restore-by-symmetry "each masked cell takes the color that its unmasked images under the symmetries in `symmetry` share."
+
+  (DET &lacks
+    (ex_input *E)
+    (ex_input (:Col *C))
+    (NOT (ex_input E (:Col C))))
+
+  (DET &mask_color
+    (ex_input (:Col *C))
+    (NOT (ex_output (:Col C)))
+    (NOT (&lacks C)))
+
+  ;; The elements that keep each input's unmasked cells.
+  (INIT &inv Agreement
+    (key ((ex_input ^E *P *Col)
+          (NOT (&mask_color (:C Col))))
+      (source (P (:v Col))
+        (ex_input E *P *Col)
+        (NOT (&mask_color (:C Col))))
+      (target (P (:v Col))
+        (ex_input E *P *Col)
+        (NOT (&mask_color (:C Col))))))
+
+  ;; The named subgroup of the unbroken elements.
+  (INIT &kept Inclusion
+    (pattern ((:pattern S) (:m D))
+      (sym_member *S *D))
+    (observed ((:m D))
+      (d4_elem *D)
+      (NOT (&inv.conflict D))))
+
+  (DET &symmetry
+    (&kept.equal (:pattern *S)))
+
+  ;; The colors of each masked cell's unmasked images about the grid's center.
+  (INIT &shared Singleton
+    (key ((input ^P (:Col *C))
+          (&mask_color C)
+          (&symmetry *S)
+          (sym_member S *D)
+          (apply D P (:P_out *Q))
+          (input (:P Q) *Col)
+          (NOT (&mask_color (:C Col))))
+      (member ((:v Col))
+        (input P (:Col *C))
+        (&mask_color C)
+        (&symmetry *S)
+        (sym_member S *D)
+        (apply D P (:P_out *Q))
+        (input (:P Q) *Col)
+        (NOT (&mask_color (:C Col)))))))
+
+(OUTPUT crop-to-mask "the output is the masked rectangle, cropped from the restored pattern."
+
+  ;; The masked rectangle.
+  (INIT &mask_box BoundingBox
+    (cell (P)
+      (input *P (:Col *C))
+      (&mask_color C))))
+
+(RULE &output
+  (&shared.value (:key (:P *P2)) (:v *Col))
+  (&mask_box.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

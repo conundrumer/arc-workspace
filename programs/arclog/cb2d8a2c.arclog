@@ -1,0 +1,343 @@
+;; inputs ead12c290ff27ac204548d060c4b044af4a6bac9d7baff38872c730b07496b29 programs/solvers/cb2d8a2c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cb2d8a2c
+
+(INPUT source "one cell of path_color (3) lies on one edge of the grid; the direction from that edge to the opposite edge is the direction of travel")
+
+(INPUT walls "each wall is a straight segment one cell wide, perpendicular to the direction of travel, that touches one of the two edges parallel to the direction of travel and ends inside the grid")
+
+(INPUT wall-marks "each wall is wall_color (2) with mark_color (1) cells at every second cell, starting at the cell on the edge; the count of mark_color cells is the wall's clearance")
+
+(INPUT walls-in-order "the walls lie at distinct distances from the source's edge, and each one crosses the line the path follows when it comes to that wall")
+
+(OUTPUT erase-marks "each mark_color cell becomes wall_color; the walls are otherwise unchanged")
+
+(OUTPUT clearance "the gap the path keeps from a wall, before the wall and past its free end, is the count of mark_color cells on that wall"
+
+  (DET &mark_color
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output (:Col C))))
+
+  (DET &wall_color
+    (ex_input *E *P (:Col *Col_in))
+    (&mark_color (:C Col_in))
+    (ex_output E P (:Col *C)))
+
+  (DET &gap_blocked
+    (ex_input (:E *Key) *P *Col)
+    (NOT (&wall_color (:C Col))))
+
+  (DET &gap_dir
+    (ex_input (:E *Key))
+    (dir_elem *D))
+
+  (DET &gap_mark
+    (ex_input (:E *Key) *P *Col)
+    (&mark_color (:C Col)))
+
+  ;; The steps from each mark along its wall to the first cell off the wall
+  ;; or to the next mark.
+  (INIT &gap Ray
+    (key ((OR ((&gap_mark (:Key ^Ky) *P))
+              ((&gap_dir (:Key Ky) *D))
+              ((&gap_dir (:Key Ky))
+               (ex_input (:E Ky) P)
+               (NOT (&gap_blocked (:Key Ky) P)))))
+      (source (P)
+        (&gap_mark (:Key Ky) *P))
+      (node (P)
+        (&gap_dir (:Key Ky))
+        (ex_input (:E Ky) *P)
+        (NOT (&gap_blocked (:Key Ky) P)))
+      (dir (D)
+        (&gap_dir (:Key Ky) *D))))
+
+  (INIT &gap_full Ray
+    (key ((OR ((&gap_mark (:Key ^Ky) *P))
+              ((&gap_dir (:Key Ky) *D))
+              ((&gap_dir (:Key Ky))
+               (ex_input (:E Ky) P))))
+      (source (P)
+        (&gap_mark (:Key Ky) *P))
+      (node (P)
+        (&gap_dir (:Key Ky))
+        (ex_input (:E Ky) *P))
+      (dir (D)
+        (&gap_dir (:Key Ky) *D))))
+
+  (DET &gap_stop_full
+    (&gap.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&gap_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (DET_OR_RULE &path_color RarestColor
+    (ex_input *E *P (:Col *Col_in))
+    (NOT (&mark_color (:C Col_in)))
+    (ex_output E P (:Col *C))
+    (!= C Col_in))
+
+  (DET_OR_RULE &mark_period "The cells a mark and the wall cell after it span." SepTileCount
+    (&gap_stop_full (:V0 *E) (:V1 *Q) (:V3 *N))
+    (&gap.source (:key (:Ky E)) (:P Q)))
+
+  (RULE &source
+    (input *P *Col)
+    (&path_color (:C Col))
+    (margin (:B P) *D (:K 0)))
+
+  (RULE &back
+    (&source *P)
+    (margin (:B P) *D (:K 0)))
+
+  (INIT &wall Connectivity
+    (node (P)
+      (input *P *Col)
+      (OR ((&wall_color (:C Col)))
+          ((&mark_color (:C Col))))))
+
+  (RULE &mark
+    (&wall.component *P (:Id *W))
+    (input P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &wall_edge
+    (&wall.component *P (:Id *W))
+    (&back (:D *D0))
+    (perp_dir (:D D0) (:D2 *D))
+    (margin (:B P) D (:K 0)))
+
+  (RULE &free_end
+    (&wall.component *P (:Id *W))
+    (&wall_edge W *D)
+    (opposite D (:Opp *D2))
+    (neighbor P (:D D2) *Q)
+    (NOT (&wall.component (:P Q) (:Id W))))
+
+  ;; The pairs of cells that the run from a wall's cell on the edge to its
+  ;; farthest mark covers.
+  (INIT &run Cardinality
+    (key ((OR ((&free_end ^W))
+              ((&mark W (:P *M))
+               (&wall_edge W *D)
+               (margin (:B M) D (:K *K_m))
+               (&wall.component *P (:Id W))
+               (margin (:B P) D *K)
+               (<= K K_m)
+               (&mark_period (:N *K_p))
+               (divide (:T K) (:Side K_p) (:Gap 0) (:Part *N)))))
+      (member ((:m N))
+        (&mark W (:P *M))
+        (&wall_edge W *D)
+        (margin (:B M) D (:K *K_m))
+        (&wall.component *P (:Id W))
+        (margin (:B P) D *K)
+        (<= K K_m)
+        (&mark_period (:N *K_p))
+        (divide (:T K) (:Side K_p) (:Gap 0) (:Part *N)))
+      (domain ()
+        (&free_end W)))))
+
+(OUTPUT path "a line of path_color runs from the source in the direction of travel. When the path comes to a wall, it stops on the line with clearance cells between it and the wall, turns toward the wall's free end, runs past that end until clearance cells lie between it and the end, and turns back to the direction of travel. After the last wall, it runs on to the opposite edge"
+
+  (INIT &marks Cardinality
+    (key ((OR ((&free_end ^W))
+              ((&mark W *P))))
+      (member ((:m P))
+        (&mark W *P))
+      (domain ()
+        (&free_end W))))
+
+  (RULE &travel_axis
+    (&back *D)
+    (axis_of D *A))
+
+  (INIT &order Order
+    (member ((:t W))
+      (&free_end *W))
+    (score ((:t W) (:S K))
+      (&free_end *W *P)
+      (&back *D)
+      (margin (:B P) D *K)))
+
+  (RULE &clearance
+    (&marks.size (:key *W) (:N *K)))
+
+  (RULE &detour
+    (&clearance *W *K)
+    (&free_end W *P)
+    (&travel_axis *A)
+    (&back *D)
+    (jump P D K *Q)
+    (neighbor (:P Q) D (:Q *R))
+    (split (:P R) A (:Along *Row))
+    (&wall_edge W (:D *D2))
+    (opposite (:D D2) (:Opp *D3))
+    (jump P (:D D3) K (:Q *Q2))
+    (neighbor (:P Q2) (:D D3) (:Q *R2))
+    (split (:P R2) A (:Across *Lane)))
+
+  (RULE &lane
+    (input *P)
+    (&travel_axis *A)
+    (split P A (:Across *Lane)))
+
+  (RULE &far_end
+    (input *P)
+    (&back *D)
+    (opposite D (:Opp *D2))
+    (margin (:B P) (:D D2) (:K 0))
+    (&travel_axis *A)
+    (split P A (:Across *Lane)))
+
+  (RULE &turn_cell
+    (&detour *W *Row)
+    (&lane *Lane)
+    (compose (:A Row) (:B Lane) (:C *P)))
+
+  (RULE &lane_out
+    (&lane *Lane)
+    (&detour *W (:Lane *Lane2)))
+
+  ;; The corners of the path: the source, the cells where it arrives at and
+  ;; leaves each wall's turn row, and its end on the far edge.
+  (INIT &walk Propagation
+    (source ((:n P))
+      (&source *P))
+    (edge ((:a P) (:b Q))
+      (OR ((&source *P)
+           (&travel_axis *A)
+           (split P A (:Across *L))
+           (&order.minimal (:t *W))
+           (&turn_cell W (:Lane L) (:P *Q)))
+          ((&lane_out (:W *W3) (:Lane *L3) (:Lane2 *L2))
+           (&turn_cell (:W W3) (:Lane L2) (:P *P_leave))
+           (OR ((&turn_cell (:W W3) (:Lane L3) P)
+                (= Q P_leave))
+               ((= P P_leave)
+                (&order.successor (:a W3) (:b *W2))
+                (&turn_cell (:W W2) (:Lane L2) (:P Q)))
+               ((= P P_leave)
+                (&order.maximal (:t W3))
+                (&far_end (:Lane L2) (:P Q))))))))
+
+  (INIT &leg BoundingBox
+    (key ((&walk.reached (:n ^P))
+          (&walk.edge (:a P) (:b ^Q)))
+      (cell ((:P R))
+        (OR ((= *R P))
+            ((= R Q)))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $m "how the path meets a wall" $DetourEach
+  (ALT $KeepClearance
+    (OUTPUT path "the path detours only when its line crosses the wall or passes the free end with fewer than clearance free cells between them; otherwise it runs straight on"
+      (RULE &lane_out
+        (&lane *Lane)
+        (&detour *W (:Lane *L_past))
+        (&wall_edge W *D)
+        (margin (:B Lane) D *K)
+        (margin (:B L_past) D (:K *K_past))
+        (OR ((< K K_past)
+             (= *Lane2 L_past))
+            ((>= K K_past)
+             (= Lane2 Lane))))))
+  (ALT $PassClearWall
+    (OUTPUT path "the path detours only at a wall that crosses its line; at any other wall it runs straight on, even where that leaves fewer than clearance free cells to the free end"
+      (RULE &crosses
+        (&wall.component *P (:Id *W))
+        (&travel_axis *A)
+        (split P A (:Across *Lane)))
+
+      (RULE &lane_out
+        (&lane *Lane)
+        (&detour *W (:Lane *L_past))
+        (IF ((&crosses W Lane))
+            ((= *Lane2 L_past))
+            ((= Lane2 Lane)))))))
+
+(ALTS $g "how a wall's clearance comes from its marks" $MarkCount
+  (ALT $MarkedRunClearance
+    (OUTPUT clearance "the clearance is half the length of the run from the wall's cell on the edge to its farthest mark, rounded up"
+      (RULE &clearance
+        (&run.size (:key *W) (:N *K)))))
+  (ALT $StoredClearance
+    (OUTPUT clearance "a stored table clearance_of maps a wall's mark count to its clearance; undefined on a wall whose mark count is not a key"
+      (DET &past_end
+        (&free_end *E *W (:P *Q))
+        (&wall_edge E W (:D *D0))
+        (opposite (:D D0) (:Opp *D))
+        (neighbor (:P Q) D (:Q *P)))
+
+      (INIT &past_frame Frame
+        (key ((&past_end ^E *P)
+              (frame_extent P *A *N))
+          (extent (A N)
+            (&past_end E *P)
+            (frame_extent P *A *N))))
+
+      (INIT &past_full Ray
+        (key ((OR ((&past_end ^E *P))
+                  ((&past_end E *D))
+                  ((&past_frame.cell (:key E) P))))
+          (source (P)
+            (&past_end E *P))
+          (node (P)
+            (&past_frame.cell (:key E) *P))
+          (dir (D)
+            (&past_end E *D))))
+
+      (DET &path_color_determined
+        (ex_input *E *P (:Col *Col_in))
+        (NOT (&mark_color (:C Col_in)))
+        (ex_output E P (:Col *C))
+        (!= C Col_in))
+
+      (DET &past_blocked
+        (ex_output (:E *Key) *P *Col)
+        (&path_color_determined (:C Col)))
+
+      ;; The steps from each such cell to the path a train output paints there.
+      (INIT &past Ray
+        (key ((OR ((&past_end ^E *P))
+                  ((&past_end E *D))
+                  ((&past_frame.cell (:key E) P)
+                   (NOT (&past_blocked (:Key E) P)))))
+          (source (P)
+            (&past_end E *P))
+          (node (P)
+            (&past_frame.cell (:key E) *P)
+            (NOT (&past_blocked (:Key E) P)))
+          (dir (D)
+            (&past_end E *D))))
+
+      (DET &past_stop_full
+        (&past.end (:key (:E *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&past_full.ray (:key (:E V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (DET &clearance_of
+        (&past_end *E *W *D *P)
+        (&past_stop_full (:V0 E) (:V2 D) (:V3 *K) (:V4 P))
+        (&marks.size E (:key W) *N))
+
+      (RULE &clearance
+        (&marks.size (:key *W) *N)
+        (&clearance_of N *K)))))
+
+(RULE &path
+  (&leg.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &output
+  (OR ((&path *P)
+       (&path_color (:C *Col)))
+      ((input P (:Col *Col_in))
+       (NOT (&path P))
+       (IF ((&mark_color (:C Col_in)))
+           ((&wall_color (:C Col)))
+           ((= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

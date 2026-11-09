@@ -1,0 +1,71 @@
+;; inputs c4dce9901f870ee36c22681aa6f14a85d3e355e5cf804fd551ad789904fb581a programs/solvers/99306f82.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 99306f82
+
+;; the color the outline is drawn in
+(DET &frame SharedColor)
+
+(RULE &frame_cell
+  (input *P *Col)
+  (&frame (:C Col)))
+
+(INIT &outline Outlines
+  (node (P)
+    (&frame_cell *P)))
+
+(RULE &held
+  (&outline.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(DET &bg DominantColor)
+
+;; the corner the markers are ordered from
+(DET &corner DiagDirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col))))
+
+;; The run, ordered from the marker nearest the corner.
+(INIT &marks Order
+  (member ((:t P))
+    (&mark *P))
+  (score ((:t P) (:S K))
+    (&mark *P)
+    (&corner *D)
+    (corner_dist P (:Diag D) *K)))
+
+(ALTS $choice "what the outline is, and what counts as its inside" $Rect
+  (ALT $Enclose
+    (INIT &closed Enclosure
+      (cell (P)
+        (input *P)
+        (NOT (&frame_cell P))))
+
+    (RULE &held
+      (&closed.enclosed *P))))
+
+;; The rings: depth runs inward from the held cells' own boundary.
+(INIT &rings Boundary
+  (cell (P)
+    (&held *P)))
+
+(INIT &rings_depth CellDistance
+  (node (P)
+    (&held *P))
+  (source (P)
+    (&rings.boundary *P)))
+
+(RULE &output
+  (OR ((&rings_depth.distance *P *K)
+       (&mark (:P *M) *Col)
+       (&marks.rank (:t M) *R)
+       (OR ((= K R))
+           ((> K R)
+            (&marks.maximal (:t M)))))
+      ((input P Col)
+       (NOT (&held P)))))
+
+(OUT (&output ^P ^Col))

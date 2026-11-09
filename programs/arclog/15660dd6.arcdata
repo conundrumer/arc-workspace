@@ -1,0 +1,8 @@
+;; inputs f5b93711bbfb0cb11627aa38253eefcf4e962e3218718bca7e101e2fcec2fc90 programs/solvers/15660dd6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 15660dd6
+
+(param &bg Color (8))
+(param &frame_col Color (1))
+(param &layout_axis Axis (AXIS_H))
+(param &ink Color (2))

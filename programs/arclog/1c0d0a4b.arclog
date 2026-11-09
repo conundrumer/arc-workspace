@@ -1,0 +1,51 @@
+;; inputs 1a1912297425cb837e5cc3b56d1c03aab59b216a89a3e9be092a3a000cbfcd47 programs/solvers/1c0d0a4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1c0d0a4b
+
+(DET &sep_w DivisorRatio)
+
+(DET &tile_w TileDim)
+
+(INIT &sep_division Division
+  (key ((axis_elem ^A))
+    (side (A K)
+      (&sep_w *K))
+    (gap (A G)
+      (&tile_w (:D *G))))
+  (cell (P)
+    (input *P)))
+
+(DET &bg DominantColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; On a separator line: the seps divide as sep_w-wide tiles with tile_w gaps.
+(RULE &sep
+  (&sep_division.tile *P))
+
+(ALTS $choice "which cells belong to the separator lines; data-equivalent on this task" $Period
+  (ALT $Blank
+    (RULE &ink_line
+      (&ink *P)
+      (split P *A (:Across *P_across)))
+
+    (RULE &sep
+      (input *P)
+      (split P *A (:Across *Ac))
+      (NOT (&ink_line A (:P_across Ac))))))
+
+(RULE &output
+  (OR ((&sep *P)
+       (&bg (:C *Col)))
+      ((&ink P)
+       (&bg (:C Col)))
+      ((input P (:Col *Col2))
+       (&bg (:C Col2))
+       (NOT (&sep P))
+       (&paint (:C Col)))))
+
+(OUT (&output ^P ^Col))

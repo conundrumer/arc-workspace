@@ -1,0 +1,280 @@
+;; inputs 4a46998e1fd4b9ba0100dea375878fd6a64cafe709d6afb95f7bfaba583fc538 programs/solvers/20fb2937.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20fb2937
+
+(DET &bg DominantColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+;; The cut: a line of a single non-bg color.
+(RULE &cut_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; Which side of a band the swatch sits on; the key mark takes the other. Bands run across this direction's axis.
+(DET &swatch_dir DirDomain)
+
+(RULE &band_axis
+  (&swatch_dir *D)
+  (axis_of D (:A *A2))
+  (perp (:A A2) (:A2 *A)))
+
+;; The gap between bands; layers abut, so they have none.
+(DET &band_gap DivisorRatio)
+
+;; Which side of the cutting line the header sits on.
+(DET &header_dir DirDomain)
+
+(RULE &side
+  (&cut_divider *A)
+  (axis_of *D A)
+  (&cut_tile_of *P (:P_tile *P_part))
+  (margin (:B P_part) D (:K 0)))
+
+;; Each part's box, which that part is viewed from.
+(INIT &hdr_box BoundingBox
+  (cell (P)
+    (&header_dir *D)
+    (&side D *P)))
+
+(RULE &header
+  (&hdr_box.cell *P)
+  (&hdr_box.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_hdr))
+  (input P *Col))
+
+;; The header's colored blobs: the swatches and the key marks.
+(INIT &blob Connectivity
+  (key ((&header ^E (:P_hdr *P) *Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (&header E (:P_hdr *P) *Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &blob_box BoundingBox
+  (key ((&blob.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&blob.component (:key E) *P Id))))
+
+(DET &tile_dim
+  (&swatch_dir *D)
+  (&blob_box.box (:key (:E *Ky_e) (:Id *Ky_id)) *B)
+  (margin B D (:K 0))
+  (&blob_box.cell (:key (:E Ky_e) (:Id Ky_id)) *P)
+  (box_extent B P *A (:N *K)))
+
+(INIT &tile_count_division Division
+  (key ((&tile_dim ^A ^K)
+        (&band_axis A))
+    (side (A K))
+    (gap (A G)
+      (&band_gap (:K *G))))
+  (cell ((:P P_hdr))
+    (&header *P_hdr)))
+
+(INIT &tile_count_division2 Division
+  (key ((OR ((&header *P_hdr)
+             (&tile_dim ^A))
+            ((&tile_dim A *K))))
+    (cell ((:P P_hdr))
+      (&header *P_hdr)
+      (&tile_dim A))
+    (side (A K)
+      (&tile_dim A *K))))
+
+(DET &tile_count
+  (OR ((&header *E *P_hdr)
+       (&tile_count_division.tile (:key *A) (:P P_hdr) (:P_outer *P_band))
+       (frame_extent (:P P_band) A *N))
+      ((&header (:E *E2) (:P_hdr *P_hdr2))
+       (&tile_count_division2.tile (:key A) (:P P_hdr2) (:P_outer *P_band2))
+       (&band_axis (:A *A2))
+       (perp (:A A2) (:A2 A))
+       (frame_extent (:P P_band2) A N))))
+
+(INIT &header_cell_division Division
+  (key ((&band_axis ^A))
+    (parts (A N)
+      (&tile_count A *N))
+    (gap (A G)
+      (&band_gap (:K *G))))
+  (cell ((:P P_hdr))
+    (&header *P_hdr)))
+
+(INIT &header_cell_division2 Division
+  (key ((perp ^A ^A2))
+    (cell ((:P P_hdr))
+      (&header *P_hdr)
+      (&header_cell_division.tile (:key A) (:P P_hdr)))
+    (parts ((:A A2) (:N N2))
+      (&tile_count (:A A2) (:N *N2)))))
+
+(INIT &fld_box BoundingBox
+  (cell (P)
+    (&header_dir *D)
+    (opposite D (:Opp *D2))
+    (&side (:D D2) *P)))
+
+(RULE &field
+  (&fld_box.cell *P)
+  (&fld_box.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_fld))
+  (input P *Col))
+
+(RULE &header_cell
+  (&header *P_hdr *Col)
+  (&header_cell_division.tile (:key *A) (:P P_hdr) (:P_outer *P_band) (:P_inner *P_slab))
+  (split (:P P_slab) A (:Along *P_inner_band))
+  (&header_cell_division2.tile (:key A *A2) (:P P_hdr) (:P_outer *P_layer) (:P_inner *P_slab2))
+  (split (:P P_slab2) (:A A2) (:Along *P_inner_layer))
+  (compose (:A P_inner_band) (:B P_inner_layer) (:C *P_intile)))
+
+(ALTS $d "what the header's cut reads" $Count
+  (ALT $Size
+    (INIT &header_cell_division3 Division
+      (key ((&band_axis ^A))
+        (side (A K)
+          (&tile_dim A *K))
+        (gap (A G)
+          (&band_gap (:K *G))))
+      (cell ((:P P_hdr))
+        (&header *P_hdr)))
+
+    (INIT &header_cell_division4 Division
+      (key ((perp ^A ^A2))
+        (cell ((:P P_hdr))
+          (&header *P_hdr)
+          (&header_cell_division3.tile (:key A) (:P P_hdr)))
+        (side ((:A A2) (:K K2))
+          (&tile_dim (:A A2) (:K *K2)))))
+
+    (RULE &header_cell
+      (&header *P_hdr *Col)
+      (&header_cell_division3.tile (:key *A) (:P P_hdr) (:P_outer *P_band) (:P_inner *P_slab))
+      (split (:P P_slab) A (:Along *P_inner_band))
+      (&header_cell_division4.tile (:key A *A2) (:P P_hdr) (:P_outer *P_layer) (:P_inner *P_slab2))
+      (split (:P P_slab2) (:A A2) (:Along *P_inner_layer))
+      (compose (:A P_inner_band) (:B P_inner_layer) (:C *P_intile)))))
+
+(ALTS $paint "what a marked field cell becomes" $Neighbor
+  (ALT $Stamp
+    (DET &hit
+      (&mark *E *P_fld *P_band)
+      (&swatch E P_band *Col)
+      (ex_output E (:P *Q) Col))
+
+    (DET &offset
+      (&hit (:P_fld *P) *Q)
+      (relative (:Base P) (:X Q) (:X_rel *Delta)))
+
+    (DET &missed
+      (&offset *Delta)
+      (ex_output *E)
+      (&mark E (:P_fld *P) *P_band)
+      (&swatch E P_band *Col)
+      (compose (:A P) (:B Delta) (:C *Q))
+      (NOT (ex_output E (:P Q) Col)))
+
+    (DET &shape
+      (&offset *Delta)
+      (NOT (&missed Delta)))
+
+    (RULE &paint
+      (&mark (:P_fld *P) *P_band)
+      (&swatch P_band *Col)
+      (&shape *Delta)
+      (compose (:A P) (:B Delta) (:C *P_fld))
+      (&field P_fld)))
+  (ALT $Blit
+    (RULE &paint
+      (&mark (:P_fld *P) *P_band)
+      (&swatch P_band (:P_intile *S) *Col)
+      (&band_key P_band (:P_intile *P_key))
+      (relative (:Base P_key) (:X S) (:X_rel *Delta))
+      (compose (:A P) (:B Delta) (:C *P_fld))
+      (&field P_fld))))
+
+(RULE &swatch
+  (&header_cell *P_layer *P_band *P_intile *Col)
+  (&swatch_dir *D)
+  (margin (:B P_layer) D (:K 0)))
+
+(RULE &band_key
+  (&header_cell *P_layer *P_band *P_intile *Col)
+  (NOT (&bg (:C Col)))
+  (&swatch_dir *D)
+  (opposite D (:Opp *D2))
+  (margin (:B P_layer) (:D D2) (:K 0)))
+
+(RULE &mark
+  (&field *P_fld *Col)
+  (&band_key *P_band Col))
+
+(RULE &paint
+  (&mark (:P_fld *P) *P_band)
+  (&swatch P_band *Col)
+  (&field *P_fld)
+  (OR ((= P_fld P))
+      ((neighbor P *D (:Q P_fld)))))
+
+(RULE &output
+  (OR ((&paint (:P_fld *P) *Col))
+      ((&field (:P_fld P))
+       (NOT (&paint (:P_fld P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

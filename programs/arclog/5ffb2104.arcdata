@@ -1,0 +1,6 @@
+;; inputs 6c06dcf2d57af2c2412f2602e811dd14368b3610cd85b542c3edb29d526e1cc5 programs/solvers/5ffb2104.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5ffb2104
+
+(param &bg Color (0))
+(param &grav Dir (DIR_R))

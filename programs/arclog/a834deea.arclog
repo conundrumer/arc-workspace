@@ -1,0 +1,197 @@
+;; inputs 2dbbd3ae453a7e8ad485f13eb795a02b145cc5ed3c2f9ccb2e924a5058743b9c programs/solvers/a834deea.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a834deea
+
+(INPUT boxes "one or more 5×5 boxes stand apart from each other. Each box has a solid outline of &frame_color, and no side neighbor of the outline outside the box has that color."
+
+  (DET_OR_RULE &frame_color RarestColor)
+
+  (RULE &frame_cell
+    (input *P *Col)
+    (&frame_color (:C Col)))
+
+  (INIT &comps4 Connectivity
+    (node (P)
+      (&frame_cell *P)))
+
+  (INIT &comp_box BoundingBox
+    (key ((&comps4.component *P ^Id))
+      (cell (P)
+        (&comps4.component *P Id))))
+
+  (INIT &comps8 Connectivity
+    (node (P)
+      (&frame_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT keyed-fill "in each box, an interior cell of &frame_color takes the color &position_color gives for its place in the 3×3 interior."
+
+  (INIT &outline Outlines
+    (node (P)
+      (&frame_cell *P)))
+
+  (DET &attached2
+    (&outline.box *E *B)
+    (&frame_cell E *P)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&frame_cell E (:P Q))
+    (NOT (inside (:A Q) B)))
+
+  (RULE &iso_dir
+    (dir_elem *D))
+
+  (RULE &attached
+    (&outline.box *B)
+    (&frame_cell *P)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B))
+    (&iso_dir *D)
+    (neighbor P D *Q)
+    (&frame_cell (:P Q))
+    (NOT (inside (:A Q) B)))
+
+  (DET &box2
+    (&outline.box *E *B)
+    (dir_elem)
+    (NOT (&attached2 E B)))
+
+  (RULE &box
+    (&outline.box *B)
+    (&iso_dir)
+    (NOT (&attached B)))
+
+  ;; The interior of each box.
+  (INIT &inner BoundingBox
+    (key ((&box ^B))
+      (cell (P)
+        (input *P)
+        (interior (:A P) B))))
+
+  ;; The interior of each box.
+  (INIT &inner2 BoundingBox
+    (key ((&box2 (:E ^K) ^B))
+      (cell (P)
+        (ex_input (:E K) *P)
+        (interior (:A P) B))))
+
+  (DET &inner_cell2
+    (&box2 *E *B)
+    (&inner2.box (:key (:K E) B) (:B *I))
+    (&frame_cell E *P)
+    (inside (:A P) (:B I)))
+
+  (RULE &inner_cell
+    (&box *B)
+    (&inner.box (:key B) (:B *I))
+    (&frame_cell *P)
+    (inside (:A P) (:B I)))
+
+  (DET &filled
+    (&inner_cell2 *E *P *I)
+    (ex_input E P (:Col *C_in))
+    (ex_output E P *Col)
+    (!= Col C_in))
+
+  (DET &position_color
+    (&filled (:P *P_grid) *I *Col)
+    (inside (:A P_grid) (:B I))
+    (relative (:Base I) (:X P_grid) (:X_rel *P)))
+
+  (INIT &touch Inclusion
+    (pattern ((:pattern D) (:m M))
+      (OR ((corner_dir (:C *D) (:D *M)))
+          ((dir_elem D)
+           (= M D))))
+    (observed ((:observed P I) (:m D))
+      (&inner_cell *P *I)
+      (inside (:A P) (:B I))
+      (same_dist *D (:P1 P) (:P2 I)))))
+
+(OUTPUT center-kept "the center of the interior has no entry in &position_color and keeps its color.")
+
+(OUTPUT rest-kept "every other cell keeps its input color."
+
+  (DET &side_color
+    (&filled *E (:P *P_grid) *I *Col)
+    (ex_input E (:P *Q_grid))
+    (inside (:A Q_grid) (:B I))
+    (relative (:Base I) (:X Q_grid) (:X_rel *Q_inner))
+    (centered (:P Q_inner))
+    (neighbor (:P Q_grid) *D (:Q P_grid))))
+
+(ALTS $find "which cells form a box" $Outline
+  (ALT $Outline
+    (ALTS $iso "which neighbors of the outline outside the box must not be frame-colored" $SideIsolation
+      (ALT $DiagonalIsolation
+        (INPUT boxes "no diagonal neighbor of the outline outside the box has &frame_color either."
+          (RULE &iso_dir
+            (dir8_elem *D))))))
+  (ALT $ComponentBbox
+    (INPUT boxes "a box is the bounding box of a connected component of &frame_color. Its outline need not be solid."
+      (RULE &box
+        (&comp_box.box *B)))
+    (ALTS $conn "which neighbors join a component" $FourConn
+      (ALT $EightConn
+        (INPUT boxes "diagonal neighbors join a component too."
+          (INIT &comp_box BoundingBox
+            (key ((&comps8.component *P ^Id))
+              (cell (P)
+                (&comps8.component *P Id)))))))))
+
+(ALTS $key "which key a recolored cell reads" $Place
+  (ALT $RingBySide
+    (OUTPUT keyed-fill "a box is any size. A cell of the interior takes &side_color at the corner or side whose outline sides it touches. A cell that touches no side, or two opposite sides, keeps its color.")
+    (RULE &keyed
+      (&inner_cell *P *I)
+      (&touch.equal (:observed P I) (:pattern *D))
+      (&side_color D *Col)))
+  (ALT $SignOfOffset
+    (OUTPUT keyed-fill "a box is any size. A cell of the interior takes &side_color at the direction of its row and column offsets from the interior's center. The center keeps its color."
+      (RULE &place_nearer
+        (&inner_cell (:P *P_grid) *I)
+        (inside (:A P_grid) (:B I))
+        (relative (:Base I) (:X P_grid) (:X_rel *P))
+        (dist_pair P *D *K *K2)
+        (< K K2))
+
+      (RULE &place_quadrant
+        (diag_dirs (:D *Diag) *D1 *D2)
+        (&place_nearer *P (:D D1))
+        (&place_nearer P (:D D2)))
+
+      (RULE &off_mid
+        (&place_nearer (:P *P_inner) *D)
+        (axis_of D *A))
+
+      (RULE &sign_key
+        (OR ((&place_quadrant (:P *P_inner) (:Diag *D)))
+            ((&place_nearer (:P P_inner) D)
+             (axis_of D *A)
+             (perp A *A2)
+             (NOT (&off_mid P_inner (:A A2)))))))
+    (RULE &keyed
+      (&inner_cell *P *I)
+      (inside (:A P) (:B I))
+      (relative (:Base I) (:X P) (:X_rel *P_inner))
+      (&sign_key P_inner *D)
+      (&side_color D *Col))))
+
+(RULE &keyed
+  (&inner_cell *P *I)
+  (inside (:A P) (:B I))
+  (relative (:Base I) (:X P) (:X_rel *P_inner))
+  (&position_color (:P P_inner) *Col))
+
+(RULE &output
+  (OR ((&keyed *P *Col))
+      ((input P Col)
+       (NOT (&keyed P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,194 @@
+;; inputs 512b621f5f2eb0761e0181ce68f400e6c7d6913f193f75bd1b586257f0b9fd6c programs/solvers/0ca9ddb6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0ca9ddb6
+
+(INIT &ground_count Cardinality
+  (key ((ex_input *E *P ^Col))
+    (member ((:m E P))
+      (ex_input *E *P Col))))
+
+;; The grids' ground color; dots are the exception to it.
+(INIT &ground Order
+  (member ((:t Col))
+    (&ground_count.size (:key *Col)))
+  (score ((:t Col) (:S Count))
+    (&ground_count.size (:key *Col) (:N *Count))))
+
+(DET &dot
+  (ex_input *E *P (:Col *M))
+  (NOT (&ground.maximal (:t M))))
+
+(DET &star
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *Col2))
+  (!= Col2 Col))
+
+;; Each star with its dot, one 8-connected blob; inert dots blob alone.
+(INIT &blob Connectivity
+  (key ((OR ((&star ^E *P))
+            ((&dot E P))))
+    (node (P)
+      (OR ((&star E *P))
+          ((&dot E P)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &arms_frame Frame
+  (key ((&dot ^E *P)
+        (&blob.component (:key E) P ^Id)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&dot E *P)
+      (&blob.component (:key E) P Id)
+      (frame_extent P *A *N))))
+
+(INIT &diags_frame Frame
+  (key ((&dot ^E *P)
+        (&blob.component (:key E) P ^Id)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&dot E *P)
+      (&blob.component (:key E) P Id)
+      (frame_extent P *A *N))))
+
+(DET &radius DivisorRatio)
+
+(DET &arms_mark
+  (&dot *E *P)
+  (&blob.component (:key E) P *Id))
+
+;; Casts from each blob's dot, one instance per kind, classify the
+;; blob's painted cells.
+(INIT &arms Ray
+  (key ((OR ((&dot ^E *P)
+             (&blob.component (:key E) P ^Id))
+            ((&arms_mark E Id)
+             (dir_elem *D))
+            ((&arms_frame.cell (:key E Id) P))))
+    (source (P)
+      (&dot E *P)
+      (&blob.component (:key E) P Id))
+    (node (P)
+      (&arms_frame.cell (:key E Id) *P))
+    (dir (D)
+      (&arms_mark E Id)
+      (dir_elem *D))))
+
+(DET &arms_cell
+  (&arms_mark *E *Id)
+  (ex_input E *P))
+
+(DET &star_cell
+  (&dot *E (:P *Q) *M)
+  (&blob.component (:key E) (:P Q) *Id)
+  (&blob.component (:key E) *P Id)
+  (&star E P *Col)
+  (relative (:Base Q) (:X P) (:X_rel *Delta)))
+
+(DET &arm_paint
+  (&star_cell *E *Id (:M *Mark) *P *Col)
+  (&arms.ray (:key E Id) P *K)
+  (&arms_cell E Id P)
+  (!= K 0))
+
+(RULE &arm_dir
+  (&arm_paint (:Mark *Key))
+  (dir_elem *D))
+
+;; One cast per kind: each roster's marks cast that kind's directions.
+(INIT &arm Ray
+  (key ((OR ((input *P (:Col ^M))
+             (&arm_paint (:Mark M)))
+            ((&arm_dir (:Key M) *D))
+            ((&arm_dir (:Key M))
+             (input P))))
+    (source (P)
+      (input *P (:Col M))
+      (&arm_paint (:Mark M)))
+    (node (P)
+      (&arm_dir (:Key M))
+      (input *P))
+    (dir (D)
+      (&arm_dir (:Key M) *D))))
+
+(DET &diags_mark
+  (&dot *E *P)
+  (&blob.component (:key E) P *Id))
+
+(INIT &diags Ray
+  (key ((OR ((&dot ^E *P)
+             (&blob.component (:key E) P ^Id))
+            ((&diags_mark E Id)
+             (diag_dir_elem *D))
+            ((&diags_frame.cell (:key E Id) P))))
+    (source (P)
+      (&dot E *P)
+      (&blob.component (:key E) P Id))
+    (node (P)
+      (&diags_frame.cell (:key E Id) *P))
+    (dir (D)
+      (&diags_mark E Id)
+      (diag_dir_elem *D))))
+
+(DET &diags_cell
+  (&diags_mark *E *Id)
+  (ex_input E *P))
+
+(DET &diag_paint
+  (&star_cell *E *Id (:M *Mark) *P *Col)
+  (&diags.ray (:key E Id) P *K)
+  (&diags_cell E Id P)
+  (!= K 0))
+
+(RULE &diag_dir
+  (&diag_paint (:Mark *Key))
+  (diag_dir_elem *D))
+
+(INIT &diag Ray
+  (key ((OR ((input *P (:Col ^M))
+             (&diag_paint (:Mark M)))
+            ((&diag_dir (:Key M) *D))
+            ((&diag_dir (:Key M))
+             (input P))))
+    (source (P)
+      (input *P (:Col M))
+      (&diag_paint (:Mark M)))
+    (node (P)
+      (&diag_dir (:Key M))
+      (input *P))
+    (dir (D)
+      (&diag_dir (:Key M) *D))))
+
+(RULE &painted
+  (&radius (:K *R))
+  (OR ((&arm.ray (:key *M) *P *K)
+       (&arm_paint (:Mark M) *Col))
+      ((&diag.ray (:key M) P K)
+       (&diag_paint (:Mark M) Col)))
+  (!= K 0)
+  (<= K R))
+
+(ALTS $choice "how a mark's star footprint is computed (data-equivalent on this task)" $Ray
+  (ALT $Lookup
+    (DET &paint
+      (&star_cell (:M *Mark) *Col))
+
+    (DET &template
+      (&star_cell (:M *Mark) *Delta))
+
+    (RULE &painted
+      (input (:P *P2) (:Col *M))
+      (&paint (:Mark M) *Col)
+      (&template (:Mark M) (:Delta *V))
+      (compose (:A P2) (:B V) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

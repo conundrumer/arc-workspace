@@ -1,0 +1,8 @@
+;; inputs bb9bcd61bb947a85a4957e8b242494e563e80fb31a7141f20a45c07f2a555428 programs/solvers/45bbe264.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 45bbe264
+
+(representative 23581191)
+
+(param &bg Color (0))
+(param &cross_color Color (2))

@@ -1,0 +1,198 @@
+;; inputs 31953bf4a980c348147419fd8c6b08e3519c4153e05bf7059e97aa2edf3f4014 programs/solvers/a3325580.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a3325580
+
+(INPUT objects "a field of &bg holds one-color objects, each a connected group of cells, cells that touch at a corner included, and no two objects share a color"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &objs4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))))
+
+(INPUT apart "the objects with the largest cell count occupy disjoint ranges along &layout_axis"
+
+  (DET &clash
+    (ex_output *E *P (:Col *C1))
+    (ex_output E (:P *Q) (:Col *C2))
+    (!= C1 C2)
+    (same_dist *D (:P1 P) (:P2 Q)))
+
+  (DET &layout_axis
+    (axis_of *D *A)
+    (NOT (&clash D))))
+
+(OUTPUT largest "the output keeps each object whose cell count equals the largest cell count in the input")
+
+(OUTPUT order "the kept objects are ordered from an end of &layout_axis by a key, the distance from that end to the object's nearest cell, and objects with the same key may take either order; the output is undefined where the two ends give different orders"
+
+  (INIT &objs8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &cell
+    (&objs8.component *P *Id))
+
+  (INIT &size Cardinality
+    (key ((&cell ^Id *P))
+      (member ((:m P))
+        (&cell Id *P))))
+
+  (INIT &largest Order
+    (member ((:t N))
+      (&size.size *N))
+    (score ((:t N) (:S N))
+      (&size.size *N)))
+
+  (RULE &kept
+    (&size.size (:key *Id) *N)
+    (&largest.maximal (:t N)))
+
+  (RULE &lead_end
+    (&layout_axis *A)
+    (corner_dir *C A (:D *L)))
+
+  (INIT &obox BoundingBox
+    (key ((&cell ^Id *P))
+      (cell (P)
+        (&cell Id *P))))
+
+  (INIT &order Order
+    (key ((OR ((diag_dir_elem (:D ^C))
+               (&kept *Id))
+              ((&lead_end C *L)
+               (&obox.box (:key Id) *B)
+               (margin B (:D L) *K))))
+      (member ((:t Id))
+        (diag_dir_elem (:D C))
+        (&kept *Id))
+      (score ((:t Id) (:S K))
+        (&lead_end C *L)
+        (&obox.box (:key *Id) *B)
+        (margin B (:D L) *K))))
+
+  ;; A unit's line nearest the scan edge.
+  (INIT &head BoundingBox
+    (key ((&layout_axis *A)
+          (diag_dirs (:D *C) A (:D2 ^S))
+          (&obox.box (:key ^Id) *B)
+          (margin B (:D S) *K)
+          (&cell Id *P)
+          (margin (:B P) (:D S) K))
+      (cell (P)
+        (&layout_axis *A)
+        (diag_dirs (:D *C) A (:D2 S))
+        (&obox.box (:key Id) *B)
+        (margin B (:D S) *K)
+        (&cell Id *P)
+        (margin (:B P) (:D S) K)))))
+
+(OUTPUT columns "the output has one line per kept object, laid out in that order from that end, each filled with that object's color")
+
+(OUTPUT height "each line is as long as the largest cell count"
+
+  (INIT &kept_count Cardinality
+    (member ((:m Id))
+      (&kept *Id)))
+
+  (INIT &chart Frame
+    (extent (A (:N K))
+      (OR ((&layout_axis *A)
+           (&kept_count.size (:N *K)))
+          ((&layout_axis (:A *A3))
+           (perp (:A A3) (:A2 A))
+           (&largest.maximal (:t K))))))
+
+  (RULE &line_of
+    (&chart.cell *P)
+    (&layout_axis *A)
+    (split P A (:Along *P_line))))
+
+(ALTS $piece "what the cell count and the order are taken over" $Objects
+  (ALT $Objects
+    (ALTS $conn "which cells join one object" $Conn8
+      (ALT $Conn4
+        (INPUT objects "only cells that share a side join one object"
+          (RULE &cell
+            (&objs4.component *P *Id))))))
+  (ALT $ColorClass
+    (OUTPUT largest "each color's cells form one unit wherever they lie, and the colors with the largest total cell count are kept"
+      (INIT &classes Quotient
+        (equivalent ((:a P) (:b Q))
+          (&ink *P *Col)
+          (&ink (:P *Q) Col)))
+
+      (RULE &cell
+        (&classes.class (:a *P) *Id)))))
+
+(ALTS $rank "which distance to the end of &layout_axis orders the kept units" $NearEdge
+  (ALT $FirstScan
+    (OUTPUT order "the key is read over the unit's line nearest an edge across &layout_axis alone, and the output is undefined where the two edges give different orders"
+      (INIT &order Order
+        (key ((diag_dir_elem (:D ^C)))
+          (score ((:t Id) (:S K))
+            (&layout_axis *A)
+            (diag_dirs (:D C) A (:D1 *L) (:D2 *S))
+            (&head.box (:key *Id S) *B)
+            (margin B (:D L) *K)))
+        (member ((:t Id))
+          (&kept *Id))))))
+
+(RULE &ties_pool
+  (diag_dir_elem (:D *Key))
+  (&lead_end (:C Key) *L)
+  (&line_of (:P_line *S))
+  (dist_pair (:P S) (:D L) (:K *N) (:K2 *N2))
+  (&order.rank (:key (:C Key)) (:t *X) *R)
+  (<= R N)
+  (&order.dual_rank (:key (:C Key)) (:t X) (:R *R2))
+  (<= R2 N2))
+
+;; A unit sits no nearer the lead edge than the count of units before it,
+;; and no nearer the far edge than the count of units after it: the lines of
+;; its own tie.
+(RULE &ties_key
+  (&ties_pool *Key)
+  (ONE))
+
+(RULE &ties_item
+  (&ties_pool *Key *S *X)
+  (&ties_key Key))
+
+;; A unit sits no nearer the lead edge than the count of units before it,
+;; and no nearer the far edge than the count of units after it: the lines of
+;; its own tie.
+(CHOOSE &ties
+  (for ((&ties_item ^Key ^S))
+    (from (&ties_item Key S *X)))
+  (never
+    (&ties_item *Key *S *X)
+    (&ties_item Key (:S *S2) X)
+    (!= S S2)))
+
+(RULE &split_res
+  (&ties_pool (:Key *C) (:S *P_line) (:X *Id))
+  (diag_dir_elem (:D *C2))
+  (NOT (&ties_pool (:Key C2) (:S P_line) (:X Id))))
+
+;; Each line takes the color of the unit seated on it, where every corner
+;; gives the same seatings.
+(RULE &output
+  (&line_of *P *P_line)
+  (&ties (:S P_line) (:X *Id))
+  (&cell Id (:P *Q))
+  (input (:P Q) *Col)
+  (NOT (&split_res)))
+
+(OUT (&output ^P ^Col))

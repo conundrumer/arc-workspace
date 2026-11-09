@@ -1,0 +1,57 @@
+;; inputs 67e43b13ea667101ba687e5c5f66c5d790539139d1c92a920d6af28d93b3d891 programs/solvers/40853293.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 40853293
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &mark_axis
+  (&mark *Col *P)
+  (&mark Col (:P *Q))
+  (!= P Q)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(INIT &spans Ray
+  (key ((OR ((&mark ^Col *P))
+            ((&mark_axis Col *A)
+             (axis4_of *D A))
+            ((&mark_axis Col (:A *A2))
+             (input P))))
+    (source (P)
+      (&mark Col *P))
+    (node (P)
+      (&mark_axis Col *A)
+      (input *P))
+    (dir (D)
+      (&mark_axis Col *A)
+      (axis4_of *D A))))
+
+(RULE &spans_between
+  (&mark_axis (:Col *Key))
+  (input *P)
+  (&mark_axis (:Col Key) *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&spans.ray (:key (:Col Key)) P D)
+  (&spans.ray (:key (:Col Key)) P (:D O)))
+
+(DET &over_axis AxisDomain)
+
+(RULE &over
+  (&spans_between (:Key *Col) *P)
+  (&mark_axis Col *A)
+  (&over_axis A))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&over P *Col))
+      ((NOT (&over P))
+       (&spans_between (:Key Col) P))
+      ((NOT (&spans_between P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

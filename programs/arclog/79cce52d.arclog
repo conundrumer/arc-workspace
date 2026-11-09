@@ -1,0 +1,108 @@
+;; inputs 1a922dc77f9abadcdf041ee177259e7dd37e83d962476f1e698f69151d6f717b programs/solvers/79cce52d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 79cce52d
+
+(DET &corner DiagDirDomain)
+
+(RULE &far_edge
+  (&corner (:D *Diag))
+  (corner_dir (:C Diag) *A (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(DET &marker_col VanishedColor)
+
+(RULE &kept
+  (input *P *Col)
+  (&corner (:D *Diag))
+  (diag_dirs (:D Diag) *D1 *D2)
+  (NOT (margin (:B P) (:D D1) (:K 0)))
+  (NOT (margin (:B P) (:D D2) (:K 0))))
+
+(RULE &line_set
+  (&kept *P)
+  (&far_edge *A (:D *FE))
+  (margin (:B P) (:D FE) *K))
+
+(INIT &line_cycle Order
+  (key ((&line_set ^A *K))
+    (member ((:t K))
+      (&line_set A *K))
+    (score ((:t K) (:S K))
+      (&line_set A *K))))
+
+(RULE &band_cell
+  (input *P *Col)
+  (&corner (:D *Diag))
+  (perp *A *A2)
+  (corner_dir (:C Diag) (:A A2) (:D *D2))
+  (margin (:B P) (:D D2) (:K 0))
+  (corner_dir (:C Diag) A *D)
+  (NOT (margin (:B P) D (:K 0))))
+
+(RULE &marker
+  (&band_cell *A *P *Col)
+  (&marker_col (:C Col)))
+
+;; The payload's lines per axis.
+(INIT &line_count Cardinality
+  (key ((&line_set ^A *K))
+    (member ((:m K))
+      (&line_set A *K))))
+
+;; The steps around each axis's cycle of lines, up to one full turn.
+(INIT &turns Walk
+  (key ((OR ((&line_cycle.cyclic_successor (:key ^A) (:a *K) (:b *K2)))
+            ((&line_count.size (:key A) *N))))
+    (successor ((:p K) (:p_next K2))
+      (&line_cycle.cyclic_successor (:key A) (:a *K) (:b *K2)))
+    (steps (N)
+      (&line_count.size (:key A) *N))))
+
+;; The output frame — the payload's per-axis extents.
+(INIT &frame Frame
+  (key ((&line_count.size (:key ^A) *N))
+    (extent (A N)
+      (&line_count.size (:key A) *N))))
+
+(ALTS $choice "which band cell is the marker" $Marked
+  (ALT $Singleton
+    (DET &marker_count DimDiff)
+
+    (INIT &band_count Cardinality
+      (key ((&band_cell ^A *P ^Col))
+        (member ((:m P))
+          (&band_cell A *P Col))))
+
+    (RULE &marker
+      (&band_cell *A *P *Col)
+      (&marker_count (:D *N))
+      (&band_count.size (:key A Col) N))))
+
+(RULE &shift
+  (input (:P *P_cn))
+  (&corner (:D *Diag))
+  (corner_dist (:P P_cn) Diag (:K 0))
+  (&far_edge *A (:D *FE))
+  (neighbor (:P P_cn) (:D FE) (:Q *P_a))
+  (margin (:B P_a) (:D FE) (:K *K_ca))
+  (&marker A (:P *P_mk))
+  (margin (:B P_mk) (:D FE) (:K *K_mk))
+  (&turns.walk (:key A) (:p0 K_ca) *N (:p K_mk)))
+
+(RULE &out_along
+  (&kept *P)
+  (&far_edge *A (:D *FE))
+  (margin (:B P) (:D FE) (:K *K_in))
+  (&shift A *N)
+  (&turns.walk (:key A) (:p0 K_in) N (:p *K_out))
+  (&frame.cell (:key A) (:P *Q))
+  (margin (:B Q) (:D FE) (:K K_out)))
+
+(RULE &output
+  (&kept (:P *P2) *Col)
+  (perp (:A *A1) *A2)
+  (&out_along (:A A1) (:P P2) (:Q *Q1))
+  (&out_along (:A A2) (:P P2) (:Q *Q2))
+  (compose (:A Q1) (:B Q2) (:C *P)))
+
+(OUT (&output ^P ^Col))

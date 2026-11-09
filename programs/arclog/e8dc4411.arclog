@@ -1,0 +1,406 @@
+;; inputs 495d3ef12b4f6b55161cc8a3e2fb252c42e30ff99d0add40f332b8fbe81f8ae1 programs/solvers/e8dc4411.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e8dc4411
+
+(INPUT background "the most common color fills the grid.")
+
+(INPUT template-shape "the cells of color shape_color (0) form one shape, the template."
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The background: the most common color.
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (DET &missing
+    (ex_input *Col)
+    (ex_input *E)
+    (NOT (ex_input E Col)))
+
+  (DET &shape_color
+    (ex_input *Col)
+    (NOT (&missing Col)))
+
+  (RULE &template_color
+    (&shape_color *Col))
+
+  (RULE &multi_cell
+    (input *P *Col)
+    (input (:P *Q) Col)
+    (!= P Q)
+    (NOT (&commonest.maximal (:t Col))))
+
+  (INIT &multi Singleton
+    (member ((:v Col))
+      (&multi_cell *Col)))
+
+  (INIT &blobs Connectivity
+    (node (P)
+      (&template_color *Col)
+      (input *P Col))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT single-marker "one cell has a color that is neither the background nor shape_color. That cell is the marker.")
+
+(INPUT marker-past-diagonal-tip "the marker is diagonally adjacent to a template cell, and it lies past every template cell along that diagonal direction.")
+
+(OUTPUT direction "the direction of the copies is the diagonal direction from the template to the marker.")
+
+(OUTPUT step "the step is the translation along the direction by the template's extent along that diagonal, so that the first copy's cells nearest the template are one diagonal step past the template's cells nearest the marker."
+
+  (RULE &marker
+    (&template_color)
+    (input (:P *M) *Col)
+    (NOT (&commonest.maximal (:t Col)))
+    (NOT (&template_color Col)))
+
+  (INIT &lone Singleton
+    (member ((:v M))
+      (&marker *M)))
+
+  (RULE &lead
+    (&lone.value (:v *M))
+    (&marker M *Col))
+
+  (RULE &template
+    (&lead (:M *Ky))
+    (&template_color *Col)
+    (input *P Col))
+
+  (RULE &short_of
+    (&template *Ky (:P *T))
+    (diag_dir_elem *D)
+    (NOT (nearer D (:P Ky) (:Q T))))
+
+  (INIT &past_tip Singleton
+    (key ((&template (:Ky ^M) (:P *F))
+          (diag_dir_elem *D)
+          (neighbor (:P F) D (:Q M))
+          (NOT (&short_of (:Ky M) D)))
+      (member ((:v D))
+        (&template (:Ky M) (:P *F))
+        (diag_dir_elem *D)
+        (neighbor (:P F) D (:Q M))
+        (NOT (&short_of (:Ky M) D)))))
+
+  (RULE &direction
+    (&past_tip.value (:key (:M *Ky)) (:v *D)))
+
+  (RULE &span
+    (input *P)
+    (sub_extent P *A *K))
+
+  (RULE &short_of_front
+    (&direction *Ky *D)
+    (&template Ky *P)
+    (&template Ky (:P *T))
+    (nearer D (:P T) (:Q P)))
+
+  (RULE &front
+    (&template *Ky *P)
+    (NOT (&short_of_front Ky P))))
+
+(OUTPUT repeat "copies stand at one, two, three and more steps from the template, until a copy is fully outside the grid. Cells of a copy that fall outside the grid are dropped."
+
+  (RULE &march_mark
+    (&direction (:Ky *Key))
+    (&template (:Ky Key) *P))
+
+  (INIT &march_frame Frame
+    (key ((&march_mark (:Key ^M) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&march_mark (:Key M) *P)
+        (frame_extent P *A *N))))
+
+  ;; Template cells cast along the direction.
+  (INIT &march Ray
+    (key ((OR ((&march_mark (:Key ^M) *P))
+              ((&direction (:Ky M) *D))
+              ((&march_frame.cell (:key M) P))))
+      (source (P)
+        (&march_mark (:Key M) *P))
+      (node (P)
+        (&march_frame.cell (:key M) *P))
+      (dir (D)
+        (&direction (:Ky M) *D)))))
+
+(OUTPUT paint "each copy paints its cells in the marker color. All other cells keep their input color.")
+
+(ALTS $st "how far each copy moves along the diagonal" $SpanStep
+  (ALT $NoOverlapStep
+    (OUTPUT step "the step is the least k at which the template translated by k diagonal steps shares no cell with the template."
+      (RULE &overlap
+        (&direction *Ky *D)
+        (&template Ky (:P *T))
+        (&span *K)
+        (jump (:P T) D K *Q)
+        (&template Ky (:P Q)))
+
+      (INIT &clear_step Order
+        (key ((&direction (:Ky ^M)))
+          (member ((:t K))
+            (&span *K)
+            (NOT (&overlap (:Ky M) K)))
+          (score ((:t K) (:S K))
+            (&span *K)
+            (NOT (&overlap (:Ky M) K))))))
+    (RULE &step
+      (&clear_step.minimal (:key (:M *Ky)) (:t *K))))
+  (ALT $MarkerInCopyStep
+    (OUTPUT step "the step is the largest k at which the template translated by k diagonal steps holds the marker."
+      (INIT &holding Order
+        (key ((&direction (:Ky ^M) *D)
+              (&template (:Ky M) (:P *T))
+              (&span *K)
+              (jump (:P T) D K (:Q M)))
+          (member ((:t K))
+            (&direction (:Ky M) *D)
+            (&template (:Ky M) (:P *T))
+            (&span *K)
+            (jump (:P T) D K (:Q M)))
+          (score ((:t K) (:S K))
+            (&direction (:Ky M) *D)
+            (&template (:Ky M) (:P *T))
+            (&span *K)
+            (jump (:P T) D K (:Q M))))))
+    (RULE &step
+      (&holding.maximal (:key (:M *Ky)) (:t *K)))))
+
+(ALTS $cf "what each copy is, relative to the copy before it" $Translated
+  (ALT $MirroredCopies
+    (OUTPUT step "each copy is the previous copy reflected across the diagonal line, perpendicular to the direction, that lies one cell past it."
+      ;; The diagonal lines from the template's front line to each template cell's
+      ;; line, both included.
+      (INIT &lines_to Cardinality
+        (key ((&direction (:Ky ^M) *D)
+              (&template (:Ky M) (:P ^T))
+              (&front (:Ky M) (:P *F))
+              (corner_dist (:P F) (:Diag D) (:K *N_front))
+              (corner_dist (:P T) (:Diag D) (:K *N_t))
+              (input *P)
+              (corner_dist P (:Diag D) (:K *N))
+              (<= N_front N)
+              (<= N N_t))
+          (member ((:m N))
+            (&direction (:Ky M) *D)
+            (&template (:Ky M) (:P T))
+            (&front (:Ky M) (:P *F))
+            (corner_dist (:P F) (:Diag D) (:K *N_front))
+            (corner_dist (:P T) (:Diag D) (:K *N_t))
+            (input *P)
+            (corner_dist P (:Diag D) (:K *N))
+            (<= N_front N)
+            (<= N N_t))))
+
+      ;; The mirror image of a template cell across the line one cell past the
+      ;; front: as many diagonal steps on as there are lines from the front to it.
+      (RULE &first_odd
+        (&lines_to.size (:key (:M *Ky) *T) (:N *J))
+        (&direction Ky *D)
+        (jump (:P T) D (:K J) (:Q *P)))
+
+      (INIT &odd_march_frame Frame
+        (key ((&first_odd (:Ky ^M) *P)
+              (frame_extent P *A *N))
+          (extent (A N)
+            (&first_odd (:Ky M) *P)
+            (frame_extent P *A *N))))
+
+      ;; The odd copies cast along the direction from the first one.
+      (INIT &odd_march Ray
+        (key ((OR ((&first_odd (:Ky ^M) *P))
+                  ((&direction (:Ky M) *D))
+                  ((&odd_march_frame.cell (:key M) P))))
+          (source (P)
+            (&first_odd (:Ky M) *P))
+          (node (P)
+            (&odd_march_frame.cell (:key M) *P))
+          (dir (D)
+            (&direction (:Ky M) *D))))
+
+      (RULE &odd_march_cell
+        (&first_odd (:Ky *Key))
+        (input *P)))
+    (RULE &copy
+      ;; The even copies: every second step on from a template cell.
+      (OR ((&first_odd *Ky)
+           (&step Ky *K)
+           (&march.ray (:key (:M Ky)) *P (:K *J))
+           (&march_cell (:Key Ky) P)
+           (> J 0)
+           (divide (:T J) (:Side K) (:Gap K) (:Remainder 0)))
+          ;; The odd copies: every second step on from a cell of the first copy.
+          ((&step Ky (:K *K2))
+           (&odd_march.ray (:key (:M Ky)) P (:K *J2))
+           (&odd_march_cell (:Key Ky) P)
+           (divide (:T J2) (:Side K2) (:Gap K2) (:Remainder 0))))))
+  (ALT $RotatedCopies
+    (OUTPUT step "each copy is the previous copy turned a half turn in its bounding box, then moved one step."
+      (INIT &tbox BoundingBox
+        (key ((&template (:Ky ^M) (:P *T)))
+          (cell ((:P T))
+            (&template (:Ky M) (:P *T)))))
+
+      ;; The template turned a half turn in its box, then moved one step.
+      (RULE &first_odd
+        (&tbox.box (:key (:M *Ky)) *B)
+        (&template Ky (:P *T))
+        (inside (:A T) B)
+        (relative (:Base B) (:X T) (:X_rel *P_rel))
+        (c4_turn (:T *R))
+        (d4_compose (:A R) (:B R) (:C *H))
+        (apply (:D H) (:P P_rel) (:P_out *Q_rel))
+        (compose (:A B) (:B Q_rel) (:C *Q))
+        (&step Ky *K)
+        (&direction Ky *D)
+        (jump (:P Q) D K (:Q *P)))
+
+      (INIT &odd_march_frame Frame
+        (key ((&first_odd (:Ky ^M) *P)
+              (frame_extent P *A *N))
+          (extent (A N)
+            (&first_odd (:Ky M) *P)
+            (frame_extent P *A *N))))
+
+      ;; The odd copies cast along the direction from the first one.
+      (INIT &odd_march Ray
+        (key ((OR ((&first_odd (:Ky ^M) *P))
+                  ((&direction (:Ky M) *D))
+                  ((&odd_march_frame.cell (:key M) P))))
+          (source (P)
+            (&first_odd (:Ky M) *P))
+          (node (P)
+            (&odd_march_frame.cell (:key M) *P))
+          (dir (D)
+            (&direction (:Ky M) *D))))
+
+      (RULE &odd_march_cell
+        (&first_odd (:Ky *Key))
+        (input *P)))
+    (RULE &copy
+      ;; The even copies: every second step on from a template cell.
+      (OR ((&first_odd *Ky)
+           (&step Ky *K)
+           (&march.ray (:key (:M Ky)) *P (:K *J))
+           (&march_cell (:Key Ky) P)
+           (> J 0)
+           (divide (:T J) (:Side K) (:Gap K) (:Remainder 0)))
+          ;; The odd copies: every second step on from a cell of the first copy.
+          ((&step Ky (:K *K2))
+           (&odd_march.ray (:key (:M Ky)) P (:K *J2))
+           (&odd_march_cell (:Key Ky) P)
+           (divide (:T J2) (:Side K2) (:Gap K2) (:Remainder 0)))))))
+
+(ALTS $tc "how the template's color is found" $StoredShapeColor
+  (ALT $TemplateByCount
+    (INPUT template-shape "the template's color is the one color other than the background that has more than one cell; undefined where the number of such colors is not one."
+      (RULE &template_color
+        (&multi.value (:v *Col))))
+    (INPUT single-marker "the marker is a cell of any other color.")))
+
+(ALTS $ex "which cells of the template's color make up the template" $AllShapeCells
+  (ALT $TouchingComponentTemplate
+    (INPUT template-shape "the template is the 8-connected component of template-colored cells that holds the cell diagonally next to the marker; undefined where the marker is diagonally next to cells of more than one component, or of none."
+      ;; The component diagonally next to the marker.
+      (INIT &touched Singleton
+        (key ((&lead ^M))
+          (member ((:v Id))
+            (diag_dir_elem *D)
+            (neighbor (:P M) D (:Q *P))
+            (&blobs.component P *Id))))
+
+      (RULE &template
+        (&touched.value (:key (:M *Ky)) (:v *Id))
+        (&blobs.component *P Id)))))
+
+(ALTS $mk "how many markers" $OneMarker
+  (ALT $EachMarker
+    (INPUT single-marker "each cell of a color other than the background and the template's color is a marker, and each marker gets its own line of copies in its color; undefined where some marker has no direction, and where two lines of different colors share a cell."
+      (RULE &lead
+        (&marker *M *Col)))))
+
+(ALTS $dr "how the diagonal direction is found" $PastTipDirection
+  (ALT $AdjacentCellDirection
+    (OUTPUT direction "the direction is the diagonal from the one template cell that is diagonally next to the marker, whether or not the marker lies past the template; undefined where the marker is diagonally next to more than one template cell, or to none."
+      (INIT &touching Singleton
+        (key ((&template (:Ky ^M) (:P *F))
+              (diag_dir_elem *D)
+              (neighbor (:P F) D (:Q M)))
+          (member ((:v F))
+            (&template (:Ky M) (:P *F))
+            (diag_dir_elem *D)
+            (neighbor (:P F) D (:Q M)))))
+
+      (RULE &direction
+        (&touching.value (:key (:M *Ky)) (:v *F))
+        (diag_dir_elem *D)
+        (neighbor (:P F) D (:Q Ky))))))
+
+(RULE &ahead_of_back
+  (&direction *Ky *D)
+  (&template Ky *P)
+  (&template Ky (:P *T))
+  (nearer D P (:Q T)))
+
+;; The step that carries the template's back line to the line one diagonal
+;; step past its front line.
+(RULE &step
+  (&direction *Ky *D)
+  (&front Ky (:P *F))
+  (neighbor (:P F) D (:Q *F1))
+  (&template Ky (:P *B))
+  (NOT (&ahead_of_back Ky (:P B)))
+  (&span *K)
+  (jump (:P B) D K *Q)
+  (corner_dist (:P Q) (:Diag D) (:K *N))
+  (corner_dist (:P F1) (:Diag D) (:K N)))
+
+(RULE &march_cell
+  (&step (:Ky *Key))
+  (input *P))
+
+;; A whole number of steps on from a template cell.
+(RULE &copy
+  (&step *Ky *K)
+  (&march.ray (:key (:M Ky)) *P (:K *J))
+  (&march_cell (:Key Ky) P)
+  (> J 0)
+  (divide (:T J) (:Side K) (:Gap 0) (:Remainder 0)))
+
+(RULE &paint
+  (&copy (:Ky *M) *P)
+  (&lead M *Col))
+
+(RULE &stuck
+  (&lead *M)
+  (NOT (&step (:Ky M))))
+
+(RULE &clash
+  (&paint *P (:Col *Col1))
+  (&paint P (:Col *Col2))
+  (!= Col1 Col2))
+
+(RULE &defined
+  (&lead)
+  (NOT (&stuck))
+  (NOT (&clash)))
+
+(RULE &output
+  (OR ((&defined)
+       (&paint *P *Col))
+      ((&defined)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

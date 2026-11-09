@@ -1,0 +1,269 @@
+;; inputs bcad65f5cda5ce50980a01b2dd738ade894561691db6d7bcfc3160c012ba0259 programs/solvers/f3b10344.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f3b10344
+
+(INPUT solid-rectangles "every input holds axis-aligned solid single-colored rectangles on a &bg field, each a 4-connected component of its color"
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (INIT &common Singleton
+    (member ((:v Col))
+      (&palette.maximal (:t *Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&common.value (:v *C)))
+
+  (INIT &comp8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT rectangles-apart "no two rectangles touch, even at a corner; each gap between two rectangles is at least one cell")
+
+(INPUT bridge-color-absent "no input cell holds &bridge"
+
+  (DET &bridge
+    (ex_output *E (:Col *C))
+    (NOT (ex_input E (:Col C)))))
+
+(OUTPUT facing-pair "two rectangles face each other along an axis when their spans on the other axis overlap and the band between them over that overlap holds only &bg")
+
+(OUTPUT same-color-bridge "a facing pair of one color is joined; a facing pair of two colors is not")
+
+(OUTPUT bridge-band "the bridge fills the gap between the pair, over the shared span less &inset cells at each end; where that leaves no cell, no bridge is drawn"
+
+  (INIT &comp4 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (RULE &obj
+    (&comp4.component (:key *Col) *P (:Id *O)))
+
+  (INIT &bbox BoundingBox
+    (key ((&obj ^O *P))
+      (cell (P)
+        (&obj O *P))))
+
+  (RULE &face_line
+    (&bbox.box (:key *O) *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (axis_of D (:A *Ax))
+    (split P (:A Ax) (:Across *X)))
+
+  (DET &cand
+    (ex_input *P)
+    (margin (:B P) *D *K)
+    (> K 0))
+
+  (DET &bridge_side
+    (&bridge (:C *Col))
+    (ex_output *E *P Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (NOT (ex_output E (:P Q) Col)))
+
+  (DET &face_end
+    (&bridge_side *E *P *D)
+    (perp_dir D (:D2 *D_face))
+    (neighbor P (:D D_face) (:Q *R))
+    (ex_output E (:P R) *Col)
+    (NOT (&bridge (:C Col)))
+    (NOT (&common.value (:v Col))))
+
+  (DET &short
+    (&cand *K)
+    (&face_end *E *R *D *Col)
+    (jump (:P R) D K (:Q *R2))
+    (NOT (ex_output E (:P R2) Col)))
+
+  (DET &inset
+    (&cand *K)
+    (NOT (&short K))
+    (&face_end *E *R *D *Col)
+    (jump (:P R) D K (:Q *R2))
+    (neighbor (:P R2) D (:Q *R3))
+    (NOT (ex_output E (:P R3) Col)))
+
+  ;; The count of lines of each face.
+  (INIT &face_width Cardinality
+    (key ((&face_line ^O ^D *X))
+      (member ((:m X))
+        (&face_line O D *X)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &margin
+    (&bbox.box (:key *O) *B)
+    (margin B *D *K))
+
+  (RULE &shared
+    (&face_line (:O *O1) *D *X)
+    (opposite D (:Opp *D_opp))
+    (&face_line (:O *O2) (:D D_opp) X))
+
+  (RULE &facing
+    (&shared *O1 *O2 *D)
+    (!= O1 O2)
+    (&obj (:O O1) *Col)
+    (&obj (:O O2) Col)
+    (&margin (:O O1) D (:K *K1))
+    (&margin (:O O2) D (:K *K2))
+    (< K2 K1))
+
+  (RULE &gap
+    (&facing *O1 *O2 *D)
+    (opposite D (:Opp *D_opp))
+    (&margin (:O O1) D (:K *K1))
+    (&margin (:O O2) (:D D_opp) (:K *K2))
+    (input *P)
+    (margin (:B P) D *K)
+    (< K K1)
+    (margin (:B P) (:D D_opp) (:K *K_opp))
+    (< K_opp K2))
+
+  (RULE &lane
+    (&gap *O1 *O2 *D *P)
+    (axis_of D (:A *Ax))
+    (split P (:A Ax) (:Across *X))
+    (&shared O1 O2 D X))
+
+  (RULE &zone
+    (&lane *O1 *O2 *D *P))
+
+  (RULE &trimmed
+    (&zone *O1 *O2 *D *P)
+    (perp_dir D (:D2 *E))
+    (&inset *K)
+    (jump P (:D E) K *Q)
+    (NOT (&zone O1 O2 D (:P Q))))
+
+  (RULE &bridge2
+    (&zone *O1 *O2 *D *P)
+    (NOT (&trimmed O1 O2 D P)))
+
+  (RULE &checked
+    (&lane *O1 *O2 *D *P))
+
+  (RULE &blocker
+    (&checked *O1 *O2 *D *P)
+    (input P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &crossing
+    (&bridge2 *O1 *O2 *D *P)
+    (NOT (&blocker O1 O2 D)))
+
+  (RULE &near_overhang
+    (&facing *O1 *O2 *D)
+    (&face_line (:O O1) D *X)
+    (NOT (&shared O1 O2 D X)))
+
+  (RULE &far_overhang
+    (&facing *O1 *O2 *D)
+    (opposite D (:Opp *D_opp))
+    (&face_line (:O O2) (:D D_opp) *X)
+    (NOT (&shared O1 O2 D X))))
+
+(ALTS $block "which cells in the band between a pair block it" $Opaque
+  (ALT $ThroughOtherColors
+    (OUTPUT facing-pair "only a cell of the pair's own color in the band blocks it; the bridge paints the band's &bg cells"
+      (RULE &blocker
+        (&checked *O1 *O2 *D *P)
+        (input P *Col)
+        (&obj (:O O1) Col)))
+    (RULE &paint
+      (&crossing *P)
+      (input P *Col)
+      (&bg (:C Col)))
+    (ALTS $obstacle "what the bridge does to another color's cells in its band" $KeepCells
+      (ALT $PaintOver
+        (OUTPUT keep-rest "the bridge overwrites every cell of its band")
+        (RULE &paint
+          (&crossing *P))))))
+
+(ALTS $region "the part of the band between a pair that must be clear" $WholeBand
+  (ALT $ClearBridgeOnly
+    (OUTPUT facing-pair "only the cells the bridge would fill must be clear"
+      (RULE &checked
+        (&bridge2 *O1 *O2 *D *P)))))
+
+(ALTS $span "the span a bridge covers, and which pairs get one" $SharedSpan
+  (ALT $NarrowerFace
+    (OUTPUT bridge-band "the bridge covers the narrower face's span less &inset at each end"
+      (RULE &narrow_line
+        (&facing *O1 *O2 *D)
+        (opposite D (:Opp *D_opp))
+        (&face_width.size (:key (:O O1) D) (:N *N1))
+        (&face_width.size (:key (:O O2) (:D D_opp)) (:N *N2))
+        (OR ((<= N1 N2)
+             (&face_line (:O O1) D *X))
+            ((<= N2 N1)
+             (&face_line (:O O2) (:D D_opp) X))))
+
+      (RULE &zone
+        (&gap *O1 *O2 *D *P)
+        (axis_of D (:A *Ax))
+        (split P (:A Ax) (:Across *X))
+        (&narrow_line O1 O2 D X))))
+  (ALT $NestedOnly
+    (OUTPUT nested-only "a pair whose spans do not nest, neither holding the other, gets no bridge"
+      (RULE &zone
+        (&lane *O1 *O2 *D *P)
+        (OR ((NOT (&near_overhang O1 O2 D)))
+            ((NOT (&far_overhang O1 O2 D)))))))
+  (ALT $InteriorNested
+    (OUTPUT interior-nested "a pair gets a bridge only when its two faces have one span, or one face's span holds the other's and reaches past it at both ends"
+      (RULE &no_further
+        (OR ((&facing (:O1 *O) *O2 *D))
+            ((&facing (:O1 O2) (:O2 O) D)))
+        (perp_dir D (:D2 *E1))
+        (&margin O (:D E1) *K)
+        (&margin (:O O2) (:D E1) (:K *K2))
+        (>= K K2))
+
+      (RULE &zone
+        (&lane *O1 *O2 *D *P)
+        (OR ((NOT (&near_overhang O1 O2 D))
+             (NOT (&far_overhang O1 O2 D)))
+            ((NOT (&no_further (:O O1) O2)))
+            ((NOT (&no_further (:O O2) (:O2 O1)))))))))
+
+(ALTS $adj "how an object's cells join" $Comp4
+  (ALT $Components8
+    (INPUT solid-rectangles "an object is an 8-connected same-colored component, and facing and spans are read from its bounding box"
+      (RULE &obj
+        (&comp8.component (:key *Col) *P (:Id *O))))))
+
+(RULE &paint
+  (&crossing *P))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&bridge (:C *Col)))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

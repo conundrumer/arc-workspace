@@ -1,0 +1,91 @@
+;; inputs fcd07e3e6fb55437e48cb894bda44a1a28df96a6aa510b1a732d252671ef4954 programs/solvers/d22278a0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d22278a0
+
+(param &background Color (0))
+(param &ring_period number (2))
+
+(alts $choice
+  (alt $RingThenTaxicab
+    (witness wide-grid variant concept
+      (relaxed square-grid)
+      (separates "a 6x11 grid with 1 at the top-left corner and 2 at the bottom-right corner: the taxicab territory gives (0,6) and (1,6) 1 and (4,4) and (5,4) 2; the Chebyshev-then-taxicab territory gives (1,6) 2 and (4,4) 1, and gives (0,6) and (5,4) 0")
+      (input (grid
+        (1 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 2)))
+      (output concept (grid
+        (1 0 1 0 1 0 1 0 0 0 0)
+        (0 0 1 0 1 0 1 2 2 2 2)
+        (1 1 1 0 1 0 2 0 0 0 0)
+        (0 0 0 0 1 0 2 0 2 2 2)
+        (1 1 1 1 2 0 2 0 2 0 0)
+        (0 0 0 0 2 0 2 0 2 0 2)))
+      (output $RingThenTaxicab (grid
+        (1 0 1 0 1 0 0 0 0 0 0)
+        (0 0 1 0 1 0 2 2 2 2 2)
+        (1 1 1 0 1 0 2 0 0 0 0)
+        (0 0 0 0 1 0 2 0 2 2 2)
+        (1 1 1 1 1 0 2 0 2 0 0)
+        (0 0 0 0 0 0 2 0 2 0 2))))
+    (witness edge-seed borderline concept
+      (relaxed corner-seeds)
+      (separates "2 at (3,6), the middle of the right edge, with 1 at the top-left corner: the taxicab territory gives (0,4) 1, (3,2) 2 and (6,1) 1; the Chebyshev-then-taxicab territory gives those three cells 0")
+      (input (grid
+        (1 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output concept (grid
+        (1 0 1 0 1 0 0)
+        (0 0 1 0 2 2 2)
+        (1 1 1 0 2 0 0)
+        (0 0 2 0 2 0 2)
+        (1 1 2 0 2 0 0)
+        (0 0 2 0 2 2 2)
+        (1 1 2 0 0 0 0)))
+      (output $RingThenTaxicab (grid
+        (1 0 1 0 0 0 0)
+        (0 0 1 0 2 2 2)
+        (1 1 1 0 2 0 0)
+        (0 0 0 0 2 0 2)
+        (1 1 2 0 2 0 0)
+        (0 0 2 0 2 2 2)
+        (1 0 2 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed square-grid)
+      (relaxed corner-seeds)
+      (separates "`background=DominantColor` from the stored value: train 3 with 0 and 3 swapped; the stored background 0 makes every cell a seed and the output is the input, the derived background 3 draws the rings of train 3 on 3")
+      (input (grid
+        (1 3 3 3 3 3 2)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (8 3 3 3 3 3 3)))
+      (output &background=$Stored (grid
+        (1 3 3 3 3 3 2)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (8 3 3 3 3 3 3)))
+      (output &background=$Derived (grid
+        (1 3 1 3 2 3 2)
+        (3 3 1 3 2 3 3)
+        (1 1 1 3 2 2 2)
+        (3 3 3 3 3 3 3)
+        (8 8 8 3 3 2 2)
+        (3 3 8 3 8 3 3)
+        (8 3 8 3 8 3 3))))))

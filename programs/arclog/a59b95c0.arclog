@@ -1,0 +1,24 @@
+;; inputs a8b38523383916f51f5c1956c78a022ff7cbdb651b33e3542bb74357f0dd7c06 programs/solvers/a59b95c0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a59b95c0
+
+(INIT &palette Cardinality
+  (member ((:m Col))
+    (input *Col)))
+
+(INIT &arr Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&palette.size *N)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&arr.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(RULE &output
+  (input (:P *P_intile) *Col)
+  (&output_tiling.cell (:P_inner P_intile) *P))
+
+(OUT (&output ^P ^Col))

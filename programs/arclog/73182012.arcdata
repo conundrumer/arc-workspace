@@ -1,0 +1,14 @@
+;; inputs a007a5d5500de3067df7168dcba7e60fd35ba258d24eeab33b838d78dc56f1d7 programs/solvers/73182012.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 73182012
+
+(representative 2013d3e2)
+
+(param &bg Color (0))
+(param &divisor number (2))
+(param &out_tile Position
+  (grid
+    (1 _)
+    (_ _)))
+(param &win_dim number (4))
+(param &corner DiagDir (DIAG_TL))

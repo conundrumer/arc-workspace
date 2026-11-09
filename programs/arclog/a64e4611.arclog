@@ -1,0 +1,593 @@
+;; inputs 0a4406b8cd860f5bd06c1c348f68c3cf77ad21f3894f9ccfe4aaeb61d9e8c3c1 programs/solvers/a64e4611.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a64e4611
+
+(INPUT noise-field "the grid is &background with cells of one other color scattered over it"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT band "one empty rectangle, all &background, is larger in area than every other empty rectangle. It reaches at least one grid edge. Every other empty rectangle at least seven cells wide on both axes overlaps it."
+
+  (RULE &blank
+    (input *P *Col)
+    (&background (:C Col)))
+
+  ;; The runs of blank cells.
+  (INIT &open_run Ray
+    (source (P)
+      (&blank *P))
+    (node (P)
+      (&blank *P))
+    (dir (D)
+      (&blank)
+      (dir_elem *D)))
+
+  (RULE &reach
+    (&open_run.end (:P *E) *D (:Origin *P))
+    (margin (:B E) D (:K *N)))
+
+  ;; The empty rectangle on P's line across D that reaches as far toward D as
+  ;; P's run: the cells of the line whose runs reach at least that far, joined
+  ;; to P along the line.
+  (INIT &base Flood
+    (key ((&reach ^D ^P))
+      (node ((:P Q))
+        (&reach D P *N)
+        (&reach D (:P *Q) (:N *N2))
+        (same_dist D (:P1 P) (:P2 Q))
+        (<= N2 N))
+      (source (P)
+        (&reach D P))))
+
+  ;; The rectangle's box: its base run and the end of P's run.
+  (INIT &hull BoundingBox
+    (key ((OR ((&base.reached (:key ^D ^P) (:P *Q)))
+              ((&open_run.end (:P *E) D (:Origin P))
+               (dir_elem D))))
+      (cell ((:P Q))
+        (OR ((&base.reached (:key D P) (:P *Q)))
+            ((&open_run.end (:P Q) D (:Origin P))
+             (dir_elem D))))))
+
+  (INIT &area Cardinality
+    (key ((&hull.box ^B)
+          (&blank *P)
+          (inside (:A P) B))
+      (member ((:m P))
+        (&hull.box B)
+        (&blank *P)
+        (inside (:A P) B))))
+
+  (INIT &short_side Order
+    (key ((&hull.box (:key *P) ^B)
+          (box_extent B P *N))
+      (member ((:t N))
+        (&hull.box (:key *P) B)
+        (box_extent B P *N))
+      (score ((:t N) (:S N))
+        (&hull.box (:key *P) B)
+        (box_extent B P *N))))
+
+  ;; WidestBand: the rectangle with the longest short side.
+  (INIT &by_side Order
+    (member ((:t (:V B) (:S N)))
+      (&short_side.minimal (:key *B) (:t *N)))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&short_side.minimal (:key *B) (:t *N))))
+
+  (INIT &side_area Order
+    (member ((:t (:V B) (:S N)))
+      (&by_side.maximal (:t (:V *B)))
+      (&area.size (:key B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&by_side.maximal (:t (:V *B)))
+      (&area.size (:key B) *N))))
+
+(INPUT channels "straight empty channels, each at least three cells wide, run from the band to a grid edge")
+
+(OUTPUT band-fill "the band's cells become &fill, except a margin &margin cells wide along each side of the band that is not on the grid edge"
+
+  (DET &margin DivisorRatio)
+
+  (DET &fill AnyOutNewColor))
+
+(OUTPUT channel-fill "a cell becomes &fill when no cell within &margin of it on either axis is off &background, and a straight line of such cells runs from it to a grid edge in one direction and to a &fill cell of the band in the other. The line stops at the band's &fill cells."
+
+  (RULE &edge_cell
+    (input (:P *E1))
+    (margin (:B E1) *D (:K 0)))
+
+  (RULE &open_run_run_full
+    (&open_run.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &open_line
+    (&edge_cell *D *E1)
+    (opposite D (:Opp *D2))
+    (OR ((&open_run_run_full (:V1 E1) (:V2 D2) (:V3 *P))
+         (margin (:B P) D *K))
+        ((&open_run.end (:P *F) (:D D2) (:Origin E1))
+         (neighbor (:P F) (:D D2) (:Q *N))
+         (input (:P N))
+         (margin (:B N) D K))))
+
+  (INIT &arm_group Connectivity
+    (key ((&open_line ^D ^K (:E1 *E)))
+      (node ((:P E))
+        (&open_line D K (:E1 *E)))))
+
+  (INIT &group_box BoundingBox
+    (key ((&arm_group.component (:key ^D ^K) (:P *E) ^Id))
+      (cell ((:P E))
+        (&arm_group.component (:key D K) (:P *E) Id))))
+
+  (RULE &group_end
+    (&arm_group.component (:key *D *K) (:P *E1) *Id)
+    (&group_box.box (:key D K Id) *B)
+    (perp_dir D (:D2 *D_p))
+    (inside (:A E1) B)
+    (relative (:Base B) (:X E1) (:X_rel *E_rel))
+    (margin (:B E_rel) (:D D_p) (:K *K_p))
+    (&margin (:K *M))
+    (< K_p M))
+
+  (RULE &cut_end
+    (&group_end *D *K *Id *E1 *D_p)
+    (&group_box.box (:key D K Id) *B)
+    (NOT (margin B (:D D_p) (:K 0))))
+
+  (RULE &arm_line
+    (&arm_group.component (:key *D *K) (:P *E_mid) *Id)
+    (NOT (&group_end D K Id (:E1 E_mid)))
+    (&arm_group.component (:key D K) (:P *E1) Id)
+    (NOT (&cut_end D K Id E1)))
+
+  (INIT &arm_span BoundingBox
+    (key ((&arm_line ^D ^K ^Id (:E1 *E)))
+      (cell ((:P E))
+        (&arm_line D K Id (:E1 *E)))))
+
+  (RULE &line_end
+    (&arm_group.component (:key *D *K) (:P *E) *Id)
+    (opposite D (:Opp *D2))
+    (&open_run.end (:P *F) (:D D2) (:Origin E))
+    (margin (:B F) D (:K *N)))
+
+  ;; How far from the edge every line of the group stays blank.
+  (INIT &arm_depth Order
+    (key ((&line_end ^D ^K ^Id *N))
+      (member ((:t N))
+        (&line_end D K Id *N))
+      (score ((:t N) (:S N))
+        (&line_end D K Id *N))))
+
+  (RULE &rect_far
+    (&arm_depth.minimal (:key *D (:K *G_k) *Id) (:t *N_d))
+    (&line_end D (:K G_k) Id *F (:N N_d))
+    (opposite D (:Opp *D2))
+    (OR ((NOT (margin (:B F) (:D D2) (:K 0)))
+         (&margin (:K *M))
+         (jump (:P F) D (:K M) (:Q *F2)))
+        ((margin (:B F) (:D D2) (:K 0))
+         (= F2 F)))
+    (margin (:B F2) (:D D2) *K))
+
+  (RULE &arm_reach
+    ;; The margin past any line across the group's side, as the far side of a
+    ;; piece's green lies the margin past the piece's far line.
+    (OR ((&arm_span.box (:key *D *K *Id))
+         (opposite D (:Opp *D2))
+         (perp_dir D (:D2 *D_p))
+         (&edge_cell (:D D_p) (:E1 *E))
+         (&margin (:K *M))
+         (jump (:P E) D (:K M) (:Q *E2))
+         (margin (:B E2) (:D D2) (:K *N)))
+        ((&rect_far D (:G_k K) Id (:K N)))))
+
+  (RULE &arm_edge
+    (OR ((&arm_reach (:D *Key_d) (:K *Key_k) *Id *N)
+         (&arm_span.box (:key (:D Key_d) (:K Key_k) Id) (:B *B_s))
+         (OR ((perp_dir (:D Key_d) (:D2 *D)))
+             ((= D Key_d)))
+         (margin (:B B_s) D *K))
+        ((&arm_reach (:D Key_d) (:K Key_k) Id N)
+         (opposite (:D Key_d) (:Opp D))
+         (= K N))))
+
+  (RULE &arm_axis
+    (axis_of (:D *D3) *A)
+    (opposite (:D D3) (:Opp *D2))
+    (&arm_edge (:Key_d *D) (:Key_k *K) *Id *N (:D D3) (:K *K1))
+    (&arm_edge (:Key_d D) (:Key_k K) Id N (:D D2) (:K *K2))
+    (axis_inset (:D D3) K1 K2 *B))
+
+  (RULE &arm
+    (&arm_axis *D *K *Id *N *A (:B *B1))
+    (perp A *A2)
+    (&arm_axis D K Id N (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B)))
+
+  (INIT &by_area Order
+    (member ((:t (:V B) (:S N)))
+      (&area.size (:key *B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&area.size (:key *B) *N)))
+
+  (RULE &crowded
+    (input *P)
+    (input (:P *Q) *Col)
+    (NOT (&background (:C Col)))
+    (&margin (:K *M))
+    (uniform_outset (:K M) (:B *O))
+    (compose (:A P) (:B O) (:C *B))
+    (inside (:A Q) B))
+
+  (RULE &band_box
+    (&by_area.maximal (:t (:V *B)))
+    (ALL ((&by_area.maximal (:t (:V *B1)))
+          (&by_area.maximal (:t (:V *B2))))
+         ((= B1 B2))))
+
+  (RULE &shape
+    (OR ((&hull.box *B))
+        ((&arm B))))
+
+  (RULE &long_axis
+    (&shape *B)
+    (input *P)
+    (corner_dist P (:K 0))
+    (box_extent B P *A *N)
+    (perp A *A2)
+    (box_extent B P (:A A2) (:N *N2))
+    (> N N2))
+
+  (RULE &across
+    (&shape *B)
+    (dir_elem *D))
+
+  (RULE &kept_side
+    (&band_box *B)
+    (dir_elem *D)
+    (NOT (margin B D (:K 0))))
+
+  (RULE &band_rim
+    (&kept_side *B *D)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) D *K)
+    (&margin (:K *M))
+    (< K M))
+
+  (RULE &band_green
+    (&band_box *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&band_rim B P)))
+
+  (RULE &lit
+    (&band_green))
+
+  (RULE &lane_run_node
+    (&lit)
+    (input *P)
+    (NOT (&crowded P))
+    (NOT (&band_green P)))
+
+  ;; The runs of clear cells outside the band's green.
+  (INIT &lane_run Ray
+    (source (P)
+      (&lane_run_node *P))
+    (node (P)
+      (&lane_run_node *P))
+    (dir (D)
+      (&lit)
+      (dir_elem *D)))
+
+  (RULE &lane
+    (&lane_run.end (:P *E) *D (:Origin *P))
+    (margin (:B E) D (:K 0))
+    (opposite D (:Opp *D2))
+    (&lane_run.end (:P *F) (:D D2) (:Origin P))
+    (neighbor (:P F) (:D D2) (:Q *G))
+    (&band_green *B (:P G))
+    (&across B D))
+
+  (RULE &channel_lane
+    (&lane *D *P))
+
+  (RULE &turns
+    (dir_elem *D)
+    (dir_elem (:D *D_q)))
+
+  ;; The lanes that lanes leave from: a cell whose line runs to edge D lies on
+  ;; a lane toward D when the cell behind it lies on a lane it may leave, or on
+  ;; a lane toward D.
+  (INIT &chain_lane Propagation
+    (source ((:n D P))
+      (&lane *D *P)))
+
+  ;; Lanes toward one edge whose edge cells touch form one channel.
+  (INIT &channel Connectivity
+    (key ((&channel_lane ^D (:P *E))
+          (margin (:B E) D (:K 0)))
+      (node ((:P E))
+        (&channel_lane D (:P *E))
+        (margin (:B E) D (:K 0)))))
+
+  (RULE &cross
+    (OR ((&channel.component (:key *D) *P *Id))
+        ((&channel.component (:key D) (:P *E) Id)
+         (perp_dir D (:D2 *D_p))
+         (neighbor (:P E) (:D D_p) (:Q P))
+         (input P))))
+
+  (RULE &cross_end
+    (&cross *D *Id (:P *Q))
+    (opposite D (:Opp *D2))
+    (&open_run.end (:P *F) (:D D2) (:Origin Q))
+    (margin (:B F) D (:K *N)))
+
+  ;; How far from the edge every line of the cross-section stays blank.
+  (INIT &depth Order
+    (key ((&cross_end ^D ^Id *N))
+      (member ((:t N))
+        (&cross_end D Id *N))
+      (score ((:t N) (:S N))
+        (&cross_end D Id *N))))
+
+  (INIT &chan_box BoundingBox
+    (key ((OR ((&cross ^D ^Id (:P *Q)))
+              ((&depth.minimal (:key D Id) (:t *N))
+               (&cross_end D Id *F N))))
+      (cell ((:P Q))
+        (OR ((&cross D Id (:P *Q)))
+            ((&depth.minimal (:key D Id) (:t *N))
+             (&cross_end D Id (:F Q) N))))))
+
+  (RULE &arm_off
+    (&shape *B)
+    (margin B *D *K)
+    (NOT (margin B D (:K 0)))
+    (&across B D)
+    (&arm_span.box (:key D K *Id)))
+
+  ;; Through the far side of the piece's green.
+  (RULE &arm_far
+    (&arm_off *B *D *K *Id)
+    (opposite D (:Opp *D2))
+    (&margin (:K *M))
+    (jump (:P B) D (:K M) (:Q *B2))
+    (margin (:B B2) (:D D2) (:K *N))))
+
+(OUTPUT keep "every other cell keeps its input color")
+
+(ALTS $bands "which empty rectangle is the band" $LargestArea
+  (ALT $WidestBand
+    (INPUT band "the band is the empty rectangle with the longest short side, and a tie goes to the larger area. Undefined on a remaining tie."
+      (RULE &band_box
+        (&side_area.maximal (:t (:V *B)))
+        (ALL ((&side_area.maximal (:t (:V *B1)))
+              (&side_area.maximal (:t (:V *B2))))
+             ((= B1 B2)))))
+    (ALT $ChannelChain
+      (ALT $SideEmpty
+        (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+          (RULE &piece
+            (OR ((&band_box (:B *B0))
+                 (&chain.reached (:key B0) (:n *B)))
+                ((&band_box B))))))))
+  (ALT $TiedBands
+    (INPUT band "every empty rectangle of the largest area is a band"
+      ;; TiedBands: every rectangle of the largest area.
+      (RULE &band_box
+        (&by_area.maximal (:t (:V *B)))))
+    (ALT $ChannelChain
+      (ALT $SideEmpty
+        (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+          (RULE &piece
+            (OR ((&band_box (:B *B0))
+                 (&chain.reached (:key B0) (:n *B)))
+                ((&band_box B))))))))
+  (ALT $EveryRegion
+    (INPUT band "every empty rectangle at least &region_side cells wide on both axes that overlaps no larger such rectangle is a band"
+      ;; The short side of each input's largest empty rectangle, over the train
+      ;; and the test inputs.
+      (INIT &band_side Order
+        (member ((:t N))
+          (&by_area.maximal *E (:t (:V *B)))
+          (&short_side.minimal E (:key B) (:t *N)))
+        (score ((:t N) (:S N))
+          (&by_area.maximal *E (:t (:V *B)))
+          (&short_side.minimal E (:key B) (:t *N))))
+
+      (DET &region_side
+        (&band_side.minimal (:t *K)))
+
+      (RULE &wide
+        (&short_side.minimal (:key *B) (:t *N))
+        (&region_side *K)
+        (>= N K))
+
+      (RULE &outgrown
+        (&wide *B)
+        (&wide (:B *B2))
+        (&area.member (:key B) (:m *P))
+        (&area.member (:key (:B B2)) (:m P))
+        (&area.size (:key B) *N)
+        (&area.size (:key (:B B2)) (:N *N2))
+        (< N N2))
+
+      (RULE &band_box
+        (&wide *B)
+        (NOT (&outgrown B))))
+    (ALT $ChannelChain
+      (ALT $SideEmpty
+        (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+          (RULE &piece
+            (OR ((&band_box (:B *B0))
+                 (&chain.reached (:key B0) (:n *B)))
+                ((&band_box B)))))))))
+
+(ALTS $anchor "what a channel runs to" $BandAnchor
+  (ALT $ChannelChain
+    (OUTPUT channel-fill "a channel may also run to a channel's &fill cell, and it continues past a channel it crosses"
+      ;; The lanes that lanes leave from: a cell whose line runs to edge D lies on
+      ;; a lane toward D when the cell behind it lies on a lane it may leave, or on
+      ;; a lane toward D.
+      (INIT &chain_lane Propagation
+        (source ((:n D P))
+          (&lane *D *P))
+        (edge ((:a (:D D_q) (:P Q)) (:b D P))
+          (&lane_run.end (:P *E) *D (:Origin *P))
+          (margin (:B E) D (:K 0))
+          (opposite D (:Opp *D2))
+          (neighbor P (:D D2) *Q)
+          (&lane_run_node (:P Q))
+          (OR ((&turns D *D_q))
+              ((= D_q D)))))
+
+      (RULE &channel_lane
+        (&chain_lane.reached (:n *D *P))))
+    (ALT $SideEmpty
+      (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+        ;; The lanes that lanes leave from: a cell whose line runs to edge D lies on
+        ;; a lane toward D when the cell behind it lies on a lane it may leave, or on
+        ;; a lane toward D.
+        (INIT &chain_lane Propagation
+          (source ((:n D P))
+            (&lane *D *P)))
+
+        ;; The boxes reached from the band, each box sending off its arm.
+        (INIT &chain Propagation
+          (key ((&band_box (:B ^B0)))
+            (source ((:n B0))))
+          (edge ((:a B) (:b B_arm))
+            (&arm_far *B (:D *G_d) (:K *G_k) (:Id *G_id) *N)
+            (&arm (:D G_d) (:K G_k) (:Id G_id) N (:B *B_arm))))
+
+        (RULE &piece
+          (&band_box (:B *B0))
+          (&chain.reached (:key B0) (:n *B))))
+      (ALT $BandEdgeMargin
+        (OUTPUT band-fill "the margin is also kept along each long side of the band on the grid edge. Undefined on a square band."
+          (RULE &piece
+            (OR ((&band_box (:B *B0))
+                 (&chain.reached (:key B0) (:n *B)))
+                ((&band_box B)))))))
+    (ALT $ChannelRect
+      (ALT $SideEmpty
+        (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+          (RULE &piece
+            (OR ((&band_box (:B *B0))
+                 (&chain.reached (:key B0) (:n *B)))
+                ((&band_box B)))))))
+    (ALT $PerpendicularChannels
+      (ALT $SideEmpty
+        (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+          (RULE &piece
+            (OR ((&band_box (:B *B0))
+                 (&chain.reached (:key B0) (:n *B)))
+                ((&band_box B)))))))))
+
+(ALTS $extent "where a channel's green ends" $StopAtBand
+  (ALT $ChannelRect
+    (OUTPUT channel-fill "a channel is a run of touching lines toward one edge. It covers the rectangle of its lines and one line on each side, from the grid edge on while every cell is &background, less the margin at each side off the grid edge."
+      (RULE &chan_rim
+        (&chan_box.box (:key *D *Id) *B)
+        (input *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (margin (:B P_rel) (:D *D2) *K)
+        (NOT (margin B (:D D2) (:K 0)))
+        (&margin (:K *M))
+        (< K M))
+
+      (RULE &arm_far
+        (&arm_off *B *D *K *Id)
+        (&rect_far D (:G_k K) Id (:K *N))))
+    (RULE &channel_green
+      (&chan_box.box (:key *D *Id) *B)
+      (input *P)
+      (inside (:A P) B)
+      (NOT (&chan_rim D Id P)))))
+
+(ALTS $heading "the directions a channel may leave its band in" $AnyHeading
+  (ALT $PerpendicularChannels
+    (OUTPUT channel-fill "a channel leaves only across the long axis of the piece it runs to. Undefined on a square band."
+      (RULE &across
+        (&long_axis *B *A)
+        (perp A *A2)
+        (axis_of *D (:A A2)))
+
+      (RULE &turns
+        (axis_of *D *A)
+        (axis_of (:D *D_q) (:A *A2))
+        (perp A A2))
+
+      (RULE &needs_axis)
+
+      (RULE &unaligned
+        (&band_box *B)
+        (NOT (&long_axis B))
+        (&needs_axis)))
+    (RULE &unready
+      (OR ((NOT (&band_box)))
+          ((&unaligned))))))
+
+(ALTS $line "what makes a channel" $ClearLine
+  (ALT $SideEmpty
+    (OUTPUT channel-fill "on each side of the band off the grid edge, a line across that side is an arm line when every cell between the grid edge and the band's side is &background. A run of arm lines with a line past the margin at each end is an arm. The arm's lines, less the margin at each end off the grid edge, become &fill from the grid edge through the far side of the band's &fill cells, over cells of any color."
+      (RULE &piece
+        (&band_box *B))
+
+      (RULE &arm_cell
+        (&piece *B)
+        (&arm_far B (:D *G_d) (:K *G_k) (:Id *G_id) *N)
+        (&arm (:D G_d) (:K G_k) (:Id G_id) N (:B *B_arm))
+        (input *P)
+        (inside (:A P) (:B B_arm))))
+    (RULE &green
+      (OR ((&arm_cell *P))
+          ((&band_green P))))))
+
+(ALTS $edge "the band's margin on the grid edge" $OpenEdge
+  (ALT $BandEdgeMargin
+    (OUTPUT band-fill "the margin is also kept along each long side of the band on the grid edge. Undefined on a square band."
+      (RULE &kept_side
+        (OR ((&band_box *B)
+             (&long_axis B *A)
+             (perp A *A2)
+             (axis_of *D (:A A2)))
+            ((&band_box B)
+             (dir_elem D)
+             (NOT (margin B D (:K 0))))))
+
+      (RULE &needs_axis)
+
+      (RULE &unaligned
+        (&band_box *B)
+        (NOT (&long_axis B))
+        (&needs_axis)))
+    (RULE &unready
+      (OR ((NOT (&band_box)))
+          ((&unaligned))))))
+
+(RULE &channel_green
+  (&channel_lane *P))
+
+(RULE &green
+  (OR ((&band_green *P))
+      ((&channel_green P))))
+
+(RULE &unready
+  (NOT (&band_box)))
+
+(RULE &output
+  (NOT (&unready))
+  (input *P (:Col *Col_in))
+  (IF ((&green P))
+      ((&fill (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

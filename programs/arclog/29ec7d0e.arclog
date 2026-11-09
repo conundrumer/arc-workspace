@@ -1,0 +1,43 @@
+;; inputs b581e58fd0a0b3cdd23bdeb55b9bfcbbe5ad95de19d5826c15361b133e79f65a programs/solvers/29ec7d0e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 29ec7d0e
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&clean *P *Col)))
+
+(RULE &period
+  (&si.fundamental_period *A *K))
+
+(ALTS $choice "how the repair finds the period-preserving shift" $Shift
+  (ALT $Count
+    (INIT &palette Cardinality
+      (member ((:m Col))
+        (&clean *Col)))
+
+    (RULE &period
+      (&palette.size (:N *K))
+      (axis_elem *A))))
+
+(RULE &phase
+  (input *P)
+  (diag_dist P (:Diag *Dg) *A (:K1 *T) (:K2 *T2))
+  (perp A *A2)
+  (&period A *K)
+  (divide T (:Side K) (:Gap 0) (:Remainder *R))
+  (&period (:A A2) (:K *K2))
+  (divide (:T T2) (:Side K2) (:Gap 0) (:Remainder *R2)))
+
+;; A cell takes the value of the clean cells at its place in the tile.
+(RULE &output
+  (&phase *Dg *A (:P *Q) *R *R2)
+  (&clean (:P Q) *Col)
+  (&phase Dg A *P R R2))
+
+(OUT (&output ^P ^Col))

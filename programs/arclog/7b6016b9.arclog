@@ -1,0 +1,30 @@
+;; inputs 6378d7ca8e8d86264996cfcaa4590190a6a2b6c3baa8194d0cf36f1e14c53d6a programs/solvers/7b6016b9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b6016b9
+
+(DET &bg ChangedColor)
+
+(DET &outside_fill AnyOutNewColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &outside Flood
+  (node (P)
+    (&bg_cell *P))
+  (source (P)
+    (&bg_cell *P)
+    (margin (:B P) *D (:K 0))))
+
+(RULE &output
+  (OR ((&bg_cell *P)
+       (IF ((&outside.reached P))
+           ((&outside_fill (:C *Col)))
+           ((&fill (:C Col)))))
+      ((input P Col)
+       (NOT (&bg_cell P)))))
+
+(OUT (&output ^P ^Col))

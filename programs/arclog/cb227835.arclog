@@ -1,0 +1,72 @@
+;; inputs 1df1090c5994d8e536a6ff89aaa9177c7032a0bb6de3be4c531262ead5724a8a programs/solvers/cb227835.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cb227835
+
+(INPUT two-markers "on a field of background 0, the input holds exactly two cells of &marker_color, and no other cell"
+
+  (DET_OR_RULE &marker_color RarestColor))
+
+(INPUT markers-off-lines "the two markers share no row, no column and no diagonal, so the row offset and the column offset between them are both nonzero and differ in size")
+
+(OUTPUT two-king-paths "from each marker, the output draws the two shortest king-move paths to the other marker that are one straight run and one diagonal run: a straight run of |dr − dc| cells along the axis of the larger offset and a diagonal run of min(dr, dc) cells toward the other marker, in each of the two orders. The cells of those paths, the markers excluded, take &path_color"
+
+  (DET &path_color AnyOutNewColor)
+
+  (RULE &marker
+    (input *P *Col)
+    (&marker_color (:C Col)))
+
+  ;; The lines from each marker toward the eight directions.
+  (INIT &run Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir8_elem *D))))
+
+(OUTPUT markers-kept "the markers keep &marker_color, and every other cell keeps its input color")
+
+(ALTS $choice "which cells are the two markers" $Colored
+  (ALT $NonBackground
+    (INPUT two-markers "the input holds exactly two cells not of &background, of any colors; undefined where it holds more than two"
+      (DET_OR_RULE &background DominantColor)
+
+      (RULE &marker
+        (input *P *Col)
+        (NOT (&background (:C Col)))))))
+
+(RULE &crowded
+  (&marker (:P *A))
+  (&marker (:P *B))
+  (&marker (:P *C))
+  (!= A B)
+  (!= A C)
+  (!= B C))
+
+(RULE &corner
+  (&marker (:P *A))
+  (&marker (:P *B))
+  (!= A B)
+  (&run.ray (:P *C) (:D *D1) (:K *K1) (:Origin A))
+  (dir_elem (:D D1))
+  (&run.ray (:P C) (:D *D2) (:K *K2) (:Origin B))
+  (diag_dir_elem (:D D2))
+  (NOT (nearer (:D D1) (:P C) (:Q B))))
+
+(RULE &outline
+  (&corner *A *D1 *K1 *B *D2 *K2)
+  (OR ((&run.ray *P (:D D1) *K (:Origin A))
+       (<= K K1))
+      ((&run.ray P (:D D2) K (:Origin B))
+       (<= K K2)))
+  (NOT (&marker P)))
+
+(RULE &output
+  (NOT (&crowded))
+  (input *P (:Col *Col_in))
+  (IF ((&outline P))
+      ((&path_color (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

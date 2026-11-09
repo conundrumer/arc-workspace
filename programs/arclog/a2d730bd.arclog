@@ -1,0 +1,472 @@
+;; inputs fbf49e274827accf4c87ed49c112aed0df292019ada248b2f4a51e0a44810e3a programs/solvers/a2d730bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a2d730bd
+
+(INPUT background "the most frequent color fills the grid, and its value differs between inputs")
+
+(INPUT blocks "each non-background color forms one solid rectangle, at least two cells in each dimension")
+
+(INPUT dots "every other non-background cell is a single cell (no 8-neighbor of a non-background color), and its color is the color of one block")
+
+(INPUT aligned "each dot's row lies in its block's row span, or its column lies in its block's column span; the dot lies outside the block, at least two cells from it")
+
+(OUTPUT connect "for each dot, let d be the cardinal direction from its same-color block to the dot, along the axis where the dot is outside the block's span"
+
+  (INIT &ground_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The background: the commonest color.
+  (INIT &ground Order
+    (member ((:t Col))
+      (&ground_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ground_count.size (:key *Col) *N)))
+
+  ;; The pieces: the edge-joined parts of each non-background color.
+  (INIT &pieces Connectivity
+    (key ((input *P ^Col)
+          (NOT (&ground.maximal (:t Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&ground.maximal (:t Col))))))
+
+  (INIT &box BoundingBox
+    (key ((&pieces.component ^Id *P))
+      (cell (P)
+        (&pieces.component Id *P))))
+
+  (RULE &hole
+    (&box.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&pieces.component Id P)))
+
+  (RULE &joined
+    (&pieces.component *Id *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&pieces.component Id (:P Q)))
+
+  (RULE &joined_on
+    (&joined *Id *P *D)
+    (axis_of D *A))
+
+  (RULE &slim
+    (&pieces.component *Id *P)
+    (axis_elem *A)
+    (NOT (&joined_on Id P A)))
+
+  (RULE &single
+    (&pieces.component *Id *P (:key *Col))
+    (NOT (&joined Id P)))
+
+  (RULE &block
+    (&pieces.component *Id (:key *Col))
+    (NOT (&hole Id))
+    (NOT (&slim Id)))
+
+  (RULE &beyond
+    (&single *P *Col)
+    (&block *Id Col)
+    (&box.box (:key Id) *B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K)
+    (< K 0))
+
+  (RULE &off_span
+    (&beyond *P *Id *D)
+    (axis_of D *A))
+
+  (RULE &aligned
+    (&beyond *P *Id *D)
+    (axis_of D *A)
+    (perp A *A2)
+    (NOT (&off_span P Id (:A A2))))
+
+  (RULE &rival
+    (&beyond *P *Id *D *K)
+    (&beyond P Id (:D *D2) (:K *K2))
+    (!= D2 D)
+    (>= K2 K))
+
+  (RULE &face
+    (&beyond *P *Id *D)
+    (NOT (&rival P Id D)))
+
+  (RULE &gap
+    (&beyond *P *Id *D *K)
+    (OR ((&face P Id D))
+        ((NOT (&face P Id)))))
+
+  (RULE &own
+    (&single *P *Col)
+    (&block *Id Col))
+
+  (RULE &several
+    (&own *P *Id)
+    (&own P (:Id *Id2))
+    (!= Id Id2))
+
+  ;; The nearest blocks of the dot's color that it is aligned with.
+  (INIT &near_aligned Order
+    (key ((&several ^P))
+      (member ((:t (:V Id) (:S K)))
+        (&own P *Id)
+        (&aligned P Id)
+        (&gap P Id *K))
+      (score ((:t (:V Id) (:S K)) (:S K))
+        (&own P *Id)
+        (&aligned P Id)
+        (&gap P Id *K))))
+
+  ;; The nearest blocks of the dot's color, when none is aligned with it.
+  (INIT &near_any Order
+    (key ((&several ^P))
+      (member ((:t (:V Id) (:S K)))
+        (&own P *Id)
+        (NOT (&near_aligned.member (:key P)))
+        (&gap P Id *K))
+      (score ((:t (:V Id) (:S K)) (:S K))
+        (&own P *Id)
+        (NOT (&near_aligned.member (:key P)))
+        (&gap P Id *K)))))
+
+(OUTPUT foot "the cell just outside the block's side facing the dot, on the dot's line, and its two neighbors across d take the dot's color")
+
+(OUTPUT line "every cell on the dot's line strictly between the block and the dot takes the dot's color")
+
+(OUTPUT head "the dot's two neighbors across d and its neighbor one step further along d take the dot's color")
+
+(OUTPUT clear "the dot's own cell becomes background")
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (DET &block2
+    (&pieces.component *E *Id (:key *Col))
+    (NOT (&hole E Id))
+    (NOT (&slim E Id)))
+
+  (DET &beyond2
+    (&single *E *P *Col)
+    (&block2 E *Id Col)
+    (&box.box E (:key Id) *B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K)
+    (< K 0))
+
+  (DET &stretch2
+    (&beyond2 *E *P *Id *D)
+    (&box.box E (:key Id) *B)
+    (axis_of D *A)
+    (ex_input E (:P *X))
+    (same_line A P (:Q X))
+    (relative (:Base B) X *X_rel)
+    (margin (:B X_rel) D *K)
+    (< K 0)
+    (nearer D P (:Q X)))
+
+  (DET &foot3
+    (&stretch2 *E *P *Id *D (:X *F))
+    (opposite D (:Opp *D_back))
+    (neighbor (:P F) (:D D_back) (:Q *G))
+    (NOT (&stretch2 E P Id D (:X G))))
+
+  (DET &off_span2
+    (&beyond2 *E *P *Id *D)
+    (axis_of D *A))
+
+  (DET &aligned2
+    (&beyond2 *E *P *Id *D)
+    (axis_of D *A)
+    (perp A *A2)
+    (NOT (&off_span2 E P Id (:A A2))))
+
+  (DET &twin
+    (&block2 *E *Id *Col)
+    (&block2 E (:Id *Id2) Col)
+    (!= Id Id2))
+
+  (DET &plain
+    (ex_output *E)
+    (&single E *P *Col)
+    (&block2 E *Id Col)
+    (NOT (&twin E Col))
+    (&aligned2 E P Id *D))
+
+  (DET &chosen
+    (&plain *E *P *Id *D)
+    (&foot3 E P Id D *F)
+    (&single E P *Col))
+
+  (DET &inked
+    (ex_input *E *P (:Col *Bg))
+    (&ground.maximal E (:t Bg))
+    (ex_output E P *Col)
+    (!= Col Bg))
+
+  ;; The foot: the inked cells of the dot's color on the foot center's line
+  ;; across D, joined to the center.
+  (INIT &across Ray
+    (key ((OR ((&chosen ^E ^P *D *F *Col)
+               (&inked E (:P *X) Col)
+               (same_dist D (:P1 X) (:P2 F)))
+              ((&chosen E P D)
+               (perp_dir D *D2))))
+      (source ((:P X))
+        (&chosen E P *D *F *Col)
+        (&inked E (:P *X) Col)
+        (same_dist D (:P1 X) (:P2 F)))
+      (node ((:P X))
+        (&chosen E P *D *F *Col)
+        (&inked E (:P *X) Col)
+        (same_dist D (:P1 X) (:P2 F)))
+      (dir ((:D D2))
+        (&chosen E P *D)
+        (perp_dir D *D2))))
+
+  (DET &across_run_full
+    (&across.ray (:key *E *P) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (DET &aim
+    (&chosen *E *P *D))
+
+  (DET &foot_offsets
+    (&chosen *E *P *F)
+    (OR ((&across_run_full E P (:V1 F) (:V3 *X)))
+        ((= X F)))
+    (relative (:Base F) X (:X_rel *V)))
+
+  ;; The head: the inked cells of the dot's color no nearer the block than
+  ;; the dot, joined to the dot.
+  (INIT &head Flood
+    (key ((&chosen ^E ^P))
+      (node ((:P P2))
+        (OR ((&chosen E P *D *Col)
+             (&inked E (:P *P2) Col)
+             (NOT (nearer D P (:Q P2))))
+            ((&chosen E P)
+             (= P2 P))))
+      (source (P)
+        (&chosen E P))))
+
+  (DET &head_offsets
+    (&head.reached (:key *E *P) (:P *X))
+    (!= X P)
+    (relative (:Base P) X (:X_rel *V)))
+
+  ;; The drawing, in the frame where the dot lies toward `aim` from its block:
+  ;; the foot around the first cell outside the block, and the head around
+  ;; the dot.
+  (RIGID_DET &draw
+    (instance ((OR ((&aim ^E ^P)) ((&foot_offsets E P)) ((&head_offsets E P))))
+      (&aim E P *D)
+      (&foot_offsets E P *V)
+      (&head_offsets E P *V)))
+
+  (RULE &foot
+    (&draw.aim (:Pose *G) *D)
+    (&draw.foot_offsets (:Pose G) *V))
+
+  (RULE &head2
+    (&draw.aim (:Pose *G) *D)
+    (&draw.head_offsets (:Pose G) *V))
+
+  (RULE &stretch
+    (&beyond *P *Id *D)
+    (&box.box (:key Id) *B)
+    (axis_of D *A)
+    (input (:P *X))
+    (same_line A P (:Q X))
+    (relative (:Base B) X *X_rel)
+    (margin (:B X_rel) D *K)
+    (< K 0)
+    (nearer D P (:Q X)))
+
+  (RULE &foot2
+    (&stretch *P *Id *D (:X *F))
+    (opposite D (:Opp *D_back))
+    (neighbor (:P F) (:D D_back) (:Q *G))
+    (NOT (&stretch P Id D (:X G))))
+
+  (RULE &stroke
+    (&beyond *P *Id *D)
+    (&single P (:Col *Col_dot))
+    (OR ((&foot2 P Id D *F)
+         (&foot D *V)
+         (compose (:A F) (:B V) (:C *X))
+         (input (:P X))
+         (= *Col Col_dot))
+        ((&stretch P Id D X)
+         (= Col Col_dot))
+        ((&head2 D V)
+         (compose (:A P) (:B V) (:C X))
+         (input (:P X))
+         (= Col Col_dot))
+        ((= X P)
+         (&ground.maximal (:t Col)))))
+
+  (RULE &pick
+    (&own *P *Id)
+    (NOT (&several P)))
+
+  (RULE &link
+    (&pick *P *Id)
+    (&aligned P Id *D)))
+
+(ALTS $unaligned "what a dot outside both spans of its block gives" $NeedAligned
+  (ALT $NearestFace
+    (OUTPUT connect "d is the direction of the block's side with the smallest gap to the dot, and the foot and the line stand on the dot's row or column even when it misses the block. Undefined when two sides tie."
+      (RULE &link
+        (OR ((&pick *P *Id)
+             (&face P Id *D))
+            ((&pick P Id)
+             (&aligned P Id D)))))
+    (ALT $AlignedBlock
+      (OUTPUT connect "the dot connects to the nearest block of its color that it is aligned with. Undefined when two tie on the gap. When none is aligned, NearestFace connects it to the block with the smallest gap, and SkipUnaligned keeps the dot."
+        (RULE &any_tie
+          (&near_any.maximal (:key *P) (:t (:V *Id)))
+          (&near_any.maximal (:key P) (:t (:V *Id2)))
+          (!= Id Id2))
+        (RULE &pick
+          (OR ((&near_aligned.maximal (:key *P) (:t (:V *Id)))
+               (NOT (&aligned_tie P)))
+              ((&near_any.maximal (:key P) (:t (:V Id)))
+               (NOT (&any_tie P)))
+              ((&own P Id)
+               (NOT (&several P))))))))
+  (ALT $SkipUnaligned
+    (OUTPUT unaligned "a dot outside both spans of its block keeps its input color"
+      (RULE &skip
+        (&pick *P *Id)
+        (NOT (&aligned P Id))))
+    (RULE &blank
+      (OR ((&single (:P *X))
+           (NOT (&link (:P X)))
+           (NOT (&skip (:P X))))
+          ((&pieces.component *Id (:P X))
+           (NOT (&single (:P X)))
+           (NOT (&block Id)))))
+    (ALT $AlignedBlock
+      (OUTPUT connect "the dot connects to the nearest block of its color that it is aligned with. Undefined when two tie on the gap. When none is aligned, NearestFace connects it to the block with the smallest gap, and SkipUnaligned keeps the dot."
+        (RULE &skip
+          (&several *P)
+          (NOT (&near_aligned.member (:key P)))))
+      (ALT $ThinBlock
+        (INPUT blocks "a solid rectangle of two or more cells is a block at any width"
+          (RULE &skip
+            (OR ((&pick *P *Id)
+                 (NOT (&aligned P Id)))
+                ((&several P)
+                 (NOT (&near_aligned.member (:key P))))))))
+      (ALT $PaintBgOnly
+        (OUTPUT foot "only the foot cells that are background in the input take the dot's color"
+          (RULE &skip
+            (OR ((&pick *P *Id)
+                 (NOT (&aligned P Id)))
+                ((&several P)
+                 (NOT (&near_aligned.member (:key P)))))))))
+    (ALT $SkipOrphan
+      (OUTPUT orphan "a dot with no block of its color keeps its input color"
+        (RULE &skip
+          (OR ((&pick *P *Id)
+               (NOT (&aligned P Id)))
+              ((&single P)
+               (NOT (&own P))))))
+      (ALT $AlignedBlock
+        (OUTPUT connect "the dot connects to the nearest block of its color that it is aligned with. Undefined when two tie on the gap. When none is aligned, NearestFace connects it to the block with the smallest gap, and SkipUnaligned keeps the dot."
+          (RULE &skip
+            (OR ((&pick *P *Id)
+                 (NOT (&aligned P Id)))
+                ((&single P)
+                 (NOT (&own P)))
+                ((&several P)
+                 (NOT (&near_aligned.member (:key P)))))))
+        (ALT $ThinBlock
+          (INPUT blocks "a solid rectangle of two or more cells is a block at any width"
+            (RULE &skip
+              (OR ((&pick *P *Id)
+                   (NOT (&aligned P Id)))
+                  ((&single P)
+                   (NOT (&own P)))
+                  ((&several P)
+                   (NOT (&near_aligned.member (:key P))))))))
+        (ALT $PaintBgOnly
+          (OUTPUT foot "only the foot cells that are background in the input take the dot's color"
+            (RULE &skip
+              (OR ((&pick *P *Id)
+                   (NOT (&aligned P Id)))
+                  ((&single P)
+                   (NOT (&own P)))
+                  ((&several P)
+                   (NOT (&near_aligned.member (:key P))))))))))))
+
+(ALTS $orphan "what a dot with no block of its color gives" $NeedBlock
+  (ALT $SkipOrphan
+    (OUTPUT orphan "a dot with no block of its color keeps its input color"
+      (RULE &skip
+        (&single *P)
+        (NOT (&own P))))
+    (RULE &blank
+      (OR ((&single (:P *X))
+           (NOT (&link (:P X)))
+           (NOT (&skip (:P X))))
+          ((&pieces.component *Id (:P X))
+           (NOT (&single (:P X)))
+           (NOT (&block Id)))))))
+
+(ALTS $several "which block a dot connects to when its color has more than one" $SoleBlock
+  (ALT $AlignedBlock
+    (OUTPUT connect "the dot connects to the nearest block of its color that it is aligned with. Undefined when two tie on the gap. When none is aligned, NearestFace connects it to the block with the smallest gap, and SkipUnaligned keeps the dot."
+      (RULE &aligned_tie
+        (&near_aligned.maximal (:key *P) (:t (:V *Id)))
+        (&near_aligned.maximal (:key P) (:t (:V *Id2)))
+        (!= Id Id2))
+
+      (RULE &pick
+        (OR ((&near_aligned.maximal (:key *P) (:t (:V *Id)))
+             (NOT (&aligned_tie P)))
+            ((&own P Id)
+             (NOT (&several P))))))))
+
+(ALTS $thin "which solid rectangles are blocks" $ThickBlock
+  (ALT $ThinBlock
+    (INPUT blocks "a solid rectangle of two or more cells is a block at any width"
+      (RULE &block
+        (&pieces.component *Id *P (:key *Col))
+        (&joined Id P)
+        (NOT (&hole Id))))))
+
+(ALTS $content "what a drawing does to a cell that is not background in the input" $PaintOver
+  (ALT $PaintBgOnly
+    (OUTPUT foot "only the foot cells that are background in the input take the dot's color")
+    (OUTPUT line "only the line cells that are background in the input take the dot's color")
+    (OUTPUT head "only the head cells that are background in the input take the dot's color")
+    (RULE &draw2
+      (&link *P *Id *D)
+      (&stroke P Id D *X *Col)
+      (OR ((input (:P X) (:Col *Bg))
+           (&ground.maximal (:t Bg)))
+          ((= X P))))))
+
+(RULE &blank
+  (OR ((&single (:P *X))
+       (NOT (&link (:P X))))
+      ((&pieces.component *Id (:P X))
+       (NOT (&single (:P X)))
+       (NOT (&block Id)))))
+
+(RULE &draw2
+  (&link *P *Id *D)
+  (&stroke P Id D *X *Col))
+
+;; Each cell under each case: painted, or else its input color.
+(RULE &output
+  (OR ((&draw2 (:X *P) *Col))
+      ((input P Col)
+       (NOT (&draw2 (:X P)))))
+  (NOT (&blank (:X P))))
+
+(OUT (&output ^P ^Col))

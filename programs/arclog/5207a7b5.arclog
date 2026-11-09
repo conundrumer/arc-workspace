@@ -1,0 +1,75 @@
+;; inputs 08afcbe2a1ce7d01934358eb6289d7f5347d19de53e5b7ef655e6e229fc65247 programs/solvers/5207a7b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5207a7b5
+
+(DET &bg DominantColor)
+
+(DET &bar RarestColor)
+
+;; The corner the slant runs toward, and how far it goes along the bar per cell across it.
+(DET &slant_dir DiagDirDomain)
+
+(DET &rise_axis AxisDomain)
+
+(DET &rise TileCount)
+
+(RULE &base
+  (&slant_dir (:D *Dg))
+  (&rise_axis *A)
+  (diag_dirs (:D Dg) A (:D1 *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+(RULE &bar_cell
+  (input *P *Col)
+  (&bar (:C Col)))
+
+(RULE &on_slant
+  (&bar_cell (:P *Q))
+  (input *P)
+  (relative (:Base Q) (:X P) (:X_rel *R))
+  (&slant_dir (:D *Dg))
+  (&rise_axis *A)
+  (diag_dirs (:D Dg) A (:D1 *D) (:D2 *D_side))
+  (OR ((opposite D (:Opp *D1))
+       (opposite (:D D_side) (:Opp *D2)))
+      ((= D1 D)
+       (= D2 D_side)))
+  (opposite (:D D1) (:Opp *O1))
+  (margin (:B R) (:D O1) (:K *T))
+  (opposite (:D D2) (:Opp *O2))
+  (margin (:B R) (:D O2) (:K *J))
+  (&rise (:N *K))
+  (divide T (:Side K) (:Gap 0) (:Part J) (:Remainder 0)))
+
+(RULE &region
+  (&on_slant (:P *Q))
+  (input *P)
+  (OR ((= P Q))
+      ((&rise_axis *A)
+       (same_line A P Q)
+       (&base (:D *B))
+       (nearer (:D B) P Q))))
+
+(DET &paint
+  (ex_output *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (&rise_axis *A)
+  (perp A *A2)
+  (axis_of *D (:A A2))
+  (ex_input E (:P *Q) (:Col *Col_bar))
+  (&bar (:C Col_bar))
+  (nearer D P Q))
+
+(RULE &output
+  (OR ((&region *P)
+       (&bar_cell (:P *Q))
+       (OR ((&rise_axis *A)
+            (same_line A P Q)
+            (&bar (:C *Col)))
+           ((nearer *D P Q)
+            (&paint D Col))))
+      ((input P)
+       (NOT (&region P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

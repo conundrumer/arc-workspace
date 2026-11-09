@@ -1,0 +1,145 @@
+;; inputs 7b543b95f982dd4434a9f123a0adb44fd3f87f0674b246d118dcc46ef3e2946b programs/solvers/2b83f449.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2b83f449
+
+(DET &bg DominantColor)
+
+(DET &wall UnchangedColor)
+
+(DET &bar ChangedColor)
+
+(DET &post AnyOutNewColor)
+
+(DET &dot RarestColor)
+
+;; The way the dots travel between corridors.
+(DET &fall_dir DirDomain)
+
+(RULE &across_dir
+  (&fall_dir (:D *D0))
+  (perp_dir (:D D0) (:D2 *D)))
+
+(RULE &bar_center
+  (input *P *Col)
+  (&bar (:C Col))
+  (&across_dir *D)
+  (opposite D (:Opp *D2))
+  (neighbor P D *Q)
+  (input (:P Q) Col)
+  (neighbor P (:D D2) (:Q *Q2))
+  (input (:P Q2) Col))
+
+(RULE &post_cell
+  (OR ((&bar_center *P))
+      ((&bar_center (:P *Q))
+       (&fall_dir (:D *D0))
+       (axis_of (:D D0) *A)
+       (axis_of *D A)
+       (neighbor (:P Q) D (:Q P))
+       (input P))))
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(RULE &open_cell
+  (input *P)
+  (NOT (&wall_cell P))
+  (NOT (&post_cell P)))
+
+(RULE &run_blocked
+  (input *P)
+  (NOT (&open_cell P)))
+
+;; A run is a stretch of open cells along a corridor, bounded by posts and
+;; walls: each open cell casts along the corridor and halts at what bounds it.
+(INIT &run Ray
+  (source (P)
+    (&open_cell *P))
+  (node (P)
+    (input *P)
+    (NOT (&run_blocked P)))
+  (dir (D)
+    (&across_dir *D)))
+
+;; A run ends where the corridor stops being open.
+(INIT &open_rim Boundary
+  (cell (P)
+    (&open_cell *P)))
+
+(RULE &run_end
+  (&across_dir *D)
+  (&open_rim.exposed *P D))
+
+(RULE &far_end
+  (&run_end *P *D)
+  (opposite D (:Opp *D2))
+  (&run.ray (:P *Q) (:D D2) (:Origin P))
+  (&open_cell (:P Q))
+  (&run_end (:P Q) (:D D2)))
+
+(RULE &drop
+  (&open_cell *P)
+  (&fall_dir *D)
+  (neighbor P D (:Q *M))
+  (&open_cell (:P M))
+  (neighbor (:P M) D (:Q *P_land))
+  (&open_cell (:P P_land)))
+
+(RULE &dot2
+  (input (:P *Src) *Col)
+  (&dot (:C Col)))
+
+;; The run ends each dot arrives at: its own cell, and each drop on from
+;; there.
+(INIT &drops Propagation
+  (key ((&dot2 ^Src))
+    (source ((:n Src))))
+  (edge ((:a P) (:b P_land))
+    (&far_end *P *Q)
+    (&drop (:P Q) *P_land)))
+
+(RULE &post_side
+  (&open_cell *P)
+  (&across_dir *D)
+  (neighbor P D *Q)
+  (&post_cell (:P Q)))
+
+(RULE &backed
+  (&run_end *P *D)
+  (NOT (&post_side P D)))
+
+(RULE &rest_at
+  (&drops.reached (:key *Src) (:n *P2))
+  (&far_end (:P P2) *Q)
+  (NOT (&drop (:P Q)))
+  (IF ((&backed (:P P2)))
+      ((= *P P2))
+      ((= P Q))))
+
+(INIT &pile Cardinality
+  (key ((&rest_at *Src (:P ^T)))
+    (member ((:m Src))
+      (&rest_at *Src (:P T)))))
+
+(RULE &settled
+  (&pile.size (:key *T) *N)
+  (&run.ray *P *K (:Origin T))
+  (&open_cell P)
+  (< K N))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&post_cell P)
+       (&post (:C *Col)))
+      ((NOT (&post_cell P))
+       (&wall_cell P)
+       (= Col C_in))
+      ((&open_cell P)
+       (&settled P)
+       (&dot (:C Col)))
+      ((&open_cell P)
+       (NOT (&settled P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

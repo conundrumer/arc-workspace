@@ -1,0 +1,91 @@
+;; inputs 7c9fe276dd0d301feae438c67217784464ac40cb9fe4c74e3cba30bcb1ebfbd5 programs/solvers/4aab4007.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4aab4007
+
+(DET &hole ChangedColor)
+
+;; The corner the bands and the legend are anchored at.
+(DET &corner DiagDirDomain)
+
+;; How deep the bands run from the corner's edges.
+(DET &border_width TileCount)
+
+;; The axis the stripes run along.
+(DET &stripe_axis DiagAxisDomain)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(RULE &corner_dists
+  (input *P)
+  (&corner (:D *Diag))
+  (diag_dist P Diag *K1 *K2))
+
+(RULE &band_cell
+  (&corner_dists *P (:K1 *K) *K2)
+  (<= K K2)
+  (&border_width *N)
+  (< K N))
+
+(RULE &damaged
+  (input *P *Col)
+  (&hole (:C Col)))
+
+;; The legend is what every example paints alike; the stripes differ
+;; from example to example.
+(INIT &steady Singleton
+  (key ((&intact *E *P *Col)
+        (NOT (&band_cell E P))
+        (&corner_dists E P ^K1 ^K2)
+        (<= K1 K2))
+    (member ((:v Col))
+      (&intact *E *P *Col)
+      (NOT (&band_cell E P))
+      (&corner_dists E P K1 K2)
+      (<= K1 K2))))
+
+(DET &legend
+  (&steady.value (:key *K1 *K2)))
+
+(RULE &legend_cell
+  (&corner_dists *P *K1 *K2)
+  (&legend K1 K2))
+
+(RULE &stripe
+  (input *P)
+  (NOT (&band_cell P))
+  (NOT (&legend_cell P)))
+
+(DET &band_color
+  (&band_cell *E *P *K)
+  (&intact E P *Col))
+
+(ALTS $choice "how a damaged band cell finds its color" $Stored
+  (ALT $Uniform
+    (RULE &output
+      (OR ((&damaged *P)
+           (&band_cell P *K)
+           (&band_cell (:P *Q) K)
+           (&intact (:P Q) *Col))
+          ((&intact P Col))
+          ((&damaged P)
+           (&stripe P)
+           (&stripe (:P *Q2))
+           (&intact (:P Q2) Col)
+           (&stripe_axis (:Da *A))
+           (same_line A P (:Q Q2)))))))
+
+(RULE &output
+  (OR ((&intact *P *Col))
+      ((&damaged P)
+       (&stripe P)
+       (&stripe (:P *Q))
+       (&intact (:P Q) Col)
+       (&stripe_axis (:Da *A))
+       (same_line A P Q))
+      ((&damaged P)
+       (&band_cell P *K)
+       (&band_color K Col))))
+
+(OUT (&output ^P ^Col))

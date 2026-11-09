@@ -1,0 +1,130 @@
+;; inputs 53fd6f025a3e6060ed80203b335de47296e55a5adafa3a8b67edfaf416b2201a programs/solvers/62593bfd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 62593bfd
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &blobs Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &size Cardinality
+  (key ((&blobs.component *P ^Id))
+    (member ((:m P))
+      (&blobs.component *P Id))))
+
+(RULE &paired
+  (&size.size (:key *Id) *N)
+  (&size.size (:key (:Id *Id2)) N)
+  (!= Id Id2))
+
+;; Where a partnered blob goes.
+(DET &paired_dir DirDomain)
+
+(ALTS $choice "what makes two blobs partners" $Size
+  (ALT $Shape
+    (INIT &bbox BoundingBox
+      (key ((&blobs.component *P ^Id))
+        (cell (P)
+          (&blobs.component *P Id))))
+
+    (RULE &blob_inner
+      (&blobs.component *P *Id)
+      (&bbox.box (:key Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+    ;; Each ordered pair of blobs, both seen from their own boxes.
+    (INIT &shape_map Agreement
+      (key ((OR ((&blob_inner ^Id *P_inner)
+                 (&blobs.component (:Id ^Id2))
+                 (!= Id Id2))
+                ((&blob_inner (:Id Id2) P_inner)
+                 (&blobs.component Id)
+                 (!= Id Id2))))
+        (source ((:P P_inner))
+          (&blob_inner Id *P_inner)
+          (&blobs.component (:Id Id2))
+          (!= Id Id2))
+        (target ((:P P_inner))
+          (&blob_inner (:Id Id2) *P_inner)
+          (&blobs.component Id)
+          (!= Id Id2))))
+
+    (RULE &shape_map_src
+      (&blob_inner (:Id *A) (:P_inner *P))
+      (&blobs.component (:Id *B))
+      (!= A B))
+
+    (RULE &shape_map_dst
+      (&blob_inner (:Id *B) (:P_inner *P))
+      (&blobs.component (:Id *A))
+      (!= A B))
+
+    (RULE &over
+      (&shape_map_dst *A *B (:P *Q))
+      (d4_inverse *D (:D_inv *D_back))
+      (apply (:D D_back) (:P Q) (:P_out *P))
+      (NOT (&shape_map_src A B P)))
+
+    (RULE &onto
+      (&shape_map_src *A *B)
+      (d4_elem *D)
+      (NOT (&shape_map.mismatch (:key (:Id A) (:Id2 B)) D))
+      (NOT (&over A B D)))
+
+    (RULE &paired
+      (&onto (:A *Id)))))
+
+(RULE &dest
+  (&blobs.component *Id)
+  (&paired_dir (:D *D_paired))
+  (OR ((NOT (&paired Id))
+       (opposite (:D D_paired) (:Opp *D)))
+      ((&paired Id)
+       (= D D_paired))))
+
+;; The blob slides until it touches the destination edge.
+(INIT &slide Distance
+  (key ((&blobs.component *P ^Id)
+        (&dest Id *D)
+        (margin (:B P) D *K))
+    (source_distance (K)
+      (&blobs.component *P Id)
+      (&dest Id *D)
+      (margin (:B P) D *K))))
+
+(RULE &slide_travel_full
+  (&slide.distance (:key (:Id *V0)) *K)
+  (&dest (:Id V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &paint
+  (&blobs.component (:key *Col) (:P *P2) *Id)
+  (&slide_travel_full (:V0 Id) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (&bg_mode.maximal (:t Col))
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

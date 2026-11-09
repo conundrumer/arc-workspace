@@ -1,0 +1,205 @@
+;; inputs 19843ad4060f5398433a568736b39189d5c56758cf8298c7547d8278bef6ba48 programs/solvers/c9680e90.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c9680e90
+
+(param &background Color (7))
+(param &head_color Color (2))
+(param &tail_color Color (6))
+(param &mark_color Color (5))
+(param &divider_color Color (9))
+(param &divider_axis Axis (AXIS_H))
+
+(alts $tail
+  (alt $PathTail
+    (witness bent-tail foreign $PathTail
+      (relaxed straight-tail)
+      (separates "a tail bends: the concept stops the head at the bend, $PathTail takes it to the far end")
+      (input (grid
+        (7 7 7 7 7 7 7)
+        (7 5 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 2 6 6 7 7 7)
+        (7 7 7 6 7 7 7)))
+      (output $Dir8Tail $StraightTail (grid
+        (7 7 7 7 7 7 7)
+        (7 7 7 5 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7)
+        (7 7 7 6 7 7 7)))
+      (output $PathTail (grid
+        (7 7 7 5 7 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7)))))
+  (alt $Dir8Tail
+    (witness diagonal-tail-cell ordinary concept
+      (separates "a tail cell sits diagonal to another head: the concept ignores it, $Dir8Tail also moves that head onto it")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7)
+        (7 5 5 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9 9 9)
+        (6 2 2 7 7 7 7 7 7)
+        (7 7 6 7 7 7 7 7 7)
+        (7 7 6 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7)))
+      (output $PathTail $StraightTail (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 5 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7)
+        (5 7 7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9 9 9)
+        (2 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7)))
+      (output $Dir8Tail (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 5 7 7 7 7 7 7)
+        (7 7 5 7 7 7 7 7 7)
+        (5 7 7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9 9 9)
+        (2 7 7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7))))))
+
+(alts $twin
+  (alt $ColumnTwin
+    (witness column-lonely-mark foreign concept
+      (relaxed mirror-twins)
+      (separates "a second mark shares the column of a head's twin: the concept keeps it, $ColumnTwin and $MirrorRedraw erase it")
+      (input (grid
+        (7 5 7 7 5 7 7)
+        (7 5 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 2 6 7 6 7 7)
+        (7 7 7 7 2 7 7)))
+      (output $MirrorTwin (grid
+        (7 5 7 7 7 7 7)
+        (7 7 5 7 5 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 2 7 7)
+        (7 7 7 7 7 7 7)))
+      (output $ColumnTwin $MirrorRedraw (grid
+        (7 7 7 7 7 7 7)
+        (7 7 5 7 5 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 2 7 7)
+        (7 7 7 7 7 7 7)))))
+  (alt $MirrorRedraw
+    (witness lonely-mark foreign concept
+      (relaxed mirror-twins)
+      (separates "a mark sits where no head mirrors: the concept and $ColumnTwin keep it, $MirrorRedraw erases it")
+      (input (grid
+        (7 7 7 7 5 7 5)
+        (7 5 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 2 6 7 6 7 7)
+        (7 7 7 7 2 7 7)))
+      (output $MirrorTwin $ColumnTwin (grid
+        (7 7 7 7 7 7 5)
+        (7 7 5 7 5 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 2 7 7)
+        (7 7 7 7 7 7 7)))
+      (output $MirrorRedraw (grid
+        (7 7 7 7 7 7 7)
+        (7 7 5 7 5 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 2 7 7)
+        (7 7 7 7 7 7 7))))))
+
+(alts $locate
+  (alt $DividerDerived
+    (witness recolored-divider variant $DividerDerived
+      (relaxed center-divider)
+      (separates "the divider has a color other than the stored one: the concept finds no divider and is undefined, $DividerDerived mirrors across it")
+      (input (grid
+        (7 7 7 7 5 7 7)
+        (7 5 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (8 8 8 8 8 8 8)
+        (7 7 7 7 7 7 7)
+        (7 2 6 7 6 7 7)
+        (7 7 7 7 2 7 7)))
+      (output $StoredDivider undefined)
+      (output $DividerDerived $CenterMirror (grid
+        (7 7 7 7 7 7 7)
+        (7 7 5 7 5 7 7)
+        (7 7 7 7 7 7 7)
+        (8 8 8 8 8 8 8)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 2 7 7)
+        (7 7 7 7 7 7 7))))))
+
+(alts $mirror
+  (alt $CenterMirror
+    (witness off-center-divider foreign concept
+      (relaxed center-divider)
+      (separates "the divider is off the grid's center: the concept mirrors across the divider, $CenterMirror across the center and finds no twin")
+      (input (grid
+        (7 7 7 7 7 7 7)
+        (7 5 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 2 6 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)))
+      (output $DividerMirror (grid
+        (7 7 7 7 7 7 7)
+        (7 7 5 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)))
+      (output $CenterMirror (grid
+        (7 7 7 7 7 7 7)
+        (7 5 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor foreign concept
+      (separates "the divider color outnumbers the background: the derived background is the divider color")
+      (input (grid
+        (5 7 7 7 7)
+        (9 9 9 9 9)
+        (2 6 6 6 6)))
+      (output &background=$Stored (grid
+        (7 7 7 7 5)
+        (9 9 9 9 9)
+        (7 7 7 7 2)))
+      (output ($StoredDivider &background=$Derived) (grid
+        (9 7 7 7 5)
+        (9 9 9 9 9)
+        (9 9 9 9 2)))
+      (output ($DividerDerived &background=$Derived) undefined))))

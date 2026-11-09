@@ -3,7 +3,7 @@ report of the cases that do not end `Consistent`.
 
     uv run python -m arclog_convert.train_replay [--out <dir>] [<stem> ...]
 
-The command replays the files under `gen/` of `arclog_convert.out`, or of
+The command replays the converted solvers (`programs/arclog/`) of `arclog_convert.out`, or the files under `gen/` of
 `--out`, with no conversion; in a linked worktree it writes no record without `--out` or `ARCLOG_OUT`; `arclog_convert.verify` runs the same replay on
 the solvers it checks. The `verdicts` binary of `arclog-cli` replays every case closed-world
 and gives each case a verdict: the consistency of the last `OUT` form the stream
@@ -27,10 +27,10 @@ built again in the checkout's `engine/target` during the run, the run is not
 affected: it runs a private copy of the binary, taken once where the run needs
 it, in a temporary directory that the run removes when it ends or is stopped.
 
-A task's verdicts stand in `train_replay/<stem>.json` beside `gen/`, as a
+A task's verdicts stand in `train_replay/<stem>.json` of the output directory, as a
 record with these fields: `files`, the sha256 of the task's `.arclog` and
 `.arcdata`, of the files of each solver that a `(representative <id>)` line
-names, followed to its end, of the files under `gen/cases/<stem>/` (`arclog_convert.convert.convert_cases`), and of the task file; `sources`, the digest of the
+names, followed to its end, of the files under `cases/<stem>/` of the converted solvers (`arclog_convert.convert.convert_cases`), and of the task file; `sources`, the digest of the
 engine's sources; `binary`, the sha256 of the `verdicts` binary the run ran; and
 `cases`. A task is fresh, and replays nothing, where its record's `files`
 equal the current ones and either its `sources` equal the current digest or its
@@ -71,6 +71,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from arc.task import TASKS_DIR
+from arclog_convert import corpus as converted_dir
 from arclog_convert.lint_alts import selects_case
 from arclog_convert.readback import read_checked
 from engine import checkout
@@ -266,7 +267,7 @@ def write_record(records: Path, stem: str, files: str, sources: str, binary: str
 def replay(stems: list[str], out: Path, accept: bool = False) -> int:
     """Replay the stale tasks of `stems` under `out`, print the report, and
     give the exit status."""
-    gen, records, tasks = out / "gen", out / "train_replay", TASKS_DIR
+    gen, records, tasks = converted_dir(out), out / "train_replay", TASKS_DIR
     sources = engine_digest()
     cases: dict[str, list[Case]] = {}
     panics: dict[str, str] = {}
@@ -328,12 +329,12 @@ def replay(stems: list[str], out: Path, accept: bool = False) -> int:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.train_replay")
-    parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
-    parser.add_argument("stems", nargs="*", help="the solvers to replay; every solver of gen/ where none is given")
+    parser.add_argument("--out", type=Path, help="the directory the converter wrote under, in place of `arclog_convert.out`; its arclog and arcdata files stand in `gen/` of it; required in a linked worktree unless `ARCLOG_OUT` is set")
+    parser.add_argument("stems", nargs="*", help="the solvers to replay; every converted solver where none is given")
     args = parser.parse_args(argv)
     from arclog_convert import writable_out
     root = args.out.resolve() if args.out else writable_out()
-    stems = args.stems or sorted(p.stem for p in (root / "gen").glob("*.arclog"))
+    stems = args.stems or sorted(p.stem for p in converted_dir(root).glob("*.arclog"))
     return replay(stems, root)
 
 

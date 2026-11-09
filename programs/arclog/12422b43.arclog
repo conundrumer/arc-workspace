@@ -1,0 +1,88 @@
+;; inputs 4a25e953bbfed81d81778bd421dd0333cdf2f7514517a96d40a73355c88f570a programs/solvers/12422b43.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 12422b43
+
+(DET &bg DominantColor)
+
+(DET &marker SharedColor)
+
+(DET &flow DirDomain)
+
+(RULE &cell_line
+  (input *P *Col)
+  (&flow *D)
+  (opposite D (:Opp *O))
+  (margin (:B P) (:D O) (:K *R)))
+
+(RULE &ink
+  (&cell_line *P *Col *R)
+  (NOT (&bg (:C Col)))
+  (NOT (&marker (:C Col))))
+
+(RULE &marker_line
+  (&cell_line *Col *R)
+  (&marker (:C Col)))
+
+(RULE &unit
+  (&ink *P *Col *R)
+  (&marker_line R))
+
+(INIT &pat_len Cardinality
+  (member ((:m R))
+    (&ink *R)))
+
+(INIT &unit_len Cardinality
+  (member ((:m R))
+    (&marker_line *R)))
+
+(RULE &copy
+  (&unit (:P *P1) *Col)
+  (&pat_len.size *N)
+  (&flow *D)
+  (jump (:P P1) D (:K N) (:Q *P_seat))
+  (input *P)
+  (same_line *A (:P P_seat) (:Q P))
+  (axis_of D A)
+  (relative (:Base P_seat) (:X P) (:X_rel *V))
+  (opposite D (:Opp *O))
+  (margin (:B V) (:D O) (:K *T))
+  (&unit_len.size (:N *K))
+  (divide T (:Side K) (:Gap 0) (:Remainder 0)))
+
+(ALTS $choice "two models place the copies" $Stamp
+  (ALT $Tile
+    ;; The remainder: cells of the non-ink lines.
+    (INIT &region_box BoundingBox
+      (cell (P)
+        (&cell_line *P *R)
+        (NOT (&ink R))))
+
+    (INIT &copy_division Division
+      (key ((&flow ^D)
+            (axis_of D ^A))
+        (side (A K)
+          (&unit_len.size (:N *K))))
+      (cell ((:P P_inner))
+        (&region_box.cell *P)
+        (&region_box.box *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+    (RULE &copy
+      (&region_box.cell *P)
+      (&region_box.box *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&copy_division.tile (:key *D *A) (:P P_inner) (:P_inner *P_slab))
+      (split (:P P_slab) A (:Along *P_intile))
+      (opposite D (:Opp *O))
+      (margin (:B P_intile) (:D O) (:K *R))
+      (&unit (:P *P_u) *Col R)
+      (same_line A P (:Q P_u)))))
+
+(RULE &output
+  (OR ((&copy *P *Col))
+      ((input P Col)
+       (NOT (&copy P)))))
+
+(OUT (&output ^P ^Col))

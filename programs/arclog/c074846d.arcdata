@@ -1,0 +1,195 @@
+;; inputs 85c0f77cc6e1c8070d86e083d115ef10e9a8a2e4b242524a8f65c53e4678754f programs/solvers/c074846d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c074846d
+
+(param &pivot_color Color (5))
+(param &arm_color Color (2))
+(param &trail_color Color (3))
+(param &sense Sense (SENSE_CW))
+(param &background Color (0))
+
+(alts $turn
+  (alt $RotateOffsets
+    (witness bent-arm borderline $RotateOffsets
+      (relaxed arm)
+      (separates "An arm cell off the pivot's row and column: the per-direction turn leaves it in arm color, and the offset rotation turns it with the rest of the arm.")
+      (input (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 2 2 5 0)
+        (0 2 0 0 0)
+        (0 0 0 0 0)))
+      (output $DirTurn (grid
+        (0 0 0 2 0)
+        (0 0 0 2 0)
+        (0 3 3 5 0)
+        (0 2 0 0 0)
+        (0 0 0 0 0)))
+      (output $RotateOffsets (grid
+        (0 0 2 2 0)
+        (0 0 0 2 0)
+        (0 3 3 5 0)
+        (0 3 0 0 0)
+        (0 0 0 0 0))))))
+
+(alts $adj
+  (alt $CornerJoin
+    (witness corner-touch foreign $RotateOffsets
+      (relaxed pivot)
+      (relaxed arm)
+      (separates "Two sticks that touch only at a corner: 8-adjacency joins them into one stick, so the arm cell at row 3, col 1 also turns about the lower pivot and paints row 5, col 3; 4-adjacency keeps them apart.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 2 5 0 0 0)
+        (2 0 0 0 0 0 0)
+        (2 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output concept $CornerJoin (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (2 2 0 0 0 0 0)
+        (3 5 0 2 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($RotateOffsets $OnePivotSet) (grid
+        (0 2 2 0 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (3 2 2 0 0 0 0)
+        (3 5 0 2 0 0 0)
+        (0 0 0 2 0 0 0)))
+      (output ($DirTurn $Join4) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (2 2 0 0 0 0 0)
+        (3 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($RotateOffsets $Join4) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (3 2 2 0 0 0 0)
+        (3 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $scope
+  (alt $PerStick
+    (witness two-sticks variant $PerStick
+      (relaxed pivot)
+      (separates "Two sticks, an arm cell of one on the column of the other's pivot: one pivot set turns that cell about both pivots and paints an extra arm cell at row 2, col 1; turning each stick about its own pivot paints none.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 2 2 5 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 5)))
+      (output concept (grid
+        (0 0 0 0 0 2 0)
+        (0 0 0 0 0 2 0)
+        (0 2 0 3 3 5 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 3 3 5)))
+      (output ($RotateOffsets $OnePivotSet) (grid
+        (0 0 0 0 0 2 0)
+        (0 2 0 0 0 2 0)
+        (0 2 0 3 3 5 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 3 3 5)))
+      (output $PerStick (grid
+        (0 0 0 0 0 2 0)
+        (0 0 0 0 0 2 0)
+        (0 0 0 3 3 5 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 3 3 5))))))
+
+(alts &pivot_color
+  (alt &pivot_color=$Derived
+    (witness pivot_color=RarestColor borderline concept
+      (relaxed blank-field)
+      (separates "A stray cell as rare as the pivot: the rarest-color derivation makes it a second pivot, and the arm cell on its column turns about it to row 5, col 5; the stored pivot color leaves the stray cell alone.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 2 5 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output &pivot_color=$Stored (grid
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($DirTurn &pivot_color=$Derived) (grid
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 8 0 0 2 0)
+        (0 0 0 0 0 0 0)))
+      (output ($RotateOffsets &pivot_color=$Derived) (grid
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 3 3 5 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 0)
+        (0 0 8 0 0 2 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed pivot)
+      (relaxed blank-field)
+      (separates "Two sticks on a background of 1: the stored background 0 makes every 1 cell a stick cell, so both sticks join one stick and the arm cell at row 6, col 5 also turns about the upper pivot and paints row 2, col 1; the dominant color 1 as background keeps the two sticks apart.")
+      (input (grid
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 2 2 5 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 2 2 5)))
+      (output ($DirTurn &background=$Stored) (grid
+        (1 1 1 1 1 2 1)
+        (1 1 1 1 1 2 1)
+        (1 2 1 3 3 5 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 2)
+        (1 1 1 1 1 1 2)
+        (1 1 1 1 3 3 5)))
+      (output $RotateOffsets (grid
+        (1 1 1 1 1 2 1)
+        (1 2 1 1 1 2 1)
+        (1 2 1 3 3 5 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 2)
+        (1 1 1 1 1 1 2)
+        (1 1 1 1 3 3 5)))
+      (output &background=$Derived (grid
+        (1 1 1 1 1 2 1)
+        (1 1 1 1 1 2 1)
+        (1 1 1 3 3 5 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 2)
+        (1 1 1 1 1 1 2)
+        (1 1 1 1 3 3 5))))))

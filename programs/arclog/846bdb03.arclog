@@ -1,0 +1,78 @@
+;; inputs 8ec318327c397500bd8736156371a2d5c3542aeab2ace63c6701592e3ab74ca0 programs/solvers/846bdb03.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 846bdb03
+
+(DET &bg DominantColor)
+
+(DET &corner RarestColor)
+
+;; The orientations the shape may take: the reflection group that swaps the bars.
+(DET &sym SymDomain)
+
+(RULE &transform
+  (&sym *S)
+  (sym_member S (:D *T)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&corner (:C Col))))
+
+(RULE &boxed
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(RULE &cropped
+  (input (:P *P2) *Col)
+  (&bbox.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(RULE &bar
+  (&cropped *P *Col)
+  (margin (:B P) *D (:K 0))
+  (NOT (&bg (:C Col)))
+  (NOT (&corner (:C Col))))
+
+;; The box off its border, in its own frame.
+(INIT &core BoundingBox
+  (cell (P)
+    (&cropped *P)
+    (interior (:A P) (:B 0))))
+
+(INIT &shape BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&boxed P))))
+
+(RULE &placed
+  (input *P *Col)
+  (&shape.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner3))
+  (&transform *T)
+  (apply (:D T) (:P P_inner3) (:P_out *P_inner)))
+
+(RULE &touches
+  (&bar *D *Col)
+  (&placed *T (:P_inner *P) Col)
+  (margin (:B P) D (:K 0)))
+
+(RULE &defect
+  (&transform *T)
+  (&bar *D *Col)
+  (NOT (&touches T D Col)))
+
+(RULE &output
+  (OR ((&cropped *P *Col)
+       (NOT (&core.cell P)))
+      ((&core.cell P)
+       (&core.box *B)
+       (inside (:A P) B)
+       (relative (:Base B) (:X P) (:X_rel *P_inner))
+       (&placed *T P_inner Col)
+       (NOT (&defect T)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,83 @@
+;; inputs 4b73eaf07449c75d277f430a3b5084b099425f993e692466e2b6bb0ca95b006c programs/solvers/f0afb749.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0afb749
+
+(INPUT single-cell-marks "the marks, the cells not of background 0, are isolated single cells, no two touching, even at a corner.")
+
+(INPUT one-mark-color "all marks of an input share one color, which differs between inputs.")
+
+(INPUT one-mark-per-diagonal "no two marks lie on one main diagonal, top-left to bottom-right.")
+
+(OUTPUT scale-up "the output is the input scaled by 2: each input cell becomes a 2×2 block of its color."
+
+  (INIT &colors Cardinality
+    (member ((:m Col))
+      (input *Col))
+    (domain ())))
+
+(OUTPUT diagonal-through-block "for each mark's block, every background cell of the output on the main diagonal that runs through the block's corner-to-corner diagonal takes 1, on both sides of the block out to the grid edge."
+
+  (DET &scale ScaleRatio)
+
+  (RULE &block_size
+    (&scale *K))
+
+  (INIT &block Frame
+    (extent (A (:N K))
+      (&block_size *K)
+      (axis_elem *A)))
+
+  (INIT &scaled_tiling Tiling
+    (outer ((:P P_tile))
+      (input (:P *P_tile)))
+    (inner ((:P P_intile))
+      (&block.cell (:P *P_intile))))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  ;; The diagonal axis the lines follow.
+  (DET &line_axis DiagAxisDomain)
+
+  (RULE &scaled
+    (&scaled_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) (:P *P_grid_out))
+    (&block.cell (:P P_intile)))
+
+  (RULE &on_line
+    (input (:P *P_tile) *Col)
+    (NOT (&bg (:C Col)))
+    (&scaled (:P_grid_out *P2) P_tile *P_intile)
+    (&line_axis (:Da *DA))
+    (diag_axis_of *D (:Da DA))
+    (corner_dist (:P P_intile) (:Diag D) (:K 0))
+    (&scaled (:P_grid_out *P))
+    (same_line (:A DA) (:P P2) (:Q P))))
+
+(ALTS $l "What a mark's line does where it meets another mark's block" $PassBehind
+  (ALT $LineOverBlocks
+    (OUTPUT diagonal-through-block "each mark's line takes 1 on every cell of its diagonal outside the mark's own block, so it paints over other marks' blocks.")
+    (RULE &painted
+      (&on_line (:P_tile *P_mark) *P)
+      (&scaled (:P_grid_out P) *P_tile)
+      (!= P_tile P_mark))))
+
+(ALTS $s "Where the scale factor comes from" $StoredScale
+  (ALT $ScaleByColorCount
+    (OUTPUT scale-up "the scale factor is the number of distinct colors of the input, background included."
+      (RULE &block_size
+        (&colors.size (:N *K))))))
+
+(DET &line_color AnyOutNewColor)
+
+(RULE &painted
+  (&on_line *P)
+  (&scaled (:P_grid_out P) *P_tile)
+  (input (:P P_tile) *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (&scaled (:P_grid_out *P) *P_tile)
+  (IF ((&painted P))
+      ((&line_color (:C *Col)))
+      ((input (:P P_tile) Col))))
+
+(OUT (&output ^P ^Col))

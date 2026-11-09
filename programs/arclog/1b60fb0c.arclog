@@ -1,0 +1,99 @@
+;; inputs 23f7ac038040f1c1d5dc8dffe89a03f16c409bac00cd8d60d16d6a4fc395c6ca programs/solvers/1b60fb0c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1b60fb0c
+
+(DET &ink RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+;; The applied turn; for $Complete its powers are the figure's symmetry group.
+(DET &sym D4Domain)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(RULE &placement
+  (&ink_cell *P)
+  (&sym *D)
+  (apply D P (:P_out *P_turn))
+  (&ink_cell (:P *Q))
+  (relative (:Base P_turn) (:X Q) (:X_rel *Delta)))
+
+(RULE &orbit
+  (&placement *Delta)
+  (&ink_cell (:P *P2))
+  (OR ((&sym *D)
+       (apply D (:P P2) (:P_out *P_turn))
+       (compose (:A P_turn) (:B Delta) (:C *P)))
+      ((= P P2))
+      ((&sym (:D *D2))
+       (apply (:D D2) (:P P2) (:P_out *P_turn2))
+       (compose (:A P_turn2) (:B Delta) (:C *Q1))
+       (&sym (:D *D3))
+       (apply (:D D3) (:P Q1) (:P_out *P_turn3))
+       (compose (:A P_turn3) (:B Delta) (:C P)))
+      ((&sym (:D *D4))
+       (apply (:D D4) (:P P2) (:P_out *P_turn4))
+       (compose (:A P_turn4) (:B Delta) (:C *Q12))
+       (&sym (:D *D5))
+       (apply (:D D5) (:P Q12) (:P_out *P_turn5))
+       (compose (:A P_turn5) (:B Delta) (:C *Q2))
+       (&sym (:D *D6))
+       (apply (:D D6) (:P Q2) (:P_out *P_turn6))
+       (compose (:A P_turn6) (:B Delta) (:C P)))))
+
+;; The completed figure is the smallest orbit, so a placement that pushes the
+;; figure off the grid pays for the cells it puts there.
+(INIT &size Cardinality
+  (key ((&orbit ^Delta *P))
+    (member ((:m P))
+      (&orbit Delta *P))))
+
+(INIT &smallest Order
+  (member ((:t (:V Delta) (:S N)))
+    (&size.size (:key *Delta) *N))
+  (score ((:t (:V Delta) (:S N)) (:S N))
+    (&size.size (:key *Delta) *N)))
+
+(RULE &restored
+  (&smallest.minimal (:t (:V *Delta)))
+  (&orbit Delta *P)
+  (input P)
+  (NOT (&ink_cell P)))
+
+(ALTS $choice "whether the turn closes or applies once" $Complete
+  (ALT $Copy
+    (RULE &copy_cell
+      (&placement *Delta)
+      (&ink_cell (:P *P2))
+      (&sym *D)
+      (apply D (:P P2) (:P_out *P_turn))
+      (compose (:A P_turn) (:B Delta) (:C *P)))
+
+    (INIT &fittest_count Cardinality
+      (key ((&copy_cell ^Delta *P)
+            (&ink_cell P))
+        (member ((:m P))
+          (&copy_cell Delta *P)
+          (&ink_cell P))))
+
+    (INIT &fittest Order
+      (member ((:t Delta))
+        (&fittest_count.size (:key *Delta)))
+      (score ((:t Delta) (:S N))
+        (&fittest_count.size (:key *Delta) *N)))
+
+    (RULE &restored
+      (&fittest.maximal (:t *Delta))
+      (&copy_cell Delta *P)
+      (input P)
+      (NOT (&ink_cell P)))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&restored P)))
+      ((&restored P)
+       (&fill (:C Col)))))
+
+(OUT (&output ^P ^Col))

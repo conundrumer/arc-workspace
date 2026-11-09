@@ -1,0 +1,6 @@
+;; inputs 067ed3fe7a31bd4d71880f5ab07d497b91d365d6f599198ea484f205d441d631 programs/solvers/94414823.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 94414823
+
+(param &bg Color (0))
+(param &wall Color (5))

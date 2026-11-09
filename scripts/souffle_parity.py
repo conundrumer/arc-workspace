@@ -32,7 +32,7 @@ def parser() -> argparse.ArgumentParser:
         "is given."))
     sub.add_parser("uses", help=mctx(
         "Write each lib name, each proposer and each form keyword that a file of "
-        "`work/arclog/gen/` uses, with the stems of the files that use it, to "
+        "`programs/arclog/` uses, with the stems of the files that use it, to "
         "`.cache/parity/uses.json` of the main worktree, and print its path."))
     lib_cmd = sub.add_parser("lib", help=mctx(
         "Write the Souffle rows of each inputs file of the lib elements under "

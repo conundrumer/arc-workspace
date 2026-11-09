@@ -1,0 +1,132 @@
+;; inputs a327f9a8a494abc7a3c1584838e3a4d5ecae7f96b8f4ca6251a80208088cae13 programs/solvers/652646ff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 652646ff
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &ground_count Cardinality
+  (key ((ex_output ^E *P ^Col))
+    (member ((:m P))
+      (ex_output E *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &ground Order
+  (key ((&ground_count.size (:key ^E *Col)))
+    (member ((:t Col))
+      (&ground_count.size (:key E *Col)))
+    (score ((:t Col) (:S N))
+      (&ground_count.size (:key E *Col) *N))))
+
+;; The output redraws every figure whole, so a figure fills its own box.
+(INIT &frame BoundingBox
+  (key ((ex_output ^E *P ^Col)
+        (NOT (&ground.maximal (:key E) (:t Col))))
+    (cell (P)
+      (ex_output E *P Col)
+      (NOT (&ground.maximal (:key E) (:t Col))))))
+
+(DET &shape
+  (&frame.cell (:key (:E *F_e) (:Col *F_col)) (:P *P2))
+  (&frame.box (:key (:E F_e) (:Col F_col)) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+;; A color's cells occur in the figure: those cells take the shape role and
+;; the whole figure the cell role, so a placement carries the grid into the
+;; figure's frame.
+(INIT &occ Occurrences
+  (key ((&ink ^Col))
+    (shape ((:P P_grid))
+      (input (:P *P_grid) Col)))
+  (cell ((:P P_intile))
+    (&shape (:P *P_intile))))
+
+(RULE &drawn
+  (&occ.occurrence (:key *Col) (:P *P_place))
+  (&shape (:P *P_intile))
+  (relative (:Base P_place) (:X P_intile) (:X_rel *P)))
+
+(RULE &shared
+  (&drawn *Col *P)
+  (&drawn (:Col *Col2) P)
+  (!= Col Col2))
+
+(RULE &front
+  (&shared *Col *Col2 (:P *P_grid))
+  (input (:P P_grid) Col))
+
+;; The edge the stack runs from, the frontmost figure first.
+(DET &stack_dir DirDomain)
+
+;; The tile's own frame, read off the shape's.
+(INIT &tile_frame Frame
+  (extent (A N)
+    (&shape (:P *P_intile))
+    (frame_extent (:P P_intile) *A *N)))
+
+(ALTS $choice "what the shared cells say about which figure is in front" $Existence
+  (ALT $Majority
+    ;; How far the first color outshows the second on the cells they share.
+    (INIT &lead Excess
+      (key ((OR ((&shared ^Col ^Col2 (:P *P_grid))
+                 (input (:P P_grid) Col))
+                ((&shared Col Col2 (:P P_grid))
+                 (input (:P P_grid) (:Col Col2)))))
+        (plus ((:m P_grid))
+          (&shared Col Col2 (:P *P_grid))
+          (input (:P P_grid) Col))
+        (minus ((:m P_grid))
+          (&shared Col Col2 (:P *P_grid))
+          (input (:P P_grid) (:Col Col2)))))
+
+    (RULE &front
+      (&lead.excess (:key *Col *Col2)))))
+
+(INIT &behind Propagation
+  (key ((&drawn ^Col))
+    (source ((:n Col))))
+  (edge ((:a Col3) (:b Col2))
+    (&front (:Col *Col3) *Col2)))
+
+(INIT &stack Order
+  (member ((:t Col))
+    (&drawn *Col))
+  (before ((:a Col) (:b Col2))
+    (&behind.reached (:key *Col) (:n *Col2))
+    (!= Col Col2)))
+
+(RULE &tile
+  (&stack.rank (:t *Col) *R)
+  (&stack.dual_rank (:t Col) (:R *R2))
+  (&stack_dir *D)
+  (axis_inset D (:K1 R) (:K2 R2) (:B *P_tile)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile *P_tile))
+  (inner ((:P P_intile))
+    (&tile_frame.cell (:P *P_intile))))
+
+(RULE &output
+  (&tile (:Col *Col_fig) *P_tile)
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner *P_intile) *P)
+  (&stack_dir *D)
+  (axis_of D)
+  (OR ((NOT (&shape (:P P_intile)))
+       (&bg_mode.maximal (:t *Col)))
+      ((&shape (:P P_intile))
+       (= Col Col_fig))))
+
+(OUT (&output ^P ^Col))

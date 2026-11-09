@@ -1,0 +1,8 @@
+;; inputs e611b3093f52e0ba31f29e16ef655eda96cefa4a2cf1ba8dfb862454c7d0b80b programs/solvers/928ad970.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 928ad970
+
+(param &bg Color (0))
+(param &mark_col Color (5))
+(param &mark_inset number (1))
+(param &content_inset number (1))

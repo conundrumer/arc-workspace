@@ -1,0 +1,7 @@
+;; inputs 3049366e86cc8f0f6f5fa76a53da410a7589be7764a7cd1215674a0d6e966b7d programs/solvers/11dc524f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 11dc524f
+
+(param &bg Color (7))
+(param &shape_color Color (2))
+(param &mirror_color Color (5))

@@ -1,0 +1,130 @@
+;; inputs 4f23efb75bc4ca0f3df9ee91990269d2223776e10664ebb33a9500a25d4ecb3a programs/solvers/f83cb3f6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f83cb3f6
+
+(INPUT one-wall "one straight line of `wall_color` cells crosses the grid from edge to edge along one axis, at neither border, so both sides have cells; some cells of the line may be missing, and those are its holes.")
+
+(INPUT dots "every other non-`background` cell is a single dot of one color, other than `wall_color`, the same for all dots of an input; dots lie on both sides of the wall.")
+
+(OUTPUT keep-wall "the wall cells stay as they are.")
+
+(OUTPUT pull-to-wall "for each line perpendicular to the wall, and each side of the wall, where that line has a wall cell and at least one dot on that side, the cell next to the wall cell on that side takes the color of the dot on that line and side nearest the wall.")
+
+(OUTPUT hole-drops "dots on a line that meets a hole in the wall leave no mark.")
+
+(OUTPUT clear-rest "every other cell is `background`."
+
+  (INIT &out_mode_count Cardinality
+    (key ((ex_output ^E *P ^Col))
+      (member ((:m P))
+        (ex_output E *P Col))))
+
+  ;; The commonest color of each train output.
+  (INIT &out_mode Order
+    (key ((&out_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&out_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&out_mode_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&out_mode.maximal (:t *C))
+    (&out_mode.maximal (:key *E))
+    (NOT (&out_mode.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&out_mode.maximal (:t *C))
+    (NOT (&background_defect C)))
+
+  (RULE &off_line
+    (input *P *Col)
+    (input (:P *Q) Col)
+    (perp *A *A2)
+    (axis_of *D (:A A2))
+    (NOT (same_dist D (:P1 P) (:P2 Q))))
+
+  (RULE &color_line
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (input (:P *Q) Col)
+    (!= P Q)
+    (axis_elem *A)
+    (NOT (&off_line Col A)))
+
+  (DET &wall_defect
+    (&color_line (:Col *C))
+    (ex_input *E)
+    (NOT (&color_line E (:Col C))))
+
+  (DET_OR_RULE &wall_color RarestColor
+    (&color_line (:Col *C))
+    (NOT (&wall_defect C)))
+
+  (RULE &wall_color2
+    (&wall_color (:C *Col)))
+
+  (RULE &wall
+    (&wall_color2 *Col)
+    (input *P Col))
+
+  (RULE &wall_axis
+    (&wall_color2 *Col)
+    (&color_line Col *A))
+
+  (RULE &dot
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&wall P)))
+
+  (RULE &approach
+    (&dot *P)
+    (&wall_axis *A)
+    (perp A *A2)
+    (&wall (:P *F))
+    (same_line (:A A2) P (:Q F))
+    (axis_of *D (:A A2))
+    (nearer D P (:Q F)))
+
+  (RULE &past
+    (&approach *P *D *F)
+    (&approach (:P *Q) D F)
+    (dir_elem (:D *E1))
+    (nearer (:D E1) (:P Q) (:Q P))))
+
+(ALTS $w "How the wall's cells are found" $WallColor
+  (ALT $WallByLine
+    (INPUT one-wall "the wall is the one non-background color whose cells, two or more, all lie on one row or one column; undefined where no color or more than one color does so."
+      (RULE &wall_color2
+        (&color_line *Col)
+        (ALL ((&color_line (:Col *Col2)))
+             ((= Col Col2)))))))
+
+(ALTS $p "Which dot of a pile gives its color" $NearestDot
+  (ALT $FarthestDot
+    (OUTPUT pull-to-wall "the cell next to the wall cell takes the color of the dot on that line and side farthest from the wall.")
+    (RULE &pile_color
+      (&approach *P *D *F)
+      (input P *Col)
+      (NOT (&past P (:E1 D))))))
+
+(RULE &pile_color
+  (&approach *P *D *F)
+  (input P *Col)
+  (opposite D (:Opp *E))
+  (NOT (&past P (:E1 E))))
+
+(RULE &landed
+  (&pile_color *F *D *Col)
+  (neighbor (:P F) D (:Q *P)))
+
+(RULE &output
+  (&wall_axis)
+  (input *P)
+  (OR ((&wall P)
+       (input P *Col))
+      ((&landed P Col))
+      ((NOT (&wall P))
+       (NOT (&landed P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

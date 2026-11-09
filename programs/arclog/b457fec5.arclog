@@ -1,0 +1,337 @@
+;; inputs 69483dcb1de8bca87d7822e3a5969920341ba5aedfb81970bb5aedc92d96bcc6 programs/solvers/b457fec5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b457fec5
+
+(INPUT background "every cell outside the key and the trails is &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT key-line "a key: a straight line of cells, one cell thick, along the axis of &key_start, each cell a different color, none of them &background or &shape_color. It lies one line in from the DIR_T edge, and stands apart from every trail."
+
+  (DET &shape_color ChangedColor)
+
+  ;; the direction toward the key's end that holds its first color
+  (DET &key_start DirDomain))
+
+(INPUT diagonal-trail "one or more trails of &shape_color, each the union of the positions of an n×n square that starts at a corner and moves one step along a diagonal for each of T steps (n ≥ 3, T ≥ 1). Trails do not touch each other or the key.")
+
+(INPUT whole-cycles "the number of positions the square takes in each trail, T + 1, is a multiple of the key's length K")
+
+(INPUT head-end "the start of each trail is its end toward &head_dir"
+
+  (RULE &cell
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (INIT &trail Connectivity
+    (node (P)
+      (&cell *P)))
+
+  (DET &cell2
+    (ex_input *E *P *Col)
+    (&shape_color (:C Col)))
+
+  (INIT &trail2 Connectivity
+    (key ((&cell2 ^E *P))
+      (node (P)
+        (&cell2 E *P))))
+
+  (INIT &trail_box BoundingBox
+    (key ((&trail.component *P (:Id ^I)))
+      (cell (P)
+        (&trail.component *P (:Id I)))))
+
+  (INIT &trail_box2 BoundingBox
+    (key ((&trail2.component (:key (:E ^K)) *P (:Id ^I)))
+      (cell (P)
+        (&trail2.component (:key (:E K)) *P (:Id I)))))
+
+  (DET &end_corner2
+    (&trail2.component (:key *E) *P (:Id *I))
+    (&trail_box2.box (:key (:K E) I) *B)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (RULE &end_corner
+    (&trail.component *P (:Id *I))
+    (&trail_box.box (:key I) *B)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (RULE &trail_color
+    (&shape_color (:C *Col)))
+
+  (RULE &key_cell
+    (&trail_color (:Col *Col2))
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (!= Col Col2))
+
+  (RULE &key_off_axis
+    (&key_cell *P)
+    (&key_cell (:P *Q))
+    (perp *A (:A2 *A_x))
+    (axis_of *D (:A A_x))
+    (NOT (same_dist D (:P1 P) (:P2 Q))))
+
+  (RULE_OR_DET &key_axis "The axis the key lies along."
+    (&key_cell)
+    (axis_elem *A)
+    (NOT (&key_off_axis A)))
+
+  (DET &head
+    (&end_corner2 *E *D *P)
+    (diag_opposite D (:Opp *D_in))
+    (neighbor P (:D D_in) *Q)
+    (ex_output E P *Col)
+    (ex_output E (:P Q) (:Col *Col2))
+    (!= Col Col2))
+
+  (DET &refuted
+    (&head (:D *D2))
+    (dir_elem *D)
+    (NOT (corner_dir (:C D2) D)))
+
+  (DET &head_dir
+    (&head (:D *D2))
+    (corner_dir (:C D2) *D)
+    (NOT (&refuted D)))
+
+  ;; How far each end square lies from the key's line, across the key's axis.
+  ;; The trail's cells on its box's side at that end, along the key's axis, are
+  ;; the end square's cells on that side.
+  (INIT &end_gap Order
+    (key ((&end_corner ^I ^D))
+      (member ((:t K))
+        (&trail_box.box (:key I) *B)
+        (&key_axis *A)
+        (corner_dir (:C D) A (:D *D_side))
+        (&trail.component *P (:Id I))
+        (inside (:A P) B)
+        (same_dist (:D D_side) (:P1 P) (:P2 B))
+        (&key_cell (:P *Q))
+        (relative (:Base Q) (:X P) (:X_rel *V))
+        (perp A (:A2 *A_x))
+        (axis_of (:D *D_x) (:A A_x))
+        (margin (:B V) (:D D_x) *K)
+        (>= K 0))
+      (score ((:t K) (:S K))
+        (&trail_box.box (:key I) *B)
+        (&key_axis *A)
+        (corner_dir (:C D) A (:D *D_side))
+        (&trail.component *P (:Id I))
+        (inside (:A P) B)
+        (same_dist (:D D_side) (:P1 P) (:P2 B))
+        (&key_cell (:P *Q))
+        (relative (:Base Q) (:X P) (:X_rel *V))
+        (perp A (:A2 *A_x))
+        (axis_of (:D *D_x) (:A A_x))
+        (margin (:B V) (:D D_x) *K)
+        (>= K 0)))))
+
+(OUTPUT keep-rest "every cell that is not a trail cell keeps its input color, the key included")
+
+(OUTPUT key-order "the key colors, in order from the key's end toward &key_start, are c0, c1, …, cK-1"
+
+  (DET &lex_corner DiagDirDomain)
+
+  (DET &lex_axis AxisDomain)
+
+  (RULE &key_lex_axis
+    (&trail_color)
+    (&lex_axis *A))
+
+  (RULE &key_lex_corner
+    (&trail_color)
+    (&lex_corner *D))
+
+  (INIT &key_lex Order
+    (member ((:t P))
+      (&key_cell *P))
+    (score ((:t P) (:S K1))
+      (&key_cell *P)
+      (&key_lex_corner (:D *Diag))
+      (&key_lex_axis *A)
+      (diag_dist P Diag A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&key_cell *P)
+      (&key_lex_corner (:D *Diag))
+      (&key_lex_axis *A)
+      (diag_dist P Diag A *K1 *K2))))
+
+(OUTPUT step-paint "in each trail, the square at step t (t = 0 at the head, t = T at the far end) paints its n×n cells with color c(t mod K); a cell takes the color of the last step that covers it. So a cell whose distances from the head square's two outer edges are u and v takes c(min(u, v, T) mod K)."
+
+  (RULE &head_corner
+    (&end_corner *I *D)
+    (&head_dir (:D *D_head))
+    (corner_dir (:C D) (:D D_head)))
+
+  (RULE &trail_cell
+    (&head_corner *I *D)
+    (&trail.component *P (:Id I))
+    (&trail_box.box (:key I) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (RULE &head_dist
+    (&trail_cell *I *P *P_rel *D)
+    (corner_dir (:C D) (:D *D_edge))
+    (margin (:B P_rel) (:D D_edge) *K))
+
+  ;; T, the slide's step count: the least distance from one outer edge of the
+  ;; head square among the trail's cells on the box's edge opposite the other.
+  (INIT &slide Order
+    (key ((&trail_cell ^I *P_rel *D)
+          (diag_dirs D *D1 *D2)
+          (opposite (:D D1) (:Opp *D_far))
+          (margin (:B P_rel) (:D D_far) (:K 0))
+          (margin (:B P_rel) (:D D2) *K))
+      (member ((:t K))
+        (&trail_cell I *P_rel *D)
+        (diag_dirs D *D1 *D2)
+        (opposite (:D D1) (:Opp *D_far))
+        (margin (:B P_rel) (:D D_far) (:K 0))
+        (margin (:B P_rel) (:D D2) *K))
+      (score ((:t K) (:S K))
+        (&trail_cell I *P_rel *D)
+        (diag_dirs D *D1 *D2)
+        (opposite (:D D1) (:Opp *D_far))
+        (margin (:B P_rel) (:D D_far) (:K 0))
+        (margin (:B P_rel) (:D D2) *K))))
+
+  ;; The last step whose square covers the cell: min(u, v, T).
+  (INIT &last_step Order
+    (key ((OR ((&head_dist ^P *K))
+              ((&head_dist *I P)
+               (&slide.minimal (:key I) (:t *T)))))
+      (member ((:t K))
+        (OR ((&head_dist P *K))
+            ((&head_dist *I P)
+             (&slide.minimal (:key I) (:t K)))))
+      (score ((:t K) (:S K))
+        (OR ((&head_dist P *K))
+            ((&head_dist *I P)
+             (&slide.minimal (:key I) (:t K)))))))
+
+  (RULE &key_seq_elem
+    (&key_cell *P)
+    (&key_axis *A)
+    (&key_start *D)
+    (axis_of D A))
+
+  (INIT &key_seq Order
+    (member ((:t P))
+      (&key_seq_elem *P))
+    (score ((:t P) (:S K))
+      (&key_seq_elem *P)
+      (&key_start *D)
+      (margin (:B P) D *K)))
+
+  (RULE &key_first
+    (&key_seq.minimal (:t *P)))
+
+  (RULE &key_last
+    (&key_seq.maximal (:t *P)))
+
+  ;; The key read as a cycle: each color to the next, the last back to the first.
+  (INIT &cycle Walk
+    (successor ((:p P) (:p_next Q))
+      (OR ((&key_last *P)
+           (&key_first (:P *Q)))
+          ((&key_seq.successor (:a P) (:b Q)))))
+    (steps (N)
+      (&last_step.minimal (:t *N))))
+
+  (RULE &head_key
+    (&slide.minimal (:key *I))
+    (&key_first (:P *Q)))
+
+  ;; The key cycle walked backward.
+  (INIT &cycle_back Walk
+    (successor ((:p Q) (:p_next P))
+      (&cycle.successor (:p *P) (:p_next *Q)))
+    (steps ((:N T))
+      (&slide.minimal (:t *T)))))
+
+(ALTS $h "which end of a trail the slide starts at" $HeadDir
+  (ALT $HeadNearKeyLine
+    (INPUT head-end "the start of each trail is the end whose square lies nearer the key's line, measured across the key's axis; undefined where the two end squares lie equally near that line, or where the key is no line"
+      (RULE &head_corner
+        (&end_gap.minimal (:key *I *D) (:t *K))
+        (&end_gap.minimal (:key I (:D *D2)) (:t *K2))
+        (< K K2)))))
+
+(ALTS $k "the order of the key colors" $KeyFromStart
+  (ALT $KeyLexOrder
+    (INPUT key-line "the key lies along either axis")
+    (OUTPUT key-order "the key colors, in reading order from the &lex_corner corner with &lex_axis primary, are c0, c1, …, cK-1"
+      (RULE &key_first
+        (&key_lex.minimal (:t *P)))
+
+      (RULE &key_last
+        (&key_lex.maximal (:t *P)))
+
+      ;; The key read as a cycle: each color to the next, the last back to the first.
+      (INIT &cycle Walk
+        (successor ((:p P) (:p_next Q))
+          (OR ((&key_last *P)
+               (&key_first (:P *Q)))
+              ((&key_lex.successor (:a P) (:b Q)))))
+        (steps (N)
+          (&last_step.minimal (:t *N)))))))
+
+(ALTS $c "where the color cycle is anchored along a trail" $PhaseFromHead
+  (ALT $CycleFromTail
+    (OUTPUT step-paint "step t takes c((t + K − 1 − T) mod K), so the far square takes c(K−1)"
+      ;; The head takes the color T steps back from the last, so the far square
+      ;; takes the last.
+      (RULE &head_key
+        (&slide.minimal (:key *I) (:t *T))
+        (&key_last (:P *Q_last))
+        (&cycle_back.walk (:p0 Q_last) (:N T) (:p *Q))))))
+
+(ALTS $f "how the square at the far end is painted" $FarStep
+  (ALT $TailLastColor
+    (OUTPUT step-paint "the far square is solid c(K−1), and every other step is as in the concept")
+    (RULE &paint
+      (&trail.component *P (:Id *I))
+      (&last_step.minimal (:key P) (:t *N))
+      (&slide.minimal (:key I) (:t *T))
+      (OR ((< N T)
+           (&head_key I (:Q *Q_head))
+           (&cycle.walk (:p0 Q_head) N (:p *Q)))
+          ((= N T)
+           (&key_last (:P Q)))))))
+
+(ALTS $s "the color of the trails" $ShapeStored
+  (ALT $ShapeColorBulk
+    (INPUT diagonal-trail "the trails are as in the concept, of the one color other than &background with more than one cell; undefined where there is not exactly one"
+      (RULE &bulk
+        (input *P *Col)
+        (input (:P *Q) Col)
+        (!= P Q)
+        (NOT (&background (:C Col))))
+
+      (RULE &trail_color
+        (&bulk *Col)
+        (ALL ((&bulk (:Col *Col2)))
+             ((= Col Col2))))
+
+      (RULE &cell
+        (input *P *Col)
+        (&trail_color Col)))))
+
+(RULE &paint
+  (&trail.component *P (:Id *I))
+  (&last_step.minimal (:key P) (:t *N))
+  (&head_key I (:Q *Q_head))
+  (&cycle.walk (:p0 Q_head) N (:p *Q)))
+
+(RULE &output
+  (OR ((&paint *P *Q)
+       (input (:P Q) *Col))
+      ((input P Col)
+       (&trail_color (:Col *Col2))
+       (!= Col Col2))))
+
+(OUT (&output ^P ^Col))

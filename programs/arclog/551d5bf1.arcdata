@@ -1,0 +1,6 @@
+;; inputs df4dddce227aa35125d290aa620a10935e04b12ca9ae85cef1dce6dbe1451164 programs/solvers/551d5bf1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 551d5bf1
+
+(param &outline Color (1))
+(param &ink Color (8))

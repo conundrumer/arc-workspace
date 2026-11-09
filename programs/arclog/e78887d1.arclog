@@ -1,0 +1,301 @@
+;; inputs 1ddce7668016e911b1374d5851c6c863b4a8d7147e0ab8269d41af318cf923c6 programs/solvers/e78887d1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e78887d1
+
+(INPUT glyph-tiling "the input is cut into cells of &glyph_size × &glyph_size, with blank lines &gap wide between cells on both axes; on the axis the bands stack along, a blank line &gap wide also borders the first and the last band, and on the other axis no blank line borders the grid."
+
+  ;; The turn from &shift_dir to the direction from each band to the next.
+  (DET &band_sense SenseDomain)
+
+  ;; The direction in which glyph patterns move from one band to the next.
+  (DET &shift_dir DirDomain)
+
+  (RULE &band_dir
+    (&shift_dir (:D *D3))
+    (&band_sense *S)
+    (turn S (:D D3) (:D2 *D)))
+
+  ;; The one color of the grid's edge line toward &band_dir.
+  (INIT &edge Singleton
+    (member ((:v Col))
+      (ex_input *P *Col)
+      (&band_dir (:D *BD))
+      (margin (:B P) (:D BD) (:K 0))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&edge.value (:v *C)))
+
+  ;; The border's width: the distance from the edge toward &band_dir
+  ;; to the nearest pattern cell.
+  (INIT &border Order
+    (key ((ex_input ^E *P *Col)
+          (NOT (&bg (:C Col)))
+          (&band_dir (:D *BD))
+          (margin (:B P) (:D BD) *K))
+      (member ((:t K))
+        (ex_input E *P *Col)
+        (NOT (&bg (:C Col)))
+        (&band_dir (:D *BD))
+        (margin (:B P) (:D BD) *K))
+      (score ((:t K) (:S K))
+        (ex_input E *P *Col)
+        (NOT (&bg (:C Col)))
+        (&band_dir (:D *BD))
+        (margin (:B P) (:D BD) *K))))
+
+  (INIT &border_width Singleton
+    (member ((:v K))
+      (&border.minimal (:t *K))))
+
+  (DET_OR_RULE &gap SepThickness
+    (&border_width.value (:v *G)))
+
+  (DET &glyph_size
+    (ex_output *P)
+    (&band_dir (:D *BD))
+    (axis_of (:D BD) *A)
+    (frame_extent P A (:N *K))))
+
+(INPUT bands "each line of cells across the stacking axis is a band, and each cell of a band is a slot that holds one glyph: a pattern of one color on &bg.")
+
+(INPUT slot-colors "each slot position holds one color in every band, and different slot positions hold different colors.")
+
+(INPUT band-shift "each band after the first, toward &band_dir, is the band before it with each glyph pattern moved &shift_step slots toward &shift_dir, a pattern that passes the slot nearest &shift_dir wrapping round to the slot farthest from it, and each pattern drawn in the color of the slot it lands in."
+
+  (INIT &band_cell_division Division
+    (key ((OR ((input (:P *P_grid))
+               (&band_dir (:D ^BD))
+               (&gap ^G)
+               (axis_inset (:D BD) (:K1 G) (:K2 G) *B)
+               (inside (:A P_grid) B)
+               (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+               (axis_of (:D BD)))
+              ((&band_dir (:D BD))
+               (&gap G)
+               (axis_of (:D BD) *A))))
+      (cell ((:P P_inner))
+        (input (:P *P_grid))
+        (&band_dir (:D BD))
+        (&gap G)
+        (axis_inset (:D BD) (:K1 G) (:K2 G) *B)
+        (inside (:A P_grid) B)
+        (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+        (axis_of (:D BD)))
+      (side (A (:K Sz))
+        (&band_dir (:D BD))
+        (&gap G)
+        (axis_of (:D BD) *A)
+        (&glyph_size (:K *Sz)))
+      (gap (A G)
+        (&band_dir (:D BD))
+        (&gap G)
+        (axis_of (:D BD) *A))))
+
+  (RULE &band_cell
+    (input (:P *P_grid))
+    (&band_cell_division.tile (:key *BD *G) (:P *P_inner) (:P_outer *P_band) (:P_inner *P_inband))
+    (axis_inset (:D BD) (:K1 G) (:K2 G) *B)
+    (inside (:A P_grid) B)
+    (relative (:Base B) (:X P_grid) (:X_rel P_inner)))
+
+  (INIT &slot_cell_division Division
+    (key ((&gap ^G))
+      (gap (A G)
+        (axis_elem *A)))
+    (cell ((:P P_inband))
+      (&band_cell *P_inband))
+    (side (A (:K Sz))
+      (axis_elem *A)
+      (&glyph_size (:K *Sz))))
+
+  (INIT &out_slot_cell_division Division
+    (key ((&gap ^G))
+      (gap (A G)
+        (axis_elem *A)))
+    (cell (P)
+      (ex_output *P))
+    (side (A (:K Sz))
+      (axis_elem *A)
+      (&glyph_size (:K *Sz))))
+
+  (RULE &slot_cell
+    (&band_cell *P_band *P_inband)
+    (&slot_cell_division.tile (:P P_inband) (:P_outer *P_slot) (:P_inner *P_intile)))
+
+  (RULE &step_cand
+    (&slot_cell (:P_slot *S))
+    (&shift_dir *D)
+    (margin (:B S) D (:K *N)))
+
+  (RULE &glyph
+    (&band_cell *P_grid *P_band *P_inband)
+    (input (:P P_grid) *Col)
+    (&slot_cell P_band P_inband *P_slot *P_intile))
+
+  (RULE &ink
+    (&glyph *P_band *P_slot *P_intile *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &last_band
+    (&band_cell *P_band)
+    (&band_dir (:D *BD))
+    (margin (:B P_band) (:D BD) (:K 0)))
+
+  (DET &out_slot_cell
+    (ex_output *E *P *Col)
+    (&out_slot_cell_division.tile P (:P_outer *P_slot) (:P_inner *P_intile)))
+
+  ;; The slots form a cycle toward &shift_dir: the slot nearest it
+  ;; wraps round to the slot farthest from it.
+  (INIT &slot_cycle Walk
+    (successor ((:p S) (:p_next S2))
+      (&slot_cell (:P_slot *S))
+      (&shift_dir *D)
+      (OR ((neighbor (:P S) D (:Q *S2))
+           (&slot_cell (:P_slot S2)))
+          ((margin (:B S) D (:K 0))
+           (opposite D (:Opp *D2))
+           (&slot_cell (:P_slot S2))
+           (margin (:B S2) (:D D2) (:K 0)))))
+    (steps (N)
+      (&step_cand *N)))
+
+  (DET &step_unfit
+    (&step_cand *E *N)
+    (&slot_cycle.walk E (:p0 *S) N (:p *S2))
+    (&last_band E (:P_band *B))
+    (&out_slot_cell E (:P_slot S2) *P_intile *Col)
+    (IF ((&ink E (:P_band B) (:P_slot S) P_intile))
+        ((&bg (:C Col)))
+        ((NOT (&bg (:C Col))))))
+
+  (DET_OR_RULE &shift_step "The number of slots a glyph pattern moves from one band to the next." SepThickness
+    (&step_cand *E (:N *G))
+    (ex_output E)
+    (NOT (&step_unfit (:N G)))))
+
+(OUTPUT next-band "the output is one band without its border lines: the last band with each glyph pattern moved &shift_step slots toward &shift_dir, a pattern that passes the slot nearest &shift_dir wrapping round to the slot farthest from it, and each pattern drawn in the color of the slot it lands in."
+
+  (RULE &first_band
+    (&band_cell *P_band)
+    (&band_dir (:D *BD))
+    (opposite (:D BD) (:Opp *BD2))
+    (margin (:B P_band) (:D BD2) (:K 0)))
+
+  (RULE &next_band
+    (&band_cell (:P_band *P_band1))
+    (&band_dir (:D *BD))
+    (neighbor (:P P_band1) (:D BD) (:Q *P_band2))
+    (&band_cell (:P_band P_band2)))
+
+  (RULE &unlike
+    (&next_band *P_band1 *P_band2)
+    (&glyph (:P_band P_band1) (:P_slot *P_slot1) *P_intile)
+    (&slot_cell (:P_slot *P_slot2))
+    (OR ((&ink (:P_band P_band1) (:P_slot P_slot1) P_intile)
+         (NOT (&ink (:P_band P_band2) (:P_slot P_slot2) P_intile)))
+        ((&ink (:P_band P_band2) (:P_slot P_slot2) P_intile)
+         (NOT (&ink (:P_band P_band1) (:P_slot P_slot1) P_intile)))))
+
+  (RULE &stacked
+    (&next_band))
+
+  (RULE &stored_move
+    (&shift_step (:G *N))
+    (&slot_cycle.walk (:p0 *P_slot1) N (:p *P_slot2)))
+
+  (RULE &move
+    (&stored_move *P_slot1 *P_slot2))
+
+  (INIT &band_count Cardinality
+    (member ((:m B))
+      (&band_cell (:P_band *B)))
+    (domain ()))
+
+  ;; The move applied once per band.
+  (INIT &moves Walk
+    (successor ((:p S) (:p_next S2))
+      (&move (:P_slot1 *S) (:P_slot2 *S2)))
+    (steps (N)
+      (&move)
+      (&band_count.size *N))))
+
+(ALTS $s "Where the move from one band to the next comes from" $Stored
+  (ALT $StepFromBandsOrStored
+    (OUTPUT next-band "the move is read off the input as each cyclic move of the slots that takes each band's patterns onto the next band's, and on an input with one band it is the stored move; undefined where an input has more than one band and no cyclic move, or more than one, takes each band onto the next."
+      (RULE &step_misfit
+        (&step_cand *N)
+        (&slot_cycle.walk (:p0 *S) N (:p *S2))
+        (&unlike (:P_slot1 S) (:P_slot2 S2)))
+
+      (RULE &move
+        (OR ((&stacked)
+             (&step_cand *N)
+             (NOT (&step_misfit N))
+             (&slot_cycle.walk (:p0 *P_slot1) N (:p *P_slot2)))
+            ((NOT (&stacked))
+             (&stored_move P_slot1 P_slot2))))))
+  (ALT $PermutationFromBandsOrStored
+    (OUTPUT next-band "the move is each permutation of the slots that takes each band's patterns onto the next band's, read off the input, and on an input with one band it is the stored move; undefined where an input has more than one band and no permutation takes each band onto the next."
+      (RULE &slot_match
+        (&stacked)
+        (&slot_cell (:P_slot *P_slot1))
+        (&slot_cell (:P_slot *P_slot2))
+        (NOT (&unlike P_slot1 P_slot2)))
+
+      ;; Each permutation of the slots that the matches allow.
+      (CHOOSE &perms
+        (for ((&slot_match (:P_slot2 ^S2)))
+          (from (&slot_match (:P_slot1 *S) (:P_slot2 S2))))
+        (never
+          (&slot_match (:P_slot1 *S) (:P_slot2 *S2))
+          (&slot_match (:P_slot1 S) (:P_slot2 *S22))
+          (!= S2 S22)))
+
+      (RULE &move
+        (OR ((&perms (:S2 *P_slot2) (:S *P_slot1)))
+            ((NOT (&stacked))
+             (&stored_move P_slot1 P_slot2)))))))
+
+(ALTS $o "Which band the output continues from" $LastBand
+  (ALT $FromFirstBand
+    (OUTPUT next-band "the first band's patterns are moved as many times as there are bands; undefined nowhere the concept is defined.")
+    (RULE &landing
+      (&band_count.size *N)
+      (&moves.walk (:p0 *P_slot) N (:p *P_slot2))
+      (&first_band *P_band))))
+
+(ALTS $g "The color a moved pattern is drawn in" $LandingSlot
+  (ALT $SlotColorFromFirstBand
+    (OUTPUT next-band "a moved pattern is drawn in the color of the slot it lands in, in the first band; undefined nowhere the concept is defined.")
+    (RULE &color_band
+      (&first_band *P_band))))
+
+(RULE &slot_color
+  (&glyph *P_band *P_slot *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &color_band
+  (&last_band *P_band))
+
+(RULE &landing
+  (&move (:P_slot1 *P_slot) *P_slot2)
+  (&last_band *P_band))
+
+(RULE &output
+  ;; The output is the last band's frame: each slot holds its landed pattern,
+  ;; and each cell between slots is &bg.
+  (OR ((&landing (:P_band *B_src) (:P_slot *S) (:P_slot2 *S2))
+       (&last_band (:P_band *B))
+       (&slot_cell (:P_band B) (:P_inband *P) (:P_slot S2) *P_intile)
+       (IF ((&ink (:P_band B_src) (:P_slot S) P_intile))
+           ((&color_band (:P_band *B_col))
+            (&slot_color (:P_band B_col) (:P_slot S2) *Col))
+           ((&bg (:C Col)))))
+      ((&landing)
+       (&last_band (:P_band *B2))
+       (&band_cell (:P_band B2) (:P_inband P))
+       (NOT (&slot_cell (:P_band B2) (:P_inband P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

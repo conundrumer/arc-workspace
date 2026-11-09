@@ -1,0 +1,324 @@
+;; inputs 12e4b158208eb74939cddd358a0a98ee5d477ecd1eec00ad08dbcc92cf93c027 programs/solvers/af24b4cc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; af24b4cc
+
+(INPUT block-grid "the input is a grid of equal blocks laid out in rows and columns, with a 1-wide line of bg (0) along every edge of the input and between each two adjacent blocks"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE_OR_DET &inked_line "A line that holds a cell other than bg."
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (axis_elem *A)
+    (split P A (:Along *L)))
+
+  (RULE_OR_DET &tiling_divider
+    (input *P)
+    (axis_elem *A)
+    (split P A (:Along *L))
+    (NOT (&inked_line L)))
+
+  (RULE &tiling_on_divider
+    (input *P)
+    (&tiling_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank Order
+    (key ((OR ((&tiling_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiling_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiling_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiling_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiling_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx *P D (:N *N1))
+    (&tiling_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (DET_OR_RULE &tile_edge "The width of the lines along the edges." SepThickness TileDim)
+
+  (DET_OR_RULE &tile_gap "The width of the lines between the tiles." SepThickness TileDim)
+
+  (RULE &inset_cell
+    (input (:P *P_grid))
+    (&tile_edge (:G *K))
+    (uniform_inset K *B)
+    (inside (:A P_grid) B)
+    (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+  ;; The lines each band holds.
+  (INIT &band_lines Cardinality
+    (key ((&tiling_part_of ^E *P ^A ^P_part)
+          (split P A (:Along *L)))
+      (member ((:m L))
+        (&tiling_part_of E *P A P_part)
+        (split P A (:Along *L)))))
+
+  (INIT &band_size Singleton
+    (key ((&band_lines.size (:key *E ^A) (:N *K))
+          (ex_output E))
+      (member ((:v K))
+        (&band_lines.size (:key *E A) (:N *K))
+        (ex_output E))))
+
+  (DET &tile_size
+    (&band_size.value (:key *A) (:v *K)))
+
+  (INIT &sized Division
+    (key ((&tile_gap ^G))
+      (gap (A G)
+        (&tile_size *A *K)))
+    (cell (P)
+      (&inset_cell (:P_inner *P)))
+    (side (A K)
+      (&tile_size *A *K)))
+
+  ;; The bands along each axis.
+  (INIT &bands Cardinality
+    (key ((&tiling_part_of ^E ^A *P_part))
+      (member ((:m P_part))
+        (&tiling_part_of E A *P_part))))
+
+  (INIT &band_count Singleton
+    (key ((&bands.size (:key *E ^A) *N)
+          (ex_output E))
+      (member ((:v N))
+        (&bands.size (:key *E A) *N)
+        (ex_output E))))
+
+  (DET &tile_count
+    (&band_count.value (:key *A) (:v *N)))
+
+  (INIT &counted Division
+    (key ((&tile_gap ^G))
+      (gap (A G)
+        (&tile_count *A *N)))
+    (cell (P)
+      (&inset_cell (:P_inner *P)))
+    (parts (A N)
+      (&tile_count *A *N)))
+
+  (INIT &piece Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (INIT &piece8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT block-size "each block is block_h (3) rows by block_w (2) columns")
+
+(INPUT block-layout "the blocks stand in block_rows (2) rows and block_cols (3) columns")
+
+(INPUT no-bg-in-block "no cell of a block is bg (0)")
+
+(INPUT unique-mode "in each block, one color occurs more often than every other color")
+
+(OUTPUT output-frame "the output has one row per block row and one column per block column, inside a border of bg that is margin (1) cells wide"
+
+  ;; The bounding box of the cells other than bg.
+  (INIT &region BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (RULE_OR_DET &region.box "The bounding box of the cells other than bg."))
+
+(OUTPUT block-mode "the output cell of a block takes that block's commonest color"
+
+  (RULE &stripe_member
+    (&tiling_part_of (:P *P2) (:A *Key) (:P_part *M))
+    (split (:P P2) (:A Key) (:Along *P)))
+
+  ;; One picture line per run of lines between dividers.
+  (INIT &stripe Order
+    (key ((axis_elem ^A)
+          (axis_of ^D A))
+      (member ((:t P_part))
+        (&stripe_member (:Key A) (:M *P_part)))
+      (before ((:a P_part) (:b M_b))
+        (&stripe_member (:Key A) (:M *P_part) (:P *L))
+        (&stripe_member (:Key A) (:M *M_b) (:P *Q))
+        (!= P_part M_b)
+        (margin (:B L) D (:K *K1))
+        (margin (:B Q) D (:K *K2))
+        (< K1 K2))))
+
+  (RULE &stripe_pos
+    (&stripe.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+    (&stripe.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+    (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+  (RULE &tile
+    (&tiling_part_of *P *A (:P_part *P_part1))
+    (&stripe_pos (:Key A) (:M P_part1) (:P_pos *P1))
+    (perp A *A2)
+    (&tiling_part_of P (:A A2) (:P_part *P_part2))
+    (&stripe_pos (:Key A2) (:M P_part2) (:P_pos *P2))
+    (compose (:A P1) (:B P2) (:C *P_pic)))
+
+  (INIT &tile_id Quotient
+    (equivalent ((:a P_pic) (:b P_pic))
+      (&tile *P_pic)))
+
+  (RULE &tile_cell
+    (&tile *P *P_pic)
+    (&tile_id.class (:a P_pic) (:Id *B)))
+
+  (RULE &member
+    (&tile_cell *B *P)
+    (input P *Col))
+
+  (INIT &commonest_count Cardinality
+    (key ((&member (:B ^Bl) *P ^Col))
+      (member ((:m P))
+        (&member (:B Bl) *P Col))))
+
+  ;; The color each block's output cell takes.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key (:Bl ^Id) *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key (:Bl Id) *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key (:Bl Id) *Col) *N)))))
+
+(ALTS $parse "how the blocks are found" $Tiling
+  (ALT $Tiling
+    (ALTS $source "what cuts the tiling" $Dividers
+      (ALT $StoredTileSize
+        (INPUT block-grid "the blocks are tiles of tile_size (3 by 2), with lines tile_edge (1) wide along each edge and tile_gap (1) wide between them; undefined where an input extent does not fit whole tiles"
+          (RULE &tile
+            (&sized.tile (:P *P_inner) (:P_outer *P_pic))
+            (&inset_cell P_inner (:P_grid *P)))))
+      (ALT $StoredTileCount
+        (INPUT block-grid "the blocks are tile_count (2 by 3) equal tiles, with lines tile_edge (1) wide along each edge and tile_gap (1) wide between them; undefined where an input extent does not fit them"
+          (RULE &tile
+            (&counted.tile (:P *P_inner) (:P_outer *P_pic))
+            (&inset_cell P_inner (:P_grid *P))))))
+    (ALTS $domain "which cells of a block count toward its color" $AllCells
+      (ALT $NonBgMode
+        (OUTPUT block-mode "the output cell of a block takes the commonest color among its cells other than bg; undefined on a block with no such cell"
+          (RULE &member
+            (&tile_cell *B *P)
+            (input P *Col)
+            (NOT (&bg (:C Col))))))))
+  (ALT $Components
+    (INPUT block-grid "the blocks are the 4-adjacent pieces of cells other than bg")
+    (OUTPUT output-frame "a piece's output cell stands, toward each edge, at the rank of its distance to that edge among the pieces' distances to it, and a cell with no piece takes bg; undefined where the ranks toward two opposite edges disagree, or two pieces of different colors share a cell"
+      (RULE &member
+        (&piece.component *P (:Id *B))
+        (input P *Col))
+
+      (INIT &piece_box BoundingBox
+        (key ((&member (:B ^Id) *P))
+          (cell (P)
+            (&member (:B Id) *P))))
+
+      (RULE &piece_dist
+        (&piece_box.box (:key (:Id *B)) (:B *B2))
+        (margin (:B B2) *D *K))
+
+      (INIT &rank Order
+        (key ((&piece_dist ^D *K))
+          (member ((:t K))
+            (&piece_dist D *K))
+          (score ((:t K) (:S K))
+            (&piece_dist D *K))))
+
+      (RULE &piece_slot_axis
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&piece_dist (:B *Key) D *K)
+        (&rank.rank (:key D) (:t K) *R)
+        (&piece_dist (:B Key) (:D D2) (:K *K2))
+        (&rank.rank (:key (:D D2)) (:t K2) (:R *R2))
+        (axis_inset D (:K1 R) (:K2 R2) *B))
+
+      (RULE &piece_slot
+        (&piece_slot_axis *Key *A (:B *B1))
+        (perp A *A2)
+        (&piece_slot_axis Key (:A A2) (:B *B2))
+        (compose (:A B1) (:B B2) (:C *B))))
+    (RULE &slot
+      (&piece_slot (:Key *B) (:B *P_pic)))
+    (ALTS $adjacency "which cells join one piece" $Cardinal
+      (ALT $DiagonalJoin
+        (INPUT block-grid "the blocks are the 8-adjacent pieces of cells other than bg"
+          (RULE &member
+            (&piece8.component *P (:Id *B))
+            (input P *Col)))))))
+
+(ALTS $margin "how wide the output border is" $StoredMargin
+  (ALT $InputMargin
+    (OUTPUT output-frame "each side of the output border is as wide as the input's run of full bg lines on that side")
+    (RULE &border
+      (&region.box (:B *R))
+      (relative (:Base R) (:X 0) (:X_rel *B)))))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET_OR_RULE &margin SepThickness)
+
+(RULE &border
+  (&margin (:G *M))
+  (uniform_outset (:K M) *B))
+
+(RULE &slot
+  (&tile_id.class (:a *P_pic) (:Id *B)))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (&slot (:P_pic *P))
+    (&border *B)
+    (box_extent B P *A *N)))
+
+(RULE_OR_DET &canvas.extent)
+
+(RULE &placed
+  (&slot *B (:P_pic *P))
+  (&border (:B *B2))
+  (inside (:A P) (:B B2))
+  (relative (:Base B2) (:X P) (:X_rel *Q)))
+
+(RULE &output
+  (&canvas.cell *P)
+  (OR ((&placed (:B *Bl_id) (:Q P))
+       (&commonest.maximal (:key (:Id Bl_id)) (:t *Col)))
+      ((NOT (&placed (:Q P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,18 @@
+;; inputs 185a39798edc82ef96067a83c333309d12526e54b9bbec45fd54ae0209eb979d programs/solvers/3ac3eb23.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3ac3eb23
+
+(param &bg Color (0))
+(param &dir Dir (DIR_T))
+(param &step_cells number (2))
+(param &slot number (0) (1))
+(param &banner (number number) (0 0) (1 1))
+(param &trail.aim Dir (DIR_B))
+(param &trail.template Offset
+  (grid
+    (_ @1 _)
+    (1 _ 1)
+    (_ 1 _)
+    (1 _ 1)
+    (_ 1 _)
+    (1 _ 1)))

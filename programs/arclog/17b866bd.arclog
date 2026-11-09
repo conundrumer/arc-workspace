@@ -1,0 +1,94 @@
+;; inputs c740535cf93dff84a70e20df1e8b9039b9bb3d7c594a1f2e869310e1452ad960 programs/solvers/17b866bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 17b866bd
+
+(DET &block TileCount)
+
+(DET &line DivisorRatio)
+
+(INIT &on_line_division Division
+  (key ((axis_elem ^A))
+    (side (A (:K W))
+      (&line (:K *W)))
+    (gap (A G)
+      (&block (:N *G))))
+  (cell (P)
+    (input *P)))
+
+(DET &node SharedColor)
+
+(DET &corner DiagDirDomain)
+
+(DET &hole SharedColor)
+
+(RULE &on_line
+  (input *P)
+  (&on_line_division.tile (:key *A) P))
+
+(RULE &junction
+  (&on_line *P *A)
+  (perp A *A2)
+  (&on_line P (:A A2)))
+
+(RULE &mark
+  (&junction *P)
+  (input P *Col)
+  (NOT (&node (:C Col))))
+
+;; Blocks: connected components of off-line cells.
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P)
+    (NOT (&on_line P))))
+
+(RULE &mark_block
+  (&mark *P)
+  (diag_dir_elem (:D *Diag))
+  (&line (:K *W))
+  (jump P (:D Diag) (:K W) (:Q *P0))
+  (&blocks.component (:P P0) *Id))
+
+(RULE &painted
+  (&mark *P *Col)
+  (&corner (:D *Diag))
+  (&mark_block P Diag *Id))
+
+(RULE &fill
+  (&painted *Id *Col)
+  (&blocks.component *P Id)
+  (input P (:Col *Hole))
+  (&hole (:C Hole)))
+
+(ALTS $choice "what the paint covers" $Holes
+  (ALT $Stamp
+    (INIT &bbox BoundingBox
+      (key ((&blocks.component *P ^Id))
+        (cell (P)
+          (&blocks.component *P Id))))
+
+    (DET &repaint
+      (ex_output *E *P *Col)
+      (ex_input E P (:Col *Col2))
+      (!= Col Col2)
+      (&blocks.component E P *Id))
+
+    (DET &stamp
+      (&repaint *E (:P *P2) *Id)
+      (&bbox.box E (:key Id) *B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (RULE &fill
+      (&painted *Id *Col)
+      (&bbox.box (:key Id) *B)
+      (&stamp (:P *P_inner))
+      (compose (:A B) (:B P_inner) (:C *P)))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((&mark P)
+       (&node (:C Col)))
+      ((input P Col)
+       (NOT (&mark P))
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

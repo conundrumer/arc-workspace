@@ -1,0 +1,54 @@
+;; inputs 82d1ee9a1f6227d5aa844ffc09784016220266965bdb35123a41835f9eea9f5b programs/solvers/22208ba4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22208ba4
+
+(DET &bg DominantColor)
+
+(INIT &blocks Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &corner_block
+  (&blocks.component (:key *Col) *P *Id)
+  (corner_dist P *Diag (:K 0)))
+
+(INIT &bbox BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+(RULE &mover
+  (&corner_block *Id *Diag *Col)
+  (&corner_block (:Id *Id2) Col)
+  (!= Id Id2))
+
+(RULE &moved_cell
+  (&mover *Id *Diag)
+  (diag_opposite (:D Diag) (:Opp *Diag_in))
+  (&blocks.component (:key *Col) (:P *P2) Id)
+  (&bbox.box (:key Id) *B)
+  (diag_dirs (:D Diag_in) *A *D1 *D2)
+  (perp A *A2)
+  (box_extent B (:P P2) A (:N *N1))
+  (box_extent B (:P P2) (:A A2) (:N *N2))
+  (jump (:P P2) (:D D1) (:K N1) (:Q *P_step))
+  (jump (:P P_step) (:D D2) (:K N2) (:Q *P)))
+
+(RULE &vacated
+  (&mover *Id)
+  (&blocks.component *P Id))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&moved_cell P *Col))
+      ((NOT (&moved_cell P))
+       (&vacated P)
+       (&bg (:C Col)))
+      ((NOT (&moved_cell P))
+       (NOT (&vacated P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

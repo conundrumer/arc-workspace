@@ -1,0 +1,44 @@
+;; inputs a5a7dbd4d1ad71798b103a59690fc74ed4cbdcc9366b8ada9f9a1f7220e5c15c programs/solvers/50a16a69.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 50a16a69
+
+(DET &move_dir DirDomain)
+
+;; The filler color is the one that fills whole grid lines.
+(INIT &line Singleton
+  (key ((input *P *Col)
+        (split P *A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P *A (:Along L)))))
+
+(RULE &pattern
+  (input *P *Col)
+  (NOT (&line.value (:v Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&pattern *P *Col)))
+
+(RULE &phase
+  (input *P)
+  (margin (:B P) *D (:K *T))
+  (axis_of D *A)
+  (OR ((&si.fundamental_period A *K)
+       (divide T (:Side K) (:Gap 0) (:Remainder *J)))
+      ((NOT (&si.fundamental_period A))
+       (= J T))))
+
+(RULE &output
+  (axis_of (:D *D1) *A)
+  (perp A *A2)
+  (axis_of (:D *D2) (:A A2))
+  (&phase *P (:D D1) (:J *J1))
+  (&phase P (:D D2) (:J *J2))
+  (&phase (:P *Q) (:D D1) (:J J1))
+  (&phase (:P Q) (:D D2) (:J J2))
+  (&pattern (:P *R) *Col)
+  (&move_dir *D)
+  (neighbor (:P R) D Q))
+
+(OUT (&output ^P ^Col))

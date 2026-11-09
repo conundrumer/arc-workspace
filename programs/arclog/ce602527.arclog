@@ -1,0 +1,239 @@
+;; inputs 11c3e1b0270f63553d4368b9ee662d601cae9500430adc08bea2123734bf5787 programs/solvers/ce602527.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ce602527
+
+(INPUT background "one color, the commonest, fills the grid around the shapes")
+
+(INPUT color-shapes "each other color is one shape: the cells of that color, which need not be connected")
+
+(INPUT three-shapes "there are three shapes")
+
+(INPUT enlarged-copy "one shape is a copy of one of the other two, each cell scaled to a `scale` × `scale` block, in the same orientation")
+
+(INPUT edge-cut "the grid edge cuts the enlarged copy, so only part of it shows")
+
+(INPUT small-whole "the two small shapes lie whole inside the grid")
+
+(INPUT one-match "the visible part of the enlarged copy agrees with the enlarged form of one small shape only")
+
+(OUTPUT pick-shown-shape "the shown shape is the small shape whose enlarged form, at some placement, has the large shape's cells as the part of it inside the grid")
+
+(OUTPUT crop-shown-shape "the output is the bounding box of the shown shape, its cells in its color and the other cells in the background color"
+
+  (INIT &bg_mode_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  (RULE &shape_cell
+    (input *P (:Col *S))
+    (NOT (&bg_mode.maximal (:t S))))
+
+  (RULE &copy
+    (&shape_cell (:S *L)))
+
+  (INIT &sbox BoundingBox
+    (key ((&shape_cell ^S *P))
+      (cell (P)
+        (&shape_cell S *P))))
+
+  (RULE &shape_form
+    (&shape_cell *S *P)
+    (&sbox.box (:key S) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &span
+    (&shape_form (:S *L) *P_inner)
+    (axis_elem *A)
+    (OR ((frame_extent (:P P_inner) A *N))
+        ((sub_extent (:P P_inner) A (:K N)))))
+
+  (INIT &block_line Frame
+    (key ((&span ^A ^N))
+      (extent (A N))))
+
+  (RULE &enlarging
+    (&span *L *A *N)
+    (&block_line.cell (:key N A) *P)
+    (axis_of *D A)
+    (margin (:B P) D (:K *N2))
+    (> N2 0))
+
+  (INIT &size Cardinality
+    (key ((&shape_cell ^S *P))
+      (member ((:m P))
+        (&shape_cell S *P))))
+
+  (INIT &largest Order
+    (member ((:t (:V S) (:S N)))
+      (&size.size (:key *S) *N))
+    (score ((:t (:V S) (:S N)) (:S N))
+      (&size.size (:key *S) *N))))
+
+(ALTS $s "Where the enlargement factor comes from." $Stored
+  (ALT $ScaleDerived
+    (INPUT enlarged-copy "the factor is each k ≥ 2 at which a small shape's enlarged form has another shape's cells as its visible part; undefined where there is no such k")
+    (RULE &factor
+      (&copy *L)
+      (&enlarging L *A (:N *Sc))
+      (perp A *A2)
+      (&enlarging L (:A A2) (:N Sc)))))
+
+(ALTS $c "Which shape is the copy." $AnyShape
+  (ALT $LargeByCount
+    (OUTPUT copy-largest "the copy is the shape with the most cells; undefined where no other shape's enlarged form shows as that shape"
+      (RULE &copy
+        (&largest.maximal (:t (:V *L))))))
+  (ALT $LargeByEdge
+    (OUTPUT copy-at-edge "the copy is a shape that touches the grid edge; undefined where no such shape is the visible part of another's enlarged form"
+      (RULE &copy
+        (&shape_cell (:S *L) *P)
+        (margin (:B P) *D (:K 0))))))
+
+(DET &try2
+  (&enlarging *E *L *A (:N *Sc))
+  (perp A *A2)
+  (&enlarging E L (:A A2) (:N Sc)))
+
+(INIT &block2 Frame
+  (key ((&try2 ^Sc)
+        (perp *A *A2))
+    (extent (A (:N Sc))
+      (&try2 Sc)
+      (axis_elem *A))))
+
+(INIT &enlarged_tiling2 Tiling
+  (outer ((:P P_tile))
+    (&shape_form (:P_inner *P_tile)))
+  (inner ((:P P_intile))
+    (&block2.cell (:P *P_intile))))
+
+(DET &enlarged2
+  (&shape_form *E *S (:P_inner *P_tile))
+  (&block2.cell (:key *Sc) (:P *P_intile))
+  (&enlarged_tiling2.cell (:P_outer P_tile) (:P_inner P_intile) (:P *P_inner)))
+
+(DET &pairing2
+  (&try2 *E *L *Sc)
+  (&shape_cell E *S)
+  (!= S L))
+
+(DET &placement2
+  (&pairing2 *E *Sc *S *L)
+  (&enlarged2 E Sc S *P_inner)
+  (&shape_cell E (:S L) *P)
+  (relative (:Base P_inner) (:X P) (:X_rel *B)))
+
+(DET &uncovered2
+  (&placement2 *E *Sc *S *L *B)
+  (&shape_cell E (:S L) *P)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (NOT (&enlarged2 E Sc S P_inner)))
+
+(DET &stray2
+  (&placement2 *E *Sc *S *L *B)
+  (NOT (&uncovered2 E Sc S L B))
+  (ex_input E *P)
+  (NOT (&shape_cell E (:S L) P))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&enlarged2 E Sc S P_inner))
+
+(DET &shows2
+  (&placement2 *E *Sc *S *L *B)
+  (NOT (&uncovered2 E Sc S L B))
+  (NOT (&stray2 E Sc S L B)))
+
+(DET &missed
+  (&shows2 (:Sc *K))
+  (ex_output *E)
+  (NOT (&shows2 E (:Sc K))))
+
+(DET_OR_RULE &scale TileCount TileDim
+  (&shows2 (:Sc *N))
+  (NOT (&missed (:K N))))
+
+(RULE &factor
+  (&copy *L)
+  (&scale (:N *Sc)))
+
+(INIT &block Frame
+  (key ((&factor ^Sc)
+        (perp *A *A2))
+    (extent (A (:N Sc))
+      (&factor Sc)
+      (axis_elem *A))))
+
+(INIT &enlarged_tiling Tiling
+  (outer ((:P P_tile))
+    (&shape_form (:P_inner *P_tile)))
+  (inner ((:P P_intile))
+    (&block.cell (:P *P_intile))))
+
+(RULE &pairing
+  (&factor *L *Sc)
+  (&shape_cell *S)
+  (!= S L))
+
+(RULE &enlarged
+  (&shape_form *S (:P_inner *P_tile))
+  (&block.cell (:key *Sc) (:P *P_intile))
+  (&enlarged_tiling.cell (:P_outer P_tile) (:P_inner P_intile) (:P *P_inner)))
+
+(RULE &placement
+  (&pairing *Sc *S *L)
+  (&enlarged Sc S *P_inner)
+  (&shape_cell (:S L) *P)
+  (relative (:Base P_inner) (:X P) (:X_rel *B)))
+
+(RULE &uncovered
+  (&placement *Sc *S *L *B)
+  (&shape_cell (:S L) *P)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (NOT (&enlarged Sc S P_inner)))
+
+(RULE &stray
+  (&placement *Sc *S *L *B)
+  (NOT (&uncovered Sc S L B))
+  (input *P)
+  (NOT (&shape_cell (:S L) P))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&enlarged Sc S P_inner))
+
+(RULE &shows
+  (&placement *Sc *S *L *B)
+  (NOT (&uncovered Sc S L B))
+  (NOT (&stray Sc S L B)))
+
+(RULE &resolution_item
+  (&factor *L *Sc)
+  (&shows Sc *S L)
+  (&sbox.box (:key S) *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &resolution
+  (&resolution_item *S)
+  (ONE))
+
+(RULE &output
+  (&resolution *S)
+  (&factor *L *Sc)
+  (&shows Sc S L)
+  (&sbox.box (:key S) *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((NOT (&shape_cell S (:P P2)))
+       (&bg_mode.maximal (:t *Col)))
+      ((&shape_cell S (:P P2))
+       (= Col S))))
+
+(OUT (&output ^P ^Col))

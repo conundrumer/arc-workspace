@@ -1,0 +1,205 @@
+;; inputs 75513b74aa755d7db93bc82738bb9ab8ce0fc8938c5c0db512cd474b2339126d programs/solvers/d753a70b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d753a70b
+
+(INPUT background "every cell that is not part of a shape has the background color")
+
+(INPUT diamond-outlines "each shape is one color, and its cells are the cells inside the frame at one taxicab distance r ≥ 0 from a center cell inside the frame; a diamond of radius 0 is a single cell; of the diamonds a shape fits, it is the one of least radius")
+
+(INPUT diamonds-apart "two diamonds of one color share no cell and do not touch, also at a corner")
+
+(OUTPUT shrink "a diamond of the shrink color becomes the diamond of radius r − 1 around the same center, clipped by the frame")
+
+(OUTPUT grow "a diamond of the grow color becomes the diamond of radius r + 1 around the same center, clipped by the frame")
+
+(OUTPUT keep "a diamond of any other color stays unchanged")
+
+(OUTPUT size "the output has the input's size, and every cell that no output diamond takes has the background color"
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col C)))
+
+  (DET &ring2
+    (ex_output *E (:P *C))
+    (ex_output E *P)
+    (relative (:Base C) (:X P) (:X_rel *V))
+    (diag_dist (:P V) *Diag *K1 *K2)
+    (>= K1 0)
+    (>= K2 0)
+    (corner_dist (:P V) Diag *K))
+
+  (RULE &ring
+    (input (:P *C))
+    (input *P)
+    (relative (:Base C) (:X P) (:X_rel *V))
+    (diag_dist (:P V) *Diag *K1 *K2)
+    (>= K1 0)
+    (>= K2 0)
+    (corner_dist (:P V) Diag *K))
+
+  ;; A shape: the cells of one color joined with their diagonals.
+  (INIT &shapes Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  ;; A shape: the cells of one color joined with their diagonals.
+  (INIT &shapes2 Connectivity
+    (key ((ex_output (:E ^Ky) *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (ex_output (:E Ky) *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (DET &cand2
+    (&shapes2.component (:key (:Ky *E)) *Id *P)
+    (&ring2 E *C P *K))
+
+  (RULE &cand
+    (&shapes.component *Id *P)
+    (&ring *C P *K))
+
+  (DET &stray2
+    (&cand2 *E *Id *C *K)
+    (&shapes2.component (:key (:Ky E)) Id (:P *Q))
+    (&ring2 E C (:P Q) (:K *K2))
+    (!= K2 K))
+
+  (RULE &stray
+    (&cand *Id *C *K)
+    (&shapes.component Id (:P *Q))
+    (&ring C (:P Q) (:K *K2))
+    (!= K2 K))
+
+  (DET &gap2
+    (&cand2 *E *Id *C *K)
+    (&ring2 E C (:P *Q) K)
+    (NOT (&shapes2.component (:key (:Ky E)) Id (:P Q))))
+
+  (RULE &gap
+    (&cand *Id *C *K)
+    (&ring C (:P *Q) K)
+    (NOT (&shapes.component Id (:P Q))))
+
+  (DET &fit2
+    (&cand2 *E *Id *C *K)
+    (NOT (&stray2 E Id C K))
+    (NOT (&gap2 E Id C K)))
+
+  (RULE &fit
+    (&cand *Id *C *K)
+    (NOT (&stray Id C K))
+    (NOT (&gap Id C K)))
+
+  (INIT &least Order
+    (key ((&fit ^Id *K))
+      (member ((:t K))
+        (&fit Id *K))
+      (score ((:t K) (:S K))
+        (&fit Id *K))))
+
+  (RULE &diamond
+    (&fit *Id *C *K)
+    (&least.minimal (:key Id) (:t K))
+    (&shapes.component Id (:key *Col)))
+
+  (RULE &vertex
+    (&diamond *Id *C *K)
+    (dir_elem (:D *Dir))
+    (jump (:P C) (:D Dir) K (:Q *A)))
+
+  (DET &resized
+    (&fit *E *Id *C *K)
+    (&shapes.component E Id (:key *Col))
+    (&fit2 E (:Id *Id2) C (:K *K2))
+    (&shapes2.component (:key (:Ky E) Col) (:Id Id2)))
+
+  (DET &grow_color
+    (&resized (:Col *C) *K *K2)
+    (> K2 K))
+
+  (DET &shrink_color
+    (&resized (:Col *C) *K *K2)
+    (< K2 K))
+
+  (RULE &new_vertex
+    (&vertex *Id *Dir *A)
+    (&diamond Id *Col)
+    (OR ((&shrink_color (:C Col))
+         (opposite (:D Dir) (:Opp *O))
+         (neighbor (:P A) (:D O) (:Q *B)))
+        ((&grow_color (:C Col))
+         (neighbor (:P A) (:D Dir) (:Q B)))
+        ((NOT (&shrink_color (:C Col)))
+         (NOT (&grow_color (:C Col)))
+         (= B A))))
+
+  (RULE &new_radius
+    (&new_vertex *Id (:Dir *D) *B)
+    (&diamond Id *C)
+    (opposite D (:Opp *O))
+    (NOT (nearer (:D O) (:P B) (:Q C)))
+    (relative (:Base C) (:X B) (:X_rel *V))
+    (margin (:B V) (:D O) (:K *R))))
+
+(ALTS $k "how a shape's color sets its radius change" $ColorPair
+  (ALT $ChangeTable
+    (OUTPUT shrink "a stored table maps each shape color to its radius change, and replaces shrink, grow and keep; undefined on a shape color the table lacks"
+      (DET &radius_change
+        (&resized (:Col *C) (:K *K3) *K2)
+        (opposite *D (:Opp *O))
+        (jump_offset D (:K K3) (:V *A))
+        (jump_offset D (:K K2) (:V *B))
+        (relative (:Base A) (:X B) (:X_rel *V))
+        (margin (:B V) (:D O) *K))
+
+      (RULE &new_vertex
+        (&vertex *Id *Dir *A)
+        (&diamond Id *Col)
+        (&radius_change (:C Col) *K)
+        (jump (:P A) (:D Dir) K (:Q *B))))))
+
+(ALTS $f "what shrinking a single cell gives" $Vanish
+  (ALT $ShrinkFloor
+    (OUTPUT shrink "the new radius is r − 1 but at least 0, so a single cell of the shrink color stays")
+    (RULE &drawn
+      ;; A diamond whose new vertex lies past its center stays as the center cell.
+      (OR ((&new_vertex *Id)
+           (NOT (&new_radius Id))
+           (&diamond Id (:C *P) *Col))
+          ((&new_radius (:Id *Id2) *R)
+           (&diamond (:Id Id2) *C Col)
+           (&ring C P (:K R)))))))
+
+(RULE &unread
+  (&shapes.component *Id *P)
+  (NOT (&new_vertex Id)))
+
+(RULE &drawn
+  (&new_radius *Id *R)
+  (&diamond Id *C *Col)
+  (&ring C *P (:K R)))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((input P)
+       (NOT (&drawn P))
+       (NOT (&unread P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,175 @@
+;; inputs 9e036d37dcb2178d465f15c638dc83b2695845c2d3dd8766f4629d0491cbc23d programs/solvers/f931b4a8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f931b4a8
+
+(INPUT four-quadrants "the input is a square of even side, cut into four equal square quadrants.")
+
+(INPUT pattern-quadrant "the `pattern_quad` quadrant holds a pattern of non-`bg` colors with at least one `bg` hole.")
+
+(INPUT fill-quadrant "the `fill_quad` quadrant has no `bg` cell; each of its cells is a fill color.")
+
+(INPUT count-quadrants "each quadrant in `count_quad` holds at least one non-`bg` cell on `bg`, and at most as many as the quadrant has cells.")
+
+(OUTPUT output-size "the output's extent along each axis is the number of non-`bg` cells in that axis's `count_quad` quadrant.")
+
+(OUTPUT tile-pattern "the output is covered by copies of the pattern quadrant, laid edge to edge from the `anchor` corner of the output, and cut off at the far edges."
+
+  ;; the tile count of the quadrant split on each axis
+  (DET &quads TileCount)
+
+  (INIT &quad_cell_division Division
+    (cell ((:P P_grid))
+      (input (:P *P_grid)))
+    (parts (A N)
+      (axis_elem *A)
+      (&quads *N)))
+
+  (DET &bg SharedColor)
+
+  (RULE &quad_cell
+    (input (:P *P_grid) *Col)
+    (&quad_cell_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P))
+    (inside (:A P_tile) (:B 0))
+    (same_corner (:D *Q) (:P1 P_tile) (:P2 0)))
+
+  (DET &bg_at
+    (&quad_cell *E *Q *Col)
+    (&bg (:C Col)))
+
+  (DET &ink_at
+    (&quad_cell *E *Q *Col)
+    (NOT (&bg (:C Col))))
+
+  (DET &not_pattern
+    (&quad_cell *E *Q)
+    (OR ((NOT (&bg_at E Q)))
+        ((NOT (&ink_at E Q)))))
+
+  (DET &pattern_quad
+    (&quad_cell *Q)
+    (NOT (&not_pattern Q)))
+
+  (INIT &ink_box BoundingBox
+    (cell (P)
+      (&pattern_quad *Q)
+      (&quad_cell Q *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(OUTPUT fill-holes-scaled "in the tile i tiles down and j tiles across from the `anchor` corner, each `bg` cell takes the color of the fill quadrant's cell i rows down and j columns across from its own `anchor` corner. Every other cell keeps the pattern's color."
+
+  ;; the corner the tiling starts from
+  (DET &anchor DiagDirDomain)
+
+  ;; The non-bg cells of each quadrant.
+  (INIT &ink_count Cardinality
+    (key ((&quad_cell ^Q *P *Col)
+          (NOT (&bg (:C Col))))
+      (member ((:m P))
+        (&quad_cell Q *P *Col)
+        (NOT (&bg (:C Col))))))
+
+  (DET &count_fits
+    (ex_output *E *P)
+    (frame_extent P *A *N)
+    (&ink_count.size E (:key *Q) N))
+
+  (DET &count_miss
+    (ex_output *E)
+    (axis_elem *A)
+    (&quad_cell E *Q)
+    (NOT (&count_fits E A Q)))
+
+  (DET &count_quad
+    (axis_elem *A)
+    (&quad_cell *Q)
+    (NOT (&count_miss A Q)))
+
+  ;; The output frame: one line per non-bg cell of the axis's count quadrant.
+  (INIT &frame Frame
+    (extent (A N)
+      (&count_quad *A *Q)
+      (&ink_count.size (:key Q) *N)))
+
+  (RULE &tile_cell
+    (&pattern_quad *Q)
+    (&quad_cell Q *P *Col))
+
+  (RULE &tile_place
+    (&frame.cell *P)
+    (&anchor *D)
+    (corner_dir (:C D) *A (:D *E))
+    (margin (:B P) (:D E) (:K *X))
+    (&tile_cell (:P *Q))
+    (frame_extent (:P Q) A (:N *W))
+    (divide (:T X) (:Side W) (:Gap 0) (:Part *N) (:Remainder *K)))
+
+  (RULE &fill_corner
+    (&anchor *D))
+
+  (DET &fill_quad
+    (&quad_cell *Q)
+    (NOT (&bg_at Q)))
+
+  (RULE &fill_cell
+    (&fill_corner *D)
+    (&fill_quad *Q)
+    (&quad_cell Q *P *Col)
+    (diag_dist P (:Diag D) *A (:K1 *M1) (:K2 *M2))))
+
+(ALTS $t "what one tile of the output is" $Quadrant
+  (ALT $TileByBbox
+    (OUTPUT tile-pattern "the tile is the bounding box of the pattern quadrant's non-`bg` cells; undefined where the pattern quadrant has no non-`bg` cell"
+      (RULE &tile_cell
+        (&pattern_quad *Q)
+        (&quad_cell Q (:P *P2) *Col)
+        (&ink_box.box *B)
+        (inside (:A P2) B)
+        (relative (:Base B) (:X P2) (:X_rel *P))))))
+
+(ALTS $f "how a tile index that passes the fill grid reads it" $Direct
+  (ALT $FillIndexWrap
+    (OUTPUT fill-holes-scaled "the tile index wraps around the fill grid's extent on each axis"
+      (RULE &fill_index
+        (&tile_place *A *N)
+        (&fill_quad *Q)
+        (&quad_cell Q *P)
+        (frame_extent P A (:N *W))
+        (divide (:T N) (:Side W) (:Gap 0) (:Remainder *M))))
+    (RULE &output
+      (&tile_place *P *A (:N *N1) (:K *K1))
+      (perp A *A2)
+      (&tile_place P (:A A2) (:N *N2) (:K *K2))
+      (&anchor *D)
+      (&tile_cell (:P *Q) (:Col *C))
+      (diag_dist (:P Q) (:Diag D) A K1 K2)
+      (OR ((&bg C)
+           (&fill_index A (:N N1) (:M *M1))
+           (&fill_index (:A A2) (:N N2) (:M *M2))
+           (&fill_cell A M1 M2 *Col))
+          ((NOT (&bg C))
+           (= Col C))))))
+
+(ALTS $c "the corner the fill grid's cells are counted from" $SharedAnchor
+  (ALT $SeparateFillAnchor
+    (OUTPUT fill-holes-scaled "the fill grid's cells are counted from `fill_anchor`, a corner stored apart from `anchor`"
+      ;; the corner the fill grid is read from: its rows count from the top, and its columns from the left or from the right
+      (DET &fill_anchor DiagDirDomain (ONE))
+
+      (RULE &fill_corner
+        (&fill_anchor *D)))))
+
+(RULE &output
+  (&tile_place *P *A (:N *N1) (:K *K1))
+  (perp A *A2)
+  (&tile_place P (:A A2) (:N *N2) (:K *K2))
+  (&anchor *D)
+  (&tile_cell (:P *Q) (:Col *C))
+  (diag_dist (:P Q) (:Diag D) A K1 K2)
+  (OR ((&bg C)
+       (&tile_place A (:N N1))
+       (&tile_place (:A A2) (:N N2))
+       (&fill_cell A (:M1 N1) (:M2 N2) *Col))
+      ((NOT (&bg C))
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

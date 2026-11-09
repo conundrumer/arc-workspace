@@ -1,0 +1,9 @@
+;; inputs 4e24a86273b2e237cc0a3b38c2e805967d59c8936157165c05bf94342e9eda32 programs/solvers/e729b7be.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e729b7be
+
+(param &bg Color (7))
+(param &sym D4 (D4_ID) (D4_HT))
+(param &line Color (4))
+(param &marker Color (8))
+(param &transform D4 (D4_HT))

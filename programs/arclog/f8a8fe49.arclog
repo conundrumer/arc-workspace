@@ -1,0 +1,223 @@
+;; inputs a83cc0b11d72287d3abb4ef0bfc988b3c5d5c99ee933a3054998abe3e21761b0 programs/solvers/f8a8fe49.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8a8fe49
+
+(INPUT background "every cell that is not a bracket or a mark is &background"
+
+  (DET &kept
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col C)))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C3))
+    (ex_output E P (:Col *C))
+    (!= C3 C)
+    (NOT (&kept (:C C3)))))
+
+(INPUT two-facing-brackets "two brackets of &bracket_color, each a straight base line with a cell of arm length 1 at each end pointing toward the other bracket; the two bases are parallel, on one axis, with their ends aligned"
+
+  (DET &bracket_color UnchangedColor))
+
+(INPUT marks-between "every &mark_color cell lies strictly between the two brackets' arm lines and within the span of the bases"
+
+  (DET &mark_color_stored ChangedColor)
+
+  (DET_OR_RULE &mark_color RarestColor
+    (&mark_color_stored *C)))
+
+(INPUT no-midline "the lines strictly between the two bases are even in number, so every mark is strictly nearer one base than the other")
+
+(INPUT marks-touch-arm-line "the marks nearer each bracket include a cell on the line next to that bracket's arm line")
+
+(INPUT mirror-in-frame "each mark's mirror image across its nearer base lies inside the grid on a background cell")
+
+(OUTPUT brackets-stay "every bracket cell is kept")
+
+(OUTPUT marks-mirror-out "each mark cell is painted &mark_color at its mirror image across the base line of the bracket it is nearer to: a mark at distance d inside that base lands at distance d outside it"
+
+  ;; The box both brackets span; the bases are two of its edges.
+  (INIT &frame2 BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&bracket_color (:C Col))))
+
+  (RULE &open_side
+    (&frame2.box *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (NOT (&bracket_color (:C Col))))
+
+  (RULE &mark
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &depth
+    (&mark *P)
+    (&frame2.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K)
+    (NOT (&open_side D)))
+
+  (RULE &side
+    (&depth *P *D (:K *K1))
+    (opposite D (:Opp *D2))
+    (&depth P (:D D2) (:K *K2))
+    (< K1 K2))
+
+  (INIT &shape8 Connectivity
+    (node (P)
+      (&mark *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &shape4 Connectivity
+    (node (P)
+      (&mark *P)))
+
+  ;; The marks that flip across each base, as one group.
+  (INIT &group BoundingBox
+    (key ((&side *P ^D))
+      (cell (P)
+        (&side *P D)))))
+
+(OUTPUT inside-cleared "each mark's input cell becomes &background")
+
+(ALTS $unit "what flips as one unit, and so which base it flips across" $PerCell
+  (ALT $WholeShape
+    (OUTPUT marks-mirror-out "each 8-connected mark shape flips whole across the base nearer to its nearest cell; undefined where a shape's nearest cells are equally near both bases"
+      (RULE &shape
+        (&shape8.component *P *Id))
+
+      ;; Each shape's least depth from each base.
+      (INIT &reach Order
+        (key ((&shape *P ^Id)
+              (&depth P ^D *K))
+          (member ((:t K))
+            (&shape *P Id)
+            (&depth P D *K))
+          (score ((:t K) (:S K))
+            (&shape *P Id)
+            (&depth P D *K))))
+
+      (RULE &side
+        (&shape *P *Id)
+        (&reach.minimal (:key Id *D) (:t *K1))
+        (opposite D (:Opp *D2))
+        (&reach.minimal (:key Id (:D D2)) (:t *K2))
+        (< K1 K2))
+
+      (RULE &tie
+        (&reach.minimal (:key *Id *D) (:t *K))
+        (opposite D (:Opp *D2))
+        (&reach.minimal (:key Id (:D D2)) (:t K))))
+    (RULE &output
+      (NOT (&tie))
+      (NOT (&shared_role))
+      (input *P (:Col *Col_in))
+      (OR ((&landing (:Q P))
+           (&mark_color (:C *Col)))
+          ((NOT (&landing (:Q P)))
+           (&mark P)
+           (&background (:C Col)))
+          ((NOT (&landing (:Q P)))
+           (NOT (&mark P))
+           (= Col Col_in))))
+    (ALTS $adj "which cells join one shape" $EightAdjacent
+      (ALT $FourAdjacent
+        (OUTPUT marks-mirror-out "shapes join by 4-adjacency"
+          (RULE &shape
+            (&shape4.component *P *Id)))))))
+
+(ALTS $place "where a flipped mark lands" $Mirror
+  (ALT $FlipToGap
+    (OUTPUT marks-mirror-out "the marks nearer each base flip as a group, and the group's near edge sits &out_gap empty lines outside the base"
+      (DET &changed
+        (ex_input *E *P (:Col *C))
+        (ex_output E P (:Col *C2))
+        (!= C C2))
+
+      ;; The box the brackets of each example span: the cells of a color that no
+      ;; cell changes from.
+      (INIT &frame BoundingBox
+        (key ((ex_output ^E))
+          (cell (P)
+            (ex_input E *P (:Col *C))
+            (NOT (&changed C)))))
+
+      (DET &outside
+        (ex_output *E (:P *Q) (:Col *C))
+        (&changed C)
+        (NOT (&kept C))
+        (&frame.box (:key E) *B)
+        (ex_input E (:P *P_base))
+        (inside (:A P_base) B)
+        (same_dist *D (:P1 P_base) (:P2 B))
+        (nearer D (:P Q) (:Q P_base))
+        (perp_dir D *D2)
+        (same_dist (:D D2) (:P1 Q) (:P2 P_base)))
+
+      ;; The empty lines between each such mark and its base.
+      (INIT &gap Cardinality
+        (key ((&outside ^E ^Q ^D))
+          (member ((:m X))
+            (&outside E Q D *P_base)
+            (ex_output E (:P *X))
+            (perp_dir D *D2)
+            (same_dist (:D D2) (:P1 X) (:P2 Q))
+            (nearer D (:P X) (:Q P_base))
+            (nearer D (:P Q) (:Q X)))
+          (domain ()
+            (&outside E Q D))))
+
+      ;; The least gap of each group.
+      (INIT &near Order
+        (key ((&gap.size (:key ^E ^D) (:N *K)))
+          (member ((:t K))
+            (&gap.size (:key E D) (:N *K)))
+          (score ((:t K) (:S K))
+            (&gap.size (:key E D) (:N *K)))))
+
+      (DET &out_gap
+        (&near.minimal (:t *K))))
+    (RULE &landing
+      (&side *P *D)
+      (&depth P D *K)
+      (jump P D K (:Q *P_base))
+      (&out_gap (:K *G))
+      (jump (:P P_base) D (:K G) (:Q *P_gap))
+      (neighbor (:P P_gap) D (:Q *P_near))
+      (&group.box (:key D) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_g))
+      (margin (:B P_g) D (:K *K_g))
+      (jump (:P P_near) D (:K K_g) *Q))))
+
+(RULE &shared_role
+  (&bracket_color *C)
+  (OR ((&mark_color C))
+      ((&background C))))
+
+(RULE &landing
+  (&side *P *D)
+  (&depth P D *K)
+  (jump P D K (:Q *P_base))
+  (jump (:P P_base) D K *Q))
+
+(RULE &output
+  (NOT (&shared_role))
+  (input *P (:Col *Col_in))
+  (OR ((&landing (:Q P))
+       (&mark_color (:C *Col)))
+      ((NOT (&landing (:Q P)))
+       (&mark P)
+       (&background (:C Col)))
+      ((NOT (&landing (:Q P)))
+       (NOT (&mark P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,93 @@
+;; inputs dadd282734192a53ab42e000c5f6288091c47e1bc353e3d52e83dabf43db69f0 programs/solvers/3490cc26.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3490cc26
+
+(DET &bg DominantColor)
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bb BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+(RULE &block
+  (&bb.box (:key *Id) *B)
+  (&blocks.component *P Id)
+  (input P *Col))
+
+(INIT &sight_frame Frame
+  (extent (A N)
+    (&block *B)
+    (frame_extent (:P B) *A *N)))
+
+;; Blocks look along their lines, and each block stops the look behind it.
+(INIT &sight Ray
+  (source ((:P B))
+    (&block *B))
+  (node (P)
+    (&sight_frame.cell *P)
+    (NOT (&block (:B P))))
+  (dir (D)
+    (dir_elem *D)))
+
+(INIT &sight_full Ray
+  (source ((:P B))
+    (&block *B))
+  (node (P)
+    (&sight_frame.cell *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &sight_stop_full
+  (&sight.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&sight_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(DET &seed RarestColor)
+
+(DET &path AnyOutNewColor)
+
+(RULE &seed_block
+  (&block *B *Col)
+  (&seed (:C Col)))
+
+;; The chain stands at a block and steps to the nearest block it sees and
+;; does not hold, so a tie forks the walk. The partition it carries: the
+;; blocks it holds (taken) and the rest (untaken).
+(INIT &state Unfold
+  (start ((:t B))
+    (&seed_block *B))
+  (initial_taken ((:item B))
+    (&seed_block *B))
+  (initial_untaken ((:item B))
+    (&block *B)
+    (NOT (&seed_block B)))
+  (score ((:t B) (:item X) (:S K))
+    (&sight_stop_full (:V1 *X) (:V3 *K) (:V4 *B)))
+  (step ((:t B) (:t2 X))
+    (&sight_stop_full (:V1 *X) (:V4 *B))
+    (&state.take (:t B) (:item X))))
+
+(INIT &span BoundingBox
+  (key ((&state.take (:t ^B) (:item ^B2)))
+    (cell ((:P B3))
+      (OR ((= *B3 B))
+          ((= B3 B2))))))
+
+(RULE &link_cell
+  (&span.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&blocks.node P)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&link_cell P)))
+      ((&link_cell P)
+       (&path (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,7 @@
+;; inputs 51a1827a7da17b358d2293ad7d394d78e8887a1ddf186ff6822aaf510fa23fab programs/solvers/d13f3404.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d13f3404
+
+(param &bg Color (0))
+(param &sweep DiagDir (DIAG_BR))
+(param &side number (6))

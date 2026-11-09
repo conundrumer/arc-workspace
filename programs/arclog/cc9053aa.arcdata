@@ -1,0 +1,337 @@
+;; inputs 5311e33b0a18736921277520612759f0de7e1aaf9a8917b1c4719f22ee33b049 programs/solvers/cc9053aa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cc9053aa
+
+(param &wall_color Color (8))
+(param &marker_color Color (9))
+(param &hazard_color Color (7))
+(param &bg Color (0))
+
+(exclude ($HazardSide $RouteFewest) "$HazardSide fits only beside a route that breaks ties by turns.")
+(exclude ($HazardSide $RouteTieUnion) "$HazardSide fits only beside a route that breaks ties by turns.")
+(exclude ($HazardSide $RouteAnyWalk) "$HazardSide fits only beside a route that breaks ties by turns.")
+
+(alts $reach
+  (alt $HazardSide
+    (witness diagonal-hazard ordinary concept
+      (separates "a hazard in a room touches a turn of the L route at a corner alone: concept closes that turn and paints the route over the top; $HazardSide keeps it open, and with the turn branches paints the L route, the one with the fewest turns")
+      (input (grid
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 8 8 0)
+        (0 8 0 8 0 0 0 0 8 0)
+        (0 8 0 8 0 0 0 0 8 0)
+        (0 8 0 8 8 8 8 8 8 9)
+        (0 8 7 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0)
+        (0 8 8 8 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $HazardTouch (grid
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 8 8 9 9 9 9 9 9 0)
+        (0 8 0 8 0 0 0 0 9 0)
+        (0 8 0 8 0 0 0 0 9 0)
+        (0 8 0 8 8 8 8 8 9 9)
+        (0 8 7 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0)
+        (0 8 8 8 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $HazardSide (grid
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 8 8 9 8 8 8 8 8 0)
+        (0 8 0 9 0 0 0 0 8 0)
+        (0 8 0 9 0 0 0 0 8 0)
+        (0 8 0 9 9 9 9 9 9 9)
+        (0 8 7 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0)
+        (0 8 8 8 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $route
+  (alt $RouteTieUnion
+    (witness tied-routes borderline concept
+      (relaxed one-clear-route)
+      (separates "two clear routes of equal length join the contacts, one down each side of a ring: concept and the turn branches give each route as its own grid; $RouteTieUnion and $RouteAnyWalk paint the whole ring")
+      (input (grid
+        (0 0 0 0 9 0 0 0 0)
+        (0 8 8 8 8 8 8 8 0)
+        (0 8 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 8 0)
+        (0 8 0 0 7 0 0 8 0)
+        (0 8 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 8 0)
+        (0 8 8 8 8 8 8 8 0)
+        (0 0 0 0 9 0 0 0 0)))
+      (output $RouteFewest $RouteFewestTurns $RouteTieFewestTurns
+        (grid
+          (0 0 0 0 9 0 0 0 0)
+          (0 9 9 9 9 8 8 8 0)
+          (0 9 0 0 0 0 0 8 0)
+          (0 9 0 0 0 0 0 8 0)
+          (0 9 0 0 7 0 0 8 0)
+          (0 9 0 0 0 0 0 8 0)
+          (0 9 0 0 0 0 0 8 0)
+          (0 9 9 9 9 8 8 8 0)
+          (0 0 0 0 9 0 0 0 0))
+        (grid
+          (0 0 0 0 9 0 0 0 0)
+          (0 8 8 8 9 9 9 9 0)
+          (0 8 0 0 0 0 0 9 0)
+          (0 8 0 0 0 0 0 9 0)
+          (0 8 0 0 7 0 0 9 0)
+          (0 8 0 0 0 0 0 9 0)
+          (0 8 0 0 0 0 0 9 0)
+          (0 8 8 8 9 9 9 9 0)
+          (0 0 0 0 9 0 0 0 0)))
+      (output $RouteAnyWalk $RouteTieUnion (grid
+        (0 0 0 0 9 0 0 0 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 9 0 0 0 0 0 9 0)
+        (0 9 0 0 0 0 0 9 0)
+        (0 9 0 0 7 0 0 9 0)
+        (0 9 0 0 0 0 0 9 0)
+        (0 9 0 0 0 0 0 9 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 0 0 0 9 0 0 0 0)))))
+  (alt $RouteAnyWalk
+    (witness unequal-routes borderline concept
+      (relaxed one-clear-route)
+      (separates "two clear routes of unequal length and equal turn count join the contacts: concept paints the shorter one; $RouteAnyWalk paints both; $RouteFewestTurns gives each as its own grid")
+      (input (grid
+        (0 0 9 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 8 8 8 0)
+        (0 8 0 0 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 7 0 0 8 0)
+        (0 8 0 0 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 0 8 0)
+        (0 8 8 8 8 8 8 8 8 8 0)
+        (0 0 9 0 0 0 0 0 0 0 0)))
+      (output $RouteFewest $RouteTieFewestTurns $RouteTieUnion (grid
+        (0 0 9 0 0 0 0 0 0 0 0)
+        (0 9 9 8 8 8 8 8 8 8 0)
+        (0 9 0 0 0 0 0 0 0 8 0)
+        (0 9 0 0 0 0 0 0 0 8 0)
+        (0 9 0 0 0 0 7 0 0 8 0)
+        (0 9 0 0 0 0 0 0 0 8 0)
+        (0 9 0 0 0 0 0 0 0 8 0)
+        (0 9 9 8 8 8 8 8 8 8 0)
+        (0 0 9 0 0 0 0 0 0 0 0)))
+      (output $RouteAnyWalk (grid
+        (0 0 9 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 9 9 0)
+        (0 9 0 0 0 0 0 0 0 9 0)
+        (0 9 0 0 0 0 0 0 0 9 0)
+        (0 9 0 0 0 0 7 0 0 9 0)
+        (0 9 0 0 0 0 0 0 0 9 0)
+        (0 9 0 0 0 0 0 0 0 9 0)
+        (0 9 9 9 9 9 9 9 9 9 0)
+        (0 0 9 0 0 0 0 0 0 0 0)))
+      (output $RouteFewestTurns
+        (grid
+          (0 0 9 0 0 0 0 0 0 0 0)
+          (0 9 9 8 8 8 8 8 8 8 0)
+          (0 9 0 0 0 0 0 0 0 8 0)
+          (0 9 0 0 0 0 0 0 0 8 0)
+          (0 9 0 0 0 0 7 0 0 8 0)
+          (0 9 0 0 0 0 0 0 0 8 0)
+          (0 9 0 0 0 0 0 0 0 8 0)
+          (0 9 9 8 8 8 8 8 8 8 0)
+          (0 0 9 0 0 0 0 0 0 0 0))
+        (grid
+          (0 0 9 0 0 0 0 0 0 0 0)
+          (0 8 9 9 9 9 9 9 9 9 0)
+          (0 8 0 0 0 0 0 0 0 9 0)
+          (0 8 0 0 0 0 0 0 0 9 0)
+          (0 8 0 0 0 0 7 0 0 9 0)
+          (0 8 0 0 0 0 0 0 0 9 0)
+          (0 8 0 0 0 0 0 0 0 9 0)
+          (0 8 9 9 9 9 9 9 9 9 0)
+          (0 0 9 0 0 0 0 0 0 0 0)))))
+  (alt $RouteFewestTurns
+    (witness unequal-routes borderline concept))
+  (alt $RouteTieFewestTurns
+    (witness tied-turns borderline concept
+      (relaxed one-clear-route)
+      (separates "two clear routes of equal length join the contacts, an L with two turns and a staircase with four: concept gives each as its own grid; the turn branches give the L alone; $RouteTieUnion and $RouteAnyWalk paint both")
+      (input (grid
+        (0 9 0 0 0 0 0)
+        (0 8 8 8 8 8 0)
+        (0 8 0 0 0 8 0)
+        (0 8 8 8 0 8 0)
+        (0 0 0 8 0 8 0)
+        (0 7 0 8 8 8 0)
+        (0 0 0 0 0 9 0)))
+      (output $RouteFewest
+        (grid
+          (0 9 0 0 0 0 0)
+          (0 9 9 9 9 9 0)
+          (0 8 0 0 0 9 0)
+          (0 8 8 8 0 9 0)
+          (0 0 0 8 0 9 0)
+          (0 7 0 8 8 9 0)
+          (0 0 0 0 0 9 0))
+        (grid
+          (0 9 0 0 0 0 0)
+          (0 9 8 8 8 8 0)
+          (0 9 0 0 0 8 0)
+          (0 9 9 9 0 8 0)
+          (0 0 0 9 0 8 0)
+          (0 7 0 9 9 9 0)
+          (0 0 0 0 0 9 0)))
+      (output $RouteAnyWalk $RouteTieUnion (grid
+        (0 9 0 0 0 0 0)
+        (0 9 9 9 9 9 0)
+        (0 9 0 0 0 9 0)
+        (0 9 9 9 0 9 0)
+        (0 0 0 9 0 9 0)
+        (0 7 0 9 9 9 0)
+        (0 0 0 0 0 9 0)))
+      (output $RouteFewestTurns $RouteTieFewestTurns (grid
+        (0 9 0 0 0 0 0)
+        (0 9 9 9 9 9 0)
+        (0 8 0 0 0 9 0)
+        (0 8 8 8 0 9 0)
+        (0 0 0 8 0 9 0)
+        (0 7 0 8 8 9 0)
+        (0 0 0 0 0 9 0))))))
+
+(alts $wall
+  (alt $WallColorCommonest
+    (witness recolored-walls variant $WallColorCommonest
+      (relaxed wall-network)
+      (separates "the walls are 3: concept finds no wall cell to contact and is undefined; $WallColorCommonest takes 3, the commonest non-background color, and paints the route 9")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 9)
+        (0 3 0 0 0 3 0 3 0)
+        (0 3 3 3 7 3 7 3 0)
+        (0 3 0 3 0 3 0 3 0)
+        (0 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 9 0)))
+      (output $WallGiven undefined)
+      (output $WallColorCommonest (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 9)
+        (0 9 0 0 0 3 0 3 0)
+        (0 9 3 3 7 3 7 3 0)
+        (0 9 0 3 0 3 0 3 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 0 0 0 0 0 0 9 0))))))
+
+(alts $marker
+  (alt $MarkerColorEdge
+    (witness recolored-markers variant $MarkerColorEdge
+      (relaxed two-markers)
+      (separates "the markers are 4: concept finds no marker and is undefined; $MarkerColorEdge takes 4, the one non-background color on the grid edge, and paints the route 4")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 8 4)
+        (0 8 0 0 0 8 0 8 0)
+        (0 8 8 8 7 8 7 8 0)
+        (0 8 0 8 0 8 0 8 0)
+        (0 8 8 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 4 0)))
+      (output $MarkerGiven undefined)
+      (output ($MarkerColorEdge &route_color=$Derived) (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 4 4 4 4 4 4 4 4)
+        (0 4 0 0 0 8 0 8 0)
+        (0 4 8 8 7 8 7 8 0)
+        (0 4 0 8 0 8 0 8 0)
+        (0 4 4 4 4 4 4 4 0)
+        (0 0 0 0 0 0 0 4 0)))
+      (output ($MarkerColorEdge &route_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 4)
+        (0 9 0 0 0 8 0 8 0)
+        (0 9 8 8 7 8 7 8 0)
+        (0 9 0 8 0 8 0 8 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 0 0 0 0 0 0 4 0))))
+    (witness edge-wall variant concept
+      (separates "a wall line runs to the grid edge: concept paints the route as on train0; $MarkerColorEdge finds two colors on the edge and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 8 9)
+        (0 8 0 0 0 8 0 8 0)
+        (0 8 8 8 7 8 7 8 0)
+        (0 8 0 8 0 8 0 8 0)
+        (0 8 8 8 8 8 8 8 0)
+        (0 8 0 0 0 0 0 9 0)))
+      (output $MarkerGiven (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 9)
+        (0 9 0 0 0 8 0 8 0)
+        (0 9 8 8 7 8 7 8 0)
+        (0 9 0 8 0 8 0 8 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 8 0 0 0 0 0 9 0)))
+      (output $MarkerColorEdge undefined))))
+
+(alts $hazard
+  (alt $HazardColorRest
+    (witness recolored-hazards variant $HazardColorRest
+      (relaxed hazards)
+      (separates "the hazards are 2: concept finds no hazard and paints the short route down col 7; $HazardColorRest takes 2, the one color left after background, wall and marker, and paints the long route clear of it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 8 9)
+        (0 8 0 0 0 8 0 8 0)
+        (0 8 8 8 2 8 2 8 0)
+        (0 8 0 8 0 8 0 8 0)
+        (0 8 8 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 9 0)))
+      (output ($RouteFewest $HazardGiven) $RouteFewestTurns $RouteTieFewestTurns $RouteTieUnion (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 9 9)
+        (0 8 0 0 0 8 0 9 0)
+        (0 8 8 8 2 8 2 9 0)
+        (0 8 0 8 0 8 0 9 0)
+        (0 8 8 8 8 8 8 9 0)
+        (0 0 0 0 0 0 0 9 0)))
+      (output $RouteAnyWalk (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 9)
+        (0 9 0 0 0 9 0 9 0)
+        (0 9 9 9 2 9 2 9 0)
+        (0 9 0 9 0 9 0 9 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 0 0 0 0 0 0 9 0)))
+      (output $HazardColorRest (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 9)
+        (0 9 0 0 0 8 0 8 0)
+        (0 9 8 8 2 8 2 8 0)
+        (0 9 0 8 0 8 0 8 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 0 0 0 0 0 0 9 0))))))
+
+(alts &route_color
+  (alt &route_color=$Stored
+    (witness route_color=stored ordinary &route_color=$Stored
+      (separates "the route color is stored apart from the marker color: at route color 3 the stored branch paints the route 3, and every other model paints it the marker color 9")
+      (assign &route_color (3))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 8 8 8 9)
+        (0 8 0 0 0 8 0 8 0)
+        (0 8 8 8 7 8 7 8 0)
+        (0 8 0 8 0 8 0 8 0)
+        (0 8 8 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 9 0)))
+      (output &route_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 9 9 9 9 9 9 9 9)
+        (0 9 0 0 0 8 0 8 0)
+        (0 9 8 8 7 8 7 8 0)
+        (0 9 0 8 0 8 0 8 0)
+        (0 9 9 9 9 9 9 9 0)
+        (0 0 0 0 0 0 0 9 0)))
+      (output &route_color=$Stored (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 9)
+        (0 3 0 0 0 8 0 8 0)
+        (0 3 8 8 7 8 7 8 0)
+        (0 3 0 8 0 8 0 8 0)
+        (0 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 9 0))))))

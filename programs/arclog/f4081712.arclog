@@ -1,0 +1,43 @@
+;; inputs 30be24c8eb0bdf4f37d46ba574b0171897d4f1e2c34437e9e1538170578e7359 programs/solvers/f4081712.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f4081712
+
+(DET &mask VanishedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&mask (:C Col))))
+
+;; The hole: the masked cells.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&mask (:C Col))))
+
+(RULE &hole
+  (&bbox.cell *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(ALTS $choice "which D4 elements the grid is symmetric under" $Full
+  (ALT $Detect
+    ;; Self-symmetry of the clean cells.
+    (INIT &sym Agreement
+      (source (P (:v Col))
+        (&clean *P *Col))
+      (target (P (:v Col))
+        (&clean *P *Col)))
+
+    (RULE &output
+      (&hole (:P *P3) (:P_inner *P))
+      (apply *D (:P P3) (:P_out *P2))
+      (NOT (&sym.conflict D))
+      (&clean (:P P2) *Col))))
+
+(RULE &output
+  (&hole (:P *P3) (:P_inner *P))
+  (apply *D (:P P3) (:P_out *P2))
+  (&clean (:P P2) *Col))
+
+(OUT (&output ^P ^Col))

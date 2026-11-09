@@ -1,0 +1,96 @@
+;; inputs 294eec82fcefc5a33e08140c562c6f11ca0e0a620ebf147bde03026a488a437c programs/solvers/93c31fbe.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 93c31fbe
+
+(DET &bg DominantColor)
+
+;; the color of the content the boxes hold
+(DET &content RarestColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&content (:C Col))))
+
+(RULE &corner
+  (&mark *P)
+  (diag_opposite *D (:Opp *G))
+  (diag_dirs (:D G) *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (&mark (:P Q1))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&mark (:P Q2)))
+
+(INIT &span BoundingBox
+  (key ((&corner ^P *D)
+        (&corner (:P ^Q) (:D *G))
+        (diag_opposite D (:Opp G))
+        (OR ((= *R P))
+            ((= R Q))))
+    (cell ((:P R))
+      (&corner P *D)
+      (&corner (:P Q) (:D *G))
+      (diag_opposite D (:Opp G))
+      (OR ((= *R P))
+          ((= R Q))))))
+
+(RULE &corner_at
+  (&span.box *B)
+  (&corner *P *D)
+  (same_corner D (:P1 P) (:P2 B)))
+
+(RULE &box
+  (&span.box *B)
+  (ALL ((diag_dir_elem *D))
+       ((&corner_at B D))))
+
+(RULE &content_in
+  (input *P *Col)
+  (&content (:C Col))
+  (&box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; The box is longer on axis a, so the content mirrors along the box's length.
+(RULE &mirror_axis
+  (&box *B)
+  (&corner_at B *P)
+  (perp *A *A2)
+  (box_extent B P A (:N *N1))
+  (box_extent B P (:A A2) (:N *N2))
+  (> N1 N2))
+
+(ALTS $choice "Which way the content mirrors inside its box." $Long
+  (ALT $Clear
+    (RULE &off_side
+      (&content_in *B *P_inner)
+      (dist_pair (:P P_inner) *D *K *K2)
+      (>= K K2))
+
+    ;; The content lies wholly on the d side of the midline across axis a, so the
+    ;; flip on a carries it onto the side it keeps clear.
+    (RULE &mirror_axis
+      (&content_in *B)
+      (axis_of *D *A)
+      (NOT (&off_side B D)))))
+
+(RULE &ink
+  (&content_in *B *P_inner)
+  (OR ((&mirror_axis B *A)
+       (axis_inversion A (:T *F))
+       (apply (:D F) (:P P_inner) (:P_out *P_img)))
+      ((= P_img P_inner)))
+  (compose (:A B) (:B P_img) (:C *P)))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (OR ((NOT (&mark P))
+       (&ink P)
+       (&content (:C *Col)))
+      ((&mark P)
+       (= Col Col2))
+      ((NOT (&mark P))
+       (NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

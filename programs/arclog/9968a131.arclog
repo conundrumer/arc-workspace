@@ -1,0 +1,147 @@
+;; inputs 466cbd40c078f9f4aae5b9c919ccb2ff83065d4dc3663f0e4b9d43d0e65afd2b programs/solvers/9968a131.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9968a131
+
+(DET &bg DominantColor)
+
+(DET &shift_dir DirDomain)
+
+(DET &shift_dist DivisorRatio)
+
+;; a quarter turn from shift_dir: the edge the anchor line lies nearest
+(DET &anchor_sense SenseDomain)
+
+(RULE &anchor_dir
+  (&shift_dir (:D *D2))
+  (&anchor_sense *S)
+  (turn S (:D D2) (:D2 *D)))
+
+(RULE &cell_split
+  (input *P *Col)
+  (&anchor_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *P_line) (:Across *P_across)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &inked_line
+  (&ink *P)
+  (&cell_split P *P_line))
+
+(INIT &lines Order
+  (member ((:t Line))
+    (&inked_line (:P_line *Line)))
+  (score ((:t L) (:S K))
+    (&inked_line (:P_line *L))
+    (&anchor_dir *D)
+    (margin (:B L) D *K)))
+
+(RULE &shift
+  (&shift_dir *D)
+  (&shift_dist *K)
+  (jump_offset D K *V))
+
+(RULE &shifted
+  (&cell_split *P_line)
+  (&shift *V)
+  (compose (:A P_line) (:B V) (:C *P_line2)))
+
+(RULE &differs
+  (&cell_split *Col *P_line (:P_across *Across))
+  (&lines.minimal (:t *L_anc))
+  (&cell_split (:Col *Col2) (:P_line L_anc) (:P_across Across))
+  (!= Col Col2))
+
+(RULE &dest
+  (&differs *P_line)
+  (&shifted P_line (:P_line2 *P_dest)))
+
+(RULE &placed
+  ;; A line whose cells match the anchor line's stays where it is.
+  (OR ((&ink *P *Col)
+       (&cell_split P (:P_line *Line))
+       (NOT (&differs (:P_line Line))))
+      ((&ink (:P *P2) Col)
+       (&cell_split (:P P2) (:P_line *Line3))
+       (&dest (:P_line Line3) (:P_dest *Line2))
+       (relative (:Base Line3) (:X Line2) (:X_rel *V))
+       (compose (:A P2) (:B V) (:C P)))))
+
+;; The alternation: the anchor line stays where it is, and each step from it
+;; swaps a line between its own place and its shifted place.
+(INIT &alternation Walk
+  (key ((&shifted (:P_line ^L) (:P_line2 *L2)))
+    (successor ((:p P) (:p_next L2))
+      (OR ((&shifted (:P_line L) (:P_line2 *L2))
+           (= *P L))
+          ((&shifted (:P_line L) (:P_line2 P))
+           (= L2 L))))))
+
+(ALTS $choice "which lines shift" $Match
+  (ALT $Sequence
+
+    (RULE &dest
+      (&lines.rank (:t *P_line) (:R *N))
+      (&alternation.walk (:key (:L P_line)) (:p0 P_line) N (:p *P_dest)))
+
+    (RULE &placed
+      (&ink (:P *P2) *Col)
+      (&cell_split (:P P2) (:P_line *Line))
+      (&dest (:P_line Line) (:P_dest *Line2))
+      (relative (:Base Line) (:X Line2) (:X_rel *V))
+      (compose (:A P2) (:B V) (:C *P)))
+
+    ;; The alternation: the anchor line stays where it is, and each step from it
+    ;; swaps a line between its own place and its shifted place.
+    (INIT &alternation Walk
+      (key ((OR ((&shifted (:P_line ^L) (:P_line2 *L2)))
+                ((&lines.rank (:t L) (:R *N)))))
+        (successor ((:p P) (:p_next L2))
+          (OR ((&shifted (:P_line L) (:P_line2 *L2))
+               (= *P L))
+              ((&shifted (:P_line L) (:P_line2 P))
+               (= L2 L))))
+        (steps (N)
+          (&lines.rank (:t L) (:R *N))))))
+  (ALT $Stripes
+    (RULE &steps
+      (&lines.minimal (:t *L_anc))
+      (&cell_split *P_line)
+      (relative (:Base L_anc) (:X P_line) (:X_rel *V))
+      (&anchor_dir *D)
+      (margin (:B V) D (:K *N))
+      (>= N 0))
+
+    (RULE &dest
+      (&steps *P_line *N)
+      (&alternation.walk (:key (:L P_line)) (:p0 P_line) N (:p *P_dest)))
+
+    (RULE &placed
+      (&ink (:P *P2) *Col)
+      (&cell_split (:P P2) (:P_line *Line))
+      (&dest (:P_line Line) (:P_dest *Line2))
+      (relative (:Base Line) (:X Line2) (:X_rel *V))
+      (compose (:A P2) (:B V) (:C *P)))
+
+    ;; The alternation: the anchor line stays where it is, and each step from it
+    ;; swaps a line between its own place and its shifted place.
+    (INIT &alternation Walk
+      (key ((OR ((&shifted (:P_line ^L) (:P_line2 *L2)))
+                ((&steps (:P_line L) *N))))
+        (successor ((:p P) (:p_next L2))
+          (OR ((&shifted (:P_line L) (:P_line2 *L2))
+               (= *P L))
+              ((&shifted (:P_line L) (:P_line2 P))
+               (= L2 L))))
+        (steps (N)
+          (&steps (:P_line L) *N))))))
+
+(RULE &output
+  (OR ((&placed *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&placed P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,10 @@
+;; inputs 0e2b30aa315eb81310709b46bf07f965b47eda8f49c37f8389edcb75620521d3 programs/solvers/25c199f5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 25c199f5
+
+(param &bg Color (7))
+(param &divide_gap number (1))
+(param &order_corner DiagDir (DIAG_BL))
+(param &order_axis Axis (AXIS_H))
+(param &divisor number (3))
+(param &panel_size number (5))

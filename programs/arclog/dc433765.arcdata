@@ -1,0 +1,7 @@
+;; inputs 265e7c1940152026431a7740f89e00bd4a2ef451394b82891e7995597b905d1d programs/solvers/dc433765.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc433765
+
+(param &bg Color (0))
+(param &mover Color (3))
+(param &target Color (4))

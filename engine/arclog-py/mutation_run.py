@@ -10,7 +10,7 @@ merge: no test suite, merge step or gate runs it. It needs no `arclog` package: 
 Options:
   --cli <path>            the `arclog-cli` binary (required; a build with the `tool` profile, since `decode` and `tables` need an
                           optimized build)
-  --corpus <dir>          the corpus of solvers (default `work/arclog/gen`)
+  --corpus <dir>          the corpus of solvers (default `programs/arclog`)
   --tasks <dir>           the task files (default `data/tasks`)
   --out <dir>             where the mutants are kept (default `work/arclog/mutation`)
   --operators <a,b,...>   the operators to run (default every operator; the names are the keys of `OPERATORS`)
@@ -72,7 +72,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from arclog_convert.readback import read_checked  # every file of the corpus is read through it: the corpus is a `gen/` directory
+from arclog_convert.readback import read_checked  # every file of the corpus is read through it: the corpus is the converter's directory of converted solvers
 STAGE_BOUND = 60  # seconds of CPU time
 WALL_BOUND = 10 * STAGE_BOUND  # seconds on the wall clock, for a process that waits without using CPU
 CONSTRAINT_OPS = ("=", "!=", "<", "<=", ">", ">=")
@@ -713,7 +713,7 @@ class Runner:
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--cli", required=True)
-    ap.add_argument("--corpus", default="work/arclog/gen")
+    ap.add_argument("--corpus", default="programs/arclog")
     ap.add_argument("--tasks", default="data/tasks")
     ap.add_argument("--out", default="work/arclog/mutation")
     ap.add_argument("--operators", default=",".join(OPERATORS))

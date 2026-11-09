@@ -1,0 +1,54 @@
+;; inputs a3de5adfb0ce19b9b07cf728eccc7f0b0837e498d0662e63f5f4543bf73c95fe programs/solvers/2de01db2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2de01db2
+
+(DET &axis AxisDomain)
+
+(DET &bg SharedColor)
+
+(RULE &cell_line
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Across *P_line)))
+
+(DET &ink
+  (ex_output (:Col *C))
+  (NOT (&bg C)))
+
+(RULE &main
+  (&cell_line *P_line *Col)
+  (&ink (:C Col)))
+
+(ALTS $choice "which model identifies a line's main color" $Palette
+  (ALT $Owned
+    (RULE &shared
+      (&cell_line (:P_line *L1) *Col)
+      (&cell_line (:P_line *L2) Col)
+      (!= L1 L2))
+
+    (INIT &own_count_count Cardinality
+      (key ((&cell_line *P ^Col ^P_line)
+            (NOT (&shared Col)))
+        (member ((:m P))
+          (&cell_line *P Col P_line)
+          (NOT (&shared Col)))))
+
+    ;; The line's own colors, by cell count.
+    (INIT &own_count Order
+      (key ((&own_count_count.size (:key ^P_line *Col)))
+        (member ((:t Col))
+          (&own_count_count.size (:key P_line *Col)))
+        (score ((:t Col) (:S N))
+          (&own_count_count.size (:key P_line *Col) *N))))
+
+    (RULE &main
+      (&own_count.maximal (:key *P_line) (:t *Col)))))
+
+(RULE &output
+  (&cell_line *P (:Col *C_in) *P_line)
+  (OR ((&main P_line *Col)
+       (!= C_in Col))
+      ((&main P_line (:Col C_in))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

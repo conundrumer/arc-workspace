@@ -1,0 +1,7 @@
+;; inputs a0797ae8f0b62fbc0fefa4e5174f0a1f33ade5dcb75edb4e184747ebf369c5d5 programs/solvers/18419cfa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 18419cfa
+
+(param &frame Color (8))
+(param &ink Color (2))
+(param &sym Sym (SYM_BOX))

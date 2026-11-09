@@ -1,0 +1,282 @@
+;; inputs 586a7517af77fbc549403f37ceea464b50884818267cc61d11afe7d9a1c1521f programs/solvers/c62e2108.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c62e2108
+
+(INPUT background "the field is color `background` (0).")
+
+(INPUT squares "one or more copies of one shape, a square outline of side 4 with a hollow middle, all in one color other than `background` and `marker`. A square is a 4-connected object."
+
+  (DET &train
+    (ex_output *E))
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (&train E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (&train E))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_field
+    (ex_input (:Col *C))
+    (&train *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&not_field C)))
+
+  (INIT &piece8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT edge-markers "one or more straight segments of color `marker` (1), each lying along a grid edge, as long as a square's side, and covering the same rows (on a left or right edge) or the same columns (on a top or bottom edge) as exactly one square.")
+
+(INPUT clear-strip "the strip between a square and each marker lined up with it holds only `background` and that marker.")
+
+(OUTPUT repeat-toward-marker "each square repeats toward each marker lined up with it, each copy placed `gap` cells past the one before, so the copies tile the strip from the square to the grid edge, and the last copy is cut off at the grid edge."
+
+  (DET_OR_RULE &marker RarestColor
+    (ex_input *E (:Col *C))
+    (&train E)
+    (NOT (ex_output (:Col C))))
+
+  ;; the cells between one copy and the next
+  (DET &gap NumberDomain)
+
+  (INIT &piece4 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &piece
+    (&piece4.component (:key *Col) *P *Id))
+
+  (INIT &pbox BoundingBox
+    (key ((&piece ^Id *P))
+      (cell (P)
+        (&piece Id *P))))
+
+  (RULE &square
+    (&piece *Col (:Id *S))
+    (NOT (&marker (:C Col)))
+    (&pbox.box (:key (:Id S)) *B))
+
+  (RULE &mark_cell
+    (&piece *Col (:Id *M) *P)
+    (&marker (:C Col)))
+
+  (RULE &lined
+    (&mark_cell *M (:P *Q))
+    (&pbox.box (:key (:Id M)) (:B *B_m))
+    (inside (:A Q) (:B B_m))
+    (same_dist *D (:P1 Q) (:P2 B_m))
+    (opposite D (:Opp *D_opp))
+    (same_dist (:D D_opp) (:P1 Q) (:P2 B_m))
+    (&square *S (:B *B_s))
+    (perp_dir D (:D2 *D_p))
+    (dist_pair (:P B_m) (:D D_p) (:K *K1) *K2)
+    (dist_pair (:P B_s) (:D D_p) (:K K1) K2)
+    (relative (:Base Q) (:X B_s) (:X_rel *V))
+    (margin (:B V) D *K)
+    (> K 0))
+
+  (INIT &nearest Order
+    (key ((&lined *S ^M *K))
+      (member ((:t (:V S) (:S K)))
+        (&lined *S M *K))
+      (score ((:t (:V S) (:S K)) (:S K))
+        (&lined *S M *K))))
+
+  (RULE &origin
+    (&lined *S *D)
+    (&square S *B)
+    (input (:P *Q))
+    (inside (:A Q) B)
+    (relative (:Base B) (:X Q) (:X_rel *P_t))
+    (opposite D (:Opp *D_opp))
+    (margin (:B P_t) (:D D_opp) (:K 0)))
+
+  (INIT &march Ray
+    (key ((&origin ^D))
+      (source ((:P Q))
+        (&origin D *Q))
+      (node (P)
+        (&origin D)
+        (input *P))
+      (dir (D)
+        (&origin D))))
+
+  (RULE &placed
+    (&origin *S *D *Q (:P_t *P_t0))
+    (&march.ray (:key D) *P D *K (:Origin Q))
+    (axis_of D *A)
+    (frame_extent (:P P_t0) A (:N *W))
+    (&gap (:N *G))
+    (divide (:T K) (:Side W) (:Gap G) (:Part *N) (:Remainder *I))
+    (> N 0))
+
+  ;; Each copy counts from the edge opposite the one the copy before it counts from.
+  (INIT &flips Walk
+    (key ((OR ((&placed ^D)
+               (opposite D (:Opp *D_opp)))
+              ((&placed D *N))))
+      (successor ((:p P) (:p_next D_opp))
+        (OR ((&placed D)
+             (opposite D (:Opp *D_opp))
+             (= *P D))
+            ((&placed D)
+             (opposite D (:Opp P))
+             (= D_opp D))))
+      (steps (N)
+        (&placed D *N)))))
+
+(OUTPUT copies-overwrite "a copy writes every cell of its box, its hollow cells as `background`, so the marker cells take the copy's cells. Undefined where two copies write different colors to one cell."
+
+  (RULE &hit
+    (&lined *S *M *D))
+
+  (RULE &tile_val
+    (&square *S *B)
+    (input (:P *Q) *Col)
+    (inside (:A Q) B)
+    (relative (:Base B) (:X Q) (:X_rel *P_t)))
+
+  (RULE &start_side
+    (&placed *D *N)
+    (opposite D (:Opp *Side)))
+
+  (RULE &copy_cell
+    (&placed *S *D *P *N *I *P_t0)
+    (&start_side D N *Side)
+    (perp_dir D (:D2 *D_p))
+    (&tile_val S *P_t *Col)
+    (same_dist (:D D_p) (:P1 P_t) (:P2 P_t0))
+    (margin (:B P_t) (:D Side) (:K I)))
+
+  (RULE &painted
+    (&hit *S *M *D)
+    (&copy_cell S D *P *Col))
+
+  (INIT &shown Singleton
+    (key ((&painted ^P *Col))
+      (member ((:v Col))
+        (&painted P *Col)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color.")
+
+(ALTS $layer "what a copy writes over" $Overwrite
+  (ALT $Overlay
+    (OUTPUT copies-overwrite "a copy writes only its shape's cells, and the cells of a marker that a square repeats toward turn `background`. Undefined where two copies write different shape colors to one cell."
+
+      (RULE &painted
+        (&hit *S *M *D)
+        (&copy_cell S D *P *Col)
+        (NOT (&background (:C Col))))
+
+      (RULE &cleared
+        (&hit *M)
+        (&mark_cell M *P)))
+    (RULE &output
+      (input *P (:Col *Col_in))
+      (NOT (&clash))
+      (OR ((&shown.value (:key P) (:v *Col)))
+          ((&cleared P)
+           (NOT (&shown.value (:key P)))
+           (&background (:C Col)))
+          ((NOT (&shown.value (:key P)))
+           (NOT (&cleared P))
+           (= Col Col_in))))
+    (ALT $ToMarker
+      (OUTPUT repeat-toward-marker "the copies run to the marker's line, that line included, and are cut off there."
+        (RULE &painted
+          (&hit *S *M *D)
+          (&copy_cell S D *P *Col)
+          (NOT (&past M D P))
+          (NOT (&background (:C Col))))))
+    (ALT $EraseMarkers
+      (OUTPUT erase-markers "every marker cell that no copy covers turns `background`."
+        (RULE &cleared
+          (OR ((&hit *M)
+               (&mark_cell M *P))
+              ((input P *Col)
+               (&marker (:C Col)))))))))
+
+(ALTS $reach "where the copies stop" $ToEdge
+  (ALT $ToMarker
+    (OUTPUT repeat-toward-marker "the copies run to the marker's line, that line included, and are cut off there."
+      (RULE &past
+        (&lined *S *M *D)
+        (&copy_cell S D *P)
+        (&mark_cell M (:P *Q))
+        (nearer D P Q))
+
+      (RULE &painted
+        (&hit *S *M *D)
+        (&copy_cell S D *P *Col)
+        (NOT (&past M D P))))))
+
+(ALTS $form "how each copy relates to the one before" $Translate
+  (ALT $Mirror
+    (OUTPUT repeat-toward-marker "every other copy is reflected across the edge it shares with the copy before it."
+      (RULE &start_side
+        (&flips.walk (:key *D) (:p0 *D_opp) *N (:p *Side))
+        (opposite D (:Opp D_opp))))))
+
+(ALTS $adj "how the cells of a square or a marker join" $Adj4
+  (ALT $Adj8
+    (INPUT squares "a square or a marker segment is an 8-connected object."
+      (RULE &piece
+        (&piece8.component (:key *Col) *P *Id)))))
+
+(ALTS $owner "which of the squares lined up with a marker repeat toward it" $EveryLined
+  (ALT $NearestOnly
+    (OUTPUT repeat-toward-marker "of the squares lined up with a marker, only the one nearest to it repeats toward it."
+      (RULE &hit
+        (&nearest.minimal (:key *M) (:t (:V *S)))
+        (&lined S M *D)))))
+
+(ALTS $unmatched "what a marker cell that no copy covers takes" $KeepMarkers
+  (ALT $EraseMarkers
+    (OUTPUT erase-markers "every marker cell that no copy covers turns `background`."
+      (RULE &cleared
+        (input *P *Col)
+        (&marker (:C Col))))
+    (RULE &output
+      (input *P (:Col *Col_in))
+      (NOT (&clash))
+      (OR ((&shown.value (:key P) (:v *Col)))
+          ((&cleared P)
+           (NOT (&shown.value (:key P)))
+           (&background (:C Col)))
+          ((NOT (&shown.value (:key P)))
+           (NOT (&cleared P))
+           (= Col Col_in))))))
+
+(RULE &clash
+  (&shown.plural))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (NOT (&clash))
+  (OR ((&shown.value (:key P) (:v *Col)))
+      ((NOT (&shown.value (:key P)))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

@@ -24,7 +24,7 @@ from query_structure import Reader, parse_forms, query_features, relation_of  # 
 sys.path.insert(0, str(REPO / 'src'))
 from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
 
-CORPUS = REPO / 'work/arclog/gen'
+CORPUS = REPO / 'programs/arclog'
 TASKS = REPO / 'data/tasks'
 PER_QUERY = 5
 PER_QUERY_EXTRA = 12

@@ -1,0 +1,6 @@
+;; inputs 8b145f31b4019aee78c72662c8677c13c735170015d51dfd4a78828cb1fbbaec programs/solvers/d631b094.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d631b094
+
+(param &bg Color (0))
+(param &bar_axis Axis (AXIS_H))

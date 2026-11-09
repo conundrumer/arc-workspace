@@ -1,0 +1,166 @@
+;; inputs 5b2ace8c0bd302770364184cf569ed4ba9f5162783e28d0608a4ef38f9436035 programs/solvers/c920a713.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c920a713
+
+(INPUT background "every cell that no outline covers is background.")
+
+(INPUT stacked-outlines "the input holds several rectangle outlines, one per color, each one cell wide; a cell where two or more outlines meet shows the color of one of them.")
+
+(INPUT one-stack "the order that layer-order gives ranks every outline, with no two outlines left unordered and no cycle.")
+
+(OUTPUT outline-box "an outline is the least box with every cell of its color on its border and no background on its border, so a side that lies wholly under other outlines still counts.")
+
+(OUTPUT layer-order "an outline is above another when some cell on both outlines shows its color and no cell on both shows the other's; the stack is that order closed under transitivity."
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output (:Col C))))
+
+  (RULE &ink
+    (input (:Col *C))
+    (NOT (&background C)))
+
+  ;; The rectangles drawn in the cells that show an outline.
+  (INIT &frames Outlines
+    (node (P)
+      (input *P (:Col *C))
+      (&ink C)))
+
+  (RULE &on_border
+    (input *P)
+    (&frames.box *B)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (RULE &stray
+    (input *P (:Col *C))
+    (&ink C)
+    (&frames.box *B)
+    (NOT (&on_border P B)))
+
+  (RULE &fitting
+    (&ink *C)
+    (&frames.box *B)
+    (NOT (&stray C B)))
+
+  (RULE &outline
+    (&fitting *C *B)
+    (ALL ((&fitting C (:B *B2)))
+         ((inside (:A B) (:B B2)))))
+
+  (RULE &shared
+    (&outline *C *B)
+    (&on_border *P B)
+    (&outline (:C *C2) (:B *B2))
+    (!= C C2)
+    (&on_border P (:B B2)))
+
+  (INIT &votes Excess
+    (key ((OR ((&shared ^C ^C2 *P)
+               (input P (:Col C2)))
+              ((&shared C C2 P)
+               (input P (:Col C)))))
+      (plus ((:m P))
+        (&shared C C2 *P)
+        (input P (:Col C2)))
+      (minus ((:m P))
+        (&shared C C2 *P)
+        (input P (:Col C))))))
+
+(OUTPUT nested-rings "the output is a square of side 2n-1 for n outlines; the ring at depth k from the edge, 1 cell wide, takes the outline with k outlines below it, so the bottom outline is the outer ring and the top outline is the center cell."
+
+  (RULE &shows
+    (&shared *C *C2 *P)
+    (input P *Col))
+
+  (RULE &above
+    (&shows *C *C2 (:Col C2))
+    (NOT (&shows C C2 (:Col C))))
+
+  ;; The stack: the outlines above each outline, through a run of direct orders.
+  (INIT &over Propagation
+    (key ((OR ((&above *C2 ^C))
+              ((&ink C)
+               (&above C2 (:C *C3)))))
+      (source ((:n C2))
+        (&above *C2 C))
+      (edge ((:a C3) (:b C2))
+        (&ink C)
+        (&above *C2 (:C *C3)))))
+
+  (INIT &outlines Cardinality
+    (member ((:m C))
+      (&ink *C)))
+
+  (INIT &strip Frame
+    (key ((axis_elem ^A))
+      (extent (A N)
+        (&outlines.size *N))))
+
+  (RULE &ring
+    (&strip.cell (:key *A) *P)
+    (axis_of *D A)
+    (margin (:B P) D *K))
+
+  (RULE &ties_item
+    (&ink *C)
+    (&ring *K))
+
+  ;; Each seating of the outlines in the rings, one outline per ring.
+  (CHOOSE &ties
+    (for ((&ties_item ^K))
+      (from (&ties_item K *C)))
+    (never
+      (&ties_item *K *C)
+      (&ties_item (:K *K2) C)
+      (!= K K2))
+    (never
+      (&ties_item *K *C)
+      (&ties_item (:K *K2) (:C *C2))
+      (&over.reached (:key C) (:n C2))
+      (< K K2)))
+
+  (INIT &outermost Order
+    (member ((:t K))
+      (&ring *K))
+    (score ((:t K) (:S K))
+      (&ring *K)))
+
+  (RULE &ring_cell
+    (&outermost.maximal (:t *M))
+    (uniform_inset (:K M) (:B *Q))
+    (&ring *K)
+    (&ring (:K *J))
+    (<= J K)
+    (perp_dir *D *D2)
+    (jump (:P Q) D K (:Q *Q2))
+    (jump (:P Q2) (:D D2) (:K J) (:Q *P)))
+
+  (RULE &drawn
+    (&ties *K (:C *Col))
+    (&ring_cell K *P)))
+
+(ALTS $c "how a pair of outlines is ordered when their shared cells show both colors" $Drop
+  (ALT $Majority
+    (OUTPUT layer-order "the pair is ordered by the color that more of its shared cells show, and a tie gives no direct order. Undefined where the stack has a cycle or leaves two outlines unordered."
+      (RULE &above
+        (&votes.excess (:key *C2 *C))))))
+
+(ALTS $u "the output where the stack leaves two outlines unordered" $Total
+  (ALT $EachExtension
+    (INPUT one-stack "the stack has no cycle, and may leave two outlines unordered; the output holds one grid per total order that extends the stack. Undefined where the stack has a cycle.")
+    (OUT (&drawn ^P ^Col))))
+
+(RULE &loose
+  (&ink *C)
+  (&ink (:C *C2))
+  (!= C C2)
+  (NOT (&over.reached (:key C) (:n C2)))
+  (NOT (&over.reached (:key (:C C2)) (:n C))))
+
+(RULE &output
+  (&drawn *P *Col)
+  (NOT (&loose)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,38 @@
+;; inputs 82555ab2fcaa120e246bfd13882e22f7d3a35a8c2acea4b174169e9faf3373c4 programs/solvers/0dfd9992.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0dfd9992
+
+(DET &hole ChangedColor)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&intact *P *Col)))
+
+(INIT &wp Wallpaper
+  (transform (D)
+    (d4_elem *D))
+  (cell (P (:v Col))
+    (&intact *P *Col))
+  (grid (P)
+    (input *P))
+  (period (A K)
+    (&si.fundamental_period *A *K)))
+
+;; The orbits of the frame positions under the symmetries.
+(INIT &orbit Quotient
+  (edge ((:a P) (:b Q))
+    (&wp.action *P *Q)))
+
+(RULE &orbit_color
+  (&orbit.class (:a *Q) *Id)
+  (&intact (:P Q) *Col))
+
+(RULE &output
+  (&orbit.class (:a *P) *Id)
+  (&orbit_color Id *Col))
+
+(OUT (&output ^P ^Col))

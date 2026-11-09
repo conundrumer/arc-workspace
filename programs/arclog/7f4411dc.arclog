@@ -1,0 +1,59 @@
+;; inputs 988bec97870214f1dd426187088c9e4673738f25d0b5ac91b9edffcba824c81b programs/solvers/7f4411dc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7f4411dc
+
+(DET &bg DominantColor)
+
+(DET &square_dim TileCount)
+
+(RULE &ink_at
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &sq Frame
+  (extent (A (:N K))
+    (axis_elem *A)
+    (&square_dim (:N *K))))
+
+(INIT &occ Occurrences
+  (cell (P)
+    (&ink_at *P))
+  (shape (P)
+    (&sq.cell *P)))
+
+(RULE &square_kept
+  (&occ.occurrence (:P *M))
+  (&sq.cell (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+(ALTS $choice "what survives" $Square
+  (ALT $Support
+    (INIT &rim Boundary
+      (cell (P)
+        (&ink_at *P)))
+
+    (RULE &support
+      (&ink_at *P)
+      (dir_elem *D)
+      (NOT (&rim.exposed P D)))
+
+    (RULE &support_kept
+      (&support *P (:D *D1))
+      (&support P (:D *D2))
+      (!= D1 D2))
+
+    (RULE &output
+      (OR ((&support_kept *P)
+           (input P *Col))
+          ((input P)
+           (NOT (&support_kept P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&square_kept *P)
+       (input P *Col))
+      ((input P)
+       (NOT (&square_kept P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

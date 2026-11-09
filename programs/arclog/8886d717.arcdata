@@ -1,0 +1,8 @@
+;; inputs 7d81b22f003facda7122b1ceffcab10db32d21dc3a34506315bb999b4b78e343 programs/solvers/8886d717.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8886d717
+
+(param &mark Color (8))
+(param &absorb Color (2))
+(param &extend Color (7))
+(param &border Color (9))

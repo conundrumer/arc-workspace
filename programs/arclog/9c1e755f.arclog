@@ -1,0 +1,102 @@
+;; inputs 504c35f6ab8979c55a768520554f5566489b7cca91e8bec22c07c7bf601c7533 programs/solvers/9c1e755f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9c1e755f
+
+(INPUT rail "each connected run of the rail color is a rail, a straight bar")
+
+(INPUT swatch "each connected group of cells of the other colors, neither background nor rail, is a swatch: a block that hangs off one side of a rail at one end of the rail")
+
+(INPUT fit "the rail's length is a multiple of the swatch's length along it")
+
+(OUTPUT keep "every input cell keeps its color")
+
+(OUTPUT repeat "the swatch repeats along its rail: copies of the swatch, moved along the rail by multiples of the swatch's own length, paint the field the rail spans along its axis and the swatch spans across it"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &rail SharedColor)
+
+  (INIT &rails Connectivity
+    (node (P)
+      (input *P *Col)
+      (&rail (:C Col))))
+
+  (INIT &rail_box BoundingBox
+    (key ((&rails.component (:Id ^X) *P))
+      (cell (P)
+        (&rails.component (:Id X) *P))))
+
+  (INIT &swatches Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&rail (:C Col)))))
+
+  (RULE &swatch
+    (&swatches.component *P (:Id *Y))
+    (input P *Col))
+
+  (INIT &swatch_box BoundingBox
+    (key ((&swatch ^Y *P))
+      (cell (P)
+        (&swatch Y *P))))
+
+  (RULE &hangs
+    (&rails.component (:Id *X) *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&swatch *Y (:P Q)))
+
+  (RULE &rail_axis
+    (&hangs *Y *D)
+    (axis_of D (:A *A_across))
+    (perp (:A A_across) (:A2 *A)))
+
+  (RULE &field
+    (&hangs *Y *X)
+    (&rail_axis Y *A)
+    (&rail_box.box (:key X) (:B *B_rail))
+    (split (:P B_rail) A (:Along *B_along))
+    (&swatch_box.box (:key Y) (:B *B_swatch))
+    (split (:P B_swatch) A (:Across *B_across))
+    (compose (:A B_along) (:B B_across) (:C *B))))
+
+(ALTS $choice "where the copies are anchored" $Swatch
+  (ALT $FarEnd
+    (OUTPUT repeat "the swatch slides flush to the rail's far end, and copies of it there, moved back along the rail by multiples of its own length, paint the field"
+      (RULE &far_end
+        (&field *Y *B)
+        (&swatch_box.box (:key Y) (:B *B_swatch))
+        (relative (:Base B) (:X B_swatch) (:X_rel *B_rel))
+        (margin (:B B_rel) *D *K)
+        (> K 0)))
+    ;; The swatch slid flush to the far end.
+    (RULE &first_copy
+      (&swatch *Y (:P *P2) *Col)
+      (&far_end Y *D *K)
+      (jump (:P P2) D K (:Q *P)))))
+
+(RULE &first_copy
+  (&swatch *Y *P *Col))
+
+(RULE &copy
+  (&first_copy *Y (:P *P2) *Col)
+  (&rail_axis Y *A)
+  (axis_of *D A)
+  (&swatch_box.box (:key Y) *B)
+  (box_extent B (:P P2) A *N)
+  (&field Y (:B *B_field))
+  (input *P)
+  (inside (:A P) (:B B_field))
+  (same_line A (:P P2) (:Q P))
+  (margin (:B P2) D (:K *T_p))
+  (divide (:T T_p) (:Side N) (:Gap 0) (:Remainder *R))
+  (margin (:B P) D (:K *T_q))
+  (divide (:T T_q) (:Side N) (:Gap 0) (:Remainder R)))
+
+(RULE &output
+  (OR ((&copy *P *Col))
+      ((input P Col)
+       (NOT (&copy P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,15 @@
+;; inputs c740535cf93dff84a70e20df1e8b9039b9bb3d7c594a1f2e869310e1452ad960 programs/solvers/17b866bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 17b866bd
+
+(param &line number (1))
+(param &block number (4))
+(param &node Color (0))
+(param &corner DiagDir (DIAG_BR))
+(param &hole Color (0))
+(param &stamp Position
+  (grid
+    (_ 1 1 _)
+    (1 1 1 1)
+    (1 1 1 1)
+    (_ 1 1 _)))

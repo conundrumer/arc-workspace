@@ -1,0 +1,156 @@
+;; inputs 449212c7ab62f9f570ce2a3c1475334e5eaea71af06951e3174dc9bf542be8ce programs/solvers/41ace6b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 41ace6b5
+
+;; The direction a cap stands off the cap line; the stem hangs the other way.
+(DET &grow DirDomain)
+
+(DET &cap_line RarestColor)
+
+(DET &stem_line RarestColor)
+
+(RULE &ruler
+  (OR ((&cap_line (:C *Col))
+       (&grow *D))
+      ((&stem_line (:C Col))
+       (&grow (:D *D_cap))
+       (opposite (:D D_cap) (:Opp D)))))
+
+(RULE &foot
+  (input (:P *P_ink) *Col)
+  (&ruler Col)
+  (&grow *D)
+  (input *P (:Col *Col_p))
+  (same_dist D (:P1 P_ink) (:P2 P))
+  (NOT (&ruler (:Col Col_p))))
+
+(INIT &cast_frame Frame
+  (key ((&foot ^Col *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&foot Col *P)
+      (frame_extent P *A *N))))
+
+(DET &bg DominantColor)
+
+(DET &rest AnyOutNewColor)
+
+(RULE &bar_of
+  (input *P)
+  (&grow *D)
+  (axis_of D *A)
+  (split P A (:Across *B)))
+
+(RULE &bar
+  (&foot *P)
+  (&bar_of P *B))
+
+(RULE &bar_cell
+  (&bar *B)
+  (&bar_of *P B))
+
+(DET &foot_ink
+  (&foot *E (:Col *Col_line) *P)
+  (ex_output E P *Col))
+
+(DET &stem
+  (&foot_ink *Col_line *Col)
+  (&stem_line (:C Col_line)))
+
+;; How far each bar's stem reaches.
+(INIT &stem_len Cardinality
+  (key ((OR ((&bar ^B))
+            ((&bar_cell B *P)
+             (input P *Col)
+             (&stem Col))))
+    (member ((:m P))
+      (&bar_cell B *P)
+      (input P *Col)
+      (&stem Col))
+    (domain ()
+      (&bar B))))
+
+(DET &cap
+  (&foot_ink *Col_line *Col)
+  (&cap_line (:C Col_line)))
+
+;; How tall each bar's cap stands.
+(INIT &cap_len Cardinality
+  (key ((OR ((&bar ^B))
+            ((&bar_cell B *P)
+             (input P *Col)
+             (&cap Col))))
+    (member ((:m P))
+      (&bar_cell B *P)
+      (input P *Col)
+      (&cap Col))
+    (domain ()
+      (&bar B))))
+
+;; Each ruler line casts its bars' ink away from the other line.
+(INIT &cast Ray
+  (key ((OR ((&foot ^Col *P))
+            ((&ruler Col *D))
+            ((&cast_frame.cell (:key Col) P))))
+    (source (P)
+      (&foot Col *P))
+    (node (P)
+      (&cast_frame.cell (:key Col) *P))
+    (dir (D)
+      (&ruler Col *D))))
+
+(RULE &cast_cell
+  (&ruler (:Col *Key))
+  (&bar_cell *P))
+
+(INIT &tallest Order
+  (member ((:t N))
+    (&cap_len.size *N))
+  (score ((:t N) (:S N))
+    (&cap_len.size *N)))
+
+(RULE &cap_height
+  (&tallest.maximal (:t *N)))
+
+(ALTS $choice "every cap is drawn to one height; which height" $Tallest
+  (ALT $Common
+    (INIT &common_count Cardinality
+      (key ((&cap_len.size (:key *B) ^N))
+        (member ((:m B))
+          (&cap_len.size (:key *B) N))))
+
+    (INIT &common Order
+      (member ((:t M))
+        (&common_count.size (:key (:N *M))))
+      (score ((:t M) (:S N))
+        (&common_count.size (:key (:N *M)) *N)))
+
+    (RULE &cap_height
+      (&common.maximal (:t *N)))))
+
+(RULE &output
+  ;; Off the cap line stands the cap.
+  (OR ((&cap_line (:C *Col_line))
+       (&cast.ray (:key (:Col Col_line)) *P *K)
+       (&cast_cell (:Key Col_line) P)
+       (&cap_height *N)
+       (OR ((< K N)
+            (&cap *Col))
+           ((>= K N)
+            (&bg (:C Col)))))
+      ;; Off the stem line hangs the bar's own stem.
+      ((&stem_line (:C *Col_line2))
+       (&cast.ray (:key (:Col Col_line2)) P (:K *K2) (:Origin *Src))
+       (&cast_cell (:Key Col_line2) P)
+       (&bar_of (:P Src) *B)
+       (&stem_len.size (:key B) (:N *N2))
+       (OR ((< K2 N2)
+            (&stem Col))
+           ((>= K2 N2)
+            (&rest (:C Col)))))
+      ;; A line the ruler's ink fills carries no bar, and keeps its cells.
+      ((input P Col)
+       (&bar_of P (:B *B2))
+       (NOT (&bar (:B B2))))))
+
+(OUT (&output ^P ^Col))

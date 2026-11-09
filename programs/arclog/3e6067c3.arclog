@@ -1,0 +1,154 @@
+;; inputs a0b9461a25c5cf6a4f0a4640a87baf1b51abe41bd0b8e4e4387b9f1395ea1dc8 programs/solvers/3e6067c3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3e6067c3
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color; what is drawn on it is ink.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &box_mode_count Cardinality
+  (key ((&ink *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&ink *P)
+      (input P Col))))
+
+;; The edge the sequence reads from.
+(DET &seq_dir DirDomain)
+
+;; Most of the ink goes into the boxes.
+(INIT &box_mode Order
+  (member ((:t Col))
+    (&box_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&box_mode_count.size (:key *Col) *N)))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&ink *P)))
+
+(RULE &is_box
+  (&comps.component *P *Id)
+  (input P *Col)
+  (&box_mode.maximal (:t Col)))
+
+(RULE &box_cell
+  (&is_box *Id)
+  (&comps.component *P Id))
+
+(RULE &label_cell
+  (&box_cell *Id *P)
+  (input P *Col)
+  (NOT (&box_mode.maximal (:t Col))))
+
+(RULE &label_color
+  (&label_cell *Id *P)
+  (input P *Col))
+
+(INIT &bbox BoundingBox
+  (key ((&box_cell ^Id *P))
+    (cell (P)
+      (&box_cell Id *P))))
+
+(RULE &label_line
+  (&label_cell *Id (:P *Q))
+  (split (:P Q) *A (:Across *L)))
+
+(RULE &facing
+  (input *P)
+  (axis_of *D *A)
+  (split P A (:Across *L))
+  (&label_line *Id A L)
+  (&bbox.box (:key Id) *B)
+  (nearer D P (:Q B)))
+
+(RULE &corridor
+  (&facing *Id *D *P)
+  (opposite D (:Opp *D_opp))
+  (&facing (:Id *Id2) (:D D_opp) P))
+
+(RULE &obstructed
+  (&corridor *Id *Id2 *P)
+  (&ink P))
+
+(RULE &joined
+  (&corridor *Id *Id2)
+  (NOT (&obstructed Id Id2)))
+
+(RULE &seq_cell
+  (&comps.component *P *Id)
+  (NOT (&is_box Id)))
+
+(INIT &seq Order
+  (member ((:t P))
+    (&seq_cell *P))
+  (score ((:t P) (:S K))
+    (&seq_cell *P)
+    (&seq_dir *D)
+    (margin (:B P) D *K)))
+
+(RULE &names
+  (&seq_cell (:P *L))
+  (input (:P L) *Col)
+  (&label_color *Id Col))
+
+;; The rest of the sequence is still walkable from the box: traced back from
+;; a box the last slot names, each hop crosses a corridor to a box the
+;; previous slot names.
+(INIT &route Propagation
+  (source ((:n L Id))
+    (&seq.maximal (:t *L))
+    (&names L *Id))
+  (edge ((:a (:L L2) (:Id Id2)) (:b L Id))
+    (&names *L *Id)
+    (&seq.successor (:a L) (:b *L2))
+    (&names (:L L2) (:Id *Id2))
+    (&joined Id Id2)))
+
+(RULE &cand
+  (&route.reached (:n *L *Id)))
+
+(ALTS $choice "whether the walk must complete the whole sequence to count, or paints as far as it gets" $Route
+  (ALT $Walk
+    ;; Any box the slot names.
+    (RULE &cand
+      (&names *L *Id))))
+
+;; The boxes the walk stands on, having come from the sequence's start: each
+;; hop crosses a corridor to a box the next slot may stand on.
+(INIT &walk Propagation
+  (source ((:n (:L L0) (:Id Id0)))
+    (&cand (:L *L0) (:Id *Id0))
+    (&seq.minimal (:t L0)))
+  (edge ((:a (:L L2) (:Id Id2)) (:b L Id))
+    (&cand (:L *L2) (:Id *Id2))
+    (&seq.successor (:a L2) (:b *L))
+    (&cand L *Id)
+    (&joined (:Id Id2) (:Id2 Id))))
+
+(RULE &fill
+  (&walk.reached (:n *L *Id))
+  (&seq.successor (:a L) (:b *L2))
+  (&walk.reached (:n (:L L2) (:Id *Id2)))
+  (&joined Id Id2)
+  (&corridor Id Id2 *P)
+  (&label_color Id *Col))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

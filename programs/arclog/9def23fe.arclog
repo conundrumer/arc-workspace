@@ -1,0 +1,100 @@
+;; inputs 74348668b58074ae0981a5001b650dc337a8634a599766215a2276ebfc617bd5 programs/solvers/9def23fe.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9def23fe
+
+(INPUT rect "the ink holds one solid rectangle of one color")
+
+(INPUT dots "every other ink cell is a lone cell of one other color")
+
+(OUTPUT beam "on each side of the rectangle, every line the rectangle spans takes the rectangle's color out to the grid edge, unless a dot lies on that line between the rectangle and that edge"
+
+  ;; the rectangle's color, which its beams also take
+  (DET &beam SharedColor)
+
+  (RULE &rect
+    (input *P *Col)
+    (&beam (:C Col)))
+
+  (INIT &bx BoundingBox
+    (cell (P)
+      (&rect *P)))
+
+  (RULE &body
+    (input *P)
+    (&bx.box *B)
+    (inside (:A P) B))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &dot
+    (&ink *P)
+    (NOT (&rect P)))
+
+  ;; The body casts toward each edge, over the cells outside it.
+  (INIT &cast Ray
+    (source (P)
+      (&body *P))
+    (node (P)
+      (input *P)
+      (NOT (&dot P)))
+    (dir (D)
+      (dir_elem *D))))
+
+(OUTPUT keep "every other cell keeps its input color")
+
+(ALTS $f "what tells the rectangle from the dots" $Hue
+  (ALT $Touch
+    (INPUT dots "every other ink cell is a lone cell")
+    (OUTPUT beam "on each side of the ink that touches other ink, every line that ink spans takes its own color out to the grid edge, unless a lone ink cell lies on that line between it and that edge"
+      ;; A rectangle cell: ink that touches other ink.
+      (RULE &rect
+        (&ink *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&ink (:P Q))))
+    (RULE &paint
+      (&rect *P)
+      (input P *Col))))
+
+(ALTS $e "where the beams start" $Box
+  (ALT $Cells
+    (OUTPUT beam "from each cell of the rectangle, every line through it takes the rectangle's color out to the grid edge, unless a dot lies on that line between the cell and that edge"
+      (RULE &body
+        (&rect *P)))))
+
+(INIT &cast_full Ray
+  (source (P)
+    (&body *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &cast_stop_full
+  (&cast.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &paint
+  (&beam (:C *Col)))
+
+(RULE &cast_cell
+  (input *P)
+  (NOT (&body P)))
+
+(RULE &fill
+  (&cast_full.ray *P *D (:Origin *Src))
+  (&cast_cell P)
+  (NOT (&cast_stop_full (:V2 D) (:V4 Src))))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (IF ((&fill P))
+      ((&paint *Col))
+      ((= Col C0))))
+
+(OUT (&output ^P ^Col))

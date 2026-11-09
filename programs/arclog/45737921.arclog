@@ -1,0 +1,31 @@
+;; inputs 9f7b7f623af618ca1e189bfe2eeb33812f83193e87b64b23ffcc3797d4cb86fa programs/solvers/45737921.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 45737921
+
+(DET &bg DominantColor)
+
+(RULE &figure
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &obj Connectivity
+  (node (P)
+    (&figure *P)))
+
+(RULE &obj_color
+  (&obj.component *P *Id)
+  (&figure P *Col))
+
+(RULE &swap
+  (&obj_color *Id *Col)
+  (&obj_color Id (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &output
+  (OR ((&obj.component *P *Id)
+       (&figure P (:Col *C))
+       (&swap Id (:Col C) (:Col2 *Col)))
+      ((input P Col)
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

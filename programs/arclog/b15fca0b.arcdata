@@ -1,0 +1,214 @@
+;; inputs 736867a4072a7c05d79883ed467720b866400bd5c4285d7579ff05ed99cc5737 programs/solvers/b15fca0b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b15fca0b
+
+(param &endpoint_color Color (2))
+(param &path_color Color (4))
+(param &background Color (0))
+(param &wall_color Color (1))
+
+(exclude ($FewestTurns $Unique) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($FewestTurns $Joined) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($FewestTurns $TwoEnds) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($PassNonWall $Unique) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($PassNonWall $Joined) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($PassNonWall $TwoEnds) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($Unique $NoRouteKeep) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($TieAny $Joined) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($TieUnion $Joined) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($Unique $AllPairs) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($TieAny $TwoEnds) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($TieUnion $TwoEnds) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($Joined $AllPairs) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($NoRouteKeep $TwoEnds) "A case other than the concept case that takes $Unique, $Joined or $TwoEnds is subsumed by the case that takes $TieAny, $NoRouteKeep or $AllPairs in place of each of them: wherever the first is defined, the second gives its output.")
+(exclude ($Background $Joined $Steps $TwoEnds $Unique &endpoint_color=$Derived) "wherever it is defined, it gives the output of the $TieAny & $NoRouteKeep & $AllPairs copy")
+(exclude ($Background $Joined $Steps $TwoEnds $Unique &background=$Derived) "wherever it is defined, it gives the output of the $TieAny & $NoRouteKeep & $AllPairs copy")
+
+(alts $cost
+  (alt $FewestTurns
+    (witness turns-vs-steps variant concept
+      (separates "a fewest-step route that turns more often than a longer route around the walls: the concept paints the zigzag down the left channel, and $FewestTurns paints the three-run route along the top edge, down the right column and back along the bottom edge")
+      (input (grid
+        (2 0 0 0 0)
+        (1 0 1 1 0)
+        (0 0 1 1 0)
+        (0 1 1 1 0)
+        (0 0 1 1 0)
+        (1 0 1 1 0)
+        (2 0 0 0 0)))
+      (output $Steps (grid
+        (2 4 0 0 0)
+        (1 4 1 1 0)
+        (4 4 1 1 0)
+        (4 1 1 1 0)
+        (4 4 1 1 0)
+        (1 4 1 1 0)
+        (2 4 0 0 0)))
+      (output $FewestTurns (grid
+        (2 4 4 4 4)
+        (1 0 1 1 4)
+        (0 0 1 1 4)
+        (0 1 1 1 4)
+        (0 0 1 1 4)
+        (1 0 1 1 4)
+        (2 4 4 4 4))))))
+
+(alts $pass
+  (alt $PassNonWall
+    (witness foreign-color-on-route variant concept
+      (relaxed walls)
+      (separates "a cell of a color other than background, wall and endpoint on the straight route: the concept goes around it as an obstacle, and $PassNonWall crosses it and paints it")
+      (input (grid
+        (2 0 3 0 2)
+        (0 1 1 1 0)
+        (0 0 0 0 0)))
+      (output ($Background &endpoint_color=$Stored) (grid
+        (2 0 3 0 2)
+        (4 1 1 1 4)
+        (4 4 4 4 4)))
+      (output &endpoint_color=$Derived undefined)
+      (output $PassNonWall (grid
+        (2 4 4 4 2)
+        (0 1 1 1 0)
+        (0 0 0 0 0))))))
+
+(alts $tie
+  (alt $TieAny
+    (witness tied-routes variant $TieAny
+      (relaxed unique-shortest)
+      (separates "two fewest-step routes, one each side of the wall: the concept is undefined, $TieAny gives each route as its own output, and $TieUnion paints both")
+      (input (grid
+        (2 0 0 0 0)
+        (0 1 1 1 0)
+        (0 0 0 0 2)))
+      (output concept undefined)
+      (output $TieAny
+        (grid
+          (2 4 4 4 4)
+          (0 1 1 1 4)
+          (0 0 0 0 2))
+        (grid
+          (2 0 0 0 0)
+          (4 1 1 1 0)
+          (4 4 4 4 2)))
+      (output $TieUnion (grid
+        (2 4 4 4 4)
+        (4 1 1 1 4)
+        (4 4 4 4 2)))))
+  (alt $TieUnion
+    (witness tied-routes variant $TieAny)))
+
+(alts $gap
+  (alt $NoRouteKeep
+    (witness no-route foreign $NoRouteKeep
+      (relaxed connected)
+      (separates "a wall that cuts one endpoint off from the other: the concept is undefined, and $NoRouteKeep gives the input unchanged")
+      (input (grid
+        (2 0 1 0 0)
+        (0 0 1 0 0)
+        (0 0 1 0 2)))
+      (output concept undefined)
+      (output $AllPairs (grid
+        (2 0 1 0 0)
+        (0 0 1 0 0)
+        (0 0 1 0 2))))))
+
+(alts $ends
+  (alt $AllPairs
+    (witness three-endpoints variant $AllPairs
+      (relaxed two-endpoints)
+      (separates "three endpoint cells: the concept is undefined, and $AllPairs paints the fewest-step route between each two of them")
+      (input (grid
+        (2 0 0 0 2)
+        (1 1 0 1 1)
+        (1 1 0 1 1)
+        (1 1 2 1 1)))
+      (output concept undefined)
+      (output ($AllPairs &background=$Stored) (grid
+        (2 4 4 4 2)
+        (1 1 4 1 1)
+        (1 1 4 1 1)
+        (1 1 2 1 1)))
+      (output ($TieAny &background=$Derived)
+        (grid
+          (2 0 0 0 2)
+          (4 4 0 4 4)
+          (1 4 0 4 1)
+          (1 4 2 4 1))
+        (grid
+          (2 0 0 0 2)
+          (4 1 0 4 4)
+          (4 4 0 4 1)
+          (1 4 2 4 1))
+        (grid
+          (2 0 0 0 2)
+          (4 1 0 4 4)
+          (4 1 0 4 1)
+          (4 4 2 4 1))
+        (grid
+          (2 0 0 0 2)
+          (4 4 0 1 4)
+          (1 4 0 4 4)
+          (1 4 2 4 1))
+        (grid
+          (2 0 0 0 2)
+          (4 1 0 1 4)
+          (4 4 0 4 4)
+          (1 4 2 4 1))
+        (grid
+          (2 0 0 0 2)
+          (4 1 0 1 4)
+          (4 1 0 4 4)
+          (4 4 2 4 1))
+        (grid
+          (2 0 0 0 2)
+          (4 4 0 1 4)
+          (1 4 0 1 4)
+          (1 4 2 4 4))
+        (grid
+          (2 0 0 0 2)
+          (4 1 0 1 4)
+          (4 4 0 1 4)
+          (1 4 2 4 4))
+        (grid
+          (2 0 0 0 2)
+          (4 1 0 1 4)
+          (4 1 0 1 4)
+          (4 4 2 4 4)))
+      (output ($TieUnion &background=$Derived) (grid
+        (2 0 0 0 2)
+        (4 4 0 4 4)
+        (4 4 0 4 4)
+        (4 4 2 4 4))))))
+
+(alts &endpoint_color
+  (alt &endpoint_color=$Derived
+    (witness endpoint_color=RarestColor variant &endpoint_color=$Derived
+      (relaxed two-endpoints)
+      (separates "the two endpoints are of a color other than the stored endpoint color: the concept finds no endpoint and is undefined, and the derived endpoint color is the rarest color, which finds them and paints the route between them")
+      (input (grid
+        (3 0 0 0 3)
+        (1 1 0 1 1)
+        (0 0 0 0 0)))
+      (output &endpoint_color=$Stored undefined)
+      (output &endpoint_color=$Derived (grid
+        (3 4 4 4 3)
+        (1 1 0 1 1)
+        (0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant concept
+      (separates "wall cells outnumber background cells: the concept paints the route through background, and the derived background is the wall color, so the route runs through the walls")
+      (input (grid
+        (2 0 0 0 2)
+        (1 1 1 1 1)
+        (1 1 1 1 1)))
+      (output &background=$Stored (grid
+        (2 4 4 4 2)
+        (1 1 1 1 1)
+        (1 1 1 1 1)))
+      (output &background=$Derived (grid
+        (2 0 0 0 2)
+        (4 4 4 4 4)
+        (1 1 1 1 1))))))

@@ -1,0 +1,36 @@
+;; inputs 0b82e740143e22dfc9c6d42b50ca0b7c84c14e6451d860b4aab169aa31ba7605 programs/solvers/32597951.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 32597951
+
+(DET &marker RarestColor)
+
+(DET &to AnyOutNewColor)
+
+(DET &from SharedColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&marker (:C Col))))
+
+(RULE &recolor
+  (input *P *Col)
+  (&from (:C Col))
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(ALTS $choice "which cells qualify" $From
+  (ALT $Ink
+    (RULE &recolor
+      (input *P *Col)
+      (NOT (&marker (:C Col)))
+      (&bbox.box *B)
+      (inside (:A P) B))))
+
+(RULE &output
+  (OR ((&recolor *P)
+       (&to (:C *Col)))
+      ((input P Col)
+       (NOT (&recolor P)))))
+
+(OUT (&output ^P ^Col))

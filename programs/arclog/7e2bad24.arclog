@@ -1,0 +1,101 @@
+;; inputs 6c83b3aa3c7bf832b90ae84e8d573151905962196b4f3d70c336758ca355f0a5 programs/solvers/7e2bad24.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7e2bad24
+
+(DET &bg DominantColor)
+
+;; The beam's color, which is the seed's.
+(DET &ray RarestColor)
+
+;; Walls the beam passes through.
+(DET &transparent ColorDomain)
+
+;; Walls the beam turns at.
+(DET &reflective UnchangedColor)
+
+(RULE &passable
+  (OR ((&bg (:C *Col)))
+      ((&transparent (:C Col)))))
+
+(RULE &wall
+  (input *P *Col)
+  (&reflective (:C Col)))
+
+(RULE &side
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&wall (:P Q)))
+
+(RULE &leave_dir
+  (&side *P)
+  (diag_dirs *D (:D1 *D_cmp))
+  (IF ((&side P (:D D_cmp)))
+      ((opposite (:D D_cmp) (:Opp *D_out)))
+      ((= D_out D_cmp))))
+
+(RULE &bounce
+  (&leave_dir *P *D (:D_out *D1))
+  (&leave_dir P D (:D_out *D2))
+  (diag_dirs (:D *D_out) D1 D2))
+
+(RULE &seed_dir
+  (input *P *Col)
+  (&ray (:C Col))
+  (diag_dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) Col))
+
+(RULE &step
+  (input (:P *Q) *Col)
+  (&passable Col)
+  (diag_opposite *D (:Opp *D_back))
+  (neighbor (:P Q) (:D D_back) (:Q *P))
+  (input P))
+
+;; The beam's walk: a beam heading d at p moves on to the next cell, or turns.
+(INIT &walk Propagation
+  (source ((:n P D))
+    (diag_opposite *D (:Opp *D_back))
+    (&seed_dir *P (:D D_back))
+    (NOT (&seed_dir P D)))
+  (edge ((:a P D) (:b (:P Q) (:D D_out)))
+    (OR ((&bounce *P *D *D_out)
+         (&step P (:D D_out) *Q))
+        ((&step P D Q)
+         (NOT (&side P))
+         (= D_out D)))))
+
+(ALTS $choice "how a reflective wall turns the beam" $Contact
+  (ALT $WallAxis
+    (RULE &wall_axis
+      (&wall *P)
+      (axis_of *D *A)
+      (neighbor P D *Q)
+      (&wall (:P Q)))
+
+    ;; The beam's walk: a beam heading d at p moves on to the next cell, or turns.
+    (INIT &walk Propagation
+      (source ((:n P D))
+        (diag_opposite *D (:Opp *D_back))
+        (&seed_dir *P (:D D_back))
+        (NOT (&seed_dir P D)))
+      (edge ((:a P D) (:b (:P P2) (:D D_out)))
+        (OR ((input *P)
+             (diag_dir_elem *D)
+             (neighbor P D *Q)
+             (&wall_axis (:P Q) *A)
+             (perp A (:A2 *A_flip))
+             (axis_inversion (:A A_flip) (:T *F))
+             (apply_diag_dir (:D F) (:Dir D) (:Dir_out *D_out))
+             (= *P2 P))
+            ((&step P D (:Q P2))
+             (= D_out D)))))))
+
+(RULE &output
+  (OR ((&walk.reached (:n *P))
+       (&ray (:C *Col)))
+      ((input P Col)
+       (NOT (&walk.reached (:n P))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,320 @@
+;; inputs f0558f8aa23993601c8e9d287cdcd2364d3e1bc5666166b096f2a358ac0115e5 programs/solvers/c61be7dc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c61be7dc
+
+(INPUT field "every cell that is not a line or the shape has color background")
+
+(INPUT walls "two full lines of color line_color, parallel to each other, bound a corridor whose width is odd and at least 3")
+
+(INPUT cross-line "one line of color line_color, perpendicular to the walls, runs from edge to edge outside the corridor, and inside the corridor the input shows only shape or background on it")
+
+(INPUT shape "the cells of color shape_color all lie in the corridor, are symmetric about the cross line, and are odd in number")
+
+(OUTPUT close-walls "each wall moves to the line next to the corridor's center line, and the cells of the old walls take background, except where the cross line passes")
+
+(OUTPUT press-shape "the shape becomes a line of shape_color on the corridor's center line, with as many cells as the shape has, centered on the cross line; every other cell of the old corridor that no wall or cross line takes is background"
+
+  ;; The one color of each line that holds one color alone.
+  (INIT &full_line Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Across ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Across L)))))
+
+  (DET &filled
+    (&full_line.value *E (:v *Col))
+    (ex_output E))
+
+  (DET &unfilled
+    (&filled *Col)
+    (ex_input *E)
+    (ex_output E)
+    (NOT (&filled E Col)))
+
+  (DET &line_color
+    (&filled (:Col *C))
+    (NOT (&unfilled (:Col C))))
+
+  (RULE &full
+    (&full_line.value (:key *A *L) (:v *Col))
+    (&line_color (:C Col)))
+
+  ;; The walls' axis: the one axis with full lines of line_color.
+  (INIT &walls Singleton
+    (member ((:v A))
+      (&full *A)))
+
+  (RULE &gap_axis
+    (&walls.value (:v *A3))
+    (perp (:A A3) (:A2 *A)))
+
+  (RULE &place
+    (input *P)
+    (&walls.value (:v *A))
+    (split P A *Along *Across))
+
+  (RULE &wall
+    (&place *P (:Across *L))
+    (&full L))
+
+  (INIT &gap_frame Frame
+    (extent (A N)
+      (&wall *P)
+      (frame_extent P *A *N)))
+
+  (INIT &gap Ray
+    (source (P)
+      (&wall *P))
+    (node (P)
+      (&gap_frame.cell *P))
+    (dir (D)
+      (&gap_axis *A)
+      (axis4_of *D A)))
+
+  (RULE &gap_between
+    (input *P)
+    (&gap_axis *A)
+    (axis4_of *D A)
+    (dir8_opposite D (:D2 *O))
+    (&gap.ray P D)
+    (&gap.ray P (:D O)))
+
+  (RULE &corridor
+    (&gap_between *P)
+    (NOT (&wall P)))
+
+  (DET &held
+    (&corridor *E *P)
+    (ex_output E)
+    (ex_input E P *Col))
+
+  (DET &stray
+    (OR ((&held *Col)
+         (ex_input *E *P Col)
+         (ex_output E)
+         (NOT (&corridor E P)))
+        ((&held Col)
+         (ex_input (:E *E2))
+         (ex_output (:E E2))
+         (NOT (&held (:E E2) Col)))))
+
+  (DET_OR_RULE &shape_color RarestColor
+    (&held (:Col *C))
+    (NOT (&stray (:Col C))))
+
+  (RULE &shape
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (&shape *P))))
+
+(OUTPUT restore-cross-line "the cross line runs from edge to edge in the output, across the old corridor too, and the shape's line covers it at the one cell where they meet"
+
+  ;; The one color each line across the walls shows outside the corridor.
+  (INIT &outside Singleton
+    (key ((input *P *Col)
+          (NOT (&corridor P))
+          (&place P (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (NOT (&corridor P))
+        (&place P (:Along L)))))
+
+  (RULE &cross
+    (&place *P (:Along *L))
+    (&outside.value (:key L) (:v *Col))
+    (&line_color (:C Col)))
+
+  (INIT &size Cardinality
+    (member ((:m P))
+      (&shape *P))
+    (domain ()))
+
+  ;; The pressed line in a frame of its own, one cell per shape cell.
+  (INIT &line Frame
+    (key ((&walls.value (:v ^A)))
+      (extent (A N)
+        (&size.size *N))))
+
+  (INIT &corridor_box BoundingBox
+    (cell (P)
+      (&corridor *P)))
+
+  (RULE &across_host
+    (&corridor_box.box *B))
+
+  (RULE &center_line
+    (&across_host *B)
+    (&place *P (:Across *L))
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (&walls.value (:v *A))
+    (split (:P P_rel) A (:Across *L_rel))
+    (centered (:P L_rel)))
+
+  (INIT &cross_box BoundingBox
+    (cell (P)
+      (&cross *P)))
+
+  (RULE &along_host
+    (&cross_box.box *B))
+
+  (RULE &along_place
+    (&along_host *B)
+    (&place *P (:Along *L))
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (&walls.value (:v *A))
+    (split (:P P_rel) A (:Along *L_rel)))
+
+  (RULE &span_place
+    (OR ((&line.cell *P))
+        ((&along_place (:L_rel P)))))
+
+  (RULE &middle
+    (&span_place *P)
+    (&walls.value (:v *A))
+    (axis_of *D A)
+    (opposite D (:Opp *O))
+    (margin (:B P) (:D O) *K)
+    (neighbor P D *Q)
+    (margin (:B Q) D K))
+
+  (RULE &placement
+    (&walls.value (:v *A))
+    (axis_of *D A)
+    (&line.cell (:P *P_line))
+    (&along_place *L_rel *L)
+    (OR ((centered (:P P_line))
+         (centered (:P L_rel)))
+        ((&middle D (:P P_line))
+         (&middle D (:P L_rel))))
+    (relative (:Base P_line) (:X L) (:X_rel *V)))
+
+  (RULE &placed
+    (&placement *D)))
+
+(ALTS $al "the point along the corridor that the pressed line centers on" $CrossLine
+  (ALT $AlongShapeCenter
+    (OUTPUT press-shape "the line centers on the middle of the shape's extent along the corridor; undefined where that extent and the count do not let the line center on that middle"
+      (RULE &along_host
+        (&shape_box.box *B))))
+  (ALT $AlongGridMiddle
+    (OUTPUT press-shape "the line centers on the grid's middle line across the corridor; undefined where the grid's extent along the corridor and the count do not let the line center there"
+      (RULE &along_host
+        (= *B 0)))))
+
+(ALTS $ac "the line that the closed corridor centers on" $Corridor
+  (ALT $AcrossShapeCenter
+    (OUTPUT close-walls "the new walls flank the center line of the shape's extent across the corridor; undefined where that extent is even"
+      (RULE &across_host
+        (&shape_box.box *B)))
+    (OUTPUT press-shape "the line sits on the center line of the shape's extent across the corridor"))
+  (ALT $AcrossGridMiddle
+    (OUTPUT close-walls "the new walls flank the grid's middle line parallel to the walls; undefined where the grid's extent across the walls is even"
+      (RULE &across_host
+        (= *B 0)))
+    (OUTPUT press-shape "the line sits on the grid's middle line parallel to the walls")))
+
+(ALTS $uc "a count that cannot center on the center point" $ExactCenter
+  (ALT $EvenCountBothSides
+    (INPUT shape "the cells of color shape_color all lie in the corridor and are symmetric about the cross line, in any number")
+    (OUTPUT press-shape "where the line cannot center exactly, the output holds two grids, the placements half a cell off the center, one on each side"
+      (RULE &placement
+        ;; A line half a cell off the center.
+        (OR ((&walls.value (:v *A))
+             (axis_of *D A)
+             (&line.cell (:P *P_line))
+             (&along_place *L_rel *L)
+             (OR ((centered (:P P_line))
+                  (&middle D (:P L_rel)))
+                 ((&middle D (:P P_line))
+                  (centered (:P L_rel))))
+             (relative (:Base P_line) (:X L) (:X_rel *V)))
+            ((&walls.value (:v *A2))
+             (axis_of D (:A A2))
+             (&line.cell (:P *P_line2))
+             (&along_place (:L_rel *L_rel2) (:L *L2))
+             (OR ((centered (:P P_line2))
+                  (centered (:P L_rel2)))
+                 ((&middle D (:P P_line2))
+                  (&middle D (:P L_rel2))))
+             (relative (:Base P_line2) (:X L2) (:X_rel V)))))
+
+      (RULE &placed
+        ;; A line of no cells has no middle, and no cell to place.
+        (OR ((&size.size (:N 0))
+             (&along_host)
+             (&walls.value (:v *A))
+             (axis_of *D A))
+            ((&placement D)))))))
+
+(ALTS $ov "a line longer than the corridor" $WithinGrid
+  (ALT $ClipAtEdge
+    (OUTPUT press-shape "the part of the line past a grid edge is dropped")
+    (RULE &shown
+      (&placed *D)
+      (&center_line))))
+
+;; The one color of the cells outside the corridor that no line takes.
+(INIT &field Singleton
+  (member ((:v Col))
+    (ex_input *E *P *Col)
+    (ex_output E)
+    (NOT (&corridor E P))
+    (NOT (&wall E P))
+    (NOT (&cross E P))))
+
+(DET_OR_RULE &background DominantColor
+  (&field.value (:v *C)))
+
+(RULE &line_along
+  (&placement *D *V)
+  (&line.cell (:P *P_line))
+  (compose (:A P_line) (:B V) (:C *L)))
+
+(RULE &overflow
+  (&line_along *L)
+  (NOT (inside (:A L) (:B 0))))
+
+(RULE &press
+  (&line_along *D (:L *L1))
+  (&center_line (:L *L2))
+  (&place *P (:Along L1) (:Across L2)))
+
+(RULE &new_wall
+  (&center_line *L)
+  (&place *P (:Across *L2))
+  (neighbor (:P L) (:Q L2)))
+
+(RULE &shown
+  (&placed *D)
+  (&center_line)
+  (NOT (&overflow)))
+
+(RULE &resolution
+  (&shown *D)
+  (ONE))
+
+(RULE &output
+  (&resolution *D)
+  (input *P)
+  (OR ((&press D P)
+       (&shape_color (:C *Col)))
+      ((&new_wall P)
+       (NOT (&press D P))
+       (&line_color (:C Col)))
+      ((NOT (&press D P))
+       (NOT (&new_wall P))
+       (&cross P)
+       (&line_color (:C Col)))
+      ((NOT (&press D P))
+       (NOT (&new_wall P))
+       (NOT (&cross P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

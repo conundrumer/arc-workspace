@@ -1,0 +1,176 @@
+;; inputs 81f1d80431322306e80e3068bb5ba1d753326237f4595de9d7d26146f675afef programs/solvers/dc2aa30b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc2aa30b
+
+(INPUT divider-board "full rows and columns of &divider_color (0), each one cell wide, cut the grid into 3 × 3 tiles of 3 × 3 cells"
+
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (DET &lined
+    (&line_color.value *E (:v *Col))
+    (ex_output E))
+
+  (DET &unlined
+    (&lined *Col)
+    (ex_output *E)
+    (NOT (&lined E Col)))
+
+  (DET_OR_RULE &divider_color SharedColor
+    (&lined (:Col *C))
+    (NOT (&unlined (:Col C)))))
+
+(INPUT distinct-counts "no two tiles hold the same number of &counted_color cells"
+
+  (DET &counted_color ColorDomain))
+
+(OUTPUT keep-dividers "the divider lines stay where they are in the output")
+
+(OUTPUT rank-by-count "each tile is ranked by its number of &counted_color cells, from fewest to most"
+
+  (RULE_OR_DET &tiling_divider
+    (&line_color.value (:key *A *L) (:v *Col))
+    (&divider_color (:C Col)))
+
+  (RULE &tiling_on_divider
+    (input *P)
+    (&tiling_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank Order
+    (key ((OR ((&tiling_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiling_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiling_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiling_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiling_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx *P D (:N *N1))
+    (&tiling_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &tiling_tile_of
+    (&tiling_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiling_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiling_tile_of *P ^P_tile))
+      (cell (P)
+        (&tiling_tile_of *P P_tile))))
+
+  (INIT &counted Cardinality
+    (key ((OR ((&tiling_tile_of *P ^P_tile)
+               (input P *Col)
+               (&counted_color (:C Col)))
+              ((&tile_box.box (:key P_tile)))))
+      (member ((:m P))
+        (&tiling_tile_of *P P_tile)
+        (input P *Col)
+        (&counted_color (:C Col)))
+      (domain ()
+        (&tile_box.box (:key P_tile)))))
+
+  (INIT &by_count Order
+    (member ((:t P_tile))
+      (&counted.size (:key *P_tile)))
+    (score ((:t P_tile) (:S N))
+      (&counted.size (:key *P_tile) *N))))
+
+(OUTPUT place-by-rank "the tile of each rank is copied whole, unchanged, into the slot of the same rank in the slot order, which starts at the &order_corner slot and runs along &fill_axis first, then steps to the next line of slots away from that corner"
+
+  ;; The slot that takes the tile with the fewest counted cells.
+  (DET &order_corner DiagDirDomain)
+
+  ;; The axis the slot order runs along within one line of slots, before it steps to the next line.
+  (DET &fill_axis AxisDomain)
+
+  (INIT &slots Order
+    (member ((:t P_tile))
+      (&tile_box.box (:key *P_tile)))
+    (score ((:t P_tile) (:S K1))
+      (&tile_box.box (:key *P_tile))
+      (&order_corner *D)
+      (&fill_axis *A)
+      (perp A *A2)
+      (diag_dist (:P P_tile) (:Diag D) (:A A2) *K1 *K2))
+    (secondary_score ((:t P_tile) (:S K2))
+      (&tile_box.box (:key *P_tile))
+      (&order_corner *D)
+      (&fill_axis *A)
+      (perp A *A2)
+      (diag_dist (:P P_tile) (:Diag D) (:A A2) *K1 *K2))))
+
+(ALTS $choice "the output where two tiles hold one count of &counted_color" $TieUndefined
+  (ALT $TieAnyOrder
+    (OUTPUT rank-by-count "tiles that tie take their run of rank slots in every order, and the output holds the grid of each order")
+    ;; A slot takes each tile that has no more tiles before it than the slot has,
+    ;; and no more after it.
+    (RULE &ties_item
+      (&slots.rank (:t *S) (:R *R1))
+      (&by_count.rank (:t *X) (:R *R2))
+      (<= R2 R1)
+      (&slots.dual_rank (:t S) (:R *K1))
+      (&by_count.dual_rank (:t X) (:R *K2))
+      (<= K2 K1))))
+
+(RULE &tile_cell
+  (&tiling_tile_of *P *P_tile)
+  (&tile_box.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+;; A slot takes the tile of its rank. Where two tiles share a rank, a slot
+;; takes none, and the output is not total.
+(RULE &ties_item
+  (&slots.rank (:t *S) *R)
+  (&by_count.rank (:t *X) R))
+
+;; The tile each slot takes, under each resolution of a tie.
+(CHOOSE &ties
+  (for ((&ties_item ^S))
+    (from (&ties_item S *X)))
+  (never
+    (&ties_item *S *X)
+    (&ties_item (:S *S2) X)
+    (!= S S2)))
+
+(RULE &output
+  (OR ((&ties)
+       (input *P *Col)
+       (&tiling_on_divider P))
+      ((&tile_cell (:P_tile *S) P *P_intile)
+       (&ties S (:X *T))
+       (&tile_cell (:P_tile T) (:P *Q) P_intile)
+       (input (:P Q) Col))))
+
+(OUT (&output ^P ^Col))

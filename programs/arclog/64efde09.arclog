@@ -1,0 +1,159 @@
+;; inputs 5115a3fdadc3a338e9a1f13c2830fd696a41db3ba88e824f61eefa357720841b programs/solvers/64efde09.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 64efde09
+
+(DET &bg DominantColor)
+
+(RULE &back_blocked
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &obj Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &part
+  (&obj.component *P *Id)
+  (input P *Col))
+
+(RULE &bar
+  (&part *Id *P)
+  (&part Id (:P *Q))
+  (!= P Q))
+
+(RULE &tip
+  (&part *Id *P *Col)
+  (NOT (&bar Id)))
+
+;; A tip casts along its own row and column; the lane it came down is the one
+;; that reaches a bar.
+(INIT &back Ray
+  (source (P)
+    (&tip *P))
+  (node (P)
+    (input *P)
+    (NOT (&back_blocked P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(INIT &back_full Ray
+  (source (P)
+    (&tip *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &back_stop_full
+  (&back.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&back_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(INIT &bbox BoundingBox
+  (key ((&bar ^Id))
+    (cell (P)
+      (&part Id *P))))
+
+(RULE &bar_cell
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&part Id P *Col))
+
+(INIT &cong Agreement
+  (key ((OR ((&bar_cell (:Id ^A) *P_inner *Col)
+             (&bar (:Id ^B)))
+            ((&bar_cell (:Id B) P_inner Col)
+             (&bar (:Id A)))))
+    (source ((:P P_inner) (:v Col))
+      (&bar_cell (:Id A) *P_inner *Col)
+      (&bar (:Id B)))
+    (target ((:P P_inner) (:v Col))
+      (&bar_cell (:Id B) *P_inner *Col)
+      (&bar (:Id A)))))
+
+(RULE &cong_src
+  (&bar_cell (:Id *A) (:P_inner *P) (:Col *V))
+  (&bar))
+
+(RULE &reach
+  (&tip (:P *P_tip) *Col)
+  (&back_stop_full (:V1 *P) (:V2 *D_back) (:V4 P_tip))
+  (&bbox.cell (:key *Id) P)
+  (opposite (:D D_back) (:Opp *D)))
+
+(RULE &source
+  (&reach *P_tip *Col *Id *P *D)
+  (margin (:B P_tip) D (:K 0)))
+
+(ALTS $choice "The cases differ in what tells a beam's heading from its reverse" $Edge
+  (ALT $Lane
+    (INIT &lane_color Cardinality
+      (key ((&bar_cell ^Id *P *P_inner ^Col)
+            (&bbox.box (:key Id) *B)
+            (box_extent B P *A (:N *N1))
+            (perp A *A2)
+            (box_extent B P (:A A2) (:N *N2))
+            (< N1 N2)
+            (axis_of ^D A)
+            (margin (:B P_inner) D (:K 0)))
+        (member ((:m P_inner))
+          (&bar_cell Id *P *P_inner Col)
+          (&bbox.box (:key Id) *B)
+          (box_extent B P *A (:N *N1))
+          (perp A *A2)
+          (box_extent B P (:A A2) (:N *N2))
+          (< N1 N2)
+          (axis_of D A)
+          (margin (:B P_inner) D (:K 0)))))
+
+    ;; The way out: the lane where one color covers the most cells.
+    (INIT &exit Order
+      (key ((&lane_color.size (:key ^Id *D) *N))
+        (member ((:t (:V D) (:S N)))
+          (&lane_color.size (:key Id *D) *N))
+        (score ((:t (:V D) (:S N)) (:S N))
+          (&lane_color.size (:key Id *D) *N))))
+
+    (RULE &source
+      (&reach *Col *Id *P *D)
+      (&exit.maximal (:key Id) (:t (:V D))))))
+
+(RULE &emit
+  (&source (:Id *M) (:P *S) (:D *D3) *Col)
+  (&bar_cell (:Id M) (:P S) *P_inner)
+  (&cong_src (:A M))
+  (&bar (:Id *M2))
+  (apply (:D *G) (:P P_inner) (:P_out *P_inner2))
+  (NOT (&cong.mismatch (:key (:A M) (:B M2)) (:D G)))
+  (&bar_cell (:Id M2) *P (:P_inner P_inner2))
+  (apply_dir (:D G) (:Dir D3) (:Dir_out *D)))
+
+(INIT &beam Ray
+  (key ((&emit (:P ^S)))
+    (source ((:P S))
+      (&emit (:P S)))
+    (node (P)
+      (&emit (:P S) *D)
+      (input *P))
+    (dir (D)
+      (&emit (:P S) *D))))
+
+(RULE &beam_cell
+  (&emit)
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &paint
+  (&emit (:P *S) *Col)
+  (&beam.ray (:key S) *P)
+  (&beam_cell P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

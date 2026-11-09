@@ -19,7 +19,8 @@ import time
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from arclog_convert.readback import read_checked  # the corpus is a gen/ directory
+from arclog_convert.readback import read_checked  # the corpus is the converter's directory of converted solvers
+from engine import checkout
 
 
 def npy(archive, name):
@@ -196,7 +197,7 @@ def run_task(args, task):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", type=Path, default=Path("/Users/davidlu/code/arc-workspace/work/lm/data-full-9fac8128"))
-    parser.add_argument("--corpus", type=Path, default=Path("/Users/davidlu/code/arc-workspace/work/arclog/gen"))
+    parser.add_argument("--corpus", type=Path, default=checkout.arclog())
     parser.add_argument("--tasks", type=Path, default=Path(__file__).parent / "engine/data/tasks")
     parser.add_argument("--output", type=Path, default=Path(__file__).parent / "stage1-all")
     parser.add_argument("--only", nargs="*")

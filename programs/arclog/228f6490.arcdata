@@ -1,0 +1,6 @@
+;; inputs b34f1a5e867d00e4335398a3b5ad58511cf0c0ad3932137e4daa660c73d7543b programs/solvers/228f6490.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 228f6490
+
+(param &bg Color (0))
+(param &wall Color (5))

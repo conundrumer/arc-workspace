@@ -1,0 +1,12 @@
+;; inputs 9ae22d2fa17b412020c9926736cbcdc368d57626da786406dde4484786c59b37 programs/solvers/d364b489.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d364b489
+
+(param &marker Color (1))
+(param &arm (Color Dir) (2 DIR_T) (8 DIR_B) (7 DIR_L) (6 DIR_R))
+(param &template (Color Offset)
+  (2 (-1 1 0 0))
+  (7 (0 0 -1 1))
+  (1 (0 0 0 0))
+  (6 (0 0 1 -1))
+  (8 (1 -1 0 0)))

@@ -1,0 +1,160 @@
+;; inputs ecb5e20e37d74607ed31e2fc3cbf481990137e553048355b99317616f5a3c750 programs/solvers/f0100645.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0100645
+
+(INPUT two-walls "two opposite edge lines of the grid are each one solid color, and the two colors differ.")
+
+(INPUT background "every other cell that is not part of a shape is `background` (7).")
+
+(INPUT shapes "the shapes are 8-connected groups of one color, and each shape's color is one of the two wall colors.")
+
+(OUTPUT fall-to-own-wall "each shape moves as a rigid body along the wall axis toward the wall of its color.")
+
+(OUTPUT stack "a shape stops at the smallest shift that puts one of its cells next to its wall, or next to a cell of a stopped same-direction shape. Shapes nearer the wall stop first.")
+
+(OUTPUT keep-rest "the walls stay in place, and every cell no shape covers after moving is `background`."
+
+  (RULE &edge_color
+    (input *P (:Col *C))
+    (margin (:B P) *D (:K 0))
+    (ALL ((input (:P *Pm) (:Col *C1))
+          (margin (:B Pm) D (:K 0))
+          (input (:P *Q) (:Col *C2))
+          (margin (:B Q) D (:K 0)))
+         ((= C1 C2))))
+
+  (RULE &wall_pair
+    (&edge_color *D *C)
+    (opposite D (:Opp *D2))
+    (&edge_color (:D D2) (:C *C2))
+    (!= C C2))
+
+  (RULE &wall_axis
+    (&wall_pair *D)
+    (axis_of D *A))
+
+  (RULE &wall
+    (&wall_axis *A)
+    (axis_of *D A)
+    (&wall_pair D *C))
+
+  (RULE &wall_cell
+    (&wall *D)
+    (input *P)
+    (margin (:B P) D (:K 0)))
+
+  (RULE &fall_blocked
+    (&wall *D (:C *Key))
+    (&wall_cell D *P))
+
+  (RULE &field
+    (&wall *D)
+    (opposite D (:Opp *D2))
+    (&wall (:D D2))
+    (input *P)
+    (NOT (margin (:B P) D (:K 0)))
+    (NOT (margin (:B P) (:D D2) (:K 0))))
+
+  (INIT &shapes Connectivity
+    (key ((&wall ^C))
+      (node (P)
+        (&field *P)
+        (input P (:Col C))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  ;; Each shape slides toward the wall of its color and stops against that wall
+  ;; or a shape of its color already at rest.
+  (INIT &fall Distance
+    (key ((OR ((&shapes.component (:key ^C) *P *Id)
+               (&wall *D C)
+               (margin (:B P) D *K))
+              ((&shapes.component (:key C) P Id)
+               (&wall D C)
+               (&fall_blocked (:Key C) (:P *Q))
+               (gap D P Q K))
+              ((&shapes.component (:key C) P Id)
+               (&wall D C)
+               (&shapes.component (:key C) (:P *P2) (:Id *Id2))
+               (!= Id Id2)
+               (gap D P (:Q P2) K))))
+      (weight ((:a Id2) (:b Id) (:W K))
+        (&shapes.component (:key C) *P *Id)
+        (&wall *D C)
+        (&shapes.component (:key C) (:P *P2) (:Id *Id2))
+        (!= Id Id2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n Id) K)
+        (OR ((&shapes.component (:key C) *P *Id)
+             (&wall *D C)
+             (margin (:B P) D *K))
+            ((&shapes.component (:key C) (:P *P2) Id)
+             (&wall (:D *D2) C)
+             (&fall_blocked (:Key C) (:P *Q))
+             (gap (:D D2) (:P P2) Q K))))))
+
+  (RULE &fall_travel_full
+    (&fall.distance (:key (:C *V0)) (:n *V1) *K)
+    (&wall (:C V0) *D)
+    (jump_offset D K (:V *V2)))
+
+  (DET &field_color
+    (&wall_pair *E *D)
+    (opposite D (:Opp *D2))
+    (ex_input E *P (:Col *C))
+    (NOT (margin (:B P) D (:K 0)))
+    (NOT (margin (:B P) (:D D2) (:K 0)))
+    (NOT (&wall_pair E C)))
+
+  (DET &absent
+    (&field_color *C)
+    (ex_input *E)
+    (NOT (&field_color E C)))
+
+  (DET_OR_RULE &background DominantColor
+    (&field_color *C)
+    (NOT (&absent C)))
+
+  (RULE &landed
+    (&fall_travel_full (:V0 *C) (:V1 *Id) (:V2 *V))
+    (&shapes.component (:key C) (:P *P2) Id)
+    (compose (:A P2) (:B V) (:C *P))))
+
+(ALTS $choice "what a cell does whose color is neither the background nor a wall color" $Erase
+  (ALT $StrayStays
+    (OUTPUT keep-rest "a cell of a color that is neither the background nor a wall color keeps its place and its color, and a body that lands on it covers it."
+      (RULE &stray
+        (&field *P)
+        (input P (:Col *C))
+        (NOT (&background C))
+        (NOT (&wall C))))
+    (RULE &output
+      (OR ((&field *P)
+           (NOT (&landed P))
+           (IF ((&stray P))
+               ((input P *Col))
+               ((&background (:C Col)))))
+          ((&wall_cell *D P)
+           (&wall D (:C Col)))
+          ((&landed (:C Col) P))))
+    (ALTS $blocking "whether a kept stray cell stops a body" $PassOver
+      (ALT $StrayBlocks
+        (OUTPUT stack "a kept stray cell also stops a body."
+          (RULE &fall_blocked
+            (OR ((&wall (:C *Key))
+                 (&stray *P))
+                ((&wall *D (:C Key))
+                 (&wall_cell D P)))))))))
+
+(RULE &output
+  (OR ((&wall_cell *D *P)
+       (&wall D (:C *Col)))
+      ((&landed (:C Col) P))
+      ((&field P)
+       (NOT (&landed P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

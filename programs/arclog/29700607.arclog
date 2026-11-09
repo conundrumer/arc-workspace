@@ -1,0 +1,113 @@
+;; inputs 8b614225ece0057e72e5e99dc5e585b668c098f35911091790c0a67ffbeb0125 programs/solvers/29700607.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 29700607
+
+;; The edge the headers sit on.
+(DET &head_dir DirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &header
+  (&ink *P *Col)
+  (&head_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &marker
+  (&ink *P *Col)
+  (NOT (&header P)))
+
+(RULE &elbow
+  (&header (:P *H) *Col)
+  (&marker (:P *M) Col)
+  (&head_dir *D)
+  (axis_of D *A)
+  (split (:P M) A *Along)
+  (split (:P H) A *Across)
+  (compose (:A Along) (:B Across) (:C *P)))
+
+(RULE &path_mark
+  (OR ((&header *P (:Col *Key)))
+      ((&elbow P (:Col Key)))
+      ((&marker P (:Col Key)))))
+
+(INIT &path_frame Frame
+  (key ((&path_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&path_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+;; Each leg spans two of the wire's three points: header to elbow along the
+;; head axis, elbow to marker across it.
+(INIT &path Ray
+  (key ((OR ((&path_mark (:Key ^Ky) *P))
+            ((&header (:Col Ky))
+             (axis_elem *A)
+             (axis4_of *D A))
+            ((&path_frame.cell (:key Ky) P))))
+    (source (P)
+      (&path_mark (:Key Ky) *P))
+    (node (P)
+      (&path_frame.cell (:key Ky) *P))
+    (dir (D)
+      (&header (:Col Ky))
+      (axis_elem *A)
+      (axis4_of *D A))))
+
+(RULE &path_between
+  (&header (:Col *Key))
+  (input *P)
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&path.ray (:key (:Ky Key)) P D)
+  (&path.ray (:key (:Ky Key)) P (:D O)))
+
+(RULE &path_cell
+  (&header (:Col *Key))
+  (input *P))
+
+(RULE &wire
+  (OR ((&path_between (:Key *Col) *P))
+      ((&header (:P *H) Col)
+       (NOT (&elbow Col))
+       (&head_dir (:D *D_head))
+       (opposite (:D D_head) (:Opp *D))
+       (&path.ray (:key (:Ky Col)) P D (:Origin H))
+       (&path_cell (:Key Col) P))))
+
+(ALTS $choice "where the turned leg ends" $AtMarker
+  (ALT $ToEdge
+    (RULE &side
+      (&elbow (:P *E) *Col)
+      (&marker (:P *M) Col)
+      (&head_dir (:D *D_head))
+      (perp_dir (:D D_head) (:D2 *D))
+      (&path.ray (:key (:Ky Col)) (:P M) D (:Origin E))
+      (&path_cell (:Key Col) (:P M)))
+
+    (RULE &wire
+      ;; every marker sits on a frame edge, so this rule agrees with $AtMarker on every pair
+      (OR ((&elbow (:P *E) *Col)
+           (&side Col *D)
+           (&path.ray (:key (:Ky Col)) *P D (:Origin E))
+           (&path_cell (:Key Col) P))
+          ((&path_between (:Key Col) P))
+          ((&header (:P *H) Col)
+           (NOT (&elbow Col))
+           (&head_dir (:D *D_head))
+           (opposite (:D D_head) (:Opp *D2))
+           (&path.ray (:key (:Ky Col)) P (:D D2) (:Origin H))
+           (&path_cell (:Key Col) P))))))
+
+(RULE &output
+  (OR ((&wire *Col *P))
+      ((input P)
+       (NOT (&wire P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,160 @@
+;; inputs 4f23efb75bc4ca0f3df9ee91990269d2223776e10664ebb33a9500a25d4ecb3a programs/solvers/f83cb3f6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f83cb3f6
+
+(param &background Color (0))
+(param &wall_color Color (8))
+
+(alts $w
+  (alt $WallByLine
+    (witness wall-recolored variant $WallByLine
+      (relaxed one-wall)
+      (separates "the wall is drawn in a color other than the stored wall color: the stored wall color finds no wall and is undefined; finding the wall as the one color that lies on one line pulls the dots to it")
+      (input (grid
+        (5 0 0 4 0 0 0)
+        (0 0 0 4 0 5 0)
+        (0 5 0 4 0 0 0)
+        (0 0 0 4 0 5 0)
+        (0 0 0 4 0 0 5)
+        (0 5 0 0 0 0 0)
+        (5 0 0 4 5 0 0)))
+      (output ($WallColor &wall_color=$Stored) undefined)
+      (output $WallByLine &wall_color=$Derived (grid
+        (0 0 5 4 0 0 0)
+        (0 0 0 4 5 0 0)
+        (0 0 5 4 0 0 0)
+        (0 0 0 4 5 0 0)
+        (0 0 0 4 5 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 5 4 5 0 0))))))
+
+(alts $p
+  (alt $FarthestDot
+    (witness two-dot-colors borderline concept
+      (relaxed dots)
+      (separates "one column holds dots of two colors on one side of the wall: the nearest dot gives the color of the cell against the wall, or the farthest does")
+      (input (grid
+        (0 2 0 0 0 0 0)
+        (0 0 0 0 5 0 0)
+        (0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (8 8 8 8 8 8 8)
+        (0 0 0 0 0 5 0)
+        (0 0 5 0 0 0 0)))
+      (output ($NearestDot &wall_color=$Stored) (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 5 0 0 5 0 0)
+        (8 8 8 8 8 8 8)
+        (0 0 5 0 0 5 0)
+        (0 0 0 0 0 0 0)))
+      (output $FarthestDot (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 5 0 0)
+        (8 8 8 8 8 8 8)
+        (0 0 5 0 0 5 0)
+        (0 0 0 0 0 0 0)))
+      (output &wall_color=$Derived undefined))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed dots)
+      (separates "`background=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 5 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 5 1 1 1 1 5 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 5)
+        (1 1 1 1 1 5 1 1 1 1)
+        (5 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 5)
+        (8 8 8 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 5 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 5 1 1 1 1 1 1)
+        (1 1 1 1 1 1 5 1 1 1)
+        (5 1 1 1 1 1 1 5 1 1)
+        (1 5 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)))
+      (output ($NearestDot &background=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 1 1 5)
+        (8 8 8 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $FarthestDot (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (1 1 5 1 1 1 1 1 1 1)
+        (8 8 8 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output &background=$Derived (grid
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (5 5 5 1 1 5 5 1 1 5)
+        (8 8 8 8 8 8 8 8 8 8)
+        (5 5 5 5 1 1 5 5 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1))))))
+
+(alts &wall_color
+  (alt &wall_color=$Derived
+    (witness wall_color=RarestColor ordinary concept
+      (separates "the wall has more cells than there are dots: the stored wall color finds the wall and pulls the dots to it; the rarest color is the dot color, which forms no line, so the derived wall color leaves the model undefined")
+      (input (grid
+        (0 5 0 0 0 0 0)
+        (0 0 0 0 5 0 0)
+        (0 0 0 0 0 0 0)
+        (8 8 8 8 8 8 8)
+        (0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0)
+        (0 0 0 0 0 5 0)))
+      (output &wall_color=$Stored (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 5 0 0 5 0 0)
+        (8 8 8 8 8 8 8)
+        (0 0 5 0 0 5 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output &wall_color=$Derived undefined))))

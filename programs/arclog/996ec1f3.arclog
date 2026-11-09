@@ -1,0 +1,104 @@
+;; inputs 57ad5c783311e5127818f2df5397f4a5d47f3e3d609b91b1b016d1328f7acc0d programs/solvers/996ec1f3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 996ec1f3
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A uniform line spans the grid, so it divides panels rather than sit in one.
+(INIT &panels_rank Order
+  (key ((OR ((&line_color.value (:key *A *L))
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&line_color.value (:key *A *L))
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &gap TileDim)
+
+(INIT &panel_pos_tiling Tiling
+  (outer ((:P T))
+    (&panels_tile_of (:P_tile *T)))
+  (inner (P)
+    (= *P 0))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:D *G))))
+
+(INIT &cut Singleton
+  (member ((:v Col))
+    (&line_color.value (:v *Col))))
+
+(INIT &border Boundary
+  (key ((&panels_tile_of *P (:P_tile ^T)))
+    (cell (P)
+      (&panels_tile_of *P (:P_tile T)))))
+
+(INIT &fill Singleton
+  (key ((&panels_tile_of *P (:P_tile ^T))
+        (NOT (&border.boundary (:key T) P))
+        (input P *Col))
+    (member ((:v Col))
+      (&panels_tile_of *P (:P_tile T))
+      (NOT (&border.boundary (:key T) P))
+      (input P *Col))))
+
+(RULE &panel_pos
+  (&panel_pos_tiling.cell (:P_outer *P_tile) (:P_inner 0) (:P *P_grid_out)))
+
+(INIT &schematic Frame
+  (extent (A N)
+    (&panel_pos (:P_grid_out *P))
+    (frame_extent P *A *N)))
+
+(RULE &output
+  (&schematic.cell *P)
+  (OR ((&panel_pos (:P_tile *T) (:P_grid_out P))
+       (&fill.value (:key T) (:v *Col)))
+      ((NOT (&panel_pos (:P_grid_out P)))
+       (&cut.value (:v Col)))))
+
+(OUT (&output ^P ^Col))

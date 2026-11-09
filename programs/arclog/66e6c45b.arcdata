@@ -1,0 +1,17 @@
+;; inputs f3a7a43294f3bc26c7bd7aa93eb6a4e3952de95f1c92166ec3bf2650ae6ba4a6 programs/solvers/66e6c45b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 66e6c45b
+
+(param &bg Color (0))
+(param &in_label (Position Ident)
+  (grid
+    (_ _ _ _)
+    (_ 1 2 _)
+    (_ 3 4 _)
+    (_ _ _ _)))
+(param &out_label (Position Ident)
+  (grid
+    (1 _ _ 2)
+    (_ _ _ _)
+    (_ _ _ _)
+    (3 _ _ 4)))

@@ -1,0 +1,8 @@
+;; inputs bc46e60fbd3243b938671277c37049f98ad4b10942ff8981dc3d06774b28a025 programs/solvers/84ba50d3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 84ba50d3
+
+(param &bg Color (8))
+(param &shape Color (1))
+(param &divider Color (2))
+(param &fall_dir Dir (DIR_B))

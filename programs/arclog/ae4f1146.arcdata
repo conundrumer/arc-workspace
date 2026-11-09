@@ -1,0 +1,7 @@
+;; inputs bc785e55b0b5454f4d15ee4d6e207f0e6af2eb9f946e5f65c38e04d0c7e3bef8 programs/solvers/ae4f1146.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ae4f1146
+
+(param &bg Color (0))
+(param &mark Color (1))
+(param &dim number (3))

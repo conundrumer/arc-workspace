@@ -1,0 +1,147 @@
+;; inputs 782abd7288122275a15c31ac19a444250f070bc174dd58202158339291a18f34 programs/solvers/b9b7f026.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b9b7f026
+
+(INPUT rectangles "each input holds several axis-aligned rectangles on a field of &bg, each of its own color; two rectangles may touch."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &color_ids Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col)))
+
+  (INIT &comps8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT one-holed "exactly one rectangle has a hole: a region of bg cells inside it that no walk through bg cells reaches from the frame edge."
+
+  (RULE &bg_cell
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (INIT &comps Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &member
+    (&comps.component (:key *Col) *P *Id))
+
+  (INIT &flood8 Flood
+    (node (P)
+      (&bg_cell *P))
+    (source (P)
+      (&bg_cell *P)
+      (margin (:B P) *D (:K 0)))
+    (step ((:Delta V))
+      (OR ((step_offset *D *V))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) V)))))
+
+  (RULE &outside
+    (&member *Id)
+    (input *P)
+    (NOT (&member Id P)))
+
+  (INIT &own8 Flood
+    (key ((&outside ^Id *P))
+      (node (P)
+        (&outside Id *P))
+      (source (P)
+        (&outside Id *P)
+        (margin (:B P) *D (:K 0))))
+    (step ((:Delta V))
+      (OR ((step_offset *D *V))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) V))))))
+
+(OUTPUT holed-color "the output is a 1×1 grid whose cell is the color of the rectangle that encloses the hole."
+
+  (INIT &box BoundingBox
+    (key ((&member ^Id *P))
+      (cell (P)
+        (&member Id *P))))
+
+  (INIT &hole Enclosure
+    (cell (P)
+      (&bg_cell *P)))
+
+  (RULE &closed
+    (&hole.enclosed *P))
+
+  (INIT &own Enclosure
+    (key ((&outside ^Id *P))
+      (cell (P)
+        (&outside Id *P))))
+
+  (RULE &encloses
+    (&own.enclosed (:key *Id))))
+
+(ALTS $pick "which rectangle the output takes its color from" $Closure
+  (ALT $Closure
+    (ALTS $walk "which cells the walk runs through, and how a closed cell picks the rectangle" $BgWalk
+      (ALT $HoleNeighbors
+        (OUTPUT holed-color "the output is the color of the rectangle 4-adjacent to a closed bg cell.")
+        (RULE &picked
+          (&closed (:P *Q))
+          (dir_elem *D)
+          (neighbor (:P Q) D (:Q *P))
+          (&member *Id P *Col)))
+      (ALT $OwnEnclosure
+        (INPUT one-holed "exactly one rectangle closes off some cell from the frame edge, by a walk through the cells outside it.")
+        (RULE &picked
+          (&encloses *Id)
+          (&member Id *Col))))
+    (ALTS $adj "the adjacency of the walk" $Walk4
+      (ALT $Walk8
+        (INPUT one-holed "the walk also steps diagonally."
+          (RULE &closed
+            (&bg_cell *P)
+            (NOT (&flood8.reached P)))
+          (RULE &encloses
+            (&outside *Id *P)
+            (NOT (&own8.reached (:key Id) P)))))))
+  (ALT $NotSolid
+    (INPUT one-holed "exactly one rectangle's box holds a cell that is not one of its own.")
+    (OUTPUT holed-color "the output is the color of the rectangle whose box holds a cell outside it. Undefined where every rectangle fills its box.")
+    (RULE &picked
+      (&box.box (:key *Id) *B)
+      (&outside Id *P)
+      (inside (:A P) B)
+      (&member Id *Col))))
+
+(ALTS $object "what one rectangle is" $Component
+  (ALT $ColorClass
+    (INPUT rectangles "all the cells of one color form one rectangle."
+      (RULE &member
+        (&ink *P *Col)
+        (&color_ids.class (:a Col) *Id))))
+  (ALT $Object8
+    (INPUT rectangles "a rectangle's cells join through diagonal neighbors as well."
+      (RULE &member
+        (&comps8.component (:key *Col) *P *Id)))))
+
+(DET &out_dim ConstOutDimAxis)
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (&out_dim *A *N)))
+
+(RULE &picked
+  (&closed *P)
+  (&box.box (:key *Id) *B)
+  (inside (:A P) B)
+  (&member Id *Col))
+
+(OUT (&out_pos_frame.cell ^P) (&picked ^Col))

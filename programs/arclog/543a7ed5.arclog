@@ -1,0 +1,86 @@
+;; inputs 41a4ab922ca19a1257f71b3cf3bbc7408d207fdaad752e5f8ca3fdb61c5872a5 programs/solvers/543a7ed5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 543a7ed5
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &outline AnyOutNewColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &shape_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The bg the shapes leave open to the grid edge.
+(INIT &outside Flood
+  (node (P)
+    (&bg_cell *P))
+  (source (P)
+    (&bg_cell *P)
+    (margin (:B P) *D (:K 0))))
+
+;; Each shape and the box that bounds it.
+(INIT &shape Connectivity
+  (node (P)
+    (&shape_cell *P)))
+
+(INIT &shape_box BoundingBox
+  (key ((&shape.component *P ^Id))
+    (cell (P)
+      (&shape.component *P Id))))
+
+(RULE &within
+  (input *P)
+  (&shape_box.box (:key *Id) *B)
+  (inside (:A P) B))
+
+(RULE &fill_cell
+  (&bg_cell *P)
+  (NOT (&outside.reached P)))
+
+(RULE &outline_cell
+  (&outside.reached *P)
+  (&shape_cell (:P *P_shape))
+  (neighbor (:P P_shape) *D (:Q P)))
+
+(ALTS $fill "which bg counts as inside a shape" $Enclosed
+  (ALT $Boxed
+    (RULE &fill_cell
+      (&bg_cell *P)
+      (&within P))))
+
+(ALTS $outline "which bg counts as just outside a shape" $Band
+  (ALT $Ring
+    (DET &ring_width DivisorRatio)
+
+    (RULE &ring_box
+      (&shape_box.box (:key *Id) (:B *B_shape))
+      (&ring_width *K)
+      (uniform_outset K (:B *B_frame))
+      (compose (:A B_frame) (:B B_shape) (:C *B)))
+
+    (RULE &ring
+      (input *P)
+      (&ring_box *Id *B)
+      (inside (:A P) B)
+      (NOT (&within Id P)))
+
+    (RULE &outline_cell
+      (&bg_cell *P)
+      (&ring P))))
+
+(RULE &output
+  (OR ((&fill_cell *P)
+       (&fill (:C *Col)))
+      ((&outline_cell P)
+       (&outline (:C Col)))
+      ((input P Col)
+       (NOT (&fill_cell P))
+       (NOT (&outline_cell P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,76 @@
+;; inputs f99dca0f98198390594663e14da81818ac9ef17530f59fc8ddf37cc710b8cfbf programs/solvers/37ce87bb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 37ce87bb
+
+(DET &base DirDomain)
+
+(DET &add SharedColor)
+
+(DET &sub UnchangedColor)
+
+(DET &result AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+(DET &pitch TileCount)
+
+(RULE &line_of
+  (input *P)
+  (&base *D)
+  (axis_of D *A)
+  (split P A (:Across *P_line)))
+
+(RULE &bar_line
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&line_of P *P_line))
+
+;; The summed height: add cells beyond sub cells.
+(INIT &height Excess
+  (plus ((:m P))
+    (input *P *Col)
+    (&add (:C Col)))
+  (minus ((:m P))
+    (input *P *Col)
+    (&sub (:C Col))))
+
+;; One pitch across from a bar line, on a barless grid line: a candidate
+;; off the grid, and one that lands on a neighbor bar, both drop out.
+(RULE &result_line
+  (&bar_line (:P_line *P_line3))
+  (&base *D)
+  (perp_dir D *D2)
+  (&pitch (:N *K))
+  (jump (:P P_line3) (:D D2) K (:Q *P_line))
+  (&line_of P_line)
+  (NOT (&bar_line P_line)))
+
+(ALTS $choice "where the result line stands" $Next
+  (ALT $Edge
+    (DET &sense SenseDomain)
+
+    (DET &margin DivisorRatio)
+
+    (RULE &result_line
+      (&line_of *P_line)
+      (&base *D)
+      (&sense *S)
+      (turn S D *D2)
+      (&margin *K)
+      (margin (:B P_line) (:D D2) K))))
+
+(RULE &result_cell
+  (&line_of *P *P_line)
+  (&result_line P_line)
+  (&base *D)
+  (margin (:B P) D *K)
+  (&height.excess *N)
+  (< K N))
+
+(RULE &output
+  (OR ((&result_cell *P)
+       (&result (:C *Col)))
+      ((input P Col)
+       (NOT (&result_cell P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,23 @@
+;; inputs a3540c559d0bb06caf6a3a8a2aa3015d5576c5598d4bd458bae17cb1337dbb2a programs/solvers/1b2d62fb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1b2d62fb
+
+(representative f2829549)
+
+(param &frame_dim (Axis number) (AXIS_V 5) (AXIS_H 3))
+(param &arr_dim (Axis number) (AXIS_V 1) (AXIS_H 2))
+(param &gap number (1))
+(param &divide_axis Axis (AXIS_H))
+(param &divide_gap number (1))
+(param &divisor number (2))
+(param &combine (Ident Color Position Color)
+  (0 8 (grid
+    (0 0)))
+  (1 0 (grid
+    (9 0)))
+  (2 0 (grid
+    (0 9)))
+  (3 0 (grid
+    (9 9))))
+(param &bg Color (0))
+(param &out_fill Color (8))

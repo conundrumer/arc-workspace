@@ -1,0 +1,72 @@
+;; inputs e73760912aa52123e3f53acdac0044840f405dbc08c4b6bc31dc28b56cf13ba1 programs/solvers/868de0fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 868de0fa
+
+(DET &ink RarestColor)
+
+(DET &odd_fill AnyOutNewColor)
+
+(DET &even_fill AnyOutNewColor)
+
+(INIT &drect Outlines
+  (node (P)
+    (input *P *Col)
+    (&ink (:C Col))))
+
+(RULE &hole
+  (&drect.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+;; The hole's own box.
+(INIT &rect_hole BoundingBox
+  (key ((&hole ^B *P))
+    (cell (P)
+      (&hole B *P))))
+
+(RULE &rect_odd
+  (&hole *B *P)
+  (&rect_hole.box (:key B) (:B *B_hole))
+  (inside (:A P) (:B B_hole))
+  (relative (:Base B_hole) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(RULE &fill
+  (&hole *B *P)
+  (IF ((&rect_odd B))
+      ((&odd_fill (:C *Col)))
+      ((&even_fill (:C Col)))))
+
+(ALTS $choice "how an outline and its hole are found" $Rect
+  (ALT $Enclose
+    ;; The ink walls the rest of the grid off; a region it closes is a hole.
+    (INIT &closed Enclosure
+      (cell (P)
+        (input *P *Col)
+        (NOT (&ink (:C Col)))))
+
+    ;; The region's own box.
+    (INIT &region_box BoundingBox
+      (key ((&closed.enclosed *P ^Id))
+        (cell (P)
+          (&closed.enclosed *P Id))))
+
+    (RULE &region_odd
+      (&closed.enclosed *P *Id)
+      (&region_box.box (:key Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (centered (:P P_inner)))
+
+    (RULE &fill
+      (&closed.enclosed *P *Id)
+      (IF ((&region_odd Id))
+          ((&odd_fill (:C *Col)))
+          ((&even_fill (:C Col)))))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

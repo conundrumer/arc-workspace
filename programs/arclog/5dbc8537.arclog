@@ -1,0 +1,187 @@
+;; inputs 8ddefd439f157f1e1eabab4787aa27e115851481bea7b64eb0f33eafcbb68aaf programs/solvers/5dbc8537.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5dbc8537
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &inked_line
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col)))
+  (split P *A (:Along *L)))
+
+(RULE &panels_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&inked_line A L)))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&panels_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &panels_rank Order
+  (key ((OR ((&panels_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panels_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panels_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &panel
+  (&panels_tile_of *P (:P_tile *P_panel))
+  (input P *Col))
+
+;; The template is the panel whose ink is all one color.
+(INIT &panel_ink Singleton
+  (key ((&panel (:P_panel ^T) *Col)
+        (NOT (&field.maximal (:t Col))))
+    (member ((:v Col))
+      (&panel (:P_panel T) *Col)
+      (NOT (&field.maximal (:t Col))))))
+
+(RULE &hole
+  (&panel (:P_panel *T) *P *Col)
+  (&panel_ink.value (:key T))
+  (&field.maximal (:t Col)))
+
+(INIT &piece Connectivity
+  (node (P)
+    (&panel (:P_panel *T) *P *Col)
+    (NOT (&panel_ink.value (:key T)))
+    (NOT (&field.maximal (:t Col)))))
+
+(RULE &piece_cell
+  (&piece.component *P (:Id *O))
+  (input P *Col))
+
+;; A piece's pattern, read from its own bbox.
+(INIT &bbox BoundingBox
+  (key ((&piece_cell ^O *P))
+    (cell (P)
+      (&piece_cell O *P))))
+
+(RULE &shape
+  (&piece_cell *O *P *Col)
+  (&bbox.box (:key O) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; Where a piece lands with each of its cells on a hole.
+(INIT &occ Occurrences
+  (key ((OR ((&shape ^O *P_inner))
+            ((&shape O)
+             (&hole *P))))
+    (cell (P)
+      (&shape O)
+      (&hole *P))
+    (shape ((:P P_inner))
+      (&shape O *P_inner))))
+
+(RULE &covers
+  (&occ.occurrence (:key *O) (:P *P_spot))
+  (&shape O *P_inner *Col)
+  (compose (:A P_spot) (:B P_inner) (:C *P)))
+
+(RULE &reading_elem
+  (diag_axis_elem (:Da *Diag))
+  (axis_elem (:A *Axis)))
+
+(INIT &congruent Inclusion
+  (pattern ((:pattern O) (:m P_inner Col))
+    (&shape *O *P_inner *Col))
+  (observed ((:observed O) (:m P_inner Col))
+    (&shape *O *P_inner *Col)))
+
+(RULE &pruning_item
+  (&reading_elem *Diag *Axis)
+  (&occ.occurrence (:key *O) (:P *P_spot)))
+
+;; A candidate stands while the other pieces still find a joint placement
+;; beside it. Overlap conflicts under every reading; each reading adds its
+;; own tie-break among congruent pieces.
+(CHOOSE &pruning
+  (for ((&pruning_item ^Diag ^Axis ^O))
+    (from (&pruning_item Diag Axis O *P_spot)))
+  (never
+    (&pruning_item *Diag *Axis *O *P_spot)
+    (&pruning_item Diag Axis (:O *O2) (:P_spot *P_spot2))
+    (&reading_elem Diag Axis)
+    (&covers O P_spot *P)
+    (&covers (:O O2) (:P_spot P_spot2) P))
+  (never
+    (&pruning_item (:Diag *Da) (:Axis *A) *O *P_spot)
+    (&pruning_item (:Diag Da) (:Axis A) (:O *O2) (:P_spot *P_spot2))
+    (&congruent.equal (:observed O) (:pattern O2))
+    (!= O O2)
+    (&bbox.box (:key O) *B)
+    (&bbox.box (:key (:O O2)) (:B *B2))
+    (diag_axis_of (:D *C) Da)
+    (diag_dirs (:D C) A *D1 *D2)
+    (OR ((nearer (:D D1) (:P B) (:Q B2)))
+        ((same_dist (:D D1) (:P1 B) (:P2 B2))
+         (nearer (:D D2) (:P B) (:Q B2))))
+    (&occ.occurrence (:key O) (:P P_spot))
+    (&occ.occurrence (:key (:O O2)) (:P P_spot2))
+    (OR ((nearer (:D D1) (:P P_spot2) (:Q P_spot)))
+        ((same_dist (:D D1) (:P1 P_spot2) (:P2 P_spot))
+         (nearer (:D D2) (:P P_spot2) (:Q P_spot))))))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&panel (:P_panel *T) *P)
+    (&panel_ink.value (:key T))))
+
+(RULE &output
+  (&view.cell (:P *P2))
+  (&view.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&panel (:P_panel *T) (:P P2) *Col)
+       (&panel_ink.value (:key T) (:v Col)))
+      ((&pruning *O *P_spot)
+       (&covers O P_spot (:P P2) Col))))
+
+(OUT (&output ^P ^Col))

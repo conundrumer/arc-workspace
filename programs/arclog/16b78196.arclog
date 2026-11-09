@@ -1,0 +1,174 @@
+;; inputs a54918e2b98eb1f26ec87642fb53d268ed366b45b880b10b13079a0e98271a96 programs/solvers/16b78196.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 16b78196
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &obj_color
+  (&objs.component (:Id *O) *P)
+  (input P *Col))
+
+(INIT &bbox BoundingBox
+  (key ((&objs.component (:Id ^O) *P))
+    (cell (P)
+      (&objs.component (:Id O) *P))))
+
+(RULE &bar
+  (&bbox.box (:key *O) (:B *B_obj))
+  (dist_pair (:P B_obj) *D (:K 0) (:K2 0))
+  (axis_of D *A))
+
+(RULE &stack_dir
+  (&bar *A)
+  (perp A *A2)
+  (axis_of *D (:A A2)))
+
+(INIT &front Order
+  (key ((&objs.component (:Id ^O) *P)
+        (&stack_dir ^D)
+        (axis_of D (:A *A_stack))
+        (split P (:A A_stack) (:Across ^L))
+        (margin (:B P) D *K))
+    (member ((:t (:V P) (:S K)))
+      (&objs.component (:Id O) *P)
+      (&stack_dir D)
+      (axis_of D (:A *A_stack))
+      (split P (:A A_stack) (:Across L))
+      (margin (:B P) D *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&objs.component (:Id O) *P)
+      (&stack_dir D)
+      (axis_of D (:A *A_stack))
+      (split P (:A A_stack) (:Across L))
+      (margin (:B P) D *K))))
+
+(RULE &seat_offset
+  (opposite *D (:Opp *Dn))
+  (&front.minimal (:key *O (:D Dn)) (:t (:V *N)))
+  (NOT (&bar O))
+  (&front.minimal (:key (:O *Host) D) (:t (:V *P)))
+  (!= O Host)
+  (neighbor P D *Q)
+  (relative (:Base N) (:X Q) (:X_rel *R)))
+
+(RULE &rest
+  (OR ((&seat_offset *Host *O *D *R))
+      ((&seat_offset Host O D (:R *R3))
+       (perp_dir D (:D2 *D_slide))
+       (neighbor (:P R3) (:D D_slide) (:Q R)))))
+
+(RULE &catch
+  (&rest *Host *O *D *R)
+  (opposite D (:Opp *Dn))
+  (&front.minimal (:key O (:D Dn)) (:t (:V *N)))
+  (compose (:A N) (:B R) (:C *Q))
+  (neighbor (:P Q) (:D Dn) (:Q *Q2))
+  (NOT (&objs.component (:Id Host) (:P Q2)))
+  (axis_of D (:A *A_stack))
+  (&front.minimal (:key (:O Host) D) (:t (:V *P_f)))
+  (same_line (:A A_stack) (:P P_f) (:Q Q2)))
+
+(RULE &overhang
+  (&rest *Host *O *D *R)
+  (opposite D (:Opp *Dn))
+  (&front.minimal (:key O (:D Dn)) (:t (:V *N)))
+  (compose (:A N) (:B R) (:C *Q))
+  (axis_of D (:A *A_stack))
+  (split (:P Q) (:A A_stack) (:Across *L))
+  (NOT (&front.minimal (:key (:O Host) D L))))
+
+(RULE &sunk
+  (&rest *Host *O *D *R)
+  (&objs.component (:Id O) *P)
+  (compose (:A P) (:B R) (:C *Q))
+  (&objs.component (:Id Host) (:P Q)))
+
+(RULE &seat_flush
+  (&seat_offset *Host *O *D *R)
+  (NOT (&catch Host O D R))
+  (NOT (&overhang Host O D R))
+  (NOT (&sunk Host O D R)))
+
+(RULE &loose
+  (&seat_flush *Host *O *D *R)
+  (perp_dir D (:D2 *D_slide))
+  (neighbor (:P R) (:D D_slide) (:Q *R2))
+  (NOT (&catch Host O D (:R R2)))
+  (NOT (&sunk Host O D (:R R2))))
+
+(RULE &seat
+  (&seat_flush *Host *O *D *R)
+  (NOT (&loose Host O D R)))
+
+(INIT &on_grid Occurrences
+  (key ((OR ((&objs.component (:Id ^O) *P))
+            ((&objs.component (:Id O))
+             (input (:P *Q)))))
+    (cell ((:P Q))
+      (&objs.component (:Id O))
+      (input (:P *Q)))
+    (shape (P)
+      (&objs.component (:Id O) *P))))
+
+(RULE &seat_step
+  (&on_grid.occurrence (:key (:O *H)) (:P *D_host))
+  (&seat (:Host H) *O *R)
+  (compose (:A D_host) (:B R) (:C *Delta))
+  (&on_grid.occurrence (:key O) (:P Delta)))
+
+;; The bar stays where it is; a piece reaches wherever it can seat on
+;; something already placed, so long as it lands on the grid.
+(INIT &reach Propagation
+  (source ((:n (:O B) Delta))
+    (&bar (:O *B))
+    (= *Delta 0))
+  (edge ((:a (:O H) (:Delta D_host)) (:b O Delta))
+    (&seat_step *H *D_host *O *Delta)))
+
+(RULE &place_cell
+  (&reach.reached (:n *O *Delta))
+  (&objs.component (:Id O) (:P *P2))
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &clash
+  (&place_cell (:O *O1) (:Delta *D1) (:P *Q))
+  (&place_cell (:O *O2) (:Delta *D2) (:P Q))
+  (!= O1 O2))
+
+;; The reach regrown with each placement held.
+(INIT &beside Propagation
+  (key ((&reach.reached (:n (:O ^O_h) (:Delta ^D_h))))
+    (edge ((:a (:O H) (:Delta D_host)) (:b O Delta))
+      (&seat_step *H *D_host *O *Delta)
+      (&reach.reached (:n (:O H) (:Delta D_host)))
+      (&bar (:O *B))
+      (NOT (&clash (:O1 O) (:D1 Delta) (:O2 B) (:D2 0)))
+      (NOT (&clash (:O1 O) (:D1 Delta) (:O2 O_h) (:D2 D_h)))
+      (OR ((!= O O_h))
+          ((= Delta D_h)))))
+  (source ((:n (:O B) Delta))
+    (&bar (:O *B))
+    (= *Delta 0)))
+
+(RULE &refuted
+  (&reach.reached (:n *O *Delta))
+  (&objs.component (:Id *O2))
+  (NOT (&beside.reached (:key (:O_h O) (:D_h Delta)) (:n (:O O2)))))
+
+(RULE &filled
+  (&place_cell *O *Delta *P)
+  (NOT (&refuted O Delta))
+  (&obj_color O *Col))
+
+(RULE &output
+  (OR ((&filled *P *Col))
+      ((input P)
+       (NOT (&filled P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,301 @@
+;; inputs 8b70fc1c08352179ed13ee5c310152b72335024d808f6415e7851a2edfa3cf4f programs/solvers/ac605cbb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac605cbb
+
+(INPUT seed-colors-keyed "each seed's color is a key of the stamp, and no color occurs on more than one seed")
+
+(INPUT stamps-fit "each seed's stamp lies inside the grid")
+
+(INPUT stamps-meet-at-lines "two stamps share no cell other than a cell that is a line cell of both, and no line cell of a stamp lands on a seed")
+
+(OUTPUT keep-input "each input cell keeps its color unless a rule below paints it")
+
+(OUTPUT stamp-path "at each seed, the stamp of the seed's color is drawn from the seed: its line cells in line_color and its end cell in the seed's color")
+
+(OUTPUT cross-cell "a cell that is a line cell of two stamps is cross_color")
+
+(OUTPUT cross-ray "from each crossing cell, the cells toward cross_dir up to the grid edge are cross_color"
+
+  (DET &cross_dir DiagDirDomain)
+
+  (INIT &ground_count Cardinality
+    (key ((ex_input *E *P ^Col))
+      (member ((:m E P))
+        (ex_input *E *P Col))))
+
+  ;; The grids' ground color; the seeds are the exception to it.
+  (INIT &ground Order
+    (member ((:t Col))
+      (&ground_count.size (:key *Col)))
+    (score ((:t Col) (:S Count))
+      (&ground_count.size (:key *Col) (:N *Count))))
+
+  (DET &seed
+    (ex_input *E (:P *S) (:Col *C))
+    (NOT (&ground.maximal (:t C)))
+    (ex_output E))
+
+  (DET &changed
+    (&seed *E *S)
+    (ex_output E *P *Col)
+    (ex_input E P (:Col *Col_in))
+    (!= Col Col_in)
+    (relative (:Base S) (:X P) (:X_rel *V)))
+
+  (DET &stamp_end
+    (&seed *E *S *C)
+    (&changed E S *V (:Col C)))
+
+  (RULE &seed2
+    (input *P (:Col *C))
+    (&stamp_end C))
+
+  (RULE &drawn
+    (&seed2 (:P *S)))
+
+  (DET &line_mark
+    (&seed *E *S *C)
+    (&changed E S *V *Col)
+    (!= Col C))
+
+  (DET &line_defect
+    (&line_mark *V)
+    (&seed *E *S *C)
+    (NOT (&line_mark E S V)))
+
+  (DET &stamp_line
+    (&seed *E *S *C)
+    (&line_mark E S *V)
+    (NOT (&line_defect C V)))
+
+  (RULE &placed_line
+    (&seed2 (:P *S) *C)
+    (&stamp_line C *V)
+    (compose (:A S) (:B V) (:C *P)))
+
+  (RULE &line_cell
+    (&drawn *S)
+    (&placed_line S *P)
+    (input P))
+
+  (RULE &two_lines
+    (&line_cell *P (:S *S1))
+    (&line_cell P (:S *S2))
+    (!= S1 S2))
+
+  (RULE &crossing
+    (&two_lines *P))
+
+  (RULE &ray_dir
+    (&crossing *P)
+    (&cross_dir (:D *Dg)))
+
+  (INIT &cross_ray_frame Frame
+    (key ((&ray_dir *P ^Dg)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&ray_dir *P Dg)
+        (frame_extent P *A *N))))
+
+  (INIT &cross_ray_full Ray
+    (key ((OR ((&ray_dir ^Dg))
+              ((&cross_ray_frame.cell (:key Dg) *P))))
+      (source (P)
+        (&ray_dir *P Dg))
+      (node (P)
+        (&cross_ray_frame.cell (:key Dg) *P))
+      (dir ((:D Dg))
+        (&ray_dir Dg))))
+
+  (DET &line_color OutNewColor)
+
+  (DET &cross_color AnyOutNewColor)
+
+  (RULE &placed_end
+    (&seed2 (:P *S) *C)
+    (&stamp_end C *V)
+    (compose (:A S) (:B V) (:C *P)))
+
+  (RULE &end_cell
+    (&drawn *S)
+    (&placed_end S *P *C)
+    (input P))
+
+  (RULE &occupied
+    (OR ((&seed2 *P))
+        ((&line_cell P))
+        ((&end_cell P))))
+
+  (RULE &line_hidden
+    (&crossing *P))
+
+  (RULE &stamp_paint
+    (OR ((&crossing *P)
+         (&cross_color (:C *Col)))
+        ((&line_cell P)
+         (NOT (&line_hidden P))
+         (&line_color (:C Col)))
+        ((&end_cell P (:C Col)))))
+
+  (RULE &cross_ray_blocked
+    (&ray_dir (:Dg *Key))
+    (&occupied *P))
+
+  (INIT &cross_ray Ray
+    (key ((OR ((&ray_dir ^Dg))
+              ((&cross_ray_frame.cell (:key Dg) *P)
+               (NOT (&cross_ray_blocked (:Key Dg) P)))))
+      (source (P)
+        (&ray_dir *P Dg))
+      (node (P)
+        (&cross_ray_frame.cell (:key Dg) *P)
+        (NOT (&cross_ray_blocked (:Key Dg) P)))
+      (dir ((:D Dg))
+        (&ray_dir Dg))))
+
+  (RULE &cross_ray_cell
+    (&ray_dir (:Dg *Key))
+    (input)))
+
+(ALTS $ink "what the ray does at a cell that a seed or a stamp occupies" $RayPaintsInk
+  (ALT $RayUnderInk
+    (OUTPUT cross-ray "the ray goes on to the grid edge and paints only the cells that no seed or stamp occupies")
+    (RULE &ray_paint
+      (&cross_ray_full.ray *P *K)
+      (&cross_ray_cell)
+      (input P)
+      (!= K 0)
+      (NOT (&occupied P))))
+  (ALT $RayStopsAtInk
+    (OUTPUT cross-ray "the ray ends before the first cell that a seed or a stamp occupies")
+    (RULE &ray_paint
+      (&cross_ray.ray *P *K)
+      (&cross_ray_cell)
+      (input P)
+      (!= K 0))))
+
+(ALTS $heading "the diagonal direction of the ray from a crossing" $RayStoredDir
+  (ALT $RayAlongHorizontalLine
+    (OUTPUT cross-ray "on the axis across ray_fixed_dir, the ray takes the step direction of the stamp line that runs along that axis through the crossing, and on the other axis it takes ray_fixed_dir; undefined where no stamp, or two stamps, run along that axis through a crossing"
+      ;; The ray's direction on the axis that no crossing stamp sets.
+      (DET &ray_fixed_dir DirDomain)
+
+      (RULE &runs
+        (&line_cell *P *S)
+        (opposite *D (:Opp *D_back))
+        (nearer (:D D_back) (:P S) (:Q P))
+        (neighbor P (:D D_back) *Q)
+        (OR ((= Q S))
+            ((&placed_line S (:P Q)))))
+
+      (RULE &follow_run
+        (&runs *S *P *D)
+        (axis_of D *A)
+        (&ray_fixed_dir (:D *D_fixed))
+        (axis_of (:D D_fixed) (:A *A_fixed))
+        (perp (:A A_fixed) (:A2 A)))
+
+      (RULE &two_follow_runs
+        (&follow_run (:S *S1) *P)
+        (&follow_run (:S *S2) P)
+        (!= S1 S2))
+
+      (RULE &ray_dir
+        (&crossing *P)
+        (&follow_run P *D)
+        (NOT (&two_follow_runs P))
+        (&ray_fixed_dir (:D *D_fixed))
+        (diag_dirs (:D *Dg) *A (:D1 D) (:D2 D_fixed)))
+
+      (RULE &heading_void
+        (&crossing *P)
+        (OR ((NOT (&follow_run P)))
+            ((&two_follow_runs P)))))
+    (RULE &live
+      (NOT (&heading_void)))))
+
+(ALTS $end "what a cell gets where one stamp's end cell meets another stamp's line cell" $EndLineClash
+  (ALT $EndOverLine
+    (OUTPUT end-over-line "where a stamp's end cell meets another stamp's line cell, the end cell's color shows and the cell is no crossing"
+      (RULE &crossing
+        (&two_lines *P)
+        (NOT (&end_cell P)))
+
+      (RULE &line_hidden
+        (OR ((&end_cell *P))
+            ((&crossing P))))))
+  (ALT $LineOverEnd
+    (OUTPUT line-over-end "where a stamp's end cell meets another stamp's line cell, line_color shows, and the cell is a crossing only where it is a line cell of two stamps"
+      (RULE &end_hidden
+        (&end_cell *P)
+        (&line_cell P))
+
+      (RULE &stamp_paint
+        (OR ((&crossing *P)
+             (&cross_color (:C *Col)))
+            ((&line_cell P)
+             (NOT (&line_hidden P))
+             (&line_color (:C Col)))
+            ((&end_cell P (:C Col))
+             (NOT (&end_hidden P)))))))
+  (ALT $CrossAtEndCell
+    (OUTPUT cross-cell "a cell that two stamps reach, at a line cell or at the end cell, is cross_color and casts the ray"
+      (RULE &crossing
+        (OR ((&line_cell *P (:S *S1)))
+            ((&end_cell P (:S S1))))
+        (OR ((&line_cell P (:S *S2)))
+            ((&end_cell P (:S S2))))
+        (!= S1 S2))
+
+      (RULE &end_hidden
+        (&crossing *P)
+        (&end_cell P))
+
+      (RULE &stamp_paint
+        (OR ((&crossing *P)
+             (&cross_color (:C *Col)))
+            ((&line_cell P)
+             (NOT (&line_hidden P))
+             (&line_color (:C Col)))
+            ((&end_cell P (:C Col))
+             (NOT (&end_hidden P))))))))
+
+(ALTS $seed "what a seed's cell gets where another stamp's cell lands on it" $StampOverSeed
+  (ALT $SeedOverStamp
+    (OUTPUT keep-input "a seed keeps its color over any stamp")
+    (RULE &covered
+      (&stamp_paint *P)
+      (NOT (&seed2 P)))))
+
+(ALTS $grid "what is drawn of a stamp that reaches past the grid edge" $ClipStampToGrid
+  (ALT $DropStampOffGrid
+    (OUTPUT stamp-path "a stamp whose end cell lies outside the grid is not drawn"
+      (RULE &drawn
+        (&placed_end *S *P)
+        (input P)))))
+
+(RULE &covered
+  (&stamp_paint *P))
+
+(RULE &live)
+
+(RULE &ray_paint
+  (&cross_ray_full.ray *P *K)
+  (&cross_ray_cell)
+  (input P)
+  (!= K 0))
+
+(RULE &output
+  (OR ((&live)
+       (&ray_paint *P)
+       (&cross_color (:C *Col)))
+      ((&live)
+       (&covered P)
+       (NOT (&ray_paint P))
+       (&stamp_paint P Col))
+      ((&live)
+       (input P Col)
+       (NOT (&ray_paint P))
+       (NOT (&covered P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,93 @@
+;; inputs d556b4b5104b74ccc75176c9d666186981e55fb3ec6a152d4fbe6ebb9911d3c1 programs/solvers/3eda0437.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3eda0437
+
+(DET &bg SharedColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &hole
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &span BoundingBox
+  (key ((&hole ^P)
+        (&hole (:P ^Q)))
+    (cell ((:P P2))
+      (OR ((= *P2 P))
+          ((= P2 Q))))))
+
+(RULE &box_ink
+  (&span.box *B)
+  (input *P)
+  (NOT (&hole P))
+  (inside (:A P) B))
+
+(RULE &hole_box
+  (&span.box *B)
+  (NOT (&box_ink B)))
+
+(RULE &hole_cell
+  (&hole_box *B)
+  (&hole *P)
+  (inside (:A P) B))
+
+(RULE &region
+  (&hole_cell *B *P)
+  (diag_dir_elem *D)
+  (neighbor P D *Q)
+  (&hole_cell B (:P Q)))
+
+(INIT &size Cardinality
+  (key ((&region ^B)
+        (&hole_cell B *P))
+    (member ((:m P))
+      (&region B)
+      (&hole_cell B *P))))
+
+(RULE &score
+  (&size.size (:key *B) *N))
+
+(ALTS $choice "the score that ranks hole boxes" $Area
+  (ALT $Block
+    ;; The block's side.
+    (DET &block TileCount)
+
+    (RULE &square
+      (&block (:N *K))
+      (&hole_box *B)
+      (&span.box (:key *P) B)
+      (perp *A *A2)
+      (box_extent B P A (:N K))
+      (box_extent B P (:A A2) (:N K)))
+
+    ;; How many such squares a box holds.
+    (INIT &seat Cardinality
+      (key ((&hole_box ^B)
+            (&square (:B *B_sq))
+            (inside (:A B_sq) B))
+        (member ((:m B_sq))
+          (&hole_box B)
+          (&square (:B *B_sq))
+          (inside (:A B_sq) B))))
+
+    (RULE &score
+      (&seat.size (:key *B) *N))))
+
+(INIT &best Order
+  (member ((:t (:V B) (:S N)))
+    (&score *B *N))
+  (score ((:t (:V B) (:S N)) (:S N))
+    (&score *B *N)))
+
+(RULE &filled
+  (&best.maximal (:t (:V *B)))
+  (&hole_cell B *P))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

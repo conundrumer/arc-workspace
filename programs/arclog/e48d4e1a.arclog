@@ -1,0 +1,206 @@
+;; inputs 54837a1b22507dbbd834bce39ef8fa01588ba22176a035789059c45f3aec07d3 programs/solvers/e48d4e1a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e48d4e1a
+
+(INPUT full-cross "one row and one column of one color, each running edge to edge, cross on a &bg field"
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest colors of each input.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &rare
+    (&common.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&common.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&rare (:Col C)))))
+
+(INPUT mark-stack "cells of &mark_color stand in a run down the right edge from its top-right corner, and no other cell has that color"
+
+  (DET &gone
+    (ex_input *E *Col)
+    (ex_output E)
+    (NOT (ex_output E Col)))
+
+  (DET &kept
+    (&gone *Col)
+    (ex_output *E)
+    (NOT (&gone E Col)))
+
+  (DET_OR_RULE &mark_color RarestColor
+    (&gone (:Col *C))
+    (NOT (&kept (:Col C)))))
+
+(OUTPUT count-marks "the shift is the number of &mark_color cells"
+
+  (RULE &mark2
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  (DET &mark
+    (ex_input *E *P *Col)
+    (&mark_color (:C Col)))
+
+  (DET &mark_corner
+    (&mark *P)
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  (DET &off_edge
+    (&mark *P)
+    (dir_elem *D)
+    (NOT (margin (:B P) D (:K 0))))
+
+  (DET &mark_edge
+    (&mark *P)
+    (margin (:B P) *D (:K 0))
+    (NOT (&off_edge D)))
+
+  (INIT &run Flood
+    (node (P)
+      (&mark2 *P)
+      (&mark_edge *D)
+      (margin (:B P) D (:K 0)))
+    (source (P)
+      (input *P)
+      (&mark_corner *D)
+      (inside (:A P) (:B 0))
+      (same_corner D (:P1 P) (:P2 0)))))
+
+(OUTPUT shift-cross "the cross's row moves shift cells toward one edge of &shift_dir, and its column moves shift cells toward the other edge, and each line still runs edge to edge; a moved line that passes the frame edge is dropped, and the output keeps the other line"
+
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (INIT &line_color2 Singleton
+    (key ((ex_output (:E ^Ky) *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (ex_output (:E Ky) *P *Col)
+        (split P A (:Along L)))))
+
+  (DET &cross_line2
+    (&line_color2.value (:key (:Ky *E) *A *L) (:v *Col))
+    (NOT (&bg (:C Col))))
+
+  (RULE &cross_line
+    (&line_color.value (:key *A *L) (:v *Col))
+    (NOT (&bg (:C Col))))
+
+  ;; The marks the shift counts.
+  (INIT &marks Cardinality
+    (member ((:m P))
+      (&mark2 *P))
+    (domain ()))
+
+  (DET &toward
+    (&cross_line *E *A *L *Col)
+    (&cross_line2 E A (:L *L2) Col)
+    (axis_of *D A)
+    (nearer D (:P L2) (:Q L)))
+
+  (DET &shift_dir
+    (&toward *E *A (:D *D1))
+    (&toward E (:A *A2) (:D *D2))
+    (!= A A2)
+    (diag_dirs *D A D1 D2))
+
+  (RULE &heading
+    (&shift_dir *D))
+
+  (RULE &shift
+    (&heading (:D *D_corner))
+    (corner_dir (:C D_corner) *A *D)
+    (&marks.size *N))
+
+  (RULE &line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  ;; The lines of each axis in a cycle toward D: one step toward D, and from
+  ;; the line on edge D to the line on the opposite edge.
+  (INIT &wrap Walk
+    (key ((OR ((&line *A *L)
+               (axis_of ^D A)
+               (OR ((neighbor (:P L) D (:Q *L2))
+                    (&line A (:L L2)))
+                   ((margin (:B L) D (:K 0))
+                    (opposite D (:Opp *D_opp))
+                    (&line A (:L L2))
+                    (margin (:B L2) (:D D_opp) (:K 0)))))
+              ((&shift D *N))))
+      (successor ((:p L) (:p_next L2))
+        (&line *A *L)
+        (axis_of D A)
+        (OR ((neighbor (:P L) D (:Q *L2))
+             (&line A (:L L2)))
+            ((margin (:B L) D (:K 0))
+             (opposite D (:Opp *D_opp))
+             (&line A (:L L2))
+             (margin (:B L2) (:D D_opp) (:K 0)))))
+      (steps (N)
+        (&shift D *N)))))
+
+(OUTPUT erase-marks "every cell off the moved lines is &bg")
+
+(ALTS $h "which corner the cross moves toward" $FixedCorner
+  (ALT $ShiftFromMarkCorner
+    (OUTPUT shift-cross "the cross moves toward the corner diagonally opposite the corner that holds a &mark_color cell; undefined where no corner, or more than one corner, holds one"
+      (RULE &heading
+        (&mark2 *P)
+        (inside (:A P) (:B 0))
+        (same_corner (:D *D_mark) (:P1 P) (:P2 0))
+        (diag_opposite (:D D_mark) (:Opp *D))))))
+
+(ALTS $c "which marks the shift counts" $CountAll
+  (ALT $CountMarkRun
+    (OUTPUT count-marks "the shift is the length of the unbroken run of &mark_color cells down &mark_edge from &mark_corner"
+      ;; The marks the shift counts.
+      (INIT &marks Cardinality
+        (member ((:m P))
+          (&run.reached *P))
+        (domain ())))))
+
+(ALTS $e "what happens to a moved line that passes the frame edge" $DropPastEdge
+  (ALT $WrapShift
+    (OUTPUT shift-cross "a moved line that passes an edge comes back at the opposite edge")
+    (RULE &moved
+      (&cross_line *A (:L *L3) *Col)
+      (&shift A *D *N)
+      (&wrap.walk (:key D) (:p0 L3) N (:p *L)))))
+
+(RULE &moved
+  (&cross_line *A (:L *L3) *Col)
+  (&shift A *D *N)
+  (jump (:P L3) D (:K N) (:Q *L)))
+
+(RULE &paint
+  (&moved *A *L *Col)
+  (input *P)
+  (split P A (:Along L)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&moved)
+       (input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

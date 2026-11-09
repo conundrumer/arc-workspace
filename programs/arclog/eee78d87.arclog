@@ -1,0 +1,374 @@
+;; inputs fb8b5d0304f3b5746f5320fd79a5f5c54b296b2e60ba7841d5361ce4e3fed7af programs/solvers/eee78d87.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; eee78d87
+
+(INPUT field "every input is a 6×6 grid of one background color")
+
+(INPUT one-shape "the cells off the background all share one other color and together fit a box of 3×3 cells, touching all four sides of it; the cells need not be connected")
+
+(OUTPUT canvas "the output is a &canvas_size × &canvas_size grid"
+
+  (DET &out_extent
+    (ex_output *E *P)
+    (frame_extent P *A *N))
+
+  (DET &out_extent_missing
+    (&out_extent *N)
+    (ex_output *E)
+    (NOT (&out_extent E N)))
+
+  (DET &canvas_size
+    (&out_extent *N)
+    (NOT (&out_extent_missing N))))
+
+(OUTPUT stencil-tiling "the shape's box, whose own extent is the period, repeats across the output edge to edge, the copies laid symmetric about the canvas center, each copy with a center cell; a box cell the shape holds gives &hole_color, and any other box cell gives the input's background color"
+
+  (DET &new_color
+    (ex_output *E *Col)
+    (NOT (ex_input E Col)))
+
+  (DET &edge_color
+    (&new_color *E *Col)
+    (ex_output E *P Col)
+    (margin (:B P) *D (:K 0)))
+
+  (DET &not_hole
+    (&edge_color *Col)
+    (ex_output *E)
+    (NOT (&edge_color E Col)))
+
+  (DET &hole_color
+    (&edge_color (:Col *C))
+    (NOT (&not_hole (:Col C)))))
+
+(OUTPUT center-window "within the centered &window_size × &window_size window of the output, each &hole_color cell becomes &window_color; every other cell there keeps its stencil color"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (DET &window_candidate
+    (&new_color *E *Col)
+    (NOT (&edge_color E Col)))
+
+  (DET &not_window
+    (&window_candidate *Col)
+    (ex_output *E)
+    (NOT (&window_candidate E Col)))
+
+  (DET &window_color
+    (&window_candidate (:Col *C))
+    (NOT (&not_window (:Col C))))
+
+  ;; The box of the window color's cells in each example output.
+  (INIT &window_box BoundingBox
+    (key ((ex_output ^E *P *Col)
+          (&window_color (:C Col)))
+      (cell (P)
+        (ex_output E *P *Col)
+        (&window_color (:C Col)))))
+
+  (DET &extent
+    (&window_box.box (:key *E) *B)
+    (ex_output E *P)
+    (box_extent B P *A *N))
+
+  (DET &extent_missing
+    (&extent *N)
+    (ex_output *E)
+    (NOT (&extent E N)))
+
+  (DET_OR_RULE &window_size TileCount
+    (&extent *N)
+    (NOT (&extent_missing N)))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (NOT (&commonest.maximal (:t Col)))))
+
+  (RULE &stencil_cell
+    (&shape_box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *Q)))
+
+  (RULE &stencil_center
+    (&stencil_cell *Q)
+    (centered (:P Q)))
+
+  (RULE_OR_DET &period "The period: the extent of the shape's box."
+    (&shape_box.box *B)
+    (input *P)
+    (box_extent B P *N))
+
+  ;; One tile of the period's extent.
+  (INIT &tile Frame
+    (extent (A N)
+      (&period *N)
+      (axis_elem *A)))
+
+  (RULE &tile_center
+    (&tile.cell (:P *T))
+    (centered (:P T)))
+
+  (RULE &tile_reads
+    (&tile_center (:T *C_t))
+    (&tile.cell (:P *T))
+    (relative (:Base C_t) (:X T) (:X_rel *V))
+    (&stencil_center (:Q *C_s))
+    (&stencil_cell *Q)
+    (relative (:Base C_s) (:X Q) (:X_rel V)))
+
+  (RULE &cut_stencil
+    (&stencil_cell *Q)
+    (NOT (&tile_reads Q)))
+
+  (INIT &canvas_frame Frame
+    (extent (A N)
+      (&canvas_size *N)
+      (axis_elem *A)))
+
+  (RULE &canvas
+    (&canvas_frame.cell *P))
+
+  (RULE &tile_line
+    (&canvas *P)
+    (opposite *D (:Opp *D2))
+    (&period *N)
+    (&tile.cell (:P *T))
+    (margin (:B T) D *K)
+    (jump P (:D D2) K *Q)
+    (margin (:B Q) D (:K *L))
+    (divide (:T L) (:Side N) (:Gap 0) (:Part *I) (:Remainder *S)))
+
+  (RULE &asymmetric
+    (&tile_line *P *D *K (:S *S1))
+    (axis_of D *A)
+    (opposite D (:Opp *D2))
+    (&tile_line P (:D D2) K (:S *S2))
+    (&tile.cell (:P *T))
+    (dist_pair (:P T) D (:K S1) (:K2 *S3))
+    (!= S3 S2))
+
+  (RULE &phase
+    (&tile_line *D *K)
+    (axis_of D *A)
+    (NOT (&asymmetric A K))
+    (&tile_center)
+    (NOT (&cut_stencil)))
+
+  (RULE &central_copy
+    (&canvas *P)
+    (axis_of *D *A)
+    (axis_inversion A (:T *F))
+    (apply (:D F) P (:P_out *P2))
+    (OR ((= P2 P))
+        ((axis_of (:D *D3) A)
+         (neighbor P (:D D3) (:Q P2))))
+    (&phase A *K)
+    (&tile_line P D K *I))
+
+  (RULE &off_center
+    (&tile_line *P *D *K *I)
+    (axis_of D *A)
+    (&phase A K)
+    (NOT (&central_copy D I)))
+
+  (INIT &central BoundingBox
+    (cell (P)
+      (&canvas *P)
+      (NOT (&off_center P))))
+
+  ;; The box of a canvas cell's images under the canvas's flips.
+  (INIT &mirror_box BoundingBox
+    (key ((&canvas (:P ^C)))
+      (cell (P)
+        (OR ((axis_inversion (:A *A1) (:T *F)) (axis_elem (:A A1))
+             (apply (:D F) (:P C) (:P_out *P)))
+            ((= P C)))))))
+
+(OUTPUT shape-color-dropped "neither the shape's color nor its place in the input reaches the output"
+
+  (RULE &held
+    (&shape_box.box *B)
+    (input *P *Col)
+    (NOT (&commonest.maximal (:t Col)))
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *Q)))
+
+  (RULE &canvas_tile
+    (diag_dirs (:D *Dg) *A *D1 *D2)
+    (perp A *A2)
+    (&phase A (:K *K1))
+    (&tile_line *P (:D D1) (:K K1) (:S *S1))
+    (&phase (:A A2) (:K *K2))
+    (&tile_line P (:D D2) (:K K2) (:S *S2))
+    (&tile.cell (:P *T))
+    (diag_dist (:P T) (:Diag Dg) A (:K1 S1) (:K2 S2)))
+
+  (RULE &canvas_reads
+    (&canvas_tile *P *T)
+    (&tile_reads T *Q))
+
+  (RULE &window_extent
+    (&window_size *N)
+    (axis_elem *A)))
+
+(ALTS $c "how the canvas extent is set" $CanvasStored
+  (ALT $CanvasPerInputCell
+    (OUTPUT canvas "the canvas holds one stencil copy per input cell, with the outer half-copies cropped"
+      (INIT &canvas_tiling Tiling
+        (outer ((:P P_in))
+          (input (:P *P_in)))
+        (inner ((:P Q))
+          (&stencil_cell *Q)))
+
+      ;; One stencil copy per input cell, cropped by the stencil center's distance
+      ;; to the box edge on every side.
+      (RULE &canvas
+        (&canvas_tiling.cell (:P *P_grid))
+        (&stencil_center (:Q *C))
+        (margin (:B C) *D (:K *H))
+        (uniform_inset (:K H) *B)
+        (inside (:A P_grid) B)
+        (relative (:Base B) (:X P_grid) (:X_rel *P)))))
+  (ALT $CanvasGrowsByMargin
+    (OUTPUT canvas "the canvas is the input extended by &canvas_margin past every side"
+      (DET &margin
+        (ex_output *E (:P *Q))
+        (margin (:B Q) *D *K)
+        (uniform_outset K *B)
+        (ex_input E *P)
+        (box_extent B P *A *N)
+        (frame_extent (:P Q) A N))
+
+      (DET &margin_missing
+        (&margin *K)
+        (ex_output *E)
+        (NOT (&margin E K)))
+
+      (DET &canvas_margin
+        (&margin *K)
+        (NOT (&margin_missing K)))
+
+      (INIT &canvas_frame Frame
+        (extent (A N)
+          (&canvas_margin *K)
+          (uniform_outset K *B)
+          (input *P)
+          (box_extent B P *A *N))))))
+
+(ALTS $x "how the window extent is set" $WindowSized
+  (ALT $WindowTwoStencils
+    (OUTPUT center-window "the window is the two central stencil copies on each axis"
+      (RULE &window_extent
+        (&central.box *B)
+        (&canvas *P)
+        (box_extent B P *A *N)))))
+
+(ALTS $w "where the window is placed" $WindowCentered
+  (ALT $WindowOffsetStored
+    (OUTPUT center-window "the window runs from the stored corner cell &window_corner, in place of the canvas center"
+      (DET &corner
+        (&window_box.box (:key *E) *B)
+        (ex_output E *P)
+        (inside (:A P) B)
+        (same_corner *D (:P1 P) (:P2 B)))
+
+      (DET &corner_missing
+        (&corner *D *P)
+        (ex_output *E)
+        (NOT (&corner E D P)))
+
+      (DET &window_corner
+        (&corner *D *P)
+        (NOT (&corner_missing D P))))
+    (RULE &window
+      (&window_corner (:D *Dg) (:P *C))
+      (&canvas *P)
+      (relative (:Base C) (:X P) (:X_rel *V))
+      (diag_dirs (:D Dg) *A *D1 *D2)
+      (perp A *A2)
+      (margin (:B V) (:D D1) (:K *K1))
+      (>= K1 0)
+      (&window_extent A (:N *N1))
+      (< K1 N1)
+      (margin (:B V) (:D D2) (:K *K2))
+      (>= K2 0)
+      (&window_extent (:A A2) (:N *N2))
+      (< K2 N2))))
+
+(ALTS $r "how a canvas cell reads the stencil" $StencilCells
+  (ALT $LatticeElements
+    (OUTPUT stencil-tiling "the output is a lattice of lines every period, and each canvas cell reads its stencil cell's lattice element: the cell's images under the stencil's flips; undefined off a stencil whose center touches each side"
+      ;; the flips whose images of a stencil cell form its lattice element
+      (DET &element_sym SymDomain)
+
+      (RULE &wide_stencil
+        (&stencil_center (:Q *C))
+        (dir_elem *D)
+        (neighbor (:P C) D *Q)
+        (NOT (margin (:B Q) D (:K 0))))
+
+      (RULE &element
+        (&stencil_cell *Q)
+        (&element_sym (:S *Sy))
+        (sym_member (:S Sy) *D)
+        (apply D (:P Q) (:P_out *Q2))))
+    (RULE &decided
+      (&canvas_tile *P)
+      (NOT (&wide_stencil)))
+
+    (RULE &hole
+      (&canvas_reads *P *Q)
+      (&element Q *Q2)
+      (&held (:Q Q2)))
+    (ALTS $combine "when a lattice element is a hole" $LatticeAny
+      (ALT $LatticeAll
+        (OUTPUT stencil-tiling "a lattice element is a hole only when the shape holds each of its stencil cells"
+          (RULE &unheld_element
+            (&element *Q *Q2)
+            (NOT (&held (:Q Q2)))))
+        (RULE &hole
+          (&canvas_reads *P *Q)
+          (NOT (&unheld_element Q)))))))
+
+(RULE &hole
+  (&canvas_reads *P *Q)
+  (&held Q))
+
+(RULE &decided
+  (&canvas_tile *P))
+
+(RULE &window
+  (&canvas (:P *C))
+  (&mirror_box.box (:key C) *B)
+  (perp *A *A2)
+  (box_extent B (:P C) A (:N *N1))
+  (&window_extent A (:N N1))
+  (box_extent B (:P C) (:A A2) (:N *N2))
+  (&window_extent (:A A2) (:N N2))
+  (&canvas *P)
+  (inside (:A P) B))
+
+(RULE &output
+  (&window)
+  (&decided *P)
+  (OR ((&hole P)
+       (&window P)
+       (&window_color (:C *Col)))
+      ((&hole P)
+       (NOT (&window P))
+       (&hole_color (:C Col)))
+      ((NOT (&hole P))
+       (&commonest.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

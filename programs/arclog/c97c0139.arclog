@@ -1,0 +1,163 @@
+;; inputs b5fcb04e1cfd09935ab698d7a6164fb7af700d2920ba0ff6d2f9e93ad41afcea programs/solvers/c97c0139.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c97c0139
+
+(INPUT segments "every input holds, on a field of &background (0), one or more straight segments of line_color (2), each one cell wide, horizontal or vertical, and at least two cells long"
+
+  (INIT &field_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &field Order
+    (key ((&field_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&field_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&field_count.size (:key E *Col) *N))))
+
+  (DET &field_miss
+    (&field.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&field.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&field.maximal (:t *C))
+    (NOT (&field_miss C)))
+
+  (RULE &line
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &comps8 Connectivity
+    (node (P)
+      (&line *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &runs Ray
+    (source (P)
+      (&line *P))
+    (node (P)
+      (&line *P))
+    (dir (D)
+      (dir_elem *D))))
+
+(INPUT apart "the diamond of each segment lies inside the grid, and it meets no cell of another segment or of another segment's diamond")
+
+(OUTPUT diamond-fill "a &background cell at distance d from a segment's line, measured across the line, takes &fill_color when both cells d steps along the line from the cell's foot on the line are cells of that segment; the foot is the cell of the line nearest the cell, and d is at least 1"
+
+  (DET &beside
+    (ex_input *E (:P *Q) (:Col *Bg))
+    (&background (:C Bg))
+    (ex_output E (:P Q) (:Col *C_fill))
+    (NOT (&background (:C C_fill)))
+    (neighbor (:P Q) (:Q *F))
+    (ex_input E (:P F) (:Col *C_line))
+    (NOT (&background (:C C_line))))
+
+  (DET &fill_color
+    (&beside (:C_fill *C))))
+
+(OUTPUT keep "every other cell keeps its input color, so each segment stays"
+
+  ;; The cells K across the line from each line cell.
+  (INIT &across Ray
+    (source (P)
+      (&line *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &comps4 Connectivity
+    (node (P)
+      (&line *P)))
+
+  (RULE &comp_cell
+    (&comps4.component *P *Id))
+
+  (RULE &bent
+    (&comp_cell *Id *P)
+    (&comp_cell Id (:P *Q))
+    (perp *A (:A2 *A_x))
+    (axis_of (:D *D_x) (:A A_x))
+    (NOT (same_dist (:D D_x) (:P1 P) (:P2 Q))))
+
+  (RULE &seg_line
+    (&comp_cell *Id (:P *F))
+    (&comp_cell Id (:P *E1))
+    (axis_elem *A)
+    (NOT (&bent Id A)))
+
+  (RULE &diamond
+    (perp *A (:A2 *A_x))
+    (axis_of (:D *D_x) (:A A_x))
+    (&across.ray (:P *Q) (:D D_x) *K (:Origin *F))
+    (> K 0)
+    (axis_of *D A)
+    (opposite D (:Opp *O))
+    (jump (:P F) D K (:Q *E1))
+    (jump (:P F) (:D O) K (:Q *E2))
+    (&seg_line A F E1)
+    (&seg_line A F (:E1 E2))))
+
+(ALTS $cells "which cells form the lines" $Ink
+  (ALT $Ink
+    (ALTS $f "where a diamond's fill color comes from" $OneFill
+      (ALT $FillByLineColor
+        (OUTPUT diamond-fill "the fill color is &fill_by_line of the segment's color; undefined on an input with a segment whose color is no key of &fill_by_line"
+          (DET &fill_by_line
+            (&beside *C_line *C_fill)))
+        (RULE &fill
+          (&line (:P *F) *Col)
+          (&fill_by_line (:C_line Col) (:C_fill *C))))))
+  (ALT $LineColorCells
+    (INPUT segments "the lines are the cells of &line_color; a cell of another color that is not &background is no line"
+      (DET_OR_RULE &line_color RarestColor
+        (&beside (:C_line *C)))
+
+      (RULE &line
+        (input *P *Col)
+        (&line_color (:C Col))))))
+
+(ALTS $seg "what makes line cells one segment" $StraightComponents
+  (ALT $StraightRuns
+    (INPUT segments "a segment is each maximal straight run of line cells in a row or a column, whatever its component"
+      (RULE &runs_run_full
+        (&runs.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+        (!= N 0))
+
+      (RULE &seg_line
+        (&runs_run_full (:V1 *F) (:V2 *D) (:V3 *E1))
+        (axis_of D *A))))
+  (ALT $Components8
+    (INPUT segments "line cells join into components by side or by corner, so two segments that touch at a corner form one bent component, which is no segment"
+      (RULE &comp_cell
+        (&comps8.component *P *Id)))))
+
+(ALTS $target "which cells of a diamond take the fill" $KeepLines
+  (ALT $PaintOverLines
+    (OUTPUT diamond-fill "every cell of the diamond takes the fill, a cell of another segment included")
+    (RULE &painted
+      (&diamond *Q *F))))
+
+(RULE &fill
+  (&line (:P *F))
+  (&fill_color *C))
+
+(RULE &painted
+  (&diamond *Q *F)
+  (input (:P Q) *Col)
+  (&background (:C Col)))
+
+(RULE &output
+  (OR ((&painted (:Q *P) *F)
+       (&fill F (:C *Col)))
+      ((input P Col)
+       (NOT (&painted (:Q P))))))
+
+(OUT (&output ^P ^Col))

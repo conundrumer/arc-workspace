@@ -1,0 +1,108 @@
+;; inputs 9f20c51eaff6bc196667511f71beba76665fb6aece04cdffd4fe2dcc701244a2 programs/solvers/d07ae81c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d07ae81c
+
+(alts $b
+  (alt $FullLineBackground
+    (witness stray-background-cell foreign $FullLineBackground
+      (relaxed banded-background)
+      (separates "The bands run on one axis only, and a stray 2 cell sits in the 8 field in the column of the 1 marker. The repeating-layout reading finds rows that match the marker's row and carry both 8 and 2 at its column, and is undefined. The full-line reading takes 8 from the marker's full row, and the eight-neighbor reading takes 8 from its neighbors, and both cast rays.")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 1 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 4 2 2 2 2 2 2 2 2)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 2 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $Layout undefined)
+      (output $FullLineBackground $NeighborMajority (grid
+        (8 8 8 8 8 8 1 8 1 8)
+        (8 8 8 8 8 1 8 1 8 8)
+        (8 8 8 8 1 8 1 8 1 8)
+        (8 8 8 1 8 1 8 8 8 1)
+        (4 2 4 2 4 2 2 2 2 2)
+        (2 4 2 4 2 2 2 2 2 2)
+        (1 8 1 8 8 8 8 8 8 8)
+        (8 1 8 1 8 8 8 8 8 8)
+        (1 8 8 8 1 8 8 2 8 8)
+        (8 8 8 8 8 1 8 8 8 8)))))
+  (alt $NeighborMajority
+    (witness marker-at-field-corner variant concept
+      (separates "The 1 marker sits on the top-left corner of a field rectangle, with five band-colored neighbors, and the 4 marker sits on a band column one cell wide, with six field-colored neighbors. Reading each marker's background from the repeating band layout maps 8 to 1 and 2 to 4. Reading it from the color most of its eight neighbors carry swaps that map, so every ray cell takes the other marker color. Reading it from a full-length line through the cell finds a full 8 row and a full 2 column through the 4 marker, and is undefined.")
+      (input (grid
+        (8 8 2 8 8 8 8 8 8 8)
+        (8 8 4 8 8 8 8 8 8 8)
+        (8 8 2 8 8 8 8 8 8 8)
+        (8 8 2 8 8 8 8 8 8 8)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (8 8 2 1 8 8 8 8 8 8)
+        (8 8 2 8 8 8 8 8 8 8)
+        (8 8 2 8 8 8 8 8 8 8)
+        (8 8 2 8 8 8 8 8 8 8)))
+      (output $Layout (grid
+        (8 1 2 1 8 8 8 8 8 1)
+        (8 8 4 8 8 8 8 8 1 8)
+        (8 1 2 1 8 8 8 1 8 8)
+        (1 8 2 8 1 8 1 8 8 8)
+        (2 4 2 2 2 4 2 2 2 2)
+        (2 2 4 2 4 2 4 2 2 2)
+        (8 8 2 1 8 8 8 1 8 8)
+        (8 8 4 8 1 8 8 8 1 8)
+        (8 1 2 8 8 1 8 8 8 1)
+        (1 8 2 8 8 8 1 8 8 8)))
+      (output $FullLineBackground undefined)
+      (output $NeighborMajority (grid
+        (8 4 2 4 8 8 8 8 8 4)
+        (8 8 4 8 8 8 8 8 4 8)
+        (8 4 2 4 8 8 8 4 8 8)
+        (4 8 2 8 4 8 4 8 8 8)
+        (2 1 2 2 2 1 2 2 2 2)
+        (2 2 1 2 1 2 1 2 2 2)
+        (8 8 2 1 8 8 8 4 8 8)
+        (8 8 1 8 4 8 8 8 4 8)
+        (8 4 2 8 8 4 8 8 8 4)
+        (4 8 2 8 8 8 4 8 8 8))))))
+
+(alts $m
+  (alt $SingletonMarkers
+    (witness adjacent-markers borderline concept
+      (relaxed lone-markers)
+      (separates "Two 1 markers sit side by side. Reading every cell of a non-background color as a marker casts rays from both. Reading only cells with no 4-neighbor of their own color as markers casts no ray from either, so their rays are missing.")
+      (input (grid
+        (8 8 2 2 8 8 8 8 8 8)
+        (8 8 4 2 8 8 8 8 8 8)
+        (8 8 2 2 8 8 8 8 8 8)
+        (8 8 2 2 8 8 8 8 8 8)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (8 8 2 2 8 8 8 8 8 8)
+        (8 8 2 2 8 8 1 1 8 8)
+        (1 8 2 2 8 8 8 8 8 8)
+        (8 8 2 2 8 8 8 8 8 8)))
+      (output $OtherColor (grid
+        (1 1 2 4 8 8 8 8 1 8)
+        (1 1 4 2 8 8 8 1 8 8)
+        (8 1 4 4 8 8 1 8 8 8)
+        (1 8 4 4 1 1 8 8 8 8)
+        (2 2 2 4 4 4 2 2 2 4)
+        (2 2 2 4 4 4 4 2 4 4)
+        (8 8 4 2 8 1 1 1 1 8)
+        (8 1 2 2 8 8 1 1 1 8)
+        (1 8 2 2 8 1 1 1 1 1)
+        (8 1 2 2 1 1 8 8 1 1)))
+      (output $SingletonMarkers (grid
+        (8 1 2 4 8 8 8 8 1 8)
+        (8 8 4 2 8 8 8 1 8 8)
+        (8 1 2 4 8 8 1 8 8 8)
+        (1 8 2 2 1 1 8 8 8 8)
+        (2 2 2 2 4 4 2 2 2 2)
+        (2 2 2 4 2 2 4 2 2 2)
+        (8 8 4 2 8 8 8 1 8 8)
+        (8 1 2 2 8 8 1 1 1 8)
+        (1 8 2 2 8 8 8 8 8 1)
+        (8 1 2 2 8 8 8 8 8 8))))))

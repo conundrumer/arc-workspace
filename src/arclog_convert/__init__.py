@@ -4,9 +4,10 @@ outside the checkout it runs in.
 
 The converter reads the solvers, the witnesses and the lib from the
 checkout it runs in, and the lib signature from this package. It writes
-under `work/arclog/` of the main worktree, or under the directory
-`OUT_ENV` names; a command that writes there refuses to run in a linked
-worktree unless `--out` or `OUT_ENV` gives the directory. The lint (`arclog_convert.lint`) reads the files there.
+the converted solvers to `programs/arclog/` of the checkout, which git tracks, and its other files under
+`work/arclog/` of the main worktree. Where `OUT_ENV` or `--out` names a directory, it writes all of them under that
+directory, the converted solvers in `gen/` of it. A command that writes under `work/arclog/` refuses to run in a linked
+worktree unless `--out` or `OUT_ENV` gives the directory. The lint (`arclog_convert.lint`) reads the converted solvers.
 
 The command stands in `convert`. Its other subjects stand in modules of
 their own: `plans` (the determination plan files), `names` (the name map and
@@ -30,10 +31,19 @@ read it."""
 
 
 def out() -> Path:
-    """The directory the converter writes `gen/`, `plan/`,
+    """The directory the converter writes `plan/`,
     `names/`, `columns/`, `case_records/` and `helper_rows/` under: `OUT_ENV`'s value, or `work/arclog/`
-    of the main worktree, from every checkout."""
+    of the main worktree, from every checkout. The converted solvers stand in `corpus(out())`."""
     return checkout.from_env(OUT_ENV, lambda: checkout.work() / "arclog")
+
+
+def corpus(root: Path) -> Path:
+    """The directory of the converted solvers (`<stem>.arclog`, `<stem>.arcdata` and `cases/<stem>/`) that goes with
+    the output directory `root`: `programs/arclog/` of the checkout where `root` is `work/arclog/` of the main
+    worktree, the default output directory, and `gen/` of `root` for any other directory, so that `--out` puts every
+    file of a run under one directory."""
+    default = checkout.work() / "arclog"
+    return checkout.arclog() if root.resolve() == default.resolve() else root / "gen"
 
 
 def writable_out(root: Path = checkout.ROOT) -> Path:

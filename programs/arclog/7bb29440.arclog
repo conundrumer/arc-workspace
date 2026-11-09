@@ -1,0 +1,55 @@
+;; inputs 651005cba463ede96a68d92fbd64efd82c7f3b74aa555554408d91634fc43ed9 programs/solvers/7bb29440.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7bb29440
+
+(DET &bg DominantColor)
+
+(DET &body ColorDomain)
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(DET &mark
+  (ex_input (:Col *C))
+  (NOT (&bg C))
+  (NOT (&body C)))
+
+(RULE &marked
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(ALTS $choice "what counts as one of those cells" $Marks
+  (ALT $Body
+    (RULE &marked
+      (input *P *Col)
+      (NOT (&body (:C Col))))))
+
+(INIT &marks Cardinality
+  (key ((&blocks.component ^Id))
+    (member ((:m P))
+      (&marked *P)
+      (&blocks.component P Id))
+    (domain ()
+      (&blocks.component Id))))
+
+(INIT &cleanest Order
+  (member ((:t (:V Id) (:S N)))
+    (&marks.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&marks.size (:key *Id) *N)))
+
+;; The kept block's box, which the output is cropped to.
+(INIT &crop_box BoundingBox
+  (cell (P)
+    (&cleanest.minimal (:t (:V *Id)))
+    (&blocks.component *P Id)))
+
+(RULE &output
+  (&crop_box.box *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

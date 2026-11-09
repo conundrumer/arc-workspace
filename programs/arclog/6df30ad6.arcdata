@@ -1,0 +1,8 @@
+;; inputs 130a3ced3f77e6e97d01e88560df52a7134f1c256a1d19059d37cdf61b0670d0 programs/solvers/6df30ad6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6df30ad6
+
+(param &bg Color (0))
+(param &shape Color (5))
+
+(exclude ($Diamond $Most))

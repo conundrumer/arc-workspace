@@ -1,0 +1,114 @@
+;; inputs 92b68acffbba8cf4620478e28bb390da84b075a9bf80a582c1c8e01b424ffad5 programs/solvers/13f06aa5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 13f06aa5
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &ink_mode_count Cardinality
+  (key ((&ink *P ^Col))
+    (member ((:m P))
+      (&ink *P Col))))
+
+;; Distance between trail dots.
+(DET &spacing TileCount)
+
+;; Where two fired edges meet.
+(DET &corner_color AnyOutNewColor)
+
+;; The shapes' own color — the commonest ink.
+(INIT &ink_mode Order
+  (member ((:t Col))
+    (&ink_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&ink_mode_count.size (:key *Col) *N)))
+
+(RULE &mark
+  (&ink *P *Col)
+  (NOT (&ink_mode.maximal (:t Col))))
+
+(RULE &mark_dir
+  (&mark *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&bg_mode.maximal (:t Col)))
+
+(RULE &ray_cell
+  (&mark (:P *Key))
+  (input))
+
+(ALTS $choice "how a marker's direction is read" $Open
+  (ALT $Side
+    (INIT &comps Connectivity
+      (node (P)
+        (&ink *P)))
+
+    (INIT &bbox BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &mark_dir
+      (&mark *P)
+      (&comps.component P *Id)
+      (&bbox.box (:key Id) *B)
+      (inside (:A P) B)
+      (same_dist *D (:P1 P) (:P2 B)))))
+
+(RULE &fired
+  (&mark *P *Col)
+  (&mark_dir P *D))
+
+(INIT &ray Ray
+  (key ((OR ((&mark (:P ^M)))
+            ((&mark_dir (:P M) *D))))
+    (source ((:P M))
+      (&mark (:P M)))
+    (node (P)
+      (&mark_dir (:P M) *D)
+      (input *P))
+    (dir (D)
+      (&mark_dir (:P M) *D))))
+
+(RULE &paint
+  (OR ((&fired *D *Col)
+       (input *P)
+       (margin (:B P) D (:K 0)))
+      ((&mark (:P *M) Col)
+       (&mark_dir (:P M) (:D *D2))
+       (&ray.ray (:key M) P (:D D2) *K)
+       (&ray_cell (:Key M))
+       (input P)
+       (&spacing (:N *W))
+       (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))))
+
+(RULE &corner
+  (diag_dirs (:D *Dg) *D1 *D2)
+  (&fired (:D D1))
+  (&fired (:D D2))
+  (input *P)
+  (corner_dist P (:Diag Dg) (:K 0)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&corner P)
+       (&corner_color (:C *Col)))
+      ((&paint P Col)
+       (NOT (&corner P)))
+      ((NOT (&paint P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

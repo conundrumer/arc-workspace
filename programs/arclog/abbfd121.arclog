@@ -1,0 +1,302 @@
+;; inputs df20662a77d529c64ccd42ba089bb52483c8d885c952da8365248cf83390e124 programs/solvers/abbfd121.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; abbfd121
+
+(INPUT wallpaper "a pattern that repeats along both axes covers the whole grid; its period differs between inputs")
+
+(INPUT occluders "two or more solid axis-aligned rectangles cover parts of the wallpaper, each in its own color that the wallpaper does not use; they share no side and do not overlap; an occluder is a color whose cells fill their bounding box"
+
+  (INIT &part Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (INIT &part_box BoundingBox
+    (key ((&part.component *P ^Id))
+      (cell (P)
+        (&part.component *P Id)))))
+
+(INPUT unique-largest "exactly one occluder has the largest area"
+
+  ;; Each color's bounding box.
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (RULE &color_gap
+    (&color_box.box (:key *Col) *B)
+    (input *P (:Col *C))
+    (inside (:A P) B)
+    (!= C Col))
+
+  (RULE &color_fill
+    (&color_box.box (:key *Col) *B)
+    (NOT (&color_gap Col)))
+
+  (RULE &occluder
+    (&color_fill *B))
+
+  (RULE &block_cell
+    (&occluder *B)
+    (input *P)
+    (inside (:A P) B))
+
+  (INIT &area Cardinality
+    (key ((&block_cell ^B *P))
+      (member ((:m P))
+        (&block_cell B *P))))
+
+  (RULE &above
+    (&area.size (:key (:B *A)) (:N *N1))
+    (&area.size (:key *B) (:N *N2))
+    (< N1 N2))
+
+  (RULE &top
+    (&occluder *B)
+    (NOT (&above (:A B))))
+
+  ;; The selected occluder: the one occluder nothing ranks above.
+  (INIT &sole Singleton
+    (member ((:v B))
+      (&top *B))))
+
+(INPUT phase-shown "each cell under the selected occluder has a visible cell of its phase, under the per-axis shortest periods that no two visible cells contradict")
+
+(OUTPUT select "the selected occluder is the one with the largest area"
+
+  ;; The rows and columns a box spans.
+  (INIT &span Cardinality
+    (key ((&block_cell ^B *P)
+          (split P *A (:Along *L)))
+      (member ((:m A L))
+        (&block_cell B *P)
+        (split P *A (:Along *L)))))
+
+  (INIT &sides Order
+    (key ((&block_cell ^B *P)
+          (box_extent B P *N))
+      (member ((:t N))
+        (&block_cell B *P)
+        (box_extent B P *N))
+      (score ((:t N) (:S N))
+        (&block_cell B *P)
+        (box_extent B P *N)))))
+
+(OUTPUT frame "the output has the height and width of the selected occluder")
+
+(OUTPUT recover "each output cell takes the color of the visible cells of its phase under the per-axis shortest periods that no two visible cells contradict; undefined where the phase has no visible cell"
+
+  (RULE &visible
+    (input *P *Col)
+    (NOT (&block_cell P)))
+
+  ;; The per-axis shortest periods of the visible cells.
+  (INIT &period Periods
+    (cell (P (:v Col))
+      (&visible *P *Col)))
+
+  (RULE &phase
+    (input *P)
+    (margin (:B P) *D (:K *T))
+    (axis_of D *A)
+    (OR ((&period.fundamental_period A (:K *N))
+         (divide T (:Side N) (:Gap 0) (:Remainder *K)))
+        ((NOT (&period.fundamental_period A))
+         (= K T))))
+
+  (RULE &axis_color
+    (OR ((&visible *P *Col))
+        ((&block_cell P)
+         (diag_dirs *D1 *D2)
+         (&phase P (:D D1) (:K *K1))
+         (&phase P (:D D2) (:K *K2))
+         (&phase (:P *P2) (:D D1) (:K K1))
+         (&phase (:P P2) (:D D2) (:K K2))
+         (&visible (:P P2) Col))))
+
+  (RULE &color
+    (&axis_color *P *Col))
+
+  ;; The isometries of the axis-period colors, over the whole frame.
+  (INIT &wp Wallpaper
+    (transform (D)
+      (d4_elem *D))
+    (cell (P (:v Col))
+      (&axis_color *P *Col))
+    (grid (P)
+      (input *P))
+    (period (A K)
+      (&period.fundamental_period *A *K))))
+
+(ALTS $occluder "how the occluders are found" $ColorFill
+  (ALT $MinTwoCells
+    (INPUT occluders "an occluder is a color whose cells fill their bounding box and number at least two"
+      (RULE &occluder
+        (&color_fill *Col *B)
+        (input *P Col)
+        (input (:P *Q) Col)
+        (!= P Q))))
+  (ALT $ComponentRect
+    (INPUT occluders "an occluder is a 4-connected one-color component that fills its bounding box, with both sides at least &min_side"
+      ;; The least side of an occluder.
+      (DET &min_side TileCount)
+
+      (RULE &part_gap
+        (&part_box.box (:key *Id) *B)
+        (input *P)
+        (inside (:A P) B)
+        (NOT (&part.component P Id)))
+
+      (RULE &narrow
+        (&part_box.box (:key *Id) *B)
+        (&part.component *P Id)
+        (&min_side (:N *K))
+        (box_extent B P *A *N)
+        (< N K))
+
+      (RULE &occluder
+        (&part_box.box (:key *Id) *B)
+        (NOT (&part_gap Id))
+        (&min_side (:N *K))
+        (NOT (&narrow Id K))))))
+
+(ALTS $recovery "which maps carry colors to hidden cells beside the axis periods" $AxisPeriods
+  (ALT $ObliquePeriod
+    (OUTPUT recover "a hidden cell also takes the colors that translations carry to it; a translation counts when it carries some visible cell onto a visible cell of its color, and no visible cell onto a visible cell of another color; undefined where a cell takes two colors"
+      (RULE &carried
+        (&visible *P *Col)
+        (&visible (:P *Q) Col)
+        (!= P Q)
+        (relative (:Base P) (:X Q) (:X_rel *X)))
+
+      (RULE &clash
+        (&carried *X)
+        (&visible *P (:Col *C1))
+        (compose (:A P) (:B X) (:C *Q))
+        (&visible (:P Q) (:Col *C2))
+        (!= C1 C2))
+
+      (RULE &map_link
+        (&carried *X)
+        (NOT (&clash X))
+        (input *P)
+        (compose (:A P) (:B X) (:C *Q))
+        (&block_cell (:P Q)))
+
+      (RULE &color
+        (OR ((&axis_color *P *Col))
+            ((&map_link (:P *P2) (:Q P))
+             (&axis_color (:P P2) Col))))))
+  (ALT $IsometryOrbit
+    (OUTPUT recover "where both axes have a period, a hidden cell also takes the colors that maps and axis periods carry to it, where a map applies a D4 isometry and then a translation; a map counts when it carries some cell's axis-period color onto another cell of that color and no cell's axis-period color onto a cell with another color; undefined where a cell takes two colors"
+      (RULE &aperiodic
+        (&visible)
+        (axis_elem *A)
+        (NOT (&period.fundamental_period A)))
+
+      (RULE &map_link
+        (&wp.action *P *Q)
+        (&block_cell (:P Q))
+        (NOT (&aperiodic)))
+
+      (RULE &color
+        (OR ((&axis_color *P *Col))
+            ((&map_link (:P *P2) (:Q P))
+             (&axis_color (:P P2) Col)))))))
+
+(ALTS $orbit "what a hidden cell gets when no visible cell reaches it" $NoSource
+  (ALT $HiddenFill
+    (OUTPUT fill "a hidden cell that no visible cell reaches takes &fill"
+      (DET &palette
+        (OR ((ex_input *Col))
+            ((ex_output Col))))
+
+      (RULE &above2
+        (&area.size (:key (:B *A)) (:N *N1))
+        (&area.size (:key *B) (:N *N2))
+        (< N1 N2))
+
+      (RULE &top2
+        (&occluder *B)
+        (NOT (&above2 (:A B))))
+
+      (INIT &sole2 Singleton
+        (member ((:v B))
+          (&top2 *B)))
+
+      (DET &fill_contradicted
+        (&sole2.value *E (:v *B))
+        (&block_cell E B *P)
+        (NOT (&axis_color E P))
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (ex_output E (:P P_inner) (:Col *C))
+        (&palette *Col)
+        (!= Col C))
+
+      (DET_OR_RULE &fill "The pairs hold no hidden cell without a source, so every color stays open." DominantColor RarestColor
+        (&palette (:Col *C))
+        (NOT (&fill_contradicted (:Col C)))))
+    (RULE &shade
+      (OR ((input *P)
+           (NOT (&color P))
+           (&fill (:C *Col)))
+          ((&color P Col))))
+    (ALT $Perimeter
+      (OUTPUT select "the selected occluder has the largest height plus width"
+        (DET &fill_contradicted
+          (&sole.value *E (:v *B))
+          (&block_cell E B *P)
+          (NOT (&axis_color E P))
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (ex_output E (:P P_inner) (:Col *C))
+          (&palette *Col)
+          (!= Col C))))
+    (ALT $LongestThenShortest
+      (OUTPUT select "the selected occluder has the longest side, then the longest short side"
+        (DET &fill_contradicted
+          (&sole.value *E (:v *B))
+          (&block_cell E B *P)
+          (NOT (&axis_color E P))
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (ex_output E (:P P_inner) (:Col *C))
+          (&palette *Col)
+          (!= Col C))))))
+
+(ALTS $selection "which occluder gives the output" $Area
+  (ALT $Perimeter
+    (OUTPUT select "the selected occluder has the largest height plus width"
+      (RULE &above
+        (&span.size (:key (:B *A)) (:N *N1))
+        (&span.size (:key *B) (:N *N2))
+        (< N1 N2))))
+  (ALT $LongestThenShortest
+    (OUTPUT select "the selected occluder has the longest side, then the longest short side"
+      (RULE &above
+        (&sides.maximal (:key (:B *A)) (:t *N1))
+        (&sides.maximal (:key *B) (:t *N2))
+        (&sides.minimal (:key (:B A)) (:t *M1))
+        (&sides.minimal (:key B) (:t *M2))
+        (OR ((< N1 N2))
+            ((= N1 N2)
+             (< M1 M2)))))))
+
+(RULE &shade
+  (&color *P *Col))
+
+(RULE &broken
+  (&sole.value (:v *B))
+  (&block_cell B *P)
+  (NOT (&shade P)))
+
+(RULE &output
+  (&sole.value (:v *B))
+  (NOT (&broken))
+  (&shade (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

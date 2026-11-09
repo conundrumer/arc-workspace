@@ -1,0 +1,46 @@
+;; inputs 71d4986b73e6c52663a8ac77afab22f98826440502dea81768a05bd5254b8508 programs/solvers/496994bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 496994bd
+
+(DET &bg DominantColor)
+
+(DET &axis AxisDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &img
+  (&ink (:P *P3) *Col)
+  (&axis *A)
+  (axis_inversion A (:T *F))
+  (apply (:D F) (:P P3) (:P_out *P)))
+
+(ALTS $choice "where the reflected copy comes from; the block is flush at its edge in every pair, so the pairs cannot separate the cases" $Mirror
+  (ALT $Seat
+    (DET &dir DirDomain)
+
+    (INIT &block BoundingBox
+      (cell (P)
+        (&ink *P)))
+
+    (RULE &img
+      (&ink (:P *P3) *Col)
+      (&dir *D)
+      (axis_of D *A)
+      (axis_inversion A (:T *F))
+      (apply (:D F) (:P P3) (:P_out *P_img))
+      (opposite D (:Opp *O))
+      (&block.box *B)
+      (margin B D (:K *M))
+      (jump (:P P_img) (:D O) (:K M) (:Q *P)))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((&img P Col))
+      ((input P)
+       (NOT (&ink P))
+       (NOT (&img P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

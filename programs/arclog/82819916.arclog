@@ -1,0 +1,36 @@
+;; inputs d0aaabc3b8ebb26f69918e709ac662b0e17c0bd0da99d4d11ab9a1323f9e0337 programs/solvers/82819916.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 82819916
+
+(DET &bg DominantColor)
+
+;; Lines run along this axis.
+(DET &axis AxisDomain)
+
+(RULE &cell_split
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Along *P_along) (:Across *P_line)))
+
+(RULE &blank
+  (&cell_split *Col *P_line)
+  (&bg (:C Col)))
+
+(RULE &template_color
+  (&cell_split (:Col *C) *P_along (:P_line *P_tpl))
+  (NOT (&blank (:P_line P_tpl))))
+
+(RULE &recolor
+  (&cell_split (:Col *C) *P_along *P_line)
+  (NOT (&bg C))
+  (&template_color P_along (:C *C_tpl)))
+
+(RULE &output
+  (&cell_split *P (:Col *C_in) *P_along *P_line)
+  (OR ((&template_color P_along (:C *C_tpl))
+       (&recolor P_line C_tpl (:C *Col)))
+      ((ALL ((&cell_split (:Col *Colmm) P_line))
+            ((&bg (:C Colmm))))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

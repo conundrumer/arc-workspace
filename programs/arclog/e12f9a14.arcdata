@@ -1,0 +1,121 @@
+;; inputs b024ff29b4f78e097170be4c95a5b12b2cbf502508e666db9026aa9e1068dbda programs/solvers/e12f9a14.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e12f9a14
+
+(param &core_side number (2))
+
+(alts $b
+  (alt $StopAtBox
+    (witness ray-hits-box variant $StopAtBox
+      (relaxed clear-paths)
+      (separates "a ray whose path runs into another box: the concept paints the ray over that box to the grid edge, $StopAtBox stops it at the cell before the box's wall, and $PassUnderBox leaves the box's cells as they are and paints the ray on past the box")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (3 3 3 3 8 8 8 3 3 3 3 8)
+        (3 4 4 8 8 8 8 3 6 6 3 8)
+        (3 4 4 3 8 8 8 3 6 6 3 8)
+        (3 3 3 3 8 8 8 3 8 3 3 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)))
+      (output $OverBox (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (3 3 3 3 8 8 8 3 3 3 3 8)
+        (3 4 4 4 4 4 4 4 4 4 4 4)
+        (3 4 4 3 8 8 8 3 6 6 3 8)
+        (3 3 3 3 8 8 8 3 6 3 3 8)
+        (8 8 8 8 8 8 8 8 6 8 8 8)
+        (8 8 8 8 8 8 8 8 6 8 8 8)))
+      (output $PassUnderBox (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (3 3 3 3 8 8 8 3 3 3 3 8)
+        (3 4 4 4 4 4 4 3 6 6 3 4)
+        (3 4 4 3 8 8 8 3 6 6 3 8)
+        (3 3 3 3 8 8 8 3 6 3 3 8)
+        (8 8 8 8 8 8 8 8 6 8 8 8)
+        (8 8 8 8 8 8 8 8 6 8 8 8)))
+      (output $StopAtBox (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (3 3 3 3 8 8 8 3 3 3 3 8)
+        (3 4 4 4 4 4 4 3 6 6 3 8)
+        (3 4 4 3 8 8 8 3 6 6 3 8)
+        (3 3 3 3 8 8 8 3 6 3 3 8)
+        (8 8 8 8 8 8 8 8 6 8 8 8)
+        (8 8 8 8 8 8 8 8 6 8 8 8)))))
+  (alt $PassUnderBox
+    (witness ray-hits-box variant $StopAtBox)))
+
+(alts $s
+  (alt $CoreSizePerBox
+    (witness three-core variant $CoreSizePerBox
+      (relaxed boxes)
+      (separates "a box with a 3 x 3 core: the concept at core-side 2 finds no box and returns the input, and $CoreSizePerBox takes the core's own side and casts a ray from each gap")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 3 8 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 8 3 3 3 3 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)))
+      (output ($StoredSide &core_side=$Stored) (grid
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 3 8 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 8 3 3 3 3 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)))
+      (output $CoreSizePerBox &core_side=$Derived (grid
+        (8 8 8 8 8 9 8 8 8)
+        (8 8 8 8 8 9 8 8 8)
+        (8 8 3 3 3 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 9 3 3 3 3 8 8)
+        (8 9 8 8 8 8 8 8 8)
+        (9 8 8 8 8 8 8 8 8))))))
+
+(alts &core_side
+  (alt &core_side=$Derived
+    (witness core_side=TileCount variant &core_side=$Derived
+      (relaxed boxes)
+      (separates "`core_side=TileCount` from the stored value: the input of `three-core`")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 3 8 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 8 3 3 3 3 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)))
+      (output ($StoredSide &core_side=$Stored) (grid
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 3 8 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 8 3 3 3 3 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)))
+      (output $CoreSizePerBox &core_side=$Derived (grid
+        (8 8 8 8 8 9 8 8 8)
+        (8 8 8 8 8 9 8 8 8)
+        (8 8 3 3 3 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 3 9 9 9 3 8 8)
+        (8 8 9 3 3 3 3 8 8)
+        (8 9 8 8 8 8 8 8 8)
+        (9 8 8 8 8 8 8 8 8))))))

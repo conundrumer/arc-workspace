@@ -1,0 +1,15 @@
+;; inputs fd27296a235c4e7394d331a0cc1e43fb8884654a7debf0018a5c8742e17d5d23 programs/solvers/3d31c5b3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3d31c5b3
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_V))
+(param &tiles number (4))
+(param &tile_size number (3))
+(param &prio (Position number)
+  (grid
+    (0)
+    (1)
+    (3)
+    (2)))
+(param &ink_rank (Color number) (5 0) (4 1) (8 2) (2 3))

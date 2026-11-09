@@ -1,0 +1,95 @@
+;; inputs 04e385aa8190c2df12bd537bf2e5cbd762968de4fd5940de07af702b15b46108 programs/solvers/f8f52ecc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8f52ecc
+
+(param &background Color (1))
+(param &wall_color Color (8))
+
+(alts $o
+  (alt $CrossDots
+    (witness dot-on-line borderline $KeepDot
+      (separates "a dot of another color on the straight run between two dots: the concept routes around it over background; $CrossDots runs straight and the dot keeps its color; $PaintOver runs straight and paints it")
+      (input (grid
+        (1 1 1 1 1)
+        (1 1 1 1 1)
+        (2 1 3 1 2)
+        (1 8 8 8 1)
+        (1 1 1 1 1)))
+      (output $OverBackground (grid
+        (1 1 1 1 1)
+        (2 2 2 2 2)
+        (2 1 3 1 2)
+        (1 8 8 8 1)
+        (1 1 1 1 1)))
+      (output $KeepDot (grid
+        (1 1 1 1 1)
+        (1 1 1 1 1)
+        (2 2 3 2 2)
+        (1 8 8 8 1)
+        (1 1 1 1 1)))
+      (output $PaintOver (grid
+        (1 1 1 1 1)
+        (1 1 1 1 1)
+        (2 2 2 2 2)
+        (1 8 8 8 1)
+        (1 1 1 1 1))))))
+
+(alts $crossed
+  (alt $PaintOver
+    (witness dot-on-line borderline $KeepDot)))
+
+(alts $m
+  (alt $TurnsFirst
+    (witness two-walls-snake ordinary concept
+      (separates "two offset walls between two dots: the concept takes a fewest-step walk, which winds between the walls with four turns; $TurnsFirst takes the walk with two turns, the longer way round both walls by col 1")
+      (input (grid
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 2 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 8 8 8)
+        (1 1 1 1 1 1 1)
+        (1 1 8 8 8 1 1)
+        (1 1 1 1 2 1 1)))
+      (output $StepsFirst (grid
+        (1 1 1 1 1 1 1)
+        (1 1 1 2 2 2 1)
+        (1 1 1 2 1 1 1)
+        (1 1 1 2 8 8 8)
+        (1 1 1 2 2 2 1)
+        (1 1 8 8 8 2 1)
+        (1 1 1 1 2 2 1)))
+      (output $TurnsFirst (grid
+        (1 1 1 1 1 1 1)
+        (1 2 2 2 2 2 1)
+        (1 2 1 1 1 1 1)
+        (1 2 1 1 8 8 8)
+        (1 2 1 1 1 1 1)
+        (1 2 8 8 8 1 1)
+        (1 2 2 2 2 1 1))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (relaxed dots)
+      (separates "an input whose commonest color is not 1: the stored background routes the 3s over the 1 strip; the derived background takes 2 as the field and runs the 3s straight across it")
+      (input (grid
+        (1 1 1 1 1)
+        (3 2 2 2 3)
+        (2 2 2 2 2)
+        (2 2 8 2 2)))
+      (output ($OverBackground &background=$Stored) (grid
+        (3 3 3 3 3)
+        (3 2 2 2 3)
+        (2 2 2 2 2)
+        (2 2 8 2 2)))
+      (output &background=$Derived $PaintOver (grid
+        (1 1 1 1 1)
+        (3 3 3 3 3)
+        (2 2 2 2 2)
+        (2 2 8 2 2)))
+      (output $KeepDot (grid
+        (1 1 1 1 1)
+        (3 2 2 2 3)
+        (2 2 2 2 2)
+        (2 2 8 2 2))))))

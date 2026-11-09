@@ -1,0 +1,314 @@
+;; inputs 89ae6731fdc9fb501efd97f8147e5b53fbe090366fbe28c4de9890389ae692ef programs/solvers/c4d067a0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c4d067a0
+
+(INPUT background "one color fills most of the grid; it is the commonest color of the input"
+
+  (INIT &corner_color Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (inside (:A P) (:B 0))
+      (same_corner *D (:P1 P) (:P2 0)))))
+
+(INPUT key-period "the key is a set of single cells of non-background colors, on the points of one period class of period &key_pitch along each axis, with a background cell between neighboring dots; a key point inside the key's bounding box can hold the background color"
+
+  (INIT &color_count_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &color_count Order
+    (member ((:t Col))
+      (&color_count_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&color_count_count.size (:key *Col) *N)))
+
+  ;; The one-color pieces of the grid.
+  (INIT &piece Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id))))
+
+  (DET &key_dot2
+    (&piece.component *E (:key *Col) (:P *Q) *Id)
+    (&piece_box.box E (:key Id) (:B Q))
+    (&color_count.maximal E (:t *C_bg))
+    (!= Col C_bg))
+
+  (DET &key_offset2
+    (&key_dot2 *E (:Q *Q1))
+    (&key_dot2 E (:Q *Q2))
+    (relative (:Base Q1) (:X Q2) (:X_rel *R))
+    (opposite *D (:Opp *O))
+    (margin (:B R) (:D O) (:K *T))
+    (> T 0))
+
+  (DET &pitch_cand2
+    (&key_offset2 *E)
+    (&key_dot2 E *Q)
+    (sub_extent (:P Q) *A (:K *N)))
+
+  (DET &off_pitch2
+    (&pitch_cand2 *E *N)
+    (&key_offset2 E *T)
+    (divide T (:Side N) (:Gap 0) (:Remainder *R))
+    (> R 0))
+
+  ;; The greatest pitch that divides every key offset.
+  (INIT &common_pitch2 Order
+    (key ((&pitch_cand2 ^E *N)
+          (NOT (&off_pitch2 E N)))
+      (member ((:t N))
+        (&pitch_cand2 E *N)
+        (NOT (&off_pitch2 E N)))
+      (score ((:t N) (:S N))
+        (&pitch_cand2 E *N)
+        (NOT (&off_pitch2 E N)))))
+
+  (DET &split_pitch
+    (&common_pitch2.maximal (:t *N))
+    (ex_input *E)
+    (NOT (&common_pitch2.maximal (:key E) (:t N))))
+
+  (DET_OR_RULE &key_pitch "The distance between neighboring key points." TileDim
+    (&common_pitch2.maximal (:t *D))
+    (NOT (&split_pitch (:N D))))
+
+  (RULE &bg
+    (&color_count.maximal (:t *Col)))
+
+  (RULE &key_dot
+    (&piece.component (:key *Col) (:P *Q) *Id)
+    (&piece_box.box (:key Id) (:B Q))
+    (&bg (:Col *C_bg))
+    (!= Col C_bg))
+
+  (RULE &key_offset
+    (&key_dot (:Q *Q1))
+    (&key_dot (:Q *Q2))
+    (relative (:Base Q1) (:X Q2) (:X_rel *R))
+    (opposite *D (:Opp *O))
+    (margin (:B R) (:D O) (:K *T))
+    (> T 0))
+
+  (RULE &pitch_cand
+    (&key_offset)
+    (&key_dot *Q)
+    (sub_extent (:P Q) *A (:K *N)))
+
+  (RULE &off_pitch
+    (&pitch_cand *N)
+    (&key_offset *T)
+    (divide T (:Side N) (:Gap 0) (:Remainder *R))
+    (> R 0))
+
+  ;; The greatest pitch that divides every key offset.
+  (INIT &common_pitch Order
+    (member ((:t N))
+      (&pitch_cand *N)
+      (NOT (&off_pitch N)))
+    (score ((:t N) (:S N))
+      (&pitch_cand *N)
+      (NOT (&off_pitch N)))))
+
+(INPUT given-blocks "two solid squares of one size k (k at least 2), each of a non-background color, lie on one line along the horizontal axis, with the same gap g between neighbors")
+
+(INPUT blocks-match-key "the given blocks are the large drawing of a run of neighboring key dots, block for dot and color for color, and exactly one such run of the key matches them")
+
+(INPUT fits-grid "the large drawing of the whole key, placed by that match, lies inside the grid")
+
+(OUTPUT enlarge-key "each key dot of a non-background color becomes a k×k block of that color, and key dots one pitch apart become blocks at a pitch of k+g along either axis, with the gap g read from the given blocks used on both axes")
+
+(OUTPUT anchor-by-match "the large drawing is placed so that the blocks of the matched run land on the given blocks")
+
+(OUTPUT background-dot-empty "a key point of the background color gives no block"
+
+  (INIT &key_box BoundingBox
+    (cell ((:P Q))
+      (&key_dot *Q))))
+
+(OUTPUT keep-input "every other cell keeps its input color, the key and the given blocks included"
+
+  (RULE &block
+    (&piece.component (:key *Col) *P *Id)
+    (&piece_box.box (:key Id) (:B *Box))
+    (!= Box P)
+    (&bg (:Col *C_bg))
+    (!= Col C_bg)
+    (perp *A *A2)
+    (box_extent (:B Box) P A *N)
+    (box_extent (:B Box) P (:A A2) N))
+
+  (RULE &block_pair
+    (&block (:Id *Id1) (:Box *B1) (:N *K))
+    (&block (:Id *Id2) (:Box *B2) (:N K))
+    (!= Id1 Id2)
+    (relative (:Base B1) (:X B2) (:X_rel *V))
+    (opposite *D (:Opp *O))
+    (margin (:B V) (:D O) (:K *S))
+    (> S 0)
+    (jump (:P B1) D (:K S) (:Q B2)))
+
+  (RULE &pitch
+    (&key_pitch (:D *N)))
+
+  (RULE &run_match
+    (&block_pair *Id1 *Id2 *D *S)
+    (&block (:Id Id1) (:Col *C1))
+    (&block (:Id Id2) (:Col *C2))
+    (&pitch *N)
+    (&key_dot (:Q *Q1) (:Col C1))
+    (jump (:P Q1) D (:K N) (:Q *Q2))
+    (&key_dot (:Q Q2) (:Col C2)))
+
+  (RULE &placement
+    (&run_match (:Id1 *Id) (:Q1 *Q) *S *N)
+    (&block Id (:Box *A) (:N *K)))
+
+  (RULE &ambiguous
+    (&run_match (:Id1 *Id) *Q1)
+    (&run_match (:Id1 Id) (:Q1 *Q2))
+    (!= Q1 Q2))
+
+  (RULE &frame_cell
+    (OR ((input (:P *X)))
+        ((input *P)
+         (margin (:B P) *D (:K 0))
+         (neighbor P D (:Q X)))))
+
+  (RULE &block_slot
+    (&placement *A (:Q *Q0) *S (:N *Pitch) *K)
+    (&frame_cell *X)
+    (relative (:Base A) X (:X_rel *R))
+    (opposite *D (:Opp *O))
+    (margin (:B R) (:D O) (:K *T))
+    (divide T (:Side S) (:Gap 0) (:Part *N) (:Remainder *I))
+    (< I K))
+
+  (RULE &key_point
+    (&key_dot *Q *Col))
+
+  (RULE &key_slot
+    (&placement *A (:Q *Q0) *S (:N *Pitch))
+    (&key_point *Q)
+    (relative (:Base Q0) (:X Q) (:X_rel *R))
+    (opposite *D (:Opp *O))
+    (margin (:B R) (:D O) (:K *T))
+    (divide T (:Side Pitch) (:Gap 0) (:Part *N) (:Remainder 0)))
+
+  (RULE &drawn
+    (&block_slot *A *Q0 *S *Pitch *X (:D *D1) (:N *N1))
+    (&key_slot A Q0 S Pitch *Q (:D D1) (:N N1))
+    (&block_slot A Q0 S Pitch X (:D *D2) (:N *N2))
+    (&key_slot A Q0 S Pitch Q (:D D2) (:N N2))
+    (axis_of (:D D1) (:A *A1))
+    (axis_of (:D D2) (:A *A2))
+    (perp (:A A1) A2))
+
+  (RULE &admitted
+    (&placement *A (:Q *Q0) *S (:N *Pitch))
+    (NOT (&ambiguous))))
+
+(ALTS $pitch "where the key's pitch comes from" $StoredPitch
+  (ALT $KeyPitchFromKey
+    (INPUT key-period "the key is a set of single cells of non-background colors at a pitch that is the greatest common divisor of the dots' row and column offsets; undefined where the key has one dot"
+      (RULE &pitch
+        (&common_pitch.maximal (:t *N))))))
+
+(ALTS $background "which color is the background" $Commonest
+  (ALT $BackgroundAtCorners
+    (INPUT background "one color fills most of the grid; it is the color the four grid corners share; undefined where the corners differ"
+      (RULE &bg
+        (&corner_color.value (:v *Col))))))
+
+(ALTS $spacing "how far apart in the key the dots of the given blocks stand" $NeighborRun
+  (ALT $JointPitchMatch
+    (INPUT blocks-match-key "the given blocks are the large drawing of two key dots m pitches apart along the blocks' line, block for dot and color for color, with the drawing's pitch the distance between the blocks over m and a gap of at least one cell"
+      (RULE &run_match
+        (&block_pair *Id1 *Id2 *D (:S *S3))
+        (&block (:Id Id1) (:Col *C1) (:N *K))
+        (&block (:Id Id2) (:Col *C2))
+        (&pitch *N)
+        (&key_dot (:Q *Q1) (:Col C1))
+        (&key_dot (:Q *Q2) (:Col C2))
+        (relative (:Base Q1) (:X Q2) (:X_rel *R))
+        (opposite D (:Opp *O))
+        (margin (:B R) (:D O) (:K *T))
+        (jump (:P Q1) D (:K T) (:Q Q2))
+        (divide T (:Side N) (:Gap 0) (:Part *M) (:Remainder 0))
+        (> M 0)
+        (axis_of D *A)
+        (sub_extent (:P Q1) A (:K *S))
+        (divide (:T S3) (:Side S) (:Gap 0) (:Part M) (:Remainder 0))
+        (> S K)))))
+
+(ALTS $matching "what the output is where more than one run matches" $UniqueMatch
+  (ALT $EveryMatch
+    (OUTPUT anchor-by-match "each run that matches the given blocks places one drawing, and the output holds a grid for each"
+      (RULE &admitted
+        (&placement *A (:Q *Q0) *S (:N *Pitch))))))
+
+(ALTS $overlap "what the drawing writes over" $PaintOver
+  (ALT $BackgroundBlocks
+    (OUTPUT background-dot-empty "a key point of the background color gives a block of the background color"
+      (RULE &key_point
+        (&key_box.box (:B *Box))
+        (input (:P *Q) *Col)
+        (inside (:A Q) (:B Box)))))
+  (ALT $UnderlayDrawing
+    (OUTPUT enlarge-key "the drawing writes only on cells of the background color")
+    (RULE &writable
+      (input (:P *X) (:Col *C_bg))
+      (&bg (:Col C_bg)))))
+
+(ALTS $edge "what happens where the drawing runs past the grid" $Clip
+  (ALT $NoClip
+    (OUTPUT enlarge-key "a drawing that runs past the grid gives no grid"
+      (RULE &on_drawing
+        (&key_slot *A *Q0 *S *Pitch *Q (:D *D1))
+        (&key_slot A Q0 S Pitch Q (:D *D2))
+        (axis_of (:D D1) (:A *A1))
+        (axis_of (:D D2) (:A *A2))
+        (perp (:A A1) A2))
+
+      (RULE &on_grid
+        (&drawn *A *Q0 *S *Pitch *X *Q)
+        (input (:P X)))
+
+      (RULE &runs_off
+        (OR ((&drawn *A *Q0 *S *Pitch *X)
+             (NOT (input (:P X))))
+            ((&on_drawing A Q0 S Pitch *Q)
+             (NOT (&on_grid A Q0 S Pitch Q))))))
+    (RULE &kept
+      (&admitted *A *Q0 *S *Pitch)
+      (NOT (&runs_off A Q0 S Pitch)))))
+
+(RULE &writable
+  (input (:P *X)))
+
+(RULE &paint
+  (&drawn *A *Q0 *S *Pitch *X *Q)
+  (&key_point Q *Col)
+  (&writable X))
+
+(RULE &kept
+  (&admitted *A *Q0 *S *Pitch))
+
+(RULE &run
+  (&kept *A *Q0 *S (:Pitch *L))
+  (ONE))
+
+(RULE &output
+  (OR ((&run *A *Q0 *S *L)
+       (&paint A Q0 S (:Pitch L) (:X *P) *Col))
+      ((&run (:A *A2) (:Q0 *Q02) (:S *S2) (:L *L2))
+       (input P Col)
+       (NOT (&paint (:A A2) (:Q0 Q02) (:S S2) (:Pitch L2) (:X P))))))
+
+(OUT (&output ^P ^Col))

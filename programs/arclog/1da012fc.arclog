@@ -1,0 +1,156 @@
+;; inputs 0089b1ea51aade69b8e65fa276563d5abefdef13cfb40f667612cbfc6cc8c041 programs/solvers/1da012fc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1da012fc
+
+(INPUT legend "the cells of the legend color bound a box, and the bodies of other ink inside it are the markers")
+
+(INPUT shapes "each body of ink outside the box is a shape")
+
+(INPUT bands "the objects of one constellation lie in bands along the reading axis — two of them either lie wholly apart along that axis, or cover the same extent of it and lie wholly apart across it")
+
+(INPUT read "an object precedes another in the reading order when it lies wholly ahead along the reading axis, or they meet there and it lies wholly ahead across"
+
+  (DET &bg DominantColor)
+
+  ;; The legend box's fill.
+  (DET &legend SharedColor)
+
+  ;; Reading order: the corner it starts from, and the axis it runs along before stepping across. The bands fix the axis. The pairs leave the corner free: under each corner the two constellations pair the same way.
+  (DET &corner DiagDirDomain)
+
+  (INIT &bbox BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&legend (:C Col))))
+
+  (RULE &box_cell
+    (input *P)
+    (&bbox.box *B)
+    (inside (:A P) B))
+
+  (INIT &comps Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (IF ((&box_cell P))
+          ((NOT (&legend (:C Col))))
+          ()))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &marker
+    (&comps.component *P *Id)
+    (&box_cell P))
+
+  (RULE &shape
+    (&comps.component *Id)
+    (NOT (&marker Id)))
+
+  (RULE &peers
+    (OR ((&marker (:Id *A))
+         (&marker (:Id *B)))
+        ((&shape (:Id A))
+         (&shape (:Id B)))))
+
+  (RULE &behind
+    (&comps.component *P (:Id *A))
+    (margin (:B P) *D (:K *K1))
+    (&comps.component (:P *Q) (:Id *B))
+    (margin (:B Q) D (:K *K2))
+    (>= K1 K2))
+
+  (RULE &ahead
+    (&comps.component (:Id *A))
+    (&comps.component (:Id *B))
+    (!= A B)
+    (dir_elem *D)
+    (NOT (&behind D A B)))
+
+  (DET &on_line
+    (&comps.component *E *P *Id)
+    (split P *A (:Along *L)))
+
+  (DET &off_band
+    (&peers *E (:A *I) (:B *J))
+    (&on_line E *A (:Id I) *L)
+    (&on_line E A (:Id J) L)
+    (&on_line E A (:Id I) (:L *L2))
+    (NOT (&on_line E A (:Id J) (:L L2))))
+
+  (DET &axis
+    (axis_elem *A)
+    (NOT (&off_band A)))
+
+  (RULE &read_dirs
+    (&corner (:D *C))
+    (&axis *A)
+    (diag_dirs (:D C) A *D1 *D2))
+
+  (INIT &reading Order
+    (member ((:t Id))
+      (&comps.component *Id))
+    (before ((:a A) (:b B))
+      (&peers *A *B)
+      (&read_dirs *D1 *D2)
+      (IF ((&ahead (:D D1) A B))
+          ()
+          ((NOT (&ahead (:D D1) (:A B) (:B A)))
+           (&ahead (:D D2) A B)))))
+
+  (INIT &obox BoundingBox
+    (key ((&comps.component *P ^Id))
+      (cell (P)
+        (&comps.component *P Id))))
+
+  ;; A box carries its distance to every edge, so from the reading corner it
+  ;; reads as that corner's cell.
+  (INIT &lex Order
+    (member ((:t B))
+      (&obox.box *B))
+    (before ((:a B) (:b B2))
+      (&obox.box *B)
+      (&obox.box (:B *B2))
+      (&corner *D)
+      (&axis *A)
+      (OR ((corner_dir (:C D) A (:D *D2))
+           (nearer (:D D2) (:P B) (:Q B2)))
+          ((diag_dirs D A (:D1 D2) (:D2 *D22))
+           (same_dist (:D D2) (:P1 B) (:P2 B2))
+           (nearer (:D D22) (:P B) (:Q B2)))))))
+
+(OUTPUT place "each shape takes the color of the marker whose place in the marker constellation matches the shape's place in the shape constellation; an object's place is the midpoint of its box"
+  (APPROXIMATED "a shape and a marker have the same place when they have the same rank in the reading order"))
+
+(OUTPUT keep "every cell outside the shapes keeps its color")
+
+(ALTS $choice "a shape's place in the reading order — a marker is one cell, but a shape spreads over many, so two models of it." $Separated
+  (ALT $Anchor
+    (INPUT read "an object stands at its bounding box's reading corner, and the objects run in the reading order of those corners"
+      (INIT &reading Order
+        (member ((:t Id))
+          (&comps.component *Id))
+        (before ((:a Id1) (:b Id2))
+          (&peers (:A *Id1) (:B *Id2))
+          (&obox.box (:key (:Id Id1)) (:B *B1))
+          (&obox.box (:key (:Id Id2)) (:B *B2))
+          (&lex.before (:a B1) (:b B2)))))))
+
+(RULE &shape_cell
+  (&comps.component *P *Id)
+  (&shape Id))
+
+(RULE &output
+  (OR ((&shape_cell *P)
+       (&comps.component P *Id)
+       (&reading.rank (:t Id) *R)
+       (&reading.rank (:t *Id2) R)
+       (&marker (:Id Id2))
+       (&comps.component (:P *P_marker) (:Id Id2))
+       (input (:P P_marker) *Col))
+      ((input P Col)
+       (NOT (&shape_cell P)))))
+
+(OUT (&output ^P ^Col))

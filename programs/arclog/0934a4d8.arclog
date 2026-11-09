@@ -1,0 +1,154 @@
+;; inputs 9e346bd2e93b6d82e381eff8b66ec149e4c8d59df948166ac3f1235a5e58a16c programs/solvers/0934a4d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0934a4d8
+
+(DET &mask RarestColor)
+
+;; The hole: the masked cells.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&mask (:C Col))))
+
+(DET &cell
+  (ex_input *E *P *Col)
+  (NOT (&mask (:C Col))))
+
+(DET &cell_split
+  (&cell *E *P *Col)
+  (split P *A *Along *Across))
+
+(DET &apos
+  (ex_input *P)
+  (split P *A *Along))
+
+(DET &ext_cand
+  (&apos *A *Along)
+  (sub_extent (:P Along) A *K)
+  (axis_of *D A)
+  (edge_inset D K *B))
+
+(DET &ext_map
+  (&ext_cand *A *B)
+  (&apos A *Along)
+  (axis_inversion A (:T *F))
+  (compose (:A Along) B (:C *Lm))
+  (apply (:D F) (:P Lm) (:P_out *L_img))
+  (&apos A (:Along *Along2))
+  (compose (:A Along2) B (:C L_img)))
+
+(DET &ext_mismatch
+  (&ext_map *A *B (:Along *L1) (:Along2 *L2))
+  (&cell_split *E A (:Along L1) (:Across *X) (:Col *C1))
+  (&cell_split E A (:Along L2) (:Across X) (:Col *C2))
+  (!= C2 C1))
+
+(DET &ext_pair
+  (&ext_map *A *B (:Along *L1) (:Along2 *L2))
+  (!= L1 L2)
+  (&cell_split *E A (:Along L1) (:Across *X))
+  (&cell_split E A (:Along L2) (:Across X)))
+
+(DET &axis_ext
+  (&ext_pair *A *B)
+  (NOT (&ext_mismatch A B)))
+
+(DET &mosaic_margin
+  (&axis_ext (:A *A1) (:B *B1))
+  (perp (:A A1) *A2)
+  (&axis_ext (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &mosaic
+  (input (:P *P_grid))
+  (&mosaic_margin *B)
+  (compose (:A P_grid) B (:C *P_mosaic)))
+
+(DET &mcell
+  (&cell *E (:P *P2) *Col)
+  (&mosaic_margin *B)
+  (compose (:A P2) B (:C *P)))
+
+(DET &broken
+  (&mcell *E *P (:Col *V))
+  (apply *D P (:P_out *P2))
+  (&mcell E (:P P2) (:Col *V2))
+  (!= V2 V))
+
+(DET &cand_count
+  (&mcell *P)
+  (sub_extent P *A (:K *N)))
+
+(INIT &cand_tile_division Division
+  (key ((&cand_count ^N))
+    (parts (A N)
+      (axis_elem *A)))
+  (cell ((:P Pm))
+    (&mcell (:P *Pm))))
+
+(DET &cand_broken
+  (&cand_tile_division.tile (:key *N) (:P *Pm) (:P_outer *P_tile))
+  (&broken (:P Pm) *D))
+
+(DET &cand_sym
+  (&cand_tile_division.tile (:key *N) (:P_outer *P_tile))
+  (d4_elem *D)
+  (NOT (&cand_broken N P_tile D)))
+
+;; The tile count is the coarsest decomposition whose tile labels differ.
+(INIT &nonuniform Order
+  (member ((:t N))
+    (&cand_sym *N (:P_tile *T1) *D)
+    (&cand_tile_division.tile (:key N) (:P_outer *T2))
+    (NOT (&cand_sym N (:P_tile T2) D)))
+  (score ((:t N) (:S N))
+    (&cand_sym *N (:P_tile *T1) *D)
+    (&cand_tile_division.tile (:key N) (:P_outer *T2))
+    (NOT (&cand_sym N (:P_tile T2) D))))
+
+;; Each tile's group is the named subgroup matching its unbroken set.
+(INIT &symid Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:observed T) (:m D))
+    (&nonuniform.minimal (:t *N))
+    (&cand_sym N (:P_tile *T) *D)))
+
+(DET &tile_sym
+  (&symid.equal (:observed *P_tile) (:pattern *S)))
+
+(RULE &tile_count
+  (&tile_sym (:P_tile *T))
+  (frame_extent (:P T) *A *N))
+
+(INIT &output_division Division
+  (cell ((:P Pm))
+    (&bbox.cell *P)
+    (&mosaic (:P_grid P) (:P_mosaic *Pm)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tile_count *N)))
+
+;; The mosaic's own symmetries, per example.
+(INIT &inv Agreement
+  (key ((&mcell ^E *P *Col))
+    (source (P (:v Col))
+      (&mcell E *P *Col))
+    (target (P (:v Col))
+      (&mcell E *P *Col))))
+
+(RULE &output
+  (&bbox.cell (:P *P3))
+  (&bbox.box *B)
+  (inside (:A P3) B)
+  (relative (:Base B) (:X P3) (:X_rel *P))
+  (&mosaic (:P_grid P3) (:P_mosaic *Pm))
+  (&output_division.tile (:P Pm) (:P_outer *T))
+  (&tile_sym (:P_tile T) *S)
+  (sym_member S *D)
+  (apply D (:P Pm) (:P_out *P2m))
+  (&mosaic (:P_grid *P2) (:P_mosaic P2m))
+  (input (:P P2) *Col)
+  (NOT (&mask (:C Col))))
+
+(OUT (&output ^P ^Col))

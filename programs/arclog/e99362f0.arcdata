@@ -1,0 +1,299 @@
+;; inputs 4239b32db03b45db8b2111cfd8b193a25ebbafb48fec598a959f7c1bcdf01606 programs/solvers/e99362f0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e99362f0
+
+(param &background Color (0))
+(param &priority (Color number) (8 0) (7 1) (9 2) (2 3))
+(param &panel_order (Position number)
+  (grid
+    (1 2)
+    (3 0)))
+(param &stack_member (Ident Color)
+  (0 2)
+  (1 7)
+  (2 8)
+  (3 9)
+  (4 2)
+  (4 7)
+  (5 2)
+  (5 8)
+  (6 2)
+  (6 9)
+  (7 7)
+  (7 8)
+  (8 7)
+  (8 9)
+  (9 8)
+  (9 9)
+  (10 2)
+  (10 7)
+  (10 8)
+  (11 2)
+  (11 7)
+  (11 9)
+  (12 2)
+  (12 8)
+  (12 9)
+  (13 7)
+  (13 8)
+  (13 9)
+  (14 2)
+  (14 7)
+  (14 8)
+  (14 9))
+(param &stack_out (Ident Color)
+  (0 2)
+  (1 7)
+  (2 8)
+  (3 9)
+  (4 7)
+  (5 8)
+  (6 9)
+  (7 8)
+  (8 7)
+  (9 8)
+  (10 8)
+  (11 7)
+  (12 8)
+  (13 8)
+  (14 8))
+(param &panel_stack_member (Ident Position)
+  (0 (grid
+    (_ _)
+    (1 _)))
+  (1 (grid
+    (1 _)
+    (_ _)))
+  (2 (grid
+    (_ _)
+    (_ 1)))
+  (3 (grid
+    (_ 1)
+    (_ _)))
+  (4 (grid
+    (1 _)
+    (1 _)))
+  (5 (grid
+    (_ _)
+    (1 1)))
+  (6 (grid
+    (_ 1)
+    (1 _)))
+  (7 (grid
+    (1 _)
+    (_ 1)))
+  (8 (grid
+    (1 1)
+    (_ _)))
+  (9 (grid
+    (_ 1)
+    (_ 1)))
+  (10 (grid
+    (1 _)
+    (1 1)))
+  (11 (grid
+    (1 1)
+    (1 _)))
+  (12 (grid
+    (_ 1)
+    (1 1)))
+  (13 (grid
+    (1 1)
+    (_ 1)))
+  (14 (grid
+    (1 1)
+    (1 1))))
+(param &panel_stack_out (Ident Position)
+  (0 (grid
+    (_ _)
+    (1 _)))
+  (1 (grid
+    (1 _)
+    (_ _)))
+  (2 (grid
+    (_ _)
+    (_ 1)))
+  (3 (grid
+    (_ 1)
+    (_ _)))
+  (4 (grid
+    (1 _)
+    (_ _)))
+  (5 (grid
+    (_ _)
+    (_ 1)))
+  (6 (grid
+    (_ 1)
+    (_ _)))
+  (7 (grid
+    (_ _)
+    (_ 1)))
+  (8 (grid
+    (1 _)
+    (_ _)))
+  (9 (grid
+    (_ _)
+    (_ 1)))
+  (10 (grid
+    (_ _)
+    (_ 1)))
+  (11 (grid
+    (1 _)
+    (_ _)))
+  (12 (grid
+    (_ _)
+    (_ 1)))
+  (13 (grid
+    (_ _)
+    (_ 1)))
+  (14 (grid
+    (_ _)
+    (_ 1))))
+(param &divider Color (4))
+
+(alts $k
+  (alt $OrderByPanel
+    (witness panels-recolored variant concept
+      (relaxed one-color-per-panel)
+      (separates "colors 7 and 8 trade places, so 8 marks the top-left panel and 7 the bottom-right: a color order puts 8 over 7 at row 4, cols 2-3; a panel order puts the bottom-right panel, now 7, on top there")
+      (input (grid
+        (8 0 0 0 4 0 0 9 0)
+        (8 8 0 0 4 9 9 0 9)
+        (0 0 0 0 4 0 9 9 0)
+        (0 0 8 0 4 0 0 0 0)
+        (8 0 8 8 4 9 0 0 0)
+        (4 4 4 4 4 4 4 4 4)
+        (2 0 2 0 4 0 0 0 0)
+        (2 0 0 2 4 0 0 7 7)
+        (2 0 0 2 4 7 0 0 7)
+        (0 0 0 2 4 0 7 0 0)
+        (0 0 0 0 4 0 0 7 7)))
+      (output $ByColor (grid
+        (8 0 9 0)
+        (8 8 7 7)
+        (7 9 9 7)
+        (0 7 8 2)
+        (8 0 8 8)))
+      (output $OrderByPanel (grid
+        (8 0 9 0)
+        (8 8 7 7)
+        (7 9 9 7)
+        (0 7 8 2)
+        (8 0 7 7))))))
+
+(alts $f
+  (alt $CombinationTable
+    (witness intransitive-table ordinary $CombinationTable
+      (separates "a stack table that shows 7 over 9 and 7 over 2, and 9 where 2, 7 and 9 meet: at train0 input (1,0), where those three meet, the table gives 9 and every order of the colors gives 7")
+      (assign &stack_member (0 2) (1 7) (2 8) (3 9) (4 2) (4 7) (5 2) (5 8) (6 2) (6 9) (7 7) (7 8) (8 7) (8 9) (9 8) (9 9) (10 2) (10 7) (10 8) (11 2) (11 7) (11 9) (12 2) (12 8) (12 9) (13 7) (13 8) (13 9) (14 2) (14 7) (14 8) (14 9))
+      (assign &stack_out (0 2) (1 7) (2 8) (3 9) (4 7) (5 8) (6 9) (7 8) (8 7) (9 8) (10 8) (11 9) (12 8) (13 8) (14 8))
+      (input (grid
+        (7 0 0 0 4 0 0 9 0)
+        (7 7 0 0 4 9 9 0 9)
+        (0 0 0 0 4 0 9 9 0)
+        (0 0 7 0 4 0 0 0 0)
+        (7 0 7 7 4 9 0 0 0)
+        (4 4 4 4 4 4 4 4 4)
+        (2 0 2 0 4 0 0 0 0)
+        (2 0 0 2 4 0 0 8 8)
+        (2 0 0 2 4 8 0 0 8)
+        (0 0 0 2 4 0 8 0 0)
+        (0 0 0 0 4 0 0 8 8)))
+      (output $TotalOrder (grid
+        (7 0 9 0)
+        (7 7 8 8)
+        (8 9 9 8)
+        (0 8 7 2)
+        (7 0 8 8)))
+      (output $CombinationTable (grid
+        (7 0 9 0)
+        (9 7 8 8)
+        (8 9 9 8)
+        (0 8 7 2)
+        (7 0 8 8))))))
+
+(alts $pa
+  (alt $CenterHalves
+    (witness divider-recolored variant $CenterHalves
+      (relaxed divider-cross)
+      (separates "the cross is drawn in 6, not 4: the center halves find the panels without reading the divider color and give the stack; the stored divider finds no cross and is undefined")
+      (input (grid
+        (0 7 7 0 6 0 0 0 0)
+        (0 0 0 0 6 0 9 0 9)
+        (0 7 7 0 6 9 9 0 9)
+        (7 0 7 7 6 0 0 0 9)
+        (7 0 7 7 6 9 0 0 9)
+        (6 6 6 6 6 6 6 6 6)
+        (0 0 2 2 6 8 8 8 0)
+        (0 2 0 2 6 0 0 0 8)
+        (2 2 2 2 6 0 0 8 8)
+        (0 0 2 2 6 8 0 0 0)
+        (0 0 2 0 6 0 8 8 0)))
+      (output ($DividerCross &cut=$Derived) undefined)
+      (output $CenterHalves &cut=$Stored (grid
+        (8 8 8 2)
+        (0 9 0 8)
+        (9 7 8 8)
+        (8 0 7 7)
+        (7 8 8 7))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed one-color-per-panel)
+      (separates "the background is 5, not 0: the stored background takes the 5 cells for marks with no priority and is undefined; the commonest color as background gives the stack on 5; the panel order shows the bottom-right panel wherever it has a cell, 5 included")
+      (input (grid
+        (7 5 5 5 4 5 5 9 5)
+        (7 7 5 5 4 9 9 5 9)
+        (5 5 5 5 4 5 9 9 5)
+        (5 5 7 5 4 5 5 5 5)
+        (7 5 7 7 4 9 5 5 5)
+        (4 4 4 4 4 4 4 4 4)
+        (2 5 2 5 4 5 5 5 5)
+        (2 5 5 2 4 5 5 8 8)
+        (2 5 5 2 4 8 5 5 8)
+        (5 5 5 2 4 5 8 5 5)
+        (5 5 5 5 4 5 5 8 8)))
+      (output ($ByColor &background=$Stored) undefined)
+      (output &background=$Derived (grid
+        (7 5 9 5)
+        (7 7 8 8)
+        (8 9 9 8)
+        (5 8 7 2)
+        (7 5 8 8)))
+      (output $OrderByPanel (grid
+        (5 5 5 5)
+        (5 5 8 8)
+        (8 5 5 8)
+        (5 8 5 5)
+        (5 5 8 8))))))
+
+(alts &cut
+  (alt &cut=$Stored
+    (witness cut=stored variant concept
+      (relaxed one-color-per-panel)
+      (separates "`cut=stored` from the derived value: train 0 turned a quarter turn clockwise")
+      (input (grid
+        (0 0 2 2 2 4 7 0 0 7 7)
+        (0 0 0 0 0 4 0 0 0 7 0)
+        (0 0 0 0 2 4 7 7 0 0 0)
+        (0 2 2 2 0 4 7 0 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (0 0 8 0 0 4 9 0 0 9 0)
+        (0 8 0 0 0 4 0 0 9 9 0)
+        (8 0 0 8 0 4 0 0 9 0 9)
+        (8 0 8 8 0 4 0 0 0 9 0)))
+      (output ($ByColor &cut=$Derived) (grid
+        (7 0 8 7 7)
+        (0 8 9 7 0)
+        (8 7 9 8 9)
+        (8 2 8 8 0)))
+      (output &cut=$Stored (grid
+        (0 8 7 7)
+        (8 9 7 8)
+        (8 0 8 8)))
+      (output $OrderByPanel (grid
+        (9 0 2 9 2)
+        (0 8 9 9 0)
+        (7 7 9 8 9)
+        (7 2 2 9 0))))))

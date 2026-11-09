@@ -1,0 +1,46 @@
+;; inputs e43aa3023fdf60a0824584e0ff74713615d49e1cf7ac4e6e1f17c67a98a11d70 programs/solvers/1a07d186.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1a07d186
+
+(DET &bg DominantColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &line
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &line_cell
+  (&line *A *L *Col)
+  (input *P)
+  (split P A (:Along L)))
+
+(RULE &loose
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line_cell P)))
+
+(RULE &arrive
+  (&loose (:P *P_grid_in) *Col)
+  (&line *A *L Col)
+  (split (:P P_grid_in) A (:Along *L_in) *Across)
+  (axis_of *D A)
+  (nearer D (:P L_in) (:Q L))
+  (compose (:A L) (:B Across) (:C *P_foot))
+  (neighbor (:P P_foot) D (:Q *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&line_cell P *Col))
+      ((&arrive P Col))
+      ((NOT (&line_cell P))
+       (NOT (&arrive P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

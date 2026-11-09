@@ -1,0 +1,62 @@
+;; inputs 46321854bb944bb8699ae8eb93009726781a1ad86fed02dab67fd7b063fda27d programs/solvers/22233c11.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22233c11
+
+(DET &block RarestColor)
+
+(RULE &block_cell
+  (input *P *Col)
+  (&block (:C Col)))
+
+;; The box the two squares share.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&block_cell *P)))
+
+(RULE &box_cell
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &place_nearer
+  (&box_cell (:P_inner *P))
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(RULE &place_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&place_nearer *P (:D D1))
+  (&place_nearer P (:D D2)))
+
+(DET &echo AnyOutNewColor)
+
+(RULE &quad_cell
+  (&box_cell *P *P_inner)
+  (&place_quadrant (:P P_inner) *Diag))
+
+(INIT &quad BoundingBox
+  (key ((&quad_cell ^Diag *P))
+    (cell (P)
+      (&quad_cell Diag *P))))
+
+(RULE &filled
+  (&quad_cell *Diag *P)
+  (&block_cell P))
+
+(RULE &echo_cell
+  (&quad_cell *Diag (:P *P2))
+  (NOT (&filled Diag))
+  (&quad.box (:key Diag) *B)
+  (box_extent B (:P P2) *A *N)
+  (perp A *A2)
+  (box_extent B (:P P2) (:A A2) N)
+  (jump (:P P2) (:D Diag) (:K N) (:Q *P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&echo_cell P))
+      ((&echo (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

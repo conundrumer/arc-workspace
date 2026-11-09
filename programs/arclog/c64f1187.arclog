@@ -1,0 +1,517 @@
+;; inputs 51b94309bd164fea08b156de87d6950c5308506ed4a37d52e03bf2e9ad1e443a programs/solvers/c64f1187.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c64f1187
+
+(INPUT legend "a row of entries, each a marker cell of its own color with a shape of &shape_color drawn in the tile-sized box whose &marker_corner corner the marker touches diagonally from outside"
+
+  (INIT &color_mode_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &color_mode Order
+    (key ((&color_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&color_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&color_mode_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&color_mode.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&color_mode.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&color_mode.maximal (:t *C))
+    (NOT (&background_defect C)))
+
+  (RULE &cell
+    (input *P *Col))
+
+  ;; The 4-connected pieces of ink.
+  (INIT &piece Connectivity
+    (node (P)
+      (&cell *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id))))
+
+  (DET &piece_color
+    (&piece.component *E *P *Id)
+    (ex_input E P *Col))
+
+  (DET &mixed
+    (&piece_color *E *Id (:Col *C1))
+    (&piece_color E Id (:Col *C2))
+    (!= C1 C2))
+
+  (DET &tile_color_defect
+    (&piece_color (:Col *C))
+    (ex_output *E)
+    (&mixed E *Id)
+    (NOT (&piece_color E Id (:Col C))))
+
+  (DET &tile_color
+    (&piece_color (:Col *C))
+    (NOT (&tile_color_defect C)))
+
+  (DET &tile_color3
+    (ex_input)
+    (&tile_color (:C *Col)))
+
+  (DET &tile_piece2
+    (&piece.component *E *P *Id)
+    (&cell E P *Col)
+    (&tile_color3 Col)
+    (ex_input E))
+
+  (DET &code_at
+    (&tile_piece2 *E *Id)
+    (&piece.component E *P Id)
+    (ex_input E P *Col)
+    (NOT (&tile_color (:C Col)))
+    (&piece_box.box E (:key Id) *B))
+
+  (DET &marker
+    (&code_at *E *P)
+    (ex_input E P *Col)
+    (ex_input E (:P *M) Col)
+    (&piece.component E (:P M) *Id)
+    (NOT (&tile_piece2 E Id)))
+
+  (DET &free_ink
+    (ex_output *E)
+    (&piece.component E *P *Id)
+    (NOT (&tile_piece2 E Id))
+    (ex_input E P *Col)
+    (NOT (&marker E (:M P)))
+    (NOT (ex_output E Col)))
+
+  (DET &shape_color_defect
+    (&free_ink (:Col *C))
+    (ex_output *E)
+    (NOT (&free_ink E (:Col C))))
+
+  (DET &shape_color
+    (&free_ink (:Col *C))
+    (NOT (&shape_color_defect C)))
+
+  (DET &shape_past
+    (&marker *E *M)
+    (diag_dirs *D *D1 *D2)
+    (opposite (:D D1) (:Opp *D1_far))
+    (opposite (:D D2) (:Opp *D2_far))
+    (ex_input E (:P *Q) *Col)
+    (&shape_color (:C Col))
+    (nearer (:D D1_far) (:P Q) (:Q M))
+    (nearer (:D D2_far) (:P Q) (:Q M)))
+
+  (DET &marker_corner_defect
+    (ex_output *E)
+    (&marker E *M)
+    (diag_dir_elem *D)
+    (NOT (&shape_past E D M)))
+
+  (DET &marker_corner
+    (diag_dir_elem *D)
+    (NOT (&marker_corner_defect D))))
+
+(INPUT tile-grid "a rectangular grid of 2 by 2 tiles of &tile_color, apart from the legend, with a 1-wide line of background between neighboring tiles"
+
+  (INIT &ink_mode_count Cardinality
+    (key ((&cell *P ^Col)
+          (NOT (&background (:C Col))))
+      (member ((:m P))
+        (&cell *P Col)
+        (NOT (&background (:C Col))))))
+
+  ;; The commonest colors of the ink.
+  (INIT &ink_mode Order
+    (member ((:t Col))
+      (&ink_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ink_mode_count.size (:key *Col) *N))))
+
+(INPUT code "a tile holds at most one cell of another color, at its bottom-right cell, and that color is the color of a legend marker")
+
+(INPUT background "every other cell is &background")
+
+(OUTPUT crop-to-tiles "the output is the bounding box of the tile grid, and the gaps stay background"
+
+  ;; The corner of the tile region the tiling runs from.
+  (DET &tiling_corner DiagDirDomain)
+
+  (RULE &tile_color2
+    (&tile_color (:C *Col)))
+
+  (RULE &tile_piece
+    (&piece.component *P *Id)
+    (&cell P *Col)
+    (&tile_color2 Col))
+
+  ;; The tile region.
+  (INIT &region BoundingBox
+    (cell ((:P B))
+      (&tile_piece *Id)
+      (&piece_box.box (:key Id) *B)))
+
+  (INIT &tile_extent Singleton
+    (key ((axis_elem ^A))
+      (member ((:v N))
+        (&tile_piece *Id)
+        (&piece_box.box (:key Id) *B)
+        (&piece.component *P Id)
+        (box_extent B P A *N))))
+
+  (RULE_OR_DET &tile_dim "The extent of a tile, and of a legend box, on each axis."
+    (&tile_extent.value (:key *A) (:v *N)))
+
+  (INIT &box_frame Frame
+    (extent (A N)
+      (&tile_dim *A *N)))
+
+  (RULE &box_corner_cell
+    (&box_frame.cell (:P *K))
+    (inside (:A K) (:B 0))
+    (same_corner *D (:P1 K) (:P2 0)))
+
+  (DET &bg_run_node
+    (ex_input (:E *Key) *P *Col)
+    (&background (:C Col)))
+
+  (INIT &bg_run Ray
+    (key ((OR ((&bg_run_node (:Key ^Ky) *P))
+              ((ex_output (:E Ky))
+               (dir_elem *D))))
+      (source (P)
+        (&bg_run_node (:Key Ky) *P))
+      (node (P)
+        (&bg_run_node (:Key Ky) *P))
+      (dir (D)
+        (ex_output (:E Ky))
+        (dir_elem *D))))
+
+  (INIT &gap_run Order
+    (member ((:t G))
+      (ex_output *E)
+      (ex_input E *P (:Col *C1))
+      (&tile_color (:C C1))
+      (axis_of *D *A)
+      (neighbor P D *Q)
+      (&bg_run.end (:key (:Ky E)) (:P *R) D (:Origin Q))
+      (neighbor (:P R) D (:Q *S))
+      (ex_input E (:P S) (:Col *C2))
+      (&tile_color (:C C2))
+      (sub_extent P A (:K *G))
+      (jump P D (:K G) (:Q R)))
+    (score ((:t G) (:S G))
+      (ex_output *E)
+      (ex_input E *P (:Col *C1))
+      (&tile_color (:C C1))
+      (axis_of *D *A)
+      (neighbor P D *Q)
+      (&bg_run.end (:key (:Ky E)) (:P *R) D (:Origin Q))
+      (neighbor (:P R) D (:Q *S))
+      (ex_input E (:P S) (:Col *C2))
+      (&tile_color (:C C2))
+      (sub_extent P A (:K *G))
+      (jump P D (:K G) (:Q R))))
+
+  (DET &gap
+    (&gap_run.minimal (:t *K)))
+
+  (RULE &tiling_origin
+    (&region.box (:B *R))
+    (input (:P *C))
+    (inside (:A C) (:B R))
+    (relative (:Base R) (:X C) (:X_rel *C_rel))
+    (&tiling_corner *D)
+    (diag_dirs D (:A *A1) *D1 *D2)
+    (perp (:A A1) *A2)
+    (margin (:B C_rel) (:D D1) (:K *T1))
+    (margin (:B C_rel) (:D D2) (:K *T2))
+    (&tile_dim (:A A1) (:N *W1))
+    (&tile_dim (:A A2) (:N *W2))
+    (&gap (:K *G))
+    (divide (:T T1) (:Side W1) (:Gap G) (:Remainder 0))
+    (divide (:T T2) (:Side W2) (:Gap G) (:Remainder 0)))
+
+  (RULE &tiling_tile
+    (&tiling_origin *C)
+    (&tiling_corner *D)
+    (&box_corner_cell D *K)
+    (relative (:Base K) (:X C) (:X_rel *B))
+    (&region.box (:B *R))
+    (inside (:A B) (:B R)))
+
+  (INIT &tiling_frame BoundingBox
+    (cell ((:P B))
+      (&tiling_tile *B))))
+
+(OUTPUT stamp-shape "a tile with a code takes the legend shape of the code's color, each shape cell at the same place in the tile as in its legend box, in the code's color, and the tile's other cells become background"
+
+  (RULE &box_offset
+    (&box_corner_cell *D *K)
+    (&box_frame.cell *P)
+    (relative (:Base K) (:X P) (:X_rel *W)))
+
+  (RULE &tile_cell
+    (&tile_piece *Id)
+    (&piece_box.box (:key Id) *B)
+    (&piece.component *P Id))
+
+  (RULE &code_cell
+    (&tile_cell *B *P)
+    (input P *Col)
+    (NOT (&tile_color2 Col))
+    (NOT (&background (:C Col))))
+
+  (RULE &tile_code
+    (&code_cell *B *P)
+    (input P *Col))
+
+  (RULE &marker2
+    (&tile_code *Col)
+    (input (:P *M) Col)
+    (NOT (&tile_cell (:P M))))
+
+  (RULE &legend_box
+    (&marker2 *M)
+    (diag_opposite *D (:Opp *D_in))
+    (neighbor (:P M) (:D D_in) (:Q *K)))
+
+  (RULE &legend_cell
+    (&legend_box *D *M *K)
+    (&box_offset D *W)
+    (compose (:A K) (:B W) (:C *Q)))
+
+  (RULE &corner_of
+    (&marker_corner *D))
+
+  (RULE &shape_ink
+    (&shape_color (:C *Col))
+    (input (:P *Q) Col))
+
+  (RULE &shape_cell
+    (&corner_of *D)
+    (&marker2 *M *Col)
+    (&legend_cell D M *Q)
+    (&shape_ink Q))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape_cell ^Col *Q))
+      (cell ((:P Q))
+        (&shape_cell Col *Q)))))
+
+(OUTPUT blank-tile "a tile with no code becomes background")
+
+(ALTS $legend "which shape a marker names" $InBox
+  (ALT $InBox
+    (ALTS $place "where a shape cell lands in its tile" $BoxPlace
+      (ALT $BboxAnchor
+        (OUTPUT stamp-shape "a shape's bounding box sits at the tile's &marker_corner corner")
+        (RULE &shape_anchor
+          (&shape_box.box (:key *Col) *B)
+          (&corner_of *D)
+          (input (:P *A))
+          (inside A B)
+          (same_corner D (:P1 A) (:P2 B))))))
+  (ALT $ByOrder
+    (INPUT legend "the markers and the pieces of shape ink outside the tiles are each ranked along &order_axis from &marker_corner, and a marker names the piece of its rank"
+      ;; The pieces of shape ink outside the tiles.
+      (INIT &order_piece Connectivity
+        (node ((:P Q))
+          (&shape_ink *Q)
+          (NOT (&tile_cell (:P Q)))))
+
+      (INIT &order_piece_box BoundingBox
+        (key ((&order_piece.component (:P *Q) ^Id))
+          (cell ((:P Q))
+            (&order_piece.component (:P *Q) Id))))
+
+      (RULE &piece_corner
+        (&order_piece_box.box (:key *Id) *B)
+        (&corner_of *D)
+        (input (:P *A))
+        (inside A B)
+        (same_corner D (:P1 A) (:P2 B)))
+
+      (DET &marker_line
+        (&marker *E (:M *M1))
+        (&marker E (:M *M2))
+        (axis_elem *A)
+        (same_line A (:P M1) (:Q M2)))
+
+      (DET &order_axis_defect
+        (ex_output *E)
+        (&marker E (:M *M1))
+        (&marker E (:M *M2))
+        (axis_elem *A)
+        (NOT (&marker_line E M1 M2 A)))
+
+      (DET &order_axis
+        (axis_elem *A)
+        (NOT (&order_axis_defect A)))
+
+      (INIT &marker_order Order
+        (member ((:t M))
+          (&marker2 *M))
+        (score ((:t M) (:S K1))
+          (&marker2 *M)
+          (&corner_of (:D *Diag))
+          (&order_axis *A)
+          (diag_dist (:P M) Diag A *K1 *K2))
+        (secondary_score ((:t M) (:S K2))
+          (&marker2 *M)
+          (&corner_of (:D *Diag))
+          (&order_axis *A)
+          (diag_dist (:P M) Diag A *K1 *K2)))
+
+      (INIT &piece_order Order
+        (member ((:t A))
+          (&piece_corner *A))
+        (score ((:t A) (:S K1))
+          (&piece_corner *A)
+          (&corner_of (:D *Diag))
+          (&order_axis (:A *A2))
+          (diag_dist (:P A) Diag (:A A2) *K1 *K2))
+        (secondary_score ((:t A) (:S K2))
+          (&piece_corner *A)
+          (&corner_of (:D *Diag))
+          (&order_axis (:A *A2))
+          (diag_dist (:P A) Diag (:A A2) *K1 *K2))))
+    (OUTPUT stamp-shape "a shape's bounding box sits at the tile's &marker_corner corner"
+      (RULE &shape_cell
+        (&marker2 *M *Col)
+        (&marker_order.rank (:t M) *R)
+        (&piece_order.rank (:t *A) R)
+        (&piece_corner *Id A)
+        (&order_piece.component (:P *Q) Id)))
+    (RULE &shape_anchor
+      (&shape_box.box (:key *Col) *B)
+      (&corner_of *D)
+      (input (:P *A))
+      (inside A B)
+      (same_corner D (:P1 A) (:P2 B)))))
+
+(ALTS $corner "the corner of a legend box that its marker touches" $StoredCorner
+  (ALT $DerivedCorner
+    (INPUT legend "the corner is the one at which every marker's box holds a shape cell; undefined where no corner or more than one does"
+      (RULE &box_inked
+        (&legend_cell *D *M *Q)
+        (&shape_ink Q))
+
+      (RULE &corner_defect
+        (&marker2 *M)
+        (diag_dir_elem *D)
+        (NOT (&box_inked D M)))
+
+      (RULE &corner_fit
+        (diag_dir_elem *D)
+        (NOT (&corner_defect D)))
+
+      (RULE &corner_tie
+        (&corner_fit (:D *D1))
+        (&corner_fit (:D *D2))
+        (!= D1 D2))
+
+      (RULE &corner_of
+        (&corner_fit *D)
+        (NOT (&corner_tie))))))
+
+(ALTS $ink "which cells of a legend box are the shape" $ShapeColor
+  (ALT $AnyInk
+    (INPUT legend "a shape is every cell of its box that is not &background, in no tile and no marker"
+      (RULE &shape_ink
+        (input (:P *Q) *Col)
+        (NOT (&background (:C Col)))
+        (NOT (&tile_cell (:P Q)))
+        (NOT (&marker2 (:M Q)))))))
+
+(ALTS $code "which cell of a tile is its code" $OddCell
+  (ALT $CodeAtCorner
+    (INPUT code "a tile's code is its cell at &code_corner, where that cell is neither the tile color nor background; defined on a tile with two such cells"
+      (DET &code_at_corner
+        (&code_at *E *P *B)
+        (inside (:A P) B)
+        (same_corner *D (:P1 P) (:P2 B)))
+
+      (DET &code_corner_defect
+        (ex_output *E)
+        (diag_dir_elem *D)
+        (NOT (&code_at_corner E D)))
+
+      (DET &code_corner
+        (diag_dir_elem *D)
+        (NOT (&code_corner_defect D)))
+
+      (RULE &code_cell
+        (&tile_cell *B *P)
+        (&code_corner *D)
+        (inside (:A P) B)
+        (same_corner D (:P1 P) (:P2 B))
+        (input P *Col)
+        (NOT (&tile_color2 Col))
+        (NOT (&background (:C Col)))))))
+
+(ALTS $tcol "the color of the tiles" $StoredTileColor
+  (ALT $TileColorByCount
+    (INPUT tile-grid "the tile color is the commonest color other than &background; undefined on a tie"
+      (RULE &tile_color2
+        (&ink_mode.maximal (:t *Col))
+        (ALL ((&ink_mode.maximal (:t *C1))
+              (&ink_mode.maximal (:t *C2)))
+             ((= C1 C2)))))))
+
+(ALTS $parse "how the tiles are found" $Pieces
+  (ALT $Tiling
+    (INPUT tile-grid "the tiles lie on a tiling that runs from the &tiling_corner corner of the tile region, each of the tile extent, at a stride of that extent plus &gap; the tiles are the tiling boxes that lie wholly in the region"
+      (RULE &tile_cell
+        (&tiling_tile *B)
+        (input *P)
+        (inside (:A P) B)))
+    (RULE &frame
+      (&tiling_frame.box *B))))
+
+(RULE &code_clash
+  (&code_cell *B (:P *P1))
+  (&code_cell B (:P *P2))
+  (!= P1 P2))
+
+(RULE &shape_anchor
+  (&corner_of *D)
+  (&marker2 *M *Col)
+  (&legend_box D M (:K *A)))
+
+(RULE &shape
+  (&shape_cell *Col *Q)
+  (&shape_anchor Col *A)
+  (relative (:Base A) (:X Q) (:X_rel *W)))
+
+(RULE &stamp
+  (&shape *Col *W)
+  (&tile_code *B Col)
+  (&corner_of *D)
+  (&tile_cell B (:P *C))
+  (inside (:A C) B)
+  (same_corner D (:P1 C) (:P2 B))
+  (compose (:A C) (:B W) (:C *P)))
+
+(RULE &frame
+  (&region.box *B))
+
+(RULE &output
+  (&corner_of)
+  (&frame *B)
+  (NOT (&code_clash))
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&stamp (:P P2) *Col))
+      ((NOT (&stamp (:P P2)))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,196 @@
+;; inputs 61017b3d579f82a89643c528736113927859bd8ceec185773b9c07538c764414 programs/solvers/a61f2674.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a61f2674
+
+(INPUT bar-color "the bars are drawn in &bar_color on a &background field"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &changed
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (DET &kept
+    (ex_input *E *P *Col)
+    (ex_output E P Col))
+
+  (DET_OR_RULE &bar_color RarestColor
+    (&changed (:Col *C))
+    (NOT (&kept (:Col C))))
+
+  (INIT &sole Singleton
+    (member ((:v Col))
+      (input *Col)
+      (NOT (&background (:C Col))))))
+
+(INPUT bars "vertical bars stand on the &gravity_side edge, each one column wide, with an empty column between neighbors; a bar is a 4-connected component of the bar-color cells"
+
+  ;; The edge the bars stand on.
+  (DET &gravity_side DirDomain)
+
+  (RULE &bar_color2
+    (&bar_color (:C *Col)))
+
+  (RULE &ink
+    (input *P *Col)
+    (&bar_color2 Col))
+
+  (INIT &bars8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT distinct-heights "the bars have pairwise different heights")
+
+(OUTPUT height "a bar's height is the number of lines it spans along the axis of &gravity_side"
+
+  ;; The lines along the gravity axis, each as one unit.
+  (INIT &lines Quotient
+    (equivalent ((:a P) (:b Q))
+      (input *P)
+      (input (:P *Q))
+      (&gravity_side *D)
+      (axis_of D *A)
+      (same_line A P Q))))
+
+(OUTPUT tallest-recolor "the tallest bar keeps its cells and takes &tallest_color; undefined where two bars tie for the tallest"
+
+  (DET &tallest_color AnyOutNewColor)
+
+  (INIT &bars Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &member
+    (&bars.component *P (:Id *B)))
+
+  (INIT &span BoundingBox
+    (key ((&member (:B ^Id) *P))
+      (cell (P)
+        (&member (:B Id) *P))))
+
+  (RULE &height
+    (&span.box (:key (:Id *B)) (:B *B2))
+    (&member B *P)
+    (&gravity_side *D)
+    (axis_of D *A)
+    (box_extent (:B B2) P A *N))
+
+  (INIT &rank Order
+    (member ((:t (:V Id) (:S N)))
+      (&height (:B *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&height (:B *Id) *N)))
+
+  (INIT &top Singleton
+    (member ((:v Id))
+      (&rank.maximal (:t (:V *Id))))))
+
+(OUTPUT shortest-recolor "the shortest bar keeps its cells and takes &shortest_color; undefined where two bars tie for the shortest, and where one bar is both the tallest and the shortest"
+
+  (DET &shortest_color AnyOutNewColor)
+
+  (INIT &bottom Singleton
+    (member ((:v Id))
+      (&rank.minimal (:t (:V *Id))))))
+
+(OUTPUT erase-rest "every other bar takes &background")
+
+(ALTS $reading "the unit that is ranked, and how its height is measured" $ComponentSpan
+  (ALT $ColumnCount
+    (INPUT bars "vertical bars stand on the &gravity_side edge; a bar is the set of bar-color cells on one line along the axis of &gravity_side, whether or not they touch")
+    (OUTPUT height "a bar's height is its number of cells"
+      (RULE &member
+        (&ink *P)
+        (&lines.class (:a P) (:Id *B)))
+
+      (INIT &size Cardinality
+        (key ((&member (:B ^Id) *P))
+          (member ((:m P))
+            (&member (:B Id) *P))))
+
+      (RULE &height
+        (&size.size (:key (:Id *B)) *N))))
+  (ALT $TopExtent
+    (INPUT bars "vertical bars stand on the &gravity_side edge; a bar is the set of bar-color cells on one line along the axis of &gravity_side, whether or not they touch")
+    (OUTPUT height "a bar's height is the distance of its farthest cell from the &gravity_side edge"
+      (RULE &member
+        (&ink *P)
+        (&lines.class (:a P) (:Id *B)))
+
+      ;; The distance of each line's farthest cell from the &gravity_side edge.
+      (INIT &reach Order
+        (key ((&member (:B ^Id) *P)
+              (&gravity_side *D)
+              (margin (:B P) D *K))
+          (member ((:t K))
+            (&member (:B Id) *P)
+            (&gravity_side *D)
+            (margin (:B P) D *K))
+          (score ((:t K) (:S K))
+            (&member (:B Id) *P)
+            (&gravity_side *D)
+            (margin (:B P) D *K))))
+
+      (RULE &height
+        (&reach.maximal (:key (:Id *B)) (:t *N)))))
+  (ALT $Area
+    (OUTPUT height "a bar's height is its number of cells"
+      (INIT &size Cardinality
+        (key ((&member (:B ^Id) *P))
+          (member ((:m P))
+            (&member (:B Id) *P))))
+
+      (RULE &height
+        (&size.size (:key (:Id *B)) *N))))
+  (ALT $EightConnected
+    (INPUT bars "vertical bars stand on the &gravity_side edge, each one column wide, with an empty column between neighbors; a bar is an 8-connected component of the bar-color cells"
+      (RULE &member
+        (&bars8.component *P (:Id *B))))))
+
+(ALTS $tie "what happens when several bars share an extreme height" $Unique
+  (ALT $TieAll
+    (OUTPUT tallest-recolor "every bar at the greatest height keeps its cells and takes &tallest_color")
+    (OUTPUT shortest-recolor "every bar at the least height keeps its cells and takes &shortest_color; undefined where a bar is at both extremes, as when all bars have one height")
+    (RULE &tallest
+      (&rank.maximal (:t (:V *B))))
+
+    (RULE &shortest
+      (&rank.minimal (:t (:V *B))))))
+
+(ALTS $source "where the bar color comes from" $StoredBarColor
+  (ALT $DeriveBarColor
+    (INPUT bar-color "the bars are drawn in the one color other than &background that the input holds; undefined where the input holds no such color or more than one"
+      (RULE &bar_color2
+        (&sole.value (:v *Col))))))
+
+(RULE &shortest
+  (&bottom.value (:v *B)))
+
+(RULE &tallest
+  (&top.value (:v *B)))
+
+(RULE &paint
+  (OR ((&tallest *B)
+       (NOT (&shortest B))
+       (&tallest_color (:C *Col)))
+      ((&shortest B)
+       (NOT (&tallest B))
+       (&shortest_color (:C Col)))))
+
+(RULE &output
+  (OR ((&member (:B *Id) *P)
+       (OR ((&paint (:B Id) *Col))
+           ((NOT (&rank.maximal (:t (:V Id))))
+            (NOT (&rank.minimal (:t (:V Id))))
+            (&background (:C Col)))))
+      ((&bar_color2)
+       (input P Col)
+       (NOT (&ink P)))))
+
+(OUT (&output ^P ^Col))

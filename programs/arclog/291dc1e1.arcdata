@@ -1,0 +1,9 @@
+;; inputs 6f42affee3add6f08cc0d9b2854cf19026b2bb32c92e0857efcca3a97e7a92c3 programs/solvers/291dc1e1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 291dc1e1
+
+(param &bg Color (8))
+(param &mark Color (0))
+(param &stack_dir Dir (DIR_T))
+(param &rot D4 (D4_CC))
+(param &primary_col Color (2))

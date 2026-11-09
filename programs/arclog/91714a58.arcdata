@@ -1,0 +1,6 @@
+;; inputs 525e59cb3a2e50c2b0e0f35949b27f18bc4f095be3f89263961160d39c3b2352 programs/solvers/91714a58.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 91714a58
+
+(param &bg Color (0))
+(param &square_side number (2))

@@ -1,0 +1,152 @@
+;; inputs f506dda7d9c15983c4823781e7e118c8bd678a46df8a60818db57e7bd33ab4f6 programs/solvers/f9a67cb5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f9a67cb5
+
+(param &source_color Color (2))
+(param &wall_color Color (8))
+(param &background Color (0))
+
+(alts $w
+  (alt $WallAnyColor
+    (witness wall-other-color variant $WallAnyColor
+      (relaxed parallel-walls)
+      (relaxed background)
+      (separates "the walls are 5, not the stored wall color 8: the concept sees no wall and the water falls straight to the far edge; walls as any color off the background stop it and it spreads to the gap")
+      (input (grid
+        (0 0 2 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (5 5 5 5 0 5 5)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $WallColor (grid
+        (0 0 2 0 0 0 0)
+        (0 0 2 0 0 0 0)
+        (5 5 2 5 0 5 5)
+        (0 0 2 0 0 0 0)
+        (0 0 2 0 0 0 0)))
+      (output $WallAnyColor (grid
+        (0 0 2 0 0 0 0)
+        (2 2 2 2 2 0 0)
+        (5 5 5 5 2 5 5)
+        (0 0 0 0 2 0 0)
+        (0 0 0 0 2 0 0))))))
+
+(alts $g
+  (alt $DrainWholeGap
+    (witness wide-gap borderline concept
+      (relaxed parallel-walls)
+      (separates "a gap two cells wide: the concept drains through the first gap cell the spread reaches, a one-wide stream; draining the whole gap gives a two-wide stream")
+      (input (grid
+        (0 0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 0 0)
+        (8 8 0 0 8 8 8 8)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $DrainCell (grid
+        (0 0 0 0 0 2 0 0)
+        (0 0 0 2 2 2 2 2)
+        (8 8 0 2 8 8 8 8)
+        (0 0 0 2 0 0 0 0)
+        (0 0 0 2 0 0 0 0)))
+      (output $DrainWholeGap (grid
+        (0 0 0 0 0 2 0 0)
+        (0 0 2 2 2 2 2 2)
+        (8 8 2 2 8 8 8 8)
+        (0 0 2 2 0 0 0 0)
+        (0 0 2 2 0 0 0 0))))))
+
+(alts &source_color
+  (alt &source_color=$Derived
+    (witness source_color=RarestColor variant &source_color=$Derived
+      (relaxed one-source)
+      (separates "the spout is 3, not the stored source color 2: the concept finds no source and returns the input; the derived source pours water of 3")
+      (input (grid
+        (0 0 3 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (8 8 8 8 0 8 8)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output &source_color=$Stored (grid
+        (0 0 3 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (8 8 8 8 0 8 8)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output (&source_color=$Derived &water_color=$Derived) (grid
+        (0 0 3 0 0 0 0)
+        (3 3 3 3 3 0 0)
+        (8 8 8 8 3 8 8)
+        (0 0 0 0 3 0 0)
+        (0 0 0 0 3 0 0)))
+      (output (&source_color=$Derived &water_color=$Stored) (grid
+        (0 0 2 0 0 0 0)
+        (2 2 2 2 2 0 0)
+        (8 8 8 8 2 8 8)
+        (0 0 0 0 2 0 0)
+        (0 0 0 0 2 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "`background=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (8 8 8 8 8 1 8 8 8 1 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (8 8 1 8 8 8 8 8 8 8 8 8 1 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (8 8 8 8 8 1 8 8 8 8 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)))
+      (output &background=$Derived $WallColor (grid
+        (1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 2 2 2 2 2 1 1 1 1 1 1 1)
+        (8 8 8 8 8 2 8 8 8 2 8 8 8 8 8 8 8)
+        (1 1 2 2 2 2 2 2 2 2 2 2 2 1 1 1 1)
+        (8 8 2 8 8 8 8 8 8 8 8 8 2 8 8 8 8)
+        (1 1 2 1 1 1 1 1 1 1 1 1 2 1 1 1 1)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (8 8 8 8 8 2 8 8 8 8 8 8 8 8 8 8 8)
+        (1 1 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 2 1 1 1 1 1 1 1 1 1 1 1)))
+      (output ($WallAnyColor &background=$Stored) (grid
+        (1 1 1 1 1 1 1 2 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (8 8 8 8 8 1 8 8 8 1 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (8 8 1 8 8 8 8 8 8 8 8 8 1 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (8 8 8 8 8 1 8 8 8 8 8 8 8 8 8 8 8)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1))))))
+
+(alts &water_color
+  (alt &water_color=$Stored
+    (witness water_color=stored ordinary concept
+      (separates "the stored water color is 3 beside a spout of 2: the concept paints the water in the spout's color 2; the stored water color paints it 3")
+      (assign &water_color (3))
+      (input (grid
+        (0 0 2 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (8 8 8 8 0 8 8)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output &water_color=$Derived (grid
+        (0 0 2 0 0 0 0)
+        (2 2 2 2 2 0 0)
+        (8 8 8 8 2 8 8)
+        (0 0 0 0 2 0 0)
+        (0 0 0 0 2 0 0)))
+      (output &water_color=$Stored (grid
+        (0 0 3 0 0 0 0)
+        (3 3 3 3 3 0 0)
+        (8 8 8 8 3 8 8)
+        (0 0 0 0 3 0 0)
+        (0 0 0 0 3 0 0))))))

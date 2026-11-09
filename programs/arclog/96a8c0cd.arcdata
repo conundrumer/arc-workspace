@@ -1,0 +1,7 @@
+;; inputs 25d1adde63344f0335cce977643c3423c350c1da24043129a9dfa65df1d6f87a programs/solvers/96a8c0cd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 96a8c0cd
+
+(param &bg Color (0))
+(param &marker Color (2))
+(param &deflect (Color Sense) (3 SENSE_CW) (1 SENSE_CC))

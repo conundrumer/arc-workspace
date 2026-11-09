@@ -1,0 +1,182 @@
+;; inputs b066ae227314f9415f1efb673d9cf70af22cc6ab985e95377601e3b6b054e9c8 programs/solvers/fcb5c309.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fcb5c309
+
+(param &background Color (0))
+
+(exclude ($CountDotClusters $SelectLargest) "The count unit exists only where a frame is picked by what it holds.")
+
+(alts $m
+  (alt $SizeByBorderCells
+    (witness border-cell-count ordinary concept
+      (separates "a 6x6 frame (area 36, 20 border cells, one dot) beside a 3x11 frame (area 33, 24 border cells, three dots): $SelectLargest by area crops the 6x6; $SizeByBorderCells and the concept crop the 3x11")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 4 0 0 0)
+        (0 2 2 2 2 2 2 0 0 0 0 0 0)
+        (0 2 0 0 0 0 2 0 0 0 0 0 0)
+        (0 2 0 4 0 0 2 0 0 0 0 0 0)
+        (0 2 0 0 0 0 2 0 0 4 0 0 0)
+        (0 2 0 0 0 0 2 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 4)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 2 2 0)
+        (0 2 4 0 0 4 0 0 0 4 0 2 0)
+        (0 2 2 2 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 4 0 0 0 0 0 0 0 0)))
+      (output $SizeByBorderCells $MostDots (grid
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 0 0 4 0 0 0 4 0 4)
+        (4 4 4 4 4 4 4 4 4 4 4)))
+      (output $Area $SizeByInterior (grid
+        (4 4 4 4 4 4)
+        (4 0 0 0 0 4)
+        (4 0 4 0 0 4)
+        (4 0 0 0 0 4)
+        (4 0 0 0 0 4)
+        (4 4 4 4 4 4)))))
+  (alt $SizeByInterior
+    (witness interior-area ordinary concept
+      (separates "a 6x6 frame (area 36, interior 16, three dots) beside a 3x15 frame (area 45, interior 13, one dot): $SelectLargest by area crops the 3x15; $SizeByInterior and the concept crop the 6x6")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 4 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 4 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 4 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 2 0 0 0 4 0 0 0 0 0 0)
+        (0 2 0 4 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 4 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 0)
+        (0 0 0 4 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $MostDots $SizeByInterior (grid
+        (4 4 4 4 4 4)
+        (4 4 0 0 0 4)
+        (4 0 0 4 0 4)
+        (4 0 0 0 0 4)
+        (4 0 4 0 0 4)
+        (4 4 4 4 4 4)))
+      (output $SizeByBorderCells $Area (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 0 0 0 0 0 0 4 0 0 0 0 0 0 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4))))))
+
+(alts $s
+  (alt $SelectLargest
+    (witness largest-frame ordinary concept
+      (separates "the larger frame holds fewer dots inside than the smaller: the concept crops the 5x5 frame with three dots; $SelectLargest crops the 7x7 frame with one")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 4 0 0 0 0)
+        (0 2 2 2 2 2 2 2 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 2 0 2 2 2 2 2 0)
+        (0 2 0 4 0 0 0 2 0 2 4 0 4 2 0)
+        (0 2 0 0 0 0 0 2 0 2 0 0 0 2 0)
+        (0 2 0 0 0 0 0 2 0 2 0 4 0 2 0)
+        (0 2 0 0 0 0 0 2 0 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 4 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 4 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 4 0 0 0 0 0 0 0 0 0)))
+      (output $MostDots (grid
+        (4 4 4 4 4)
+        (4 4 0 4 4)
+        (4 0 0 0 4)
+        (4 0 4 0 4)
+        (4 4 4 4 4)))
+      (output $SelectLargest (grid
+        (4 4 4 4 4 4 4)
+        (4 0 0 0 0 0 4)
+        (4 0 4 0 0 0 4)
+        (4 0 0 0 0 0 4)
+        (4 0 0 0 0 0 4)
+        (4 0 0 0 0 0 4)
+        (4 4 4 4 4 4 4))))))
+
+(alts $a
+  (alt $Adjacency8
+    (witness diagonal-cluster ordinary concept
+      (separates "the 5x5 frame holds three dots on one diagonal and the 7x7 frame two separate dots: $CountDotClusters counts 3 against 2 and crops the 5x5; $Adjacency8 counts 1 against 2 and crops the 7x7")
+      (input (grid
+        (0 0 0 4 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 0 0 0 0 0 0 0 0 0)
+        (0 2 4 0 0 2 0 0 0 0 0 0 0 0 0)
+        (0 2 0 4 0 2 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 4 2 0 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 0 2 0 0 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 0 4 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 0 0 0 0 0 2 0)
+        (0 0 4 0 0 0 0 2 0 0 0 4 0 2 0)
+        (0 0 0 0 0 0 0 2 0 0 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 4 0 0 0 0 0 0 0 0)))
+      (output concept $Adj4 (grid
+        (4 4 4 4 4)
+        (4 4 0 0 4)
+        (4 0 4 0 4)
+        (4 0 0 4 4)
+        (4 4 4 4 4)))
+      (output $SelectLargest $Adjacency8 (grid
+        (4 4 4 4 4 4 4)
+        (4 0 0 0 0 0 4)
+        (4 0 4 0 0 0 4)
+        (4 0 0 0 0 0 4)
+        (4 0 0 0 4 0 4)
+        (4 0 0 0 0 0 4)
+        (4 4 4 4 4 4 4))))))
+
+(alts $u
+  (alt $CountDotClusters
+    (witness dot-cluster ordinary concept
+      (separates "the 5x5 frame holds three dots in one 4-connected run and the 7x7 frame two separate dots: the concept counts 3 against 2 and crops the 5x5; $CountDotClusters counts 1 against 2 and crops the 7x7")
+      (input (grid
+        (0 0 0 4 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 2 0 0 0 0 0 0 0 0 0)
+        (0 2 4 4 4 2 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 2 0 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 0 2 0 0 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 0 4 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 0 0 0 0 0 2 0)
+        (0 0 4 0 0 0 0 2 0 0 0 4 0 2 0)
+        (0 0 0 0 0 0 0 2 0 0 0 0 0 2 0)
+        (0 0 0 0 0 0 0 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 4 0 0 0 0 0 0 0 0)))
+      (output concept (grid
+        (4 4 4 4 4)
+        (4 0 0 0 4)
+        (4 4 4 4 4)
+        (4 0 0 0 4)
+        (4 4 4 4 4)))
+      (output $SelectLargest $CountDotClusters (grid
+        (4 4 4 4 4 4 4)
+        (4 0 0 0 0 0 4)
+        (4 0 4 0 0 0 4)
+        (4 0 0 0 0 0 4)
+        (4 0 0 0 4 0 4)
+        (4 0 0 0 0 0 4)
+        (4 4 4 4 4 4 4))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "frame cells (28) outnumber 0 cells (19): the stored background 0 crops the 5x5 frame with two dots; DominantColor takes the frame color as background, finds no frame, and is undefined")
+      (input (grid
+        (2 2 2 2 2 0 2 2 2 2)
+        (2 4 0 0 2 0 2 4 0 2)
+        (2 0 0 4 2 0 2 0 0 2)
+        (2 0 0 0 2 0 2 2 2 2)
+        (2 2 2 2 2 0 0 0 0 0)))
+      (output &background=$Stored (grid
+        (4 4 4 4 4)
+        (4 4 0 0 4)
+        (4 0 0 4 4)
+        (4 0 0 0 4)
+        (4 4 4 4 4)))
+      (output &background=$Derived undefined))))

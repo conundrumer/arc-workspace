@@ -1,0 +1,9 @@
+;; inputs b78be94d783d91bb2816a5700382f7ff6b24a82aee37d79a700e8969778a7f65 programs/solvers/5168d44c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5168d44c
+
+(param &bg Color (0))
+(param &ring Color (2))
+(param &dot Color (3))
+(param &corner DiagDir (DIAG_BR))
+(param &step number (2))

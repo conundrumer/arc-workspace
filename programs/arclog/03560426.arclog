@@ -1,0 +1,84 @@
+;; inputs 789d551f97991bae486ab68836bbfaacf857e4597677260ba341faf76a403943 programs/solvers/03560426.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 03560426
+
+(DET &bg DominantColor)
+
+(DET &order DirDomain)
+
+(DET &corner DiagDirDomain)
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bb BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+(RULE &block_corner
+  (&blocks.component *P *Id)
+  (&bb.box (:key Id) *B)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B)))
+
+(RULE &near
+  (&corner (:D *Diag))
+  (diag_opposite (:D Diag) (:Opp *Start))
+  (&block_corner *Id *P (:D Start)))
+
+(INIT &chain Order
+  (member ((:t Id))
+    (&blocks.component *Id))
+  (score ((:t Id) (:S K))
+    (&order *D)
+    (&bb.box (:key *Id) *B)
+    (margin B D *K)))
+
+(RULE &beyond
+  (&chain.rank (:t *Id1) (:R *R1))
+  (&chain.rank (:t *Id2) (:R *R2))
+  (< R1 R2))
+
+;; The chain's walk: the first block's near corner lands on the start corner,
+;; and each next block's near corner lands where the previous block's far
+;; corner lands.
+(INIT &walk Propagation
+  (source ((:n Id P))
+    (&chain.minimal (:t *Id))
+    (&corner (:D *Diag))
+    (diag_opposite (:D Diag) (:Opp *Start))
+    (input *P)
+    (corner_dist P (:Diag Start) (:K 0)))
+  (edge ((:a (:Id Id1) (:P A)) (:b (:Id Id2) (:P A2)))
+    (&chain.successor (:a *Id1) (:b *Id2))
+    (input (:P *A))
+    (&near (:Id Id1) (:P *N))
+    (&corner (:D *Diag))
+    (&block_corner (:Id Id1) (:P *F) (:D Diag))
+    (relative (:Base N) (:X F) (:X_rel *V))
+    (compose A (:B V) (:C *A2))))
+
+(RULE &place
+  (&walk.reached (:n *Id (:P *A)))
+  (&blocks.component (:P *P_in) Id)
+  (&near Id (:P *N))
+  (relative (:Base N) (:X P_in) (:X_rel *V))
+  (compose A (:B V) (:C *P_out)))
+
+(RULE &taken
+  (&place *Id (:P_out *P))
+  (&beyond (:Id1 Id) *Id2)
+  (&place (:Id Id2) (:P_out P)))
+
+(RULE &output
+  (OR ((&place *Id *P_in (:P_out *P))
+       (NOT (&taken Id P))
+       (input (:P P_in) *Col))
+      ((input P)
+       (NOT (&place (:P_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

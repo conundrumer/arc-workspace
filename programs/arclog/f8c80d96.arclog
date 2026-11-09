@@ -1,0 +1,192 @@
+;; inputs a8d9de9b4e73a3001af71f0d2253a31b9c222ad0ef6826e33287c4242893b9b2 programs/solvers/f8c80d96.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8c80d96
+
+(INPUT background-field "every cell that is not on an outline holds &bg (0)."
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2)))
+
+(INPUT one-line-color "every outline cell holds the one other color of the input, the line color.")
+
+(INPUT nested-outlines "the line cells are the visible cells of two or more rectangle outlines, 1 cell thick, each of which reaches past the grid edge on one or more sides.")
+
+(INPUT uniform-step "each outline is the next inner one moved outward by one step on every side, the same step for every two consecutive outlines."
+
+  ;; The line color: the input's one color other than the background.
+  (INIT &line Singleton
+    (member ((:v Col))
+      (input *Col)
+      (NOT (&bg (:C Col)))))
+
+  (RULE &line_cell
+    (input *P *Col)
+    (&line.value (:v Col)))
+
+  ;; Each outline is one component of line cells.
+  (INIT &outline Connectivity
+    (node (P)
+      (&line_cell *P)))
+
+  ;; The part of each outline that lies in the grid.
+  (INIT &visible BoundingBox
+    (key ((&outline.component *P ^Id))
+      (cell (P)
+        (&outline.component *P Id))))
+
+  (RULE &open_side
+    (&visible.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (NOT (&outline.component P Id)))
+
+  (RULE &side
+    (&visible.box (:key *Id))
+    (dir_elem *D)
+    (NOT (&open_side Id D)))
+
+  (RULE &encloses
+    (&visible.box (:key *Id) *B)
+    (&visible.box (:key (:Id *Id2)) (:B *B2))
+    (!= Id Id2)
+    (inside (:A B) (:B B2)))
+
+  (RULE &enclosed_between
+    (&encloses *Id2 (:Id *Id3))
+    (&encloses (:Id2 Id3) *Id))
+
+  (RULE &gap
+    (&encloses *Id2 *Id)
+    (NOT (&enclosed_between Id Id2))
+    (&side (:Id Id2) *D)
+    (&visible.box (:key Id) *B)
+    (&visible.box (:key (:Id Id2)) (:B *B2))
+    (relative (:Base B2) (:X B) (:X_rel *V))
+    (margin (:B V) D (:K *S)))
+
+  (INIT &axis_step Singleton
+    (key ((&gap *D *S)
+          (axis_of D ^A))
+      (member ((:v S))
+        (&gap *D *S)
+        (axis_of D A))))
+
+  (INIT &side_step Singleton
+    (key ((&gap ^D *S))
+      (member ((:v S))
+        (&gap D *S)))))
+
+(OUTPUT grow-outward "the output holds the input's outlines and every further outline that the step gives outward from the outermost one, drawn in the line color where it falls in the grid, up to the first outline that falls wholly outside the grid.")
+
+(OUTPUT fill-rest "every other output cell holds &fill_color (5)."
+
+  (RULE &innermost
+    (&visible.box (:key *Id))
+    (NOT (&encloses (:Id2 Id))))
+
+  (INIT &uniform Singleton
+    (member ((:v S))
+      (&gap *S)))
+
+  (RULE &step
+    (dir_elem *D)
+    (&uniform.value (:v *S)))
+
+  (DET &fill_color
+    (ex_output *E (:Col *C))
+    (NOT (ex_input E (:Col C)))))
+
+(ALTS $g "which way the outlines grow" $Outward
+  (ALT $GrowInward
+    (OUTPUT grow-inward "also draws each outline the step gives inward from the innermost one, until the next one falls outside the grid or turns inside out. Undefined where the concept is."
+      (RULE &inward
+        (&step *D *S)
+        (&innermost *Id)
+        (&visible.box (:key Id) *B)
+        (&side Id D)
+        (input *P)
+        (relative (:Base B) (:X P) (:X_rel *V))
+        (margin (:B V) D (:K *M))
+        (divide (:T M) (:Side S) (:Gap 0) (:Part *N) (:Remainder *K)))
+
+      (RULE &inward_short
+        (&inward *P *N)
+        (&innermost *Id)
+        (&side Id *D)
+        (OR ((&inward P D (:N *N2))
+             (< N2 N))
+            ((NOT (&inward P D))))))
+    (RULE &unstepped
+      (OR ((&innermost *Id)
+           (&side Id *D)
+           (NOT (&step D)))
+          ((&outermost (:Id *Id2))
+           (&side (:Id Id2) (:D *D2))
+           (NOT (&step (:D D2))))))
+
+    (RULE &drawn
+      (OR ((&outward *P *N (:K 0))
+           (NOT (&outward_past P N)))
+          ((&inward P (:N *N2) (:K 0))
+           (NOT (&inward_short P (:N N2))))))))
+
+(ALTS $s "how many steps the outlines share" $Uniform
+  (ALT $PerAxisStep
+    (INPUT uniform-step "one step per axis, each read from the gaps on that axis. Undefined where the two sides of one axis step differently."
+      (RULE &step
+        (axis_of *D *A)
+        (&axis_step.value (:key A) (:v *S)))))
+  (ALT $PerSideStep
+    (INPUT uniform-step "one step per side, each read from the gaps on that side. Undefined where one side's gaps differ between consecutive outlines."
+      (RULE &step
+        (&side_step.value (:key *D) (:v *S))))))
+
+(RULE &outermost
+  (&visible.box (:key *Id))
+  (NOT (&encloses Id)))
+
+(RULE &unstepped
+  (&outermost *Id)
+  (&side Id *D)
+  (NOT (&step D)))
+
+(RULE &ready
+  (&gap)
+  (NOT (&unstepped)))
+
+(RULE &outward
+  (&outermost *Id)
+  (&visible.box (:key Id) *B)
+  (&side Id *D)
+  (&step D *S)
+  (input *P)
+  (relative (:Base P) (:X B) (:X_rel *V))
+  (margin (:B V) D (:K *M))
+  (divide (:T M) (:Side S) (:Gap 0) (:Part *N) (:Remainder *K)))
+
+(RULE &outward_past
+  (&outward *P *N)
+  (&outward P (:N *N2) (:K *K2))
+  (OR ((> N2 N))
+      ((= N2 N)
+       (> K2 0))))
+
+(RULE &drawn
+  (&outward *P *N (:K 0))
+  (NOT (&outward_past P N)))
+
+(RULE &output
+  (OR ((&ready)
+       (&line.value (:v *Col))
+       (OR ((&line_cell *P))
+           ((&drawn P))))
+      ((&ready)
+       (input P)
+       (NOT (&line_cell P))
+       (NOT (&drawn P))
+       (&fill_color (:C Col)))))
+
+(OUT (&output ^P ^Col))

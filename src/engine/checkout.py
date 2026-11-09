@@ -281,6 +281,17 @@ WITNESSES = Path("programs/witnesses")
 """The directory of the witness files, from the root of a worktree."""
 
 
+ARCLOG = Path("programs/arclog")
+"""The directory of the converted solvers, from the root of a worktree: `<stem>.arclog`, `<stem>.arcdata` and, in
+`cases/<stem>/`, the files of the cases. `arclog_convert.convert` writes it, git tracks it, and every reader of the
+corpus reads it from here."""
+
+
+def arclog() -> Path:
+    """`ARCLOG`, where the converted solvers stand."""
+    return ROOT / ARCLOG
+
+
 def solvers() -> Path:
     """`SOLVERS`, where each solver's file stands."""
     return ROOT / SOLVERS

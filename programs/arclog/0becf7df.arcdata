@@ -1,0 +1,16 @@
+;; inputs 7e241938b7304a8f020b905747a5ac0698cca53f972e9497ca6f8bd5f74fdf6f programs/solvers/0becf7df.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0becf7df
+
+(param &key.corner DiagDir (DIAG_TL))
+(param &key.dim (Axis number) (AXIS_V 2) (AXIS_H 2))
+(param &key.pose2 D4 (D4_ID))
+(param &key.axis Axis (AXIS_H))
+(param &key.src (Position Ident)
+  (grid
+    (0 1)
+    (2 3)))
+(param &key.dst (Position Ident)
+  (grid
+    (1 0)
+    (3 2)))

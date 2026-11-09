@@ -1,0 +1,11 @@
+;; inputs 0b6c55ef1c107e7708a7710831950d36b93f3500aa6d830f8ea8fc02af954832 programs/solvers/6773b310.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6773b310
+
+(param &marker Color (6))
+(param &mark Color (1))
+(param &bg Color (0))
+(param &divide_gap number (1))
+(param &divisor number (3))
+(param &tile_size number (3))
+(param &pair_count number (2))

@@ -1,0 +1,74 @@
+;; inputs 0970398694e5c5ec319624d9592914bbde1469f4b45071b8dac7944ce0e7fb8d programs/solvers/5ad8a7c0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5ad8a7c0
+
+;; The axis a pair spans.
+(DET &axis AxisDomain)
+
+(DET &mark RarestColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+;; Each mark casts along the task's axis and halts at the next mark.
+(INIT &cast Ray
+  (source (P)
+    (&mark_cell *P))
+  (node (P)
+    (input *P)
+    (NOT (&mark_cell P)))
+  (dir (D)
+    (&axis *A)
+    (axis_of *D A)))
+
+(INIT &cast_full Ray
+  (source (P)
+    (&mark_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&axis *A)
+    (axis_of *D A)))
+
+(RULE &cast_stop_full
+  (&cast.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &span_cell
+  (&cast_stop_full (:V4 *Src) (:V2 *D))
+  (&cast.ray *P D *K (:Origin Src))
+  (!= K 0))
+
+(INIT &closest Order
+  (member ((:t K))
+    (&cast_stop_full (:V3 *K)))
+  (score ((:t K) (:S K))
+    (&cast_stop_full (:V3 *K))))
+
+(RULE &fill
+  (&cast_stop_full (:V4 *Src) (:V2 *D) (:V3 *K))
+  (&closest.minimal (:t K))
+  (&span_cell Src D *P))
+
+(ALTS $choice "which spans fill" $Shortest
+  (ALT $Clear
+    (RULE &crossed
+      (&span_cell *Src *D *P)
+      (&mark_cell (:P *Q))
+      (&axis *A)
+      (perp A *A2)
+      (same_line (:A A2) P Q))
+
+    (RULE &fill
+      (&span_cell *Src *D *P)
+      (NOT (&crossed Src D)))))
+
+(RULE &output
+  (OR ((&fill *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

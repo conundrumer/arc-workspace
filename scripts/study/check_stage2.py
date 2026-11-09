@@ -22,6 +22,7 @@ from threading import Event, Lock, Thread
 import time
 
 from check_stage1_all import CaseDeadline, inventory, read_checked
+from engine import checkout  # on the path since check_stage1_all put `src/` there
 
 POLICY = "complete-domain-unique-text-gold-names-v7"
 READER = "complete-program-bindings-v2"
@@ -348,7 +349,7 @@ def run_task(args, task, names, receive, cancel, job_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", type=Path, default=Path("/Users/davidlu/code/arc-workspace/work/lm/data-full-9fac8128"))
-    parser.add_argument("--corpus", type=Path, default=Path("/Users/davidlu/code/arc-workspace/work/arclog/gen"))
+    parser.add_argument("--corpus", type=Path, default=checkout.arclog())
     parser.add_argument("--tasks", type=Path, default=Path(__file__).parent / "engine/data/tasks")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--task")

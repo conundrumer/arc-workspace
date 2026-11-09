@@ -1,0 +1,127 @@
+;; inputs ce92f9d743d1779638ab054eba6a08d1ad76260e0fc45c8d6af50d29dbff338b programs/solvers/505fff84.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 505fff84
+
+(DET &axis AxisDomain)
+
+(DET &marker RarestColor (SET))
+
+(INIT &set_spans Ray
+  (source (P)
+    (input *P *Col)
+    (&marker (:C Col)))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&axis *A)
+    (axis4_of *D A)))
+
+(RULE &set_spans_between
+  (input *P *Col)
+  (NOT (&marker (:C Col)))
+  (&axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&set_spans.ray P D)
+  (&set_spans.ray P (:D O)))
+
+(RULE &seg
+  (&set_spans_between *P))
+
+(ALTS $choice "data-equivalent on this task — every marked row has 1 west of 8" $Set
+  (ALT $Sided
+    (RULE &sided_rays_dir
+      (&marker (:C *Key))
+      (&axis *A)
+      (axis_of *D A))
+
+    (INIT &sided_rays Ray
+      (key ((OR ((input *P ^Col)
+                 (&marker (:C Col)))
+                ((&sided_rays_dir (:Key Col) *D))
+                ((&sided_rays_dir (:Key Col))
+                 (input P))))
+        (source (P)
+          (input *P Col)
+          (&marker (:C Col)))
+        (node (P)
+          (&sided_rays_dir (:Key Col))
+          (input *P))
+        (dir (D)
+          (&sided_rays_dir (:Key Col) *D))))
+
+    (RULE &sided_rays_cell
+      (&marker)
+      (input *P *Col)
+      (NOT (&marker (:C Col))))
+
+    (DET &mark
+      (ex_input *E *P *Col)
+      (&marker (:C Col))
+      (&axis *A)
+      (split P A (:Across *Row)))
+
+    (DET &side
+      (&mark *E *Row *P (:Col *C))
+      (&mark E Row (:P *Q) (:Col *C2))
+      (!= C C2)
+      (&axis *A)
+      (axis_of *D A)
+      (nearer D P Q))
+
+    ;; The marks on their own ends. A ray toward d means its mark lies away
+    ;; from d, so each end's color casts toward the opposite end.
+    (RULE &seg
+      (&side *D (:C *C1))
+      (opposite D (:Opp *O))
+      (&side (:D O) (:C *C2))
+      (&sided_rays.ray (:key (:Col C1)) *P (:D O))
+      (&sided_rays_cell P)
+      (&marker (:C C1))
+      (&sided_rays.ray (:key (:Col C2)) P D)
+      (&marker (:C C2)))))
+
+(RULE &seg_split
+  (&seg *P)
+  (input P *Col)
+  (&axis *A)
+  (split P A (:Along *P_along) (:Across *Row)))
+
+(RULE &rows_axis
+  (&seg_split)
+  (&axis (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+;; Out placement: contributing rows take their order positions.
+(INIT &rows Order
+  (key ((&rows_axis ^A)
+        (axis_of ^D A))
+    (before ((:a Row) (:b Row2))
+      (&seg_split *Row)
+      (&seg_split (:Row *Row2))
+      (!= Row Row2)
+      (margin (:B Row) D (:K *K1))
+      (margin (:B Row2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Row))
+    (&seg_split *Row)))
+
+(RULE &rows_pos
+  (&rows.rank (:key *A *D) (:t *M) (:R *R1))
+  (&rows.dual_rank (:key A D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(INIT &shift BoundingBox
+  (key ((&seg_split *P_along ^Row))
+    (cell ((:P P_along))
+      (&seg_split *P_along Row))))
+
+(RULE &output
+  (&rows_pos (:M *Row) (:P_pos *P_outer_v))
+  (&seg_split *P_along Row *Col)
+  (&shift.box (:key Row) *B)
+  (inside (:A P_along) B)
+  (relative (:Base B) (:X P_along) (:X_rel *P_inner_h))
+  (compose (:A P_outer_v) (:B P_inner_h) (:C *P)))
+
+(OUT (&output ^P ^Col))

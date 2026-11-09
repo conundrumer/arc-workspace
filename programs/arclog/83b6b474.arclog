@@ -1,0 +1,99 @@
+;; inputs 20e247732b1c6c3370d669858a56ae828a185b9d8a1a7ab0cfb13a52cab194a7 programs/solvers/83b6b474.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 83b6b474
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+;; The box each color's shape occupies.
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&field.maximal (:t Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&field.maximal (:t Col))))))
+
+(RULE &cand_side
+  (input *P)
+  (corner_dist P (:Diag *C) (:K 0))
+  (axis_elem *A)
+  (OR ((frame_extent P A (:N *K)))
+      ((sub_extent P A K))))
+
+(INIT &square Frame
+  (key ((&cand_side ^K)
+        (perp *A *A2))
+    (extent (A (:N K))
+      (&cand_side K)
+      (axis_elem *A))))
+
+(RULE &border
+  (&square.cell (:key *K) *P)
+  (margin (:B P) *D (:K 0)))
+
+(INIT &border_size Cardinality
+  (key ((&border ^K *P))
+    (member ((:m P))
+      (&border K *P))))
+
+(INIT &shape_size Cardinality
+  (member ((:m P))
+    (&bbox.cell *P)))
+
+(RULE &side
+  (&shape_size.size *N)
+  (&border_size.size (:key *K) N))
+
+(RULE &ring
+  (&side *K)
+  (&border K *P))
+
+;; Where a shape lands with each of its cells on the ring.
+(INIT &occ Occurrences
+  (key ((OR ((&bbox.cell (:key ^Col) *P)
+             (&bbox.box (:key Col) *B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel *P_inner)))
+            ((&bbox.cell (:key Col))
+             (&ring P))))
+    (cell (P)
+      (&bbox.cell (:key Col))
+      (&ring *P))
+    (shape ((:P P_inner))
+      (&bbox.cell (:key Col) *P)
+      (&bbox.box (:key Col) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &covers
+  (&occ.occurrence (:key *Col) (:P *B))
+  (&occ.shape (:key Col) (:P *P_inner))
+  (compose (:A B) (:B P_inner) (:C *P)))
+
+(CHOOSE &pruning
+  (for ((&occ.occurrence (:key ^Col)))
+    (from (&occ.occurrence (:key Col) (:P *B))))
+  (never
+    (&occ.occurrence (:key *Col) (:P *B))
+    (&occ.occurrence (:key (:Col *Col2)) (:P *B2))
+    (&covers Col B *P)
+    (&covers (:Col Col2) (:B B2) P)))
+
+(RULE &output
+  (&side *K)
+  (&square.cell (:key K) *P)
+  (OR ((&pruning *Col (:B *Cd_b))
+       (&covers Col (:B Cd_b) P))
+      ((NOT (&ring P))
+       (&field.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,118 @@
+;; inputs b6eb9201003c9e421786e5b378bab092c7f213c8bd0caed13d1e5f7c00ab0c46 programs/solvers/1fad071e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1fad071e
+
+(DET &block_color ColorDomain)
+
+(DET &block_dim TileCount)
+
+(INIT &block_shape_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&block_dim *N)))
+
+(DET &bg DominantColor)
+
+(DET &out_dim
+  (ex_output *P)
+  (frame_extent P *A *N))
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (&out_dim *A *N)))
+
+(RULE &on
+  (input *P *Col)
+  (&block_color (:C Col)))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&on *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+;; Each component's cells in its bbox frame, against the block shape.
+(INIT &same Inclusion
+  (pattern ((:m P))
+    (&block_shape_frame.cell *P))
+  (observed ((:observed O) (:m P_inner))
+    (&bbox.cell (:key (:Id *O)) *P)
+    (&bbox.box (:key (:Id O)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(INIT &blocks Cardinality
+  (member ((:m Id))
+    (&same.equal (:observed *Id)))
+  (domain ()
+    (input)))
+
+(RULE &total
+  (&blocks.size *N))
+
+(DET &bar
+  (ex_output *E *P *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &mark
+  (&bar (:Col *C)))
+
+(RULE &bar_mark
+  (&mark (:C *Col)))
+
+(INIT &bar_len Cardinality
+  (key ((&bar ^E *P))
+    (member ((:m P))
+      (&bar E *P))))
+
+(DET &mismatch_edge
+  (&bar_len.size (:key *E) *N)
+  (ex_output E *P)
+  (margin (:B P) *D *K)
+  (< K N)
+  (NOT (&bar E P)))
+
+(DET &bar_edge
+  (dir_elem *D)
+  (NOT (&mismatch_edge D)))
+
+(ALTS $detect "how the block shape's occurrences are found" $Object
+  (ALT $Placement
+    (INIT &occ Occurrences
+      (cell (P)
+        (&on *P))
+      (shape (P)
+        (&block_shape_frame.cell *P)))
+
+    (INIT &placements Cardinality
+      (member ((:m P))
+        (&occ.occurrence *P)))
+
+    (RULE &total
+      (&placements.size *N))))
+
+(ALTS $mark "the bar's color" $Fixed
+  (ALT $Counted
+    (RULE &bar_mark
+      (&block_color (:C *Col)))))
+
+(RULE &marked
+  (&out_pos_frame.cell *P)
+  (&bar_edge *D)
+  (margin (:B P) D *K)
+  (&total *N)
+  (< K N))
+
+(RULE &output
+  (OR ((&marked *P)
+       (&bar_mark *Col))
+      ((&out_pos_frame.cell P)
+       (&total)
+       (NOT (&marked P))
+       (&bar_mark)
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,151 @@
+;; inputs 119bf997214b32ae3f5b918d7b52741bb503e02437046813f042957dc625b49c programs/solvers/80a900e0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 80a900e0
+
+;; The inputs.
+(INIT &boards Cardinality
+  (member ((:m E))
+    (ex_input *E)))
+
+;; The checkerboard's two square classes: cells joined by diagonal steps.
+(INIT &square Quotient
+  (edge ((:a E P) (:b E (:P Q)))
+    (ex_input *E *P)
+    (diag_dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q))))
+
+(INIT &class_color_count Cardinality
+  (key ((&square.class (:a *E *P) ^Id)
+        (ex_input E P ^Col))
+    (member ((:m P))
+      (&square.class (:a *E *P) Id)
+      (ex_input E P Col))))
+
+;; The most common color of each square class.
+(INIT &class_color Order
+  (key ((&class_color_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&class_color_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&class_color_count.size (:key Id *Col) *N))))
+
+;; The inputs in which the color is a square class's most common color.
+(INIT &color_boards Cardinality
+  (key ((&square.class (:a *E) *Id)
+        (&class_color.maximal (:key Id) (:t ^Col)))
+    (member ((:m E))
+      (&square.class (:a *E) *Id)
+      (&class_color.maximal (:key Id) (:t Col)))))
+
+(DET &bg
+  (&color_boards.size (:key *Col) *N)
+  (&boards.size N))
+
+(INIT &objs Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg Col)))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &rim Boundary
+  (key ((&objs.component ^Id *P))
+    (cell (P)
+      (&objs.component Id *P)))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &aligned
+  (&objs.component *Id *P)
+  (&objs.component Id (:P *Q))
+  (diag_axis_elem *Da)
+  (same_line (:A Da) P Q))
+
+(RULE &segment
+  (&objs.component *Id *P)
+  (&objs.component Id (:P *Q))
+  (!= P Q)
+  (diag_axis_elem *Da)
+  (ALL ((&objs.component Id (:P *Pm))
+        (&objs.component Id (:P *Qm)))
+       ((&aligned Id Da (:P Pm) (:Q Qm)))))
+
+(RULE &end
+  (&segment *Id *Da)
+  (diag_axis_of *D Da)
+  (&rim.exposed (:key Id) *P D))
+
+(INIT &rays_frame Frame
+  (key ((&end (:P ^P_end)))
+    (extent (A N)
+      (frame_extent (:P P_end) *A *N))))
+
+(RULE &across
+  (&segment *Id *Da)
+  (diag_perp Da *Da2)
+  (diag_axis_of *D (:Da Da2)))
+
+(RULE &rays_blocked
+  (&end (:P *Key))
+  (&objs.component *P))
+
+(RULE &rays_dir
+  (&end *Id (:P *Key))
+  (&across Id *D))
+
+(RULE &rays_cell
+  (&end)
+  (input *P *Col)
+  (&bg Col))
+
+(ALTS $choice "which directions each end casts, and where a ray stops" $Halt
+  (ALT $Away
+    (RULE &rays_dir
+      (&end *Id (:P *Key))
+      (&across Id *D)
+      (diag_opposite D (:Opp *D_in))
+      (neighbor (:P Key) (:D D_in) *Q)
+      (&objs.component (:P Q)))
+
+    (INIT &rays Ray
+      (key ((OR ((&end (:P ^P_end)))
+                ((&rays_dir (:Key P_end) *D))
+                ((&rays_frame.cell (:key P_end) *P))))
+        (source ((:P P_end))
+          (&end (:P P_end)))
+        (node (P)
+          (&rays_frame.cell (:key P_end) *P))
+        (dir (D)
+          (&rays_dir (:Key P_end) *D))))))
+
+(INIT &rays Ray
+  (key ((OR ((&end (:P ^P_end)))
+            ((&rays_dir (:Key P_end) *D))
+            ((&rays_frame.cell (:key P_end) *P)
+             (NOT (&rays_blocked (:Key P_end) P)))))
+    (source ((:P P_end))
+      (&end (:P P_end)))
+    (node (P)
+      (&rays_frame.cell (:key P_end) *P)
+      (NOT (&rays_blocked (:Key P_end) P)))
+    (dir (D)
+      (&rays_dir (:Key P_end) *D))))
+
+(RULE &painted
+  (&rays.ray (:key *P_end) *P)
+  (&rays_cell P)
+  (&end (:P P_end))
+  (&objs.component (:P P_end) (:key *Col)))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

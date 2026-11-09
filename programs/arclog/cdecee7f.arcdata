@@ -1,0 +1,161 @@
+;; inputs 9533eacad41660295331b4f01d0964be37831700108ebe67aebdc30944b07ba0 programs/solvers/cdecee7f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cdecee7f
+
+(param &bg Color (0))
+(param &scan_dir Dir (DIR_L))
+(param &fill_corner DiagDir (DIAG_TL))
+(param &fill_axis Axis (AXIS_H))
+(param &out_size (Axis number) (AXIS_V 3) (AXIS_H 3))
+(param &fill_order (Position number)
+  (grid
+    (0 1 2)
+    (5 4 3)
+    (6 7 8)))
+
+(alts $unit
+  (alt $Objects
+    (witness touching-same-color-row foreign concept
+      (relaxed scattered-dots)
+      (separates "two dots of one color side by side in a row: the concept ranks two dots and lists the color twice, $Objects and $Diag8 take the pair as one dot and list it once")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 7 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 4)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Cell (grid
+        (3 3 7)
+        (4 8 2)
+        (0 0 0)))
+      (output $Objects (grid
+        (3 7 2)
+        (0 4 8)
+        (0 0 0))))))
+
+(alts $adj
+  (alt $Diag8
+    (witness touching-same-color-corner foreign concept
+      (relaxed scattered-dots)
+      (separates "two dots of one color that meet at a corner: the concept and $Objects list the color twice, $Diag8 takes the pair as one dot and lists it once")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 7 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (3 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 4)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Cell $Adj4 (grid
+        (3 3 7)
+        (4 8 2)
+        (0 0 0)))
+      (output $Diag8 (grid
+        (3 7 2)
+        (0 4 8)
+        (0 0 0))))))
+
+(alts $path
+  (alt $StoredPath
+    (witness raster-path ordinary $StoredPath
+      (separates "six dots, with the stored path in raster order: the concept lays the second row right to left, $StoredPath left to right")
+      (assign &fill_order
+        (grid
+          (0 1 2)
+          (3 4 5)
+          (6 7 8)))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 6)
+        (0 0 7 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Snake (grid
+        (3 7 2)
+        (6 4 8)
+        (0 0 0)))
+      (output $StoredPath (grid
+        (3 7 2)
+        (8 4 6)
+        (0 0 0))))))
+
+(alts $size
+  (alt $FitSquare
+    (witness four-dots ordinary concept
+      (separates "four dots: the concept lays them in a 3x3 output, $FitSquare in the 2x2 output that holds them")
+      (input (grid
+        (0 0 0 0 0 0 0 0 9 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 7 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $StoredSize $StoredPath (grid
+        (6 2 7)
+        (0 0 9)
+        (0 0 0)))
+      (output $FitSquare (grid
+        (6 2)
+        (9 7))))
+    (witness ten-dots borderline $FitSquare
+      (relaxed scattered-dots)
+      (separates "ten dots, one in each column: the concept lays the first nine in the 3x3 output and drops the tenth, $FitSquare lays all ten in a 4x4 output")
+      (input (grid
+        (0 0 0 0 0 8 0 0 0 0)
+        (2 0 0 0 0 0 0 0 0 5)
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 0 0 0 0 0 4 0 0 0)
+        (0 7 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 9 0)
+        (0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 0 0 0 0 6 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $StoredSize $StoredPath (grid
+        (2 7 1)
+        (8 3 9)
+        (4 6 9)))
+      (output $FitSquare (grid
+        (2 7 1 9)
+        (6 4 8 3)
+        (9 5 0 0)
+        (0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed scattered-dots)
+      (separates "dots on a field of 5: the concept takes every 5 cell as a dot and is undefined, bg=DominantColor takes 5 as the field and fills the empty output cells with 5")
+      (input (grid
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 3 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (2 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 1 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 8 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 4 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (2 8 3)
+        (5 4 1)
+        (5 5 5))))))

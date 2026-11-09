@@ -1,0 +1,13 @@
+;; inputs b2cd373f851a45b318d3f9a7cb7612ac889312bc0d24360e647bc4454fa6e824 programs/solvers/f25ffba3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f25ffba3
+
+(param &data_dir Dir (DIR_B))
+(param &stamps D4 (D4_ID) (D4_TB))
+(param &slab_depth number (5))
+(param &bg Color (0))
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_TB)
+    (D4_ID)))
+(param &n_tiles number (2))

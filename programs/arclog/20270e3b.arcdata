@@ -1,0 +1,6 @@
+;; inputs e4fda86b951da8c6d3fd202dab0d5b57f1c34d7e0c2c32542406d9a47a63d68c programs/solvers/20270e3b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20270e3b
+
+(param &bg Color (1))
+(param &socket_color Color (7))

@@ -1,0 +1,8 @@
+;; inputs 3fe3f53a43d0b1baa291bb4a1e60c021851bb03ffa7d10fce148076624cfb5d7 programs/solvers/d9f24cd1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d9f24cd1
+
+(param &mark Color (2))
+(param &block Color (5))
+(param &dodge Sense (SENSE_CW))
+(param &dir Dir (DIR_B))

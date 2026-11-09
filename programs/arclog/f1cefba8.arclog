@@ -1,0 +1,114 @@
+;; inputs c320400041524d04433ab1e49dfcbe497807462f2d00049f5fd1f153daa6ff6f programs/solvers/f1cefba8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f1cefba8
+
+(INPUT framed-rectangle "one solid rectangle of a frame color on the background 0, with a solid rectangle of a second, inner color inside it, inset from every side of the frame by 2 cells."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &region
+    (input *P (:Col *C))
+    (NOT (&background C)))
+
+  ;; The connected pieces of the non-background cells
+  (INIT &pieces Connectivity
+    (node (P)
+      (&region *P))))
+
+(INPUT nubs "a few single cells of the inner color in the frame ring, each 4-adjacent to the inner rectangle's side, and so one cell outside that side, at the inner rectangle's span on the other axis.")
+
+(OUTPUT nub-erased "each nub takes the frame color.")
+
+(OUTPUT line-through-inner "each cell of the inner rectangle on the row of a nub on the left or right side, or on the column of a nub on the top or bottom side, takes the frame color.")
+
+(OUTPUT line-outside "each background cell on such a row or column takes the inner color, on both sides of the frame out to the grid edge.")
+
+(OUTPUT rest-kept "every other cell keeps its color, the frame ring included."
+
+  ;; The parts that the cells of each non-background color close off from the grid edge
+  (INIT &enclosed Enclosure
+    (key ((&region (:P *Q))
+          (input (:P Q) (:Col ^C))
+          (input *P (:Col *C2))
+          (!= C2 C))
+      (cell (P)
+        (&region (:P *Q))
+        (input (:P Q) (:Col C))
+        (input *P (:Col *C2))
+        (!= C2 C))))
+
+  (RULE &inner_color
+    (&enclosed.enclosed *P)
+    (input P (:Col *C)))
+
+  ;; The rectangles drawn in the inner color
+  (INIT &inner_outlines Outlines
+    (node (P)
+      (&inner_color *C)
+      (input *P (:Col C))))
+
+  ;; The inner rectangle: the box the inner-color rectangles fill
+  (INIT &inner BoundingBox
+    (cell ((:P B))
+      (&inner_outlines.box *B)))
+
+  (RULE &nub
+    (&inner_color *C)
+    (input *P (:Col C))
+    (&inner.box *B)
+    (NOT (inside (:A P) B))
+    (axis_of *D *A)
+    (neighbor P D *Q)
+    (inside (:A Q) B))
+
+  (RULE &on_line
+    (&nub (:P *P2) *A)
+    (input *P)
+    (same_line A (:P P2) (:Q P))))
+
+(ALTS $n "Which inner-color cells outside the inner rectangle are nubs" $AdjacentNub
+  (ALT $AnyRingCell
+    (INPUT nubs "every inner-color cell outside the inner rectangle that lies in its row span or its column span is a nub, whether or not it touches the inner rectangle."
+      (RULE &nub
+        (&inner_color *C)
+        (input *P (:Col C))
+        (&inner.box *B)
+        (NOT (inside (:A P) B))
+        (input (:P *Q))
+        (inside (:A Q) B)
+        (axis_elem *A)
+        (same_line A P Q)))))
+
+(ALTS $p "Which cells of a line outside the frame take the inner color" $BackgroundOnly
+  (ALT $PaintOutside
+    (OUTPUT line-outside "each cell on such a row or column that is not part of the framed rectangle's component of non-background cells takes the inner color, whatever its color."
+      (RULE &framed
+        (&inner.box *B)
+        (input (:P *Q))
+        (inside (:A Q) B)
+        (&pieces.component (:P Q) *Id)
+        (&pieces.component *P Id)))
+    (RULE &painted
+      (&on_line *P)
+      (NOT (&framed P)))))
+
+(RULE &painted
+  (&on_line *P)
+  (input P (:Col *C))
+  (&background C))
+
+(RULE &recolor
+  (OR ((&enclosed.enclosed (:key (:C *Col)))
+       (OR ((&nub *P))
+           ((&on_line P)
+            (&inner.box *B)
+            (inside (:A P) B))))
+      ((&painted P)
+       (&inner_color (:C Col)))))
+
+(RULE &output
+  (OR ((&recolor *P *Col))
+      ((input P Col)
+       (NOT (&recolor P)))))
+
+(OUT (&output ^P ^Col))

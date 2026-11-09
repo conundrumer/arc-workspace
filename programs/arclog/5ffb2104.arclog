@@ -1,0 +1,44 @@
+;; inputs 6c06dcf2d57af2c2412f2602e811dd14368b3610cd85b542c3edb29d526e1cc5 programs/solvers/5ffb2104.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5ffb2104
+
+(DET &grav DirDomain)
+
+(DET &bg DominantColor)
+
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &settle Distance
+  (weight ((:a Id2) (:b Id) (:W K))
+    (&obj.component *P *Id)
+    (&grav *D)
+    (&obj.component (:P *P2) (:Id *Id2))
+    (!= Id Id2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n Id) K)
+    (&obj.component *P *Id)
+    (&grav *D)
+    (margin (:B P) D *K)))
+
+(RULE &settle_travel_full
+  (&settle.distance (:n *V1) *K)
+  (&grav *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &fallen
+  (&obj.component (:key *Col) (:P *P2) *Id)
+  (&settle_travel_full (:V1 Id) (:V2 *Delta))
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &output
+  (OR ((&fallen *P *Col))
+      ((input P)
+       (NOT (&fallen P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

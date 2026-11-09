@@ -1,0 +1,77 @@
+;; inputs 39d0a84861b3e01212d71ea1586efffa251fe2ef3dd996626eb7ad2ed44861dc programs/solvers/25ff71a9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 25ff71a9
+
+(DET &shift_dir DirDomain)
+
+(DET &shift_k DivisorRatio)
+
+(DET &bg DominantColor)
+
+(RULE &shift_image
+  (input (:P *P_in) *Col)
+  (&shift_dir *D)
+  (&shift_k *K)
+  (jump (:P P_in) D K (:Q *P_out))
+  (input (:P P_out)))
+
+(ALTS $choice "the edge behavior" $Shift
+  (ALT $Cycle
+    (RULE &row_idx
+      (input *P)
+      (&shift_dir (:D *SD))
+      (opposite (:D SD) (:Opp *FE))
+      (margin (:B P) (:D FE) *K))
+
+    (RULE &rows_dir
+      (&shift_dir (:D *SD))
+      (opposite (:D SD) (:Opp *D)))
+
+    ;; Rows seated back on the shift axis by index.
+    (INIT &rows_size Cardinality
+      (member ((:m K))
+        (&row_idx *K)))
+
+    (INIT &rows_frame Frame
+      (extent (A N)
+        (&rows_dir *D)
+        (axis_of D *A)
+        (&rows_size.size *N)))
+
+    (RULE &rows_pos
+      (&rows_frame.cell *P)
+      (&rows_dir *D)
+      (margin (:B P) D *K)
+      (&row_idx K))
+
+    (INIT &row_cycle Order
+      (member ((:t K))
+        (&row_idx *K))
+      (score ((:t K) (:S K))
+        (&row_idx *K)))
+
+    (INIT &rot Walk
+      (successor ((:p K) (:p_next K2))
+        (&row_cycle.cyclic_successor (:a *K) (:b *K2)))
+      (steps ((:N M))
+        (&shift_k (:K *M))))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (&shift_dir (:D *SD))
+      (opposite (:D SD) (:Opp *FE))
+      (margin (:B P_in) (:D FE) (:K *K_in))
+      (&shift_k (:K *M))
+      (&rot.walk (:p0 K_in) (:N M) (:p *K_out))
+      (&rows_pos (:K K_out) (:P *P_row))
+      (axis_of (:D SD) *A)
+      (split (:P P_in) A (:Across *P_across))
+      (compose (:A P_row) (:B P_across) (:C *P)))))
+
+(RULE &output
+  (OR ((&shift_image (:P_out *P) *Col))
+      ((input P)
+       (NOT (&shift_image (:P_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

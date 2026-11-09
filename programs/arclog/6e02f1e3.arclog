@@ -1,0 +1,72 @@
+;; inputs aa0f476bfe4a154a697778f35c9e4b7540a5d4ee951d2648c1906bb2341b3d3f programs/solvers/6e02f1e3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6e02f1e3
+
+(INIT &palette Cardinality
+  (member ((:m Col))
+    (input *Col)))
+
+(DET &lookup_grid
+  (&palette.size *E *N)
+  (ex_output E *P *Col))
+
+(RULE &canvas
+  (input *P))
+
+(ALTS $choice "the render: table or rule" $Lookup
+  (ALT $Figure
+    (DET &fig_edge NumberDirDomain)
+
+    (DET &mark AnyOutNewColor)
+
+    (DET &bg AnyOutNewColor)
+
+    (DET &mark_cell
+      (ex_output *E *P *Col)
+      (&mark (:C Col)))
+
+    (DET &mismatch
+      (OR ((&mark_cell *E *P)
+           (diag_dist P (:Diag *Dg) *K1 *K2)
+           (!= K1 K2))
+          (
+           (ex_output E (:P *P2))
+           (diag_dist (:P P2) (:Diag Dg) (:K1 *K) (:K2 K))
+           (NOT (&mark_cell E (:P P2))))))
+
+    (DET &fig_diag
+      (&palette.size *E *N)
+      (ex_output E)
+      (diag_axis_of (:D *Dg) *Da)
+      (NOT (&mismatch E Dg)))
+
+    (RULE &figure_cell
+      (&canvas *P)
+      (&palette.size *N)
+      (OR ((&fig_edge N *D)
+           (margin (:B P) D (:K 0)))
+          ((&fig_diag N (:Da *DA))
+           (diag_axis_of (:D *Dg) (:Da DA))
+           (diag_dist P (:Diag Dg) (:K1 *K) (:K2 K)))))
+
+    (RULE &output
+      (OR ((&figure_cell *P)
+           (&mark (:C *Col)))
+          ((&canvas P)
+           (NOT (&figure_cell P))
+           (&bg (:C Col)))))
+    (ALTS $canvas "the frame the figure is drawn in" $Input
+      (ALT $Fixed
+        (DET &out_dim ConstInDim)
+        (INIT &out_pos_frame Frame
+          (extent (A N)
+            (axis_elem *A)
+            (&out_dim *N)))
+        (RULE &canvas
+          (&out_pos_frame.cell *P))))))
+
+(RULE &output
+  (&palette.size *N)
+  (&lookup_grid N *P *Col))
+
+(OUT (&output ^P ^Col))

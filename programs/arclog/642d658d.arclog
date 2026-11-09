@@ -1,0 +1,150 @@
+;; inputs efbae736b2a31d0f40faf1935217b016240bb47e81f1b21816de226159c746dc programs/solvers/642d658d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 642d658d
+
+(DET &center RarestColor)
+
+(RULE &arm
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D (:Q *P2))
+  (input (:P P2) *Col))
+
+(RULE &ring
+  (&arm *P *Col)
+  (ALL ((dir_elem *D))
+       ((&arm P D Col))))
+
+(RULE &plus
+  (&ring *P *Col)
+  (input P (:Col *Cc))
+  (&center (:C Cc)))
+
+(DET &center_at
+  (ex_input *E *P *Col)
+  (&center (:C Col)))
+
+(DET &cand
+  (&center_at *E *P)
+  (ex_input E (:P *P2))
+  (relative (:Base P) (:X P2) (:X_rel *Off)))
+
+(DET &off_grid
+  (&cand *Off)
+  (&center_at *E *P)
+  (compose (:A P) (:B Off) (:C *P2))
+  (NOT (ex_input E (:P P2))))
+
+(DET &on_grid
+  (&cand *Off)
+  (NOT (&off_grid Off)))
+
+(DET &differ
+  (&on_grid *Off)
+  (&on_grid (:Off *Off2))
+  (&center_at *E *P)
+  (compose (:A P) (:B Off) (:C *P1))
+  (ex_input E (:P P1) *Col)
+  (compose (:A P) (:B Off2) (:C *P2))
+  (ex_input E (:P P2) (:Col *Col2))
+  (!= Col Col2))
+
+(INIT &arm_off_count Cardinality
+  (key ((&on_grid ^Off)
+        (&on_grid (:Off *Off2))
+        (NOT (&differ Off Off2)))
+    (member ((:m Off2))
+      (&on_grid Off)
+      (&on_grid (:Off *Off2))
+      (NOT (&differ Off Off2)))))
+
+(DET &out_dim
+  (ex_output *P)
+  (frame_extent P *A *N))
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (&out_dim *A *N)))
+
+;; A plus's arms hold one color, so the footprint is the largest set of
+;; offsets that agree in color at every center.
+(INIT &arm_off Order
+  (member ((:t Off))
+    (&arm_off_count.size (:key *Off)))
+  (score ((:t Off) (:S N))
+    (&arm_off_count.size (:key *Off) *N)))
+
+(ALTS $detect "which cells count as a plus" $Center
+  (ALT $Halo
+    (INIT &grid_bg_count Cardinality
+      (key ((input *P ^Col))
+        (member ((:m P))
+          (input *P Col))))
+
+    (INIT &grid_bg Order
+      (member ((:t Col))
+        (&grid_bg_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&grid_bg_count.size (:key *Col) *N)))
+
+    (RULE &plus
+      (&ring *P *Col)
+      (NOT (&grid_bg.maximal (:t Col)))))
+  (ALT $Footprint
+    (DET &fp_off
+      (&arm_off.maximal (:t *Off)))
+
+    (RULE &fp_arm
+      (input *P (:Col *Cc))
+      (&center (:C Cc))
+      (&fp_off *Off)
+      (compose (:A P) (:B Off) (:C *P2))
+      (input (:P P2) *Col))
+
+    (RULE &fp_mismatch
+      (&fp_arm *P *Col)
+      (&fp_off *Off)
+      (NOT (&fp_arm P Off Col)))
+
+    (RULE &plus
+      (&fp_arm *P *Col)
+      (NOT (&fp_mismatch P Col)))))
+
+(ALTS $select "which arm color wins" $Mode
+  (ALT $Count
+    (DET &winner
+      (ex_output *E *Col)
+      (&center_at E *P)
+      (&arm_off.maximal (:t *Off))
+      (compose (:A P) (:B Off) (:C *P2))
+      (ex_input E (:P P2) Col))
+
+    (INIT &win_count Cardinality
+      (key ((&winner ^E *P))
+        (member ((:m P))
+          (&winner E *P))))
+
+    (DET &target
+      (&win_count.size *N))
+
+    (RULE &output
+      (&plus_count_count.size (:key *Col) *N)
+      (&target N)
+      (&out_pos_frame.cell *P))))
+
+(INIT &plus_count_count Cardinality
+  (key ((&plus *P ^Col))
+    (member ((:m P))
+      (&plus *P Col))))
+
+(INIT &plus_count Order
+  (member ((:t Col))
+    (&plus_count_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&plus_count_count.size (:key *Col) *N)))
+
+(RULE &output
+  (&plus_count.maximal (:t *Col))
+  (&out_pos_frame.cell *P))
+
+(OUT (&output ^P ^Col))

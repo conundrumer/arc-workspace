@@ -1,0 +1,8 @@
+;; inputs 53813b9503ee988c4efc0afff4960fda325948a4378b842ed18674acd8b0cbe9 programs/solvers/2f767503.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2f767503
+
+(param &bg Color (7))
+(param &speck Color (4))
+(param &eye Color (9))
+(param &lens Color (5))

@@ -1,0 +1,88 @@
+;; inputs 1aa232210b9df1b12e87f4849047e8efbf34e8c2094c1b80277deaf8ff393c7d programs/solvers/f341894c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f341894c
+
+(param &head_color Color (6))
+(param &tail_color Color (1))
+(param &marker_color Color (7))
+
+(exclude ($MarkerInLine $BothUndefined))
+(exclude ($MarkerInLine $Alternate))
+(exclude ($NearerMarker $Alternate))
+
+(alts $m
+  (alt $MarkerInLine
+    (witness interior-marker borderline $MarkerInLine
+      (relaxed edge-markers)
+      (separates "an arrow whose row holds a marker inside the grid and none on the edge: the concept leaves the arrow as it is; $MarkerInLine turns its head toward the interior marker")
+      (input (grid
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)
+        (8 6 1 8 7 8)
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)))
+      (output $OnEdge (grid
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)
+        (8 6 1 8 7 8)
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)))
+      (output $MarkerInLine (grid
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)
+        (8 1 6 8 7 8)
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8)
+        (8 8 8 8 8 8))))))
+
+(alts $t
+  (alt $NearerMarker
+    (witness markers-both-ends borderline $NearerMarker
+      (relaxed one-marker-per-arrow)
+      (separates "an arrow whose row has an edge marker at each end, the left one nearer: the concept and $MarkerInLine are undefined; $NearerMarker turns its head toward the left marker")
+      (input (grid
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)
+        (7 1 6 8 8 8 7)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)))
+      (output $BothUndefined undefined)
+      (output $NearerMarker (grid
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)
+        (7 6 1 8 8 8 7)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8))))))
+
+(alts $a
+  (alt $Alternate
+    (witness alternate-crossing borderline concept
+      (relaxed one-marker-per-arrow)
+      (separates "a marker's row crosses a cell of another marker's arrow before reaching its own arrow: the concept turns only the two adjacent cells of its own arrow; $Alternate recolors every head/tail cell of the row alternately from the marker, and swaps the colors of the arrow's two cells")
+      (input (grid
+        (8 8 8 8 7 8 8)
+        (8 8 8 8 8 8 8)
+        (8 6 1 8 1 8 7)
+        (8 8 8 8 6 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)))
+      (output $Pair (grid
+        (8 8 8 8 7 8 8)
+        (8 8 8 8 8 8 8)
+        (8 1 6 8 6 8 7)
+        (8 8 8 8 1 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8)))
+      (output $Alternate (grid
+        (8 8 8 8 7 8 8)
+        (8 8 8 8 8 8 8)
+        (8 6 1 8 6 8 7)
+        (8 8 8 8 1 8 8)
+        (8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8))))))

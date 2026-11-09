@@ -1,0 +1,247 @@
+;; inputs 9312a85c9048df9b3eab829596df795b3843a7db32a3da448f20e640d905b2d2 programs/solvers/dd2401ed.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dd2401ed
+
+(INPUT divider-line "one full line of line_color crosses the grid perpendicular to near_edge, and no other cell has line_color."
+
+  ;; The one color of each line that holds a single color.
+  (INIT &line_paint Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L))))))
+
+(INPUT near-marks "cells of near_color stand only between near_edge and the divider.")
+
+(INPUT far-marks "cells of far_color stand only on the far side of the divider.")
+
+(INPUT background "every other cell is background.")
+
+(INPUT room-to-move "the destination line, at factor times the count of lines from near_edge up to and including the divider, lies inside the grid.")
+
+(INPUT destination-clear "no far mark stands on the destination line.")
+
+(OUTPUT move-divider "the divider's old line becomes background, and the destination line becomes line_color; the count of lines from near_edge up to and including the destination is factor times the count up to and including the divider.")
+
+(OUTPUT recolor-swept "a far_color cell between the old line and the destination line becomes near_color.")
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  (DET_OR_RULE &background DominantColor)
+
+  ;; the multiple of the count of lines from near_edge up to and including the divider that gives the destination's count
+  (DET &factor TileCount)
+
+  (DET &near_edge DirDomain)
+
+  (DET &line_color ChangedColor)
+
+  (DET_OR_RULE &near_color RarestColor)
+
+  (DET &far_color ColorDomain)
+
+  (RULE &divider_color
+    (&line_color *C))
+
+  (RULE &divider
+    (&divider_color (:C *Col))
+    (input *P Col))
+
+  (RULE &near_color_at
+    (&divider)
+    (dir_elem *D)
+    (&near_color (:C *Col)))
+
+  (RULE &near_reading
+    (&near_color_at *D *Col)
+    (&near_edge D))
+
+  (RULE &skewed
+    (&divider *P)
+    (&divider (:P *Q))
+    (dir_elem *D)
+    (NOT (same_dist D (:P1 P) (:P2 Q))))
+
+  (RULE &dest
+    (&divider (:P *P2))
+    (opposite *D (:Opp *D_far))
+    (NOT (&skewed D))
+    (neighbor (:P P2) (:D D_far) (:Q *P1))
+    (margin (:B P1) D *K)
+    (input *P)
+    (neighbor P (:D D_far) (:Q *Q1))
+    (margin (:B Q1) D (:K *K_dest))
+    (&factor *N)
+    (divide (:T K_dest) (:Side K) (:Gap 0) (:Part N) (:Remainder 0))
+    (> N 0))
+
+  (RULE &zone
+    (&near_reading *D (:Col *C_near))
+    (&divider (:P *P_div))
+    (&dest D (:P *Q))
+    (input *P)
+    (nearer D (:P P_div) (:Q P))
+    (nearer D P Q))
+
+  (RULE &recolored
+    (&near_reading *D (:Col *C_near))
+    (&far_color (:C *Col)))
+
+  (RULE &target
+    (&zone *D *C_near *P)
+    (input P *Col)
+    (&recolored D C_near Col)))
+
+(ALTS $e "the edge the divider's distance is measured from" $StoredNearEdge
+  (ALT $NearEdgeNearer
+    (OUTPUT move-divider "near_edge is the edge the divider is nearer to; undefined where the divider stands on the center line, or where no single full line exists."
+      (RULE &off_half
+        (&divider *P)
+        (dist_pair P *D *K *K2)
+        (>= K K2))
+
+      (RULE &near_reading
+        (&near_color_at *D *Col)
+        (NOT (&off_half D))))))
+
+(ALTS $l "the color of the divider" $StoredLineColor
+  (ALT $LineColorOfFullLine
+    (INPUT divider-line "line_color is the color of the one full line of a non-background color; undefined where no such line or more than one exists."
+      (RULE &divider_color
+        (&line_paint.value (:v *C))
+        (NOT (&background C))))))
+
+(ALTS $n "the color the swept far marks take" $StoredNearColor
+  (ALT $NearColorOfNearSide
+    (OUTPUT recolor-swept "near_color is the one non-background color on the near side of the divider; undefined where that side holds no such color or more than one."
+      (RULE &off_side
+        (input *P)
+        (dir_elem *D)
+        (&divider (:P *Q))
+        (NOT (nearer D P Q)))
+
+      (RULE &on_side
+        (input *P)
+        (dir_elem *D)
+        (&divider)
+        (NOT (&off_side D P)))
+
+      (RULE_OR_DET &side_color "A non-background color on the D side of the divider."
+        (&on_side *D *P)
+        (input P *Col)
+        (NOT (&background (:C Col))))
+
+      (RULE &mixed_side
+        (&side_color *D *Col)
+        (&side_color D (:Col *Col2))
+        (!= Col Col2))
+
+      (RULE &near_color_at
+        (&side_color *D *Col)
+        (NOT (&mixed_side D))))))
+
+(ALTS $d "what the destination line shows where a mark stands on it" $LineOverMark
+  (ALT $MarkOverLine
+    (OUTPUT move-divider "a non-background cell on the destination line keeps its input color.")
+    (RULE &paint
+      ;; Off the destination: a recolored mark, the vacated line, or the input color.
+      (OR ((&near_reading *D (:Col *C_near))
+           (&dest D)
+           (input *P (:Col *Col_in))
+           (NOT (&dest D P))
+           (OR ((&divider P)
+                (NOT (&target D C_near P))
+                (&background (:C *Col)))
+               ((&target D C_near P)
+                (= Col C_near))
+               ((NOT (&target D C_near P))
+                (NOT (&divider P))
+                (= Col Col_in))))
+          ((&near_reading D (:Col C_near))
+           (&dest D P)
+           (input P (:Col *Col_in2))
+           (IF ((&background (:C Col_in2)))
+               ((&divider_color (:C Col)))
+               ((= Col Col_in2)))))))
+  (ALT $SweptMarkOverLine
+    (OUTPUT move-divider "the sweep takes in the destination line, so a far mark there takes near_color."
+      (RULE &zone
+        (OR ((&near_reading *D (:Col *C_near))
+             (&dest D *P))
+            ((&near_reading D (:Col C_near))
+             (&divider (:P *P_div))
+             (&dest D (:P *Q))
+             (input P)
+             (nearer D (:P P_div) (:Q P))
+             (nearer D P Q)))))
+    (RULE &paint
+      (OR ((&near_reading *D (:Col *C_near))
+           (&dest D *P)
+           (OR ((&divider_color (:C *Col))
+                (NOT (&target D C_near P)))
+               ((&target D C_near P)
+                (= Col C_near))))
+          ;; Off the destination: a recolored mark, the vacated line, or the input color.
+          ((&near_reading D (:Col C_near))
+           (&dest D)
+           (input P (:Col *Col_in))
+           (NOT (&dest D P))
+           (OR ((&divider P)
+                (NOT (&target D C_near P))
+                (&background (:C Col)))
+               ((&target D C_near P)
+                (= Col C_near))
+               ((NOT (&target D C_near P))
+                (NOT (&divider P))
+                (= Col Col_in))))))
+    (ALT $RecolorNearSide
+      (OUTPUT recolor-swept "every far_color cell on the near side of the destination, the old line excepted, takes near_color."
+        (RULE &zone
+          (OR ((&near_reading *D (:Col *C_near))
+               (&dest D (:P *Q))
+               (input *P)
+               (nearer D P Q)
+               (NOT (&divider P)))
+              ((&near_reading D (:Col C_near))
+               (&dest D P))))))))
+
+(ALTS $c "the colors the sweep recolors" $FarColorOnly
+  (ALT $RecolorAnySwept
+    (OUTPUT recolor-swept "every swept cell that is neither background nor line_color takes near_color; it reads no far_color."
+      (RULE &recolored
+        (&near_reading *D (:Col *C_near))
+        (input *Col)
+        (NOT (&background (:C Col)))
+        (NOT (&divider_color (:C Col)))))))
+
+(ALTS $r "the cells the sweep recolors" $SweptColumns
+  (ALT $RecolorNearSide
+    (OUTPUT recolor-swept "every far_color cell on the near side of the destination, the old line excepted, takes near_color."
+      (RULE &zone
+        (&near_reading *D (:Col *C_near))
+        (&dest D (:P *Q))
+        (input *P)
+        (nearer D P Q)
+        (NOT (&divider P))))))
+
+(RULE &paint
+  (OR ((&near_reading *D (:Col *C_near))
+       (&dest D *P)
+       (&divider_color (:C *Col)))
+      ;; Off the destination: a recolored mark, the vacated line, or the input color.
+      ((&near_reading D (:Col C_near))
+       (&dest D)
+       (input P (:Col *Col_in))
+       (NOT (&dest D P))
+       (OR ((&divider P)
+            (NOT (&target D C_near P))
+            (&background (:C Col)))
+           ((&target D C_near P)
+            (= Col C_near))
+           ((NOT (&target D C_near P))
+            (NOT (&divider P))
+            (= Col Col_in))))))
+
+(OUT (&paint ^P ^Col))

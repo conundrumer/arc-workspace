@@ -1,0 +1,89 @@
+;; inputs d6aef82ca6f9b16273c0d3d838b7682bc5a177cb7d13976da203cc992bd2c871 programs/solvers/14b8e18c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 14b8e18c
+
+(DET &bg DominantColor)
+
+(DET &mark_color AnyOutNewColor)
+
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component ^Id *P))
+    (cell (P)
+      (&comps.component Id *P))))
+
+(RULE &square
+  (&bbox.box (:key *Id) *B)
+  (&comps.component Id *P)
+  (box_extent B P *A *N)
+  (perp A *A2)
+  (box_extent B P (:A A2) N))
+
+(RULE &multi_cell
+  (&comps.component *Id *P)
+  (&comps.component Id (:P *Q))
+  (!= P Q))
+
+(RULE &border_gap
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B))
+  (NOT (&comps.component Id P)))
+
+(RULE &qualify
+  (&square *Id)
+  (&multi_cell Id))
+
+(RULE &corner_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B)))
+
+(ALTS $choice "what makes an object square, and which corners get marks" $Square
+  (ALT $Corners
+    (RULE &anchor
+      (&qualify *Id)
+      (&corner_cell Id *Diag *P)
+      (&comps.component Id P)))
+  (ALT $Box
+    (RULE &qualify
+      (&square *Id)
+      (&multi_cell Id)
+      (NOT (&border_gap Id))))
+  (ALT $Ring
+    (RULE &has_interior
+      (&bbox.box (:key *Id) *B)
+      (&comps.component Id *P)
+      (interior (:A P) B))
+
+    (RULE &qualify
+      (&square *Id)
+      (&multi_cell Id)
+      (NOT (&border_gap Id))
+      (NOT (&has_interior Id)))))
+
+(RULE &anchor
+  (&qualify *Id)
+  (&corner_cell Id *Diag *P))
+
+(RULE &mark
+  (&anchor (:Diag *Dg) (:P *P2))
+  (corner_dir (:C Dg) *D)
+  (neighbor (:P P2) D (:Q *P))
+  (input P))
+
+(RULE &output
+  (OR ((&mark *P)
+       (&mark_color (:C *Col)))
+      ((input P Col)
+       (NOT (&mark P)))))
+
+(OUT (&output ^P ^Col))

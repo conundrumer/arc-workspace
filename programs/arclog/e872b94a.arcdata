@@ -1,0 +1,221 @@
+;; inputs 2f1851311ea4c1cdcb2491e96e1f2a88ba0295e926762add094479524217e0c1 programs/solvers/e872b94a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e872b94a
+
+(param &shape_color Color (5))
+(param &background Color (0))
+(param &fill_color Color (0))
+(param &strip_width number (1))
+(param &axis Axis (AXIS_V))
+(param &extra_cells number (1))
+(param &count_table (number Position Color)
+  (1 (grid
+    (0)
+    (0)))
+  (2 (grid
+    (0)
+    (0)
+    (0)))
+  (3 (grid
+    (0)
+    (0)
+    (0)
+    (0)))
+  (4 (grid
+    (0)
+    (0)
+    (0)
+    (0)
+    (0))))
+(param &region_count_table (number Position Color)
+  (2 (grid
+    (0)
+    (0)))
+  (3 (grid
+    (0)
+    (0)
+    (0)))
+  (4 (grid
+    (0)
+    (0)
+    (0)
+    (0)))
+  (5 (grid
+    (0)
+    (0)
+    (0)
+    (0)
+    (0))))
+
+(alts $cells
+  (alt $NonBackground
+    (witness second-color-snake borderline $NonBackground
+      (relaxed snakes-on-background)
+      (separates "a snake of a color other than the shape color: the shape-color snakes give a strip of 2, the non-background snakes give a strip of 3")
+      (input (grid
+        (5 0 3)
+        (5 0 3)
+        (5 0 0)))
+      (output ($ShapeColor $Snakes &shape_color=$Stored) ($ShapeColor $Snakes $StoredAxis) (grid
+        (0)
+        (0)))
+      (output $NonBackground (grid
+        (0)
+        (0)
+        (0)))
+      (output ($BackgroundRegions $StoredAxis) (grid
+        (0)))
+      (output ($BackgroundRegions $CountTable) ($AxisFromSnakes &shape_color=$Derived) undefined))))
+
+(alts $parts
+  (alt $BackgroundRegions
+    (witness snake-off-edge variant concept
+      (separates "one snake touches one grid edge only, so it cuts the field into no extra region: counting snakes gives a strip of 2, counting background regions gives a strip of 1, and the axis taken from the snakes has no value")
+      (input (grid
+        (0 5 0)
+        (0 5 0)
+        (0 0 0)))
+      (output ($Snakes $StoredAxis) ($Snakes $CountTable) (grid
+        (0)
+        (0)))
+      (output ($BackgroundRegions $StoredAxis) (grid
+        (0)))
+      (output ($BackgroundRegions $CountTable) $AxisFromSnakes undefined))))
+
+(alts $adj
+  (alt $Adjacency8
+    (witness corner-contact borderline $Adjacency8
+      (relaxed snakes-apart)
+      (separates "two side-connected parts touch at a corner: 4-adjacency counts two snakes and gives a strip of 3, 8-adjacency counts one and gives a strip of 2")
+      (input (grid
+        (5 0 0)
+        (5 0 0)
+        (0 5 0)
+        (0 5 0)))
+      (output ($Snakes $Adjacency4 $StoredAxis) ($Snakes $CountTable) (grid
+        (0)
+        (0)
+        (0)))
+      (output ($BackgroundRegions $Adjacency4) ($Snakes $Adjacency8) (grid
+        (0)
+        (0)))
+      (output ($BackgroundRegions $Adjacency8 $StoredAxis) (grid
+        (0)))
+      (output ($Adjacency8 $CountTable) $AxisFromSnakes undefined))))
+
+(alts $axis
+  (alt $AxisFromSnakes
+    (witness sideways-snake variant $AxisFromSnakes
+      (separates "the one snake spans the grid from left to right and not from top to bottom: the stored axis gives a column of 2, the axis taken from the snakes gives a row of 2")
+      (input (grid
+        (0 0 0)
+        (5 5 0)
+        (0 5 5)))
+      (output $StoredAxis $CountTable (grid
+        (0)
+        (0)))
+      (output $AxisFromSnakes (grid
+        (0 0))))))
+
+(alts $form
+  (alt $CountTable
+    (witness table-entry-off-form ordinary $CountTable
+      (separates "a count table whose entry for one snake is a grid no strip draws: the table gives that entry, the derived strip gives a black column of 2")
+      (assign &count_table
+        (1 (grid
+          (5)
+          (0)))
+        (2 (grid
+          (0)
+          (0)
+          (0)))
+        (3 (grid
+          (0)
+          (0)
+          (0)
+          (0)))
+        (4 (grid
+          (0)
+          (0)
+          (0)
+          (0)
+          (0))))
+      (input (grid
+        (0 5 0)
+        (0 5 5)
+        (0 0 5)))
+      (output $Strip $BackgroundRegions (grid
+        (0)
+        (0)))
+      (output ($Snakes $CountTable) (grid
+        (5)
+        (0))))))
+
+(alts &shape_color
+  (alt &shape_color=$Derived
+    (witness shape_color=RarestColor ordinary concept
+      (separates "the snake cells outnumber the background cells: the stored shape color counts two snakes and gives a strip of 3, the rarest color is the background and gives a strip of 2")
+      (input (grid
+        (5 0 5)
+        (5 0 5)
+        (5 0 5)))
+      (output ($Snakes &shape_color=$Stored &background=$Stored &fill_color=$Stored) (grid
+        (0)
+        (0)
+        (0)))
+      (output &background=$Derived &shape_color=$Derived (grid
+        (0)
+        (0)))
+      (output ($BackgroundRegions $StoredAxis) (grid
+        (0)))
+      (output ($BackgroundRegions $CountTable) undefined)
+      (output &fill_color=$Derived (grid
+        (5)
+        (5)
+        (5))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor ordinary concept
+      (separates "the snake cells outnumber the background cells: the stored background makes the 5 cells the snakes and gives a strip of 3, the commonest color makes the 0 cells the snakes and gives a strip of 2")
+      (input (grid
+        (5 0 5)
+        (5 0 5)
+        (5 0 5)))
+      (output ($Snakes &shape_color=$Stored &background=$Stored &fill_color=$Stored) (grid
+        (0)
+        (0)
+        (0)))
+      (output &background=$Derived &shape_color=$Derived (grid
+        (0)
+        (0)))
+      (output ($BackgroundRegions $StoredAxis) (grid
+        (0)))
+      (output ($BackgroundRegions $CountTable) undefined)
+      (output &fill_color=$Derived (grid
+        (5)
+        (5)
+        (5))))))
+
+(alts &fill_color
+  (alt &fill_color=$Derived
+    (witness fill_color=DominantColor ordinary concept
+      (separates "the snake cells outnumber the background cells: the stored fill color gives a strip of 0, the commonest color gives a strip of 5")
+      (input (grid
+        (5 0 5)
+        (5 0 5)
+        (5 0 5)))
+      (output ($Snakes &shape_color=$Stored &background=$Stored &fill_color=$Stored) (grid
+        (0)
+        (0)
+        (0)))
+      (output &background=$Derived &shape_color=$Derived (grid
+        (0)
+        (0)))
+      (output ($BackgroundRegions $StoredAxis) (grid
+        (0)))
+      (output ($BackgroundRegions $CountTable) undefined)
+      (output &fill_color=$Derived (grid
+        (5)
+        (5)
+        (5))))))

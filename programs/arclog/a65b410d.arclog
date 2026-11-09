@@ -1,0 +1,272 @@
+;; inputs aeb60b33d50d0072edeca9b65cff46b393075abdaf5f0a82dd053e186e306b07 programs/solvers/a65b410d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a65b410d
+
+(INPUT background "the grid is &bg except for one bar"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT bar "the bar is one run of &bar_color in one line along the axis of &anchor_side. It starts at the &anchor_side edge and has length L of at least 2."
+
+  (INIT &freq_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (DET_OR_RULE &bar_color RarestColor)
+
+  (INIT &freq Order
+    (member ((:t Col))
+      (&freq_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&freq_count.size (:key *Col) *N)))
+
+  ;; The most frequent color other than &bg, absent on a tie.
+  (INIT &common Singleton
+    (member ((:v Col))
+      (&freq.maximal (:t *Col))))
+
+  (DET &touches
+    (ex_input *E *P *Col)
+    (&bar_color (:C Col))
+    (margin (:B P) (:D *A) (:K 0)))
+
+  (DET &untouched
+    (dir_elem (:D *A))
+    (ex_input *E)
+    (NOT (&touches E A)))
+
+  (DET &anchor_side
+    (dir_elem *D)
+    (NOT (&untouched (:A D)))))
+
+(OUTPUT keep-bar "the bar's line is unchanged"
+
+  (DET &above_color AnyOutNewColor)
+
+  (DET &below_color AnyOutNewColor)
+
+  ;; the side of the bar where the runs grow
+  (DET &grow_side DirDomain)
+
+  (RULE &bar_color_of
+    (&bar_color (:C *Col)))
+
+  (RULE &ink
+    (input *P *Col)
+    (&bar_color_of Col))
+
+  (INIT &piece Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &several
+    (&piece.component (:Id *I))
+    (&piece.component (:Id *J))
+    (!= I J))
+
+  (RULE &same_bar
+    (&piece.component *P (:Id *I))
+    (&piece.component (:P *Q) (:Id I))
+    (NOT (&several)))
+
+  (INIT &bars Quotient
+    (equivalent ((:a P) (:b Q))
+      (&same_bar *P *Q)))
+
+  (INIT &bar_len Cardinality
+    (key ((&bars.class ^Id (:a *P)))
+      (member ((:m P))
+        (&bars.class Id (:a *P)))))
+
+  (RULE &bent
+    (&bars.class (:Id *B) (:a *P))
+    (&bars.class (:Id B) (:a *Q))
+    (dir_elem (:D *G))
+    (NOT (same_dist (:D G) (:P1 P) (:P2 Q))))
+
+  (RULE &touch
+    (&bars.class (:Id *B) (:a *X))
+    (margin (:B X) (:D *A) (:K 0)))
+
+  (RULE &one_end
+    (&touch *B *A)
+    (opposite (:D A) (:Opp *A2))
+    (NOT (&touch B (:A A2))))
+
+  (RULE &orient
+    (&bars.class (:Id *B))
+    (&anchor_side (:D *A))
+    (&grow_side (:D *G))
+    (NOT (&bent B G)))
+
+  (RULE &line
+    (&orient *B *G)
+    (&bars.class (:Id B) (:a *X))
+    (input *P)
+    (same_dist (:D G) (:P1 P) (:P2 X)))
+
+  (RULE &within
+    (&orient *B *A *G)
+    (&line B G (:P *S))
+    (&line B G (:P *X))
+    (&bar_len.size (:key (:Id B)) (:N *L))
+    (relative (:Base S) X *X_rel)
+    (margin (:B X_rel) (:D A) *K)
+    (>= K 0)
+    (< K L))
+
+  (RULE &edge_start
+    (&orient *B *A *G)
+    (&line B G (:P *S))
+    (margin (:B S) (:D A) (:K 0)))
+
+  (RULE &stair
+    (&edge_start *B *S)
+    (&within B S *X))
+
+  (RULE &draw
+    (OR ((&stair *B *S *X)
+         (&orient B *A *G)
+         (input *P)
+         (NOT (nearer (:D A) P (:Q S)))
+         (corner_dir *C (:D A))
+         (corner_dir C (:D G))
+         (NOT (nearer (:D C) (:P X) (:Q P)))
+         (OR ((nearer (:D G) P (:Q S))
+              (&above_color (:C *Col)))
+             ((nearer (:D G) (:P S) (:Q P))
+              (&below_color (:C Col)))))
+        ((&orient B (:G *G2))
+         (&line B (:G G2) P)
+         (input P Col))))
+
+  ;; The color the bars of one reading draw at a cell.
+  (INIT &shown Singleton
+    (key ((&draw ^P *Col))
+      (member ((:v Col))
+        (&draw P *Col)))))
+
+(OUTPUT grow-above "the line k lines from the bar toward &grow_side gets a run of &above_color from the &anchor_side edge, of length L + k. The rest of that line is &bg.")
+
+(OUTPUT shrink-below "the line k lines from the bar away from &grow_side gets a run of &below_color from the &anchor_side edge, of length L - k, when L - k > 0. The rest of that line, and every line where L - k <= 0, is &bg.")
+
+(OUTPUT staircase "together the runs form a staircase whose far ends lie on one diagonal through the bar's far end"
+
+  (RULE &no_bar
+    (NOT (&ink))))
+
+(ALTS $bar_color "where the bar color comes from" $StoredBarColor
+  (ALT $DerivedBarColor
+    (INPUT bar "the bar color is the most frequent color other than &bg. Undefined when two colors tie for most frequent."
+      (RULE &bar_color_of
+        (&common.value (:v *Col)))
+
+      (RULE &no_bar
+        (NOT (&freq_count.member))))))
+
+(ALTS $anchor "where the anchor edge comes from" $StoredAnchor
+  (ALT $StoredAnchor
+    (ALTS $placement "where each run starts and ends" $EdgeLength
+      (ALT $BarAnchor
+        (OUTPUT grow-above "each run starts level with the bar's end nearer the anchor edge"
+          (RULE &inner_bar
+            (&bars.class (:Id *B) (:a *P))
+            (&bars.class (:Id B) (:a *Q))
+            (&anchor_side (:D *A))
+            (nearer (:D A) (:P Q) (:Q P)))
+          (RULE &stair
+            (&bars.class (:Id *B) (:a *S))
+            (NOT (&inner_bar B (:P S)))
+            (&within B S *X)))
+        (OUTPUT shrink-below "each run starts level with the bar's end nearer the anchor edge"))
+      (ALT $RightDiagonal
+        (OUTPUT grow-above "each run starts at the anchor edge and ends on the diagonal through the bar's far end"
+          (RULE &stair
+            (&edge_start *B *S)
+            (&bars.class (:Id B) (:a *X))))
+        (OUTPUT shrink-below "each run starts at the anchor edge and ends on the diagonal through the bar's far end"))))
+  (ALT $AnchorDerived
+    (INPUT bar "the bar is one run of &bar_color in one line across &grow_side's axis. The anchor edge is the side edge the bar touches. Undefined when the bar touches neither side edge or both."
+      (RULE &orient
+        (&grow_side (:D *G))
+        (perp_dir (:D G) (:D2 *A))
+        (&one_end *B A)
+        (NOT (&bent B G)))))
+  (ALT $AnyEdgeAnchor
+    (INPUT bar "the bar is one run of &bar_color in one line of either axis. The anchor edge is the edge on that axis that the bar touches, and the grow side is a quarter turn from it in the sense &grow_sense. Undefined when the bar touches neither edge of its axis or both, or lies in one line of each axis."
+      ;; the grow side is a quarter turn in this sense from the anchor edge
+      (DET &grow_sense SenseDomain)
+
+      (RULE &axis_end
+        (&one_end *B *A)
+        (perp_dir (:D A) (:D2 *G))
+        (NOT (&bent B G)))
+
+      (RULE &orient
+        (&axis_end *B *A)
+        (ALL ((&axis_end B (:A *Am))
+              (&axis_end B (:A *A2)))
+             ((= Am A2)))
+        (&grow_sense *S)
+        (turn S (:D A) (:D2 *G))))))
+
+(ALTS $canvas "what the cells outside the runs take" $BlankCanvas
+  (ALT $KeepRest
+    (OUTPUT grow-above "the rest of that line keeps its input color")
+    (OUTPUT shrink-below "the rest of that line, and every line with no run, keeps its input color")
+    (RULE &rest
+      (input *P *Col))))
+
+(ALTS $reading "how the bar is read" $OneRun
+  (ALT $CountCells
+    (INPUT bar "the bar's line is the line nearest &grow_side that holds &bar_color. L is the count of &bar_color cells in that line, and the bar's ends are the first and the last of them. Cells of &bar_color in other lines are ignored. Undefined only when no cell holds &bar_color."
+      (RULE &lower
+        (&ink *P)
+        (&ink (:P *Q))
+        (&grow_side (:D *G))
+        (nearer (:D G) (:P Q) (:Q P)))
+
+      (RULE &same_bar
+        (&ink *P)
+        (NOT (&lower P))
+        (&ink (:P *Q))
+        (NOT (&lower (:P Q))))))
+  (ALT $PerBar
+    (INPUT bar "each piece of &bar_color is a bar")
+    (OUTPUT keep-bar "each bar keeps its line and draws its own runs. Undefined when two bars give one cell different colors."
+      (RULE &same_bar
+        (&piece.component *P (:Id *I))
+        (&piece.component (:P *Q) (:Id I))))))
+
+(ALTS $no_bar "what an input with no bar gives" $NeedsBar
+  (ALT $NoBarIdentity
+    (OUTPUT no-bar "an input with no cell of &bar_color is returned unchanged")
+    (RULE &output
+      (OR ((&no_bar)
+           (input *P *Col))
+          ((&orient)
+           (NOT (&failed))
+           (OR ((&shown.value (:key P) (:v Col)))
+               ((&rest P Col)
+                (NOT (&shown.value (:key P))))))))))
+
+(RULE &failed
+  (OR ((&bars.class *Id)
+       (NOT (&orient (:B Id))))
+      ((&shown.plural))))
+
+(RULE &rest
+  (input *P)
+  (&bg (:C *Col)))
+
+(RULE &output
+  (&orient)
+  (NOT (&failed))
+  (OR ((&shown.value (:key *P) (:v *Col)))
+      ((&rest P Col)
+       (NOT (&shown.value (:key P))))))
+
+(OUT (&output ^P ^Col))

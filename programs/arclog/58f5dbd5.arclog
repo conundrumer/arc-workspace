@@ -1,0 +1,222 @@
+;; inputs 6b10b07dcee24875dea9d59ae0020c353113a07c3752060b913958900f7466df programs/solvers/58f5dbd5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58f5dbd5
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode_count2 Cardinality
+  (key ((ex_input ^E *P ^Col))
+    (member ((:m P))
+      (ex_input E *P Col))))
+
+;; The ground is the commonest color.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &comp_box BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &pierced
+  (&comp_box.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&comp_box.cell (:key Id) P)))
+
+(RULE &block
+  (&comps.component (:key *Col) *P *Id)
+  (NOT (&pierced Id)))
+
+(INIT &block_box BoundingBox
+  (key ((&block ^Col *P))
+    (cell (P)
+      (&block Col *P))))
+
+(RULE &block_inner
+  (&block *Col *P)
+  (&block_box.box (:key Col) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &key_cell
+  (input *P *Col)
+  (&block Col)
+  (NOT (&block Col P)))
+
+(INIT &key_box BoundingBox
+  (key ((&key_cell ^Col *P))
+    (cell (P)
+      (&key_cell Col *P))))
+
+(RULE &key_inner
+  (&key_cell *Col *P)
+  (&key_box.box (:key Col) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; $Center — the key centered in the block.
+(RULE &hole
+  (&block_inner *Col *P (:P_inner *P_blk))
+  (&key_inner Col (:P_inner *P_key))
+  (relative (:Base P_key) (:X P_blk) (:X_rel *B))
+  (centered (:P B)))
+
+;; $Crop — the block box let out by the border on every edge.
+(INIT &blocks_box BoundingBox
+  (cell (P)
+    (&block *P)))
+
+(INIT &bg_mode2 Order
+  (key ((&bg_mode_count2.size (:key ^E *Col)))
+    (member ((:t Col))
+      (&bg_mode_count2.size (:key E *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count2.size (:key E *Col) *N))))
+
+;; The output's blocks stand the border's width inside its frame.
+(INIT &bbox BoundingBox
+  (key ((ex_output ^E *P *Col)
+        (NOT (&bg_mode2.maximal (:key E) (:t Col))))
+    (cell (P)
+      (ex_output E *P *Col)
+      (NOT (&bg_mode2.maximal (:key E) (:t Col))))))
+
+(DET &border
+  (&bbox.box *B)
+  (margin B *D *K))
+
+(RULE &crop_box
+  (&blocks_box.box (:B *B_blocks))
+  (&border *K)
+  (uniform_outset K (:B *B_wide))
+  (compose (:A B_wide) (:B B_blocks) (:C *B)))
+
+(RULE &view
+  (&crop_box *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_out)))
+
+(ALTS $punch "punch — where the key lands on the block" $Center
+  (ALT $Interior
+    ;; $Interior — the key fills the block less its rim.
+    (INIT &rim Boundary
+      (key ((&block ^Col *P))
+        (cell (P)
+          (&block Col *P))))
+
+    (INIT &inside_box BoundingBox
+      (key ((&block ^Col *P)
+            (NOT (&rim.boundary (:key Col) P)))
+        (cell (P)
+          (&block Col *P)
+          (NOT (&rim.boundary (:key Col) P)))))
+
+    (RULE &hole
+      (&inside_box.cell (:key *Col) *P)
+      (&inside_box.box (:key Col) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&key_inner Col P_inner))))
+
+(ALTS $frame "frame — where the output frame comes from" $Crop
+  (ALT $Arrange
+    ;; $Arrange — each block at its place in the arrangement, inside the border.
+    ;; A block's place is its rank from each of the four edges; blocks level with
+    ;; each other share a rank, so a band of them lands in one row.
+    (INIT &lane Order
+      (key ((dir_elem ^D))
+        (member ((:t K))
+          (&block_box.box *B)
+          (margin B D *K))
+        (score ((:t K) (:S K))
+          (&block_box.box *B)
+          (margin B D *K))))
+
+    (RULE &tile_edge
+      (&block_box.box (:key (:Col *Key)) *B)
+      (margin B *D (:K *K2))
+      (&lane.rank (:key D) (:t K2) (:R *K)))
+
+    (RULE &tile_axis
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&tile_edge *Key D (:K *K1))
+      (&tile_edge Key (:D D2) (:K *K2))
+      (axis_inset D K1 K2 *B))
+
+    (RULE &tile
+      (&tile_axis *Key *A (:B *B1))
+      (perp A *A2)
+      (&tile_axis Key (:A A2) (:B *B2))
+      (compose (:A B1) (:B B2) (:C *B)))
+
+    (INIT &view_tiling Tiling
+      (key ((OR ((&tile (:Key ^Col) (:B *P_tile))
+                 (&border ^K))
+                ((&block_inner Col *P_inner)
+                 (&border K))
+                ((axis_elem *A)
+                 (&block_inner Col)
+                 (&border K))))
+        (outer ((:P P_tile))
+          (&tile (:Key Col) (:B *P_tile))
+          (&border K))
+        (inner ((:P P_inner))
+          (&block_inner Col *P_inner)
+          (&border K))
+        (gap (A (:G K))
+          (axis_elem *A)
+          (&block_inner Col)
+          (&border K))))
+
+    (RULE &view
+      (&block_inner *Col *P *P_inner)
+      (&view_tiling.cell (:key Col *K) P_inner (:P *P_tiling))
+      (uniform_inset K *B)
+      (compose (:A B) (:B P_tiling) (:C *P_out)))
+
+    (INIT &arrange_frame Frame
+      (extent (A N)
+        (&view *P_out)
+        (frame_extent (:P P_out) *A *N)))
+
+    (RULE &output
+      (OR ((&arrange_frame.cell *P)
+           (NOT (&view (:P_out P)))
+           (&bg_mode.maximal (:t *Col)))
+          ((&view (:P *P2) (:P_out P))
+           (&hole (:P P2))
+           (&bg_mode.maximal (:t Col)))
+          ((&view (:P *P22) (:P_out P))
+           (input (:P P22) Col)
+           (NOT (&hole (:P P22))))))))
+
+(RULE &output
+  (OR ((&view (:P *P2) (:P_out *P))
+       (&hole (:P P2))
+       (&bg_mode.maximal (:t *Col)))
+      ((&view (:P *P22) (:P_out P))
+       (input (:P P22) Col)
+       (NOT (&hole (:P P22))))))
+
+(OUT (&output ^P ^Col))

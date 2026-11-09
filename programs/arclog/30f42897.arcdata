@@ -1,0 +1,6 @@
+;; inputs 99420e511f8e5414fd66e403262167c35a73bcebaba3f0f027f0c1d5b401ae8e programs/solvers/30f42897.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 30f42897
+
+(param &bg Color (8))
+(param &period_blocks number (2))

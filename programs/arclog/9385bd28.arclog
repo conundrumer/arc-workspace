@@ -1,0 +1,124 @@
+;; inputs 3a1640893dda4ba5408c14f18f8fbaecbc1f27ef9e8e02ad7d4f55069a31839f programs/solvers/9385bd28.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9385bd28
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; the legend's head: of two entries, the one nearer this edge wins
+(DET &head_dir DirDomain)
+
+;; the quarter turn from the head to the legend's key side
+(DET &key_sense SenseDomain)
+
+(RULE &key_dir
+  (&head_dir (:D *D_head))
+  (&key_sense *S)
+  (turn S (:D D_head) (:D2 *D)))
+
+;; The field is the commonest color; the regions are what is drawn on it.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(INIT &regions Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&field.maximal (:t Col)))))
+
+;; The legend is the one region that holds more than one color.
+(INIT &region_color Singleton
+  (key ((&regions.component *P ^Id)
+        (input P *Col))
+    (member ((:v Col))
+      (&regions.component *P Id)
+      (input P *Col))))
+
+(INIT &legend BoundingBox
+  (cell (P)
+    (&regions.component *P *Id)
+    (&region_color.plural (:key Id))))
+
+(RULE &in_legend
+  (input *P)
+  (&legend.box *B)
+  (inside (:A P) B))
+
+(RULE &entry
+  (&legend.box *B)
+  (&key_dir *D)
+  (opposite D (:Opp *D2))
+  (input (:P *E1) (:Col *C_key))
+  (inside (:A E1) B)
+  (same_dist D (:P1 E1) (:P2 B))
+  (input (:P *Q) (:Col *C_val))
+  (inside (:A Q) B)
+  (same_dist (:D D2) (:P1 Q) (:P2 B))
+  (&head_dir (:D *D_head))
+  (same_dist (:D D_head) (:P1 E1) (:P2 Q)))
+
+(RULE &drawn
+  (&entry (:C_key *C))
+  (input *P (:Col C))
+  (NOT (&in_legend P)))
+
+(INIT &pieces Connectivity
+  (key ((&drawn ^C *P))
+    (node (P)
+      (&drawn C *P))))
+
+(INIT &piece_box BoundingBox
+  (key ((&pieces.component *P ^Id))
+    (cell (P)
+      (&pieces.component *P Id))))
+
+(RULE &open_box
+  (&piece_box.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&pieces.component P Id)))
+
+(RULE &mark
+  (&pieces.component (:key *C) *P *Id)
+  (&open_box Id))
+
+;; The box an entry's pieces span.
+(INIT &span BoundingBox
+  (key ((&drawn ^C *P))
+    (cell (P)
+      (&drawn C *P))))
+
+(RULE &covered
+  (&entry *E1 (:C_key *C))
+  (&span.box (:key C) *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &outranked
+  (&covered *P *E1)
+  (&covered P (:E1 *E2))
+  (&head_dir *D)
+  (nearer D (:P E2) (:Q E1)))
+
+(ALTS $choice "which pieces of a key color are marks" $Open
+  (ALT $Paired
+    (RULE &mark
+      (&pieces.component (:key *C) *P *Id)
+      (&pieces.component (:key C) (:Id *Id2))
+      (!= Id Id2))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&covered P)))
+      ((&covered P (:E1 *E))
+       (NOT (&outranked P (:E1 E)))
+       (&entry (:E1 E) *C_key *C_val)
+       (IF ((&mark (:C C_key) P))
+           ((= Col C_key))
+           ((= Col C_val))))))
+
+(OUT (&output ^P ^Col))

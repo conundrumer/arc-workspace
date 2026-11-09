@@ -1,0 +1,136 @@
+;; inputs 5b7d7e71f6888cdac553b35978493bab6a18b170319bea98e645a242b31fc0ff programs/solvers/5961cc34.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5961cc34
+
+(DET &bg DominantColor)
+
+(RULE &node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &objs Connectivity
+  (key ((ex_input ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (ex_input E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &body_count Cardinality
+  (key ((&objs.component (:key ^E) *P ^Id)
+        (ex_input E P ^Col))
+    (member ((:m P))
+      (&objs.component (:key E) *P Id)
+      (ex_input E P Col))))
+
+;; The body is the bulk of an object, in its commonest color.
+(INIT &body Order
+  (key ((&body_count.size (:key ^E ^Id *Col)))
+    (member ((:t Col))
+      (&body_count.size (:key E Id *Col)))
+    (score ((:t Col) (:S N))
+      (&body_count.size (:key E Id *Col) *N))))
+
+(DET &port
+  (&body_count.member (:key (:E *O_e) (:Id *O_id) *Col))
+  (NOT (&body.maximal (:key (:E O_e) (:Id O_id)) (:t Col))))
+
+(RULE &port_cell
+  (input *P *Col)
+  (&port Col))
+
+(RULE &port_dir
+  (&node (:P *Q))
+  (NOT (&port_cell (:P Q)))
+  (dir_elem *D)
+  (neighbor (:P Q) D (:Q *P))
+  (&port_cell P))
+
+;; Each port's beam runs over the field until it meets ink.
+(INIT &beam Ray
+  (key ((OR ((&port_dir *P ^D))
+            ((dir_elem D))))
+    (source (P)
+      (&port_dir *P D))
+    (node (P)
+      (dir_elem D)
+      (input *P)
+      (NOT (&node P)))
+    (dir (D)
+      (dir_elem D))))
+
+(INIT &beam_full Ray
+  (key ((OR ((&port_dir *P ^D))
+            ((dir_elem D))))
+    (source (P)
+      (&port_dir *P D))
+    (node (P)
+      (dir_elem D)
+      (input *P))
+    (dir (D)
+      (dir_elem D))))
+
+(RULE &beam_stop_full
+  (&beam.end (:key (:D *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&beam_full.ray (:key (:D V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+;; The color the current carries.
+(DET &lit UnchangedColor)
+
+(INIT &objects Connectivity
+  (node (P)
+    (&node *P)))
+
+(RULE &feeds
+  (&beam_stop_full (:V1 *P) (:V4 *P_port))
+  (&objects.component (:P P_port) *Id)
+  (&objects.component P (:Id *Id2)))
+
+;; The live objects: the objects the current starts from, and those it
+;; reaches from them, carrying on down the beams.
+(INIT &live Propagation
+  (source ((:n Id))
+    (&objects.component *P *Id)
+    (input P *Col)
+    (&lit (:C Col)))
+  (edge ((:a Id) (:b Id2))
+    (&feeds *Id *Id2)))
+
+(ALTS $choice "which property singles out the source object; the pairs never separate them" $Lit
+  (ALT $Marked
+    ;; The color that marks the source object.
+    (DET &source RarestColor)
+
+    ;; The live objects: the objects the current starts from, and those it
+    ;; reaches from them, carrying on down the beams.
+    (INIT &live Propagation
+      (source ((:n Id))
+        (&objects.component *P *Id)
+        (input P *Col)
+        (&source (:C Col)))
+      (edge ((:a Id) (:b Id2))
+        (&feeds *Id *Id2))))
+  (ALT $Rim
+    ;; The live objects: the objects the current starts from, and those it
+    ;; reaches from them, carrying on down the beams.
+    (INIT &live Propagation
+      (source ((:n Id))
+        (&objects.component *P *Id)
+        (margin (:B P) *D (:K 0)))
+      (edge ((:a Id) (:b Id2))
+        (&feeds *Id *Id2)))))
+
+(RULE &lit_cell
+  (&live.reached (:n *Id))
+  (&objects.component (:P *P_obj) Id)
+  (OR ((&beam.ray *P (:Origin P_obj)))
+      ((= P P_obj))))
+
+(RULE &output
+  (OR ((&lit_cell *P)
+       (&lit (:C *Col)))
+      ((input P)
+       (NOT (&lit_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

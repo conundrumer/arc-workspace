@@ -1,0 +1,134 @@
+;; inputs 2766a49bc681fda2367c1a59dc6d7e9e1237c8df5d8224c884d0f67aca17065b programs/solvers/305b1341.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 305b1341
+
+(DET &bg DominantColor)
+
+;; The edge the legend's dot colors sit on.
+(DET &legend_side DirDomain)
+
+(RULE &legend
+  (&legend_side (:D *D_side))
+  (input (:P *P_dot) (:Col *Dot))
+  (margin (:B P_dot) (:D D_side) (:K 0))
+  (NOT (&bg (:C Dot)))
+  (input (:P *P_fill) (:Col *Fill))
+  (neighbor (:P P_fill) (:D D_side) (:Q P_dot))
+  (NOT (&bg (:C Fill))))
+
+(RULE &panel_cell
+  (&legend *Dot)
+  (input *P (:Col Dot))
+  (NOT (&legend (:P_dot P)))
+  (NOT (&legend (:P_fill P))))
+
+(INIT &bbox BoundingBox
+  (key ((&panel_cell ^Dot *P))
+    (cell (P)
+      (&panel_cell Dot *P))))
+
+(DET &dot_gap DivisorRatio)
+
+(DET &dot_size DivisorRatio)
+
+(INIT &periodic_dot_division Division
+  (cell ((:P P_inner))
+    (input *P)
+    (&bbox.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+  (side (A K)
+    (axis_elem *A)
+    (&dot_size *K))
+  (gap (A G)
+    (axis_elem *A)
+    (&dot_gap (:K *G))))
+
+;; The quarter turn from legend_side to the edge the first entry lies on.
+(DET &legend_sense SenseDomain)
+
+(RULE &dots_choice)
+
+(RULE &periodic_dot
+  (input *P)
+  (&bbox.box (:key *Dot) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&periodic_dot_division.tile (:P P_inner)))
+
+(RULE &dotted
+  (&panel_cell *Dot *P))
+
+;; The bounding box of the dots grown by one ring: the box of the cells one
+;; diagonal step out from its corners, which every Dots case shares.
+(INIT &grown BoundingBox
+  (key ((&bbox.box (:key ^Dot) *B)
+        (input *P)
+        (inside (:A P) B)
+        (same_corner (:D *Dc) (:P1 P) (:P2 B))
+        (neighbor P (:D Dc) *Q))
+    (cell ((:P Q))
+      (&bbox.box (:key Dot) *B)
+      (input *P)
+      (inside (:A P) B)
+      (same_corner (:D *Dc) (:P1 P) (:P2 B))
+      (neighbor P (:D Dc) *Q))))
+
+(RULE &box_panel
+  (input *P)
+  (&grown.box (:key *Dot) *B)
+  (inside (:A P) B))
+
+(RULE &panel
+  (&dots_choice)
+  (&box_panel *Dot *P))
+
+(RULE &above
+  (&legend_side *D)
+  (&legend_sense *S)
+  (turn S D (:D2 *D_run))
+  (&legend *Dot (:P_dot *P))
+  (&legend (:Dot *Dot2) (:P_dot *P2))
+  (nearer (:D D_run) P (:Q P2)))
+
+(ALTS $dots "what a panel holds" $Shown
+  (ALT $Periodic
+    (RULE &dotted
+      (&periodic_dot *Dot *P))))
+
+(ALTS $panel "what the panel's ring grows around" $Box
+  (ALT $Cells
+    (RULE &panel
+      (&dotted *Dot (:P *P2))
+      (OR ((neighbor (:P P2) *D (:Q *P))
+           (input P))
+          ((= P P2))))))
+
+(ALTS $stack "which of two overlapping panels wins" $Legend
+  (ALT $Occlusion
+    (RULE &above
+      (&periodic_dot (:Dot *Dot2) *P)
+      (NOT (&panel_cell (:Dot Dot2) P))
+      (&panel *Dot P)
+      (!= Dot Dot2))))
+
+(RULE &paint
+  (&panel *Dot *P)
+  (&legend Dot *Fill)
+  (IF ((&dotted Dot P))
+      ((= *Ink Dot))
+      ((= Ink Fill))))
+
+(RULE &covered
+  (&paint *Dot *P)
+  (&paint (:Dot *Dot2) P)
+  (&above (:Dot Dot2) (:Dot2 Dot)))
+
+(RULE &output
+  (input *P)
+  (OR ((&paint *Dot P (:Ink *Col))
+       (NOT (&covered P Dot)))
+      ((NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

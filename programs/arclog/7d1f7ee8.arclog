@@ -1,0 +1,58 @@
+;; inputs bdb785e54971c6d34143ba172c851697149bf736cd69d5483f178a375777bbf7 programs/solvers/7d1f7ee8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7d1f7ee8
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &drect Outlines
+  (key ((&ink ^Col))
+    (node (P)
+      (input *P Col))))
+
+(RULE &nested_rect
+  (&drect.box *B)
+  (&drect.box (:B *B_outer))
+  (!= B B_outer)
+  (inside (:A B) (:B B_outer)))
+
+(RULE &enclosed
+  (&ink (:Col *C))
+  (input *P (:Col C))
+  (&drect.box (:key *Col) *B)
+  (NOT (&nested_rect B))
+  (inside (:A P) B))
+
+(ALTS $choice "what counts as an outline, and which outlines are outermost" $Rect
+  (ALT $Enclose
+    ;; Each ink color walls the rest of the grid off; a cell some color cuts off
+    ;; is nested.
+    (INIT &closed Enclosure
+      (key ((&ink ^Col))
+        (cell (P)
+          (input *P (:Col *C))
+          (!= C Col))))
+
+    ;; Each color's outermost walls cut the grid off: a cell of another color
+    ;; passes, and so does a cell some color already cuts off.
+    (INIT &outer Enclosure
+      (key ((&ink ^Col))
+        (cell (P)
+          (input *P (:Col *C))
+          (OR ((!= C Col))
+              ((&closed.enclosed P))))))
+
+    (RULE &enclosed
+      (&ink (:Col *C))
+      (input *P (:Col C))
+      (&outer.enclosed (:key *Col) P))))
+
+(RULE &output
+  (OR ((&enclosed *P *Col))
+      ((input P Col)
+       (NOT (&enclosed P)))))
+
+(OUT (&output ^P ^Col))

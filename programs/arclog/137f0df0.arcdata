@@ -1,0 +1,7 @@
+;; inputs 2000038e4526fd45a6e877d5f16d63bdea93819321f97325fdd51bcad81fb426 programs/solvers/137f0df0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 137f0df0
+
+(param &bg Color (0))
+(param &inside_paint Color (2))
+(param &outside_paint Color (1))

@@ -1,0 +1,103 @@
+;; inputs c15d8ffcb07cc56933c84c891d7b403a909165adabfdc72c15c9bcb8032f8efe programs/solvers/42f14c03.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 42f14c03
+
+(INIT &bg_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg Order
+  (member ((:t Col))
+    (&bg_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_count.size (:key *Col) *N)))
+
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg.maximal (:t Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&obj.component (:Id ^O) *P))
+    (cell (P)
+      (&obj.component (:Id O) *P))))
+
+(RULE &hole
+  (&bbox.box (:key *O) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&obj.component (:Id O) P)))
+
+(INIT &holes Connectivity
+  (key ((&hole ^O *P))
+    (node (P)
+      (&hole O *P))))
+
+(INIT &hole_box BoundingBox
+  (key ((&holes.component (:key ^O) ^Id *P))
+    (cell (P)
+      (&holes.component (:key O) Id *P))))
+
+(INIT &shape Inclusion
+  (pattern ((:pattern O) (:m P_inner))
+    (&obj.component (:Id *O) *P)
+    (&bbox.box (:key O) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed (:O H_o) (:Id H_id)) (:m P_inner))
+    (&holes.component (:key (:O *H_o)) (:Id *H_id) *P)
+    (&hole_box.box (:key (:O H_o) (:Id H_id)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(RULE &fits
+  (&shape.equal (:observed (:O *H_o) *Id) (:pattern *O)))
+
+(ALTS $choice "A piece goes in a hole when" $Shape
+  (ALT $Dims
+    (RULE &fits
+      (input *P)
+      (&hole_box.box (:key (:O *H_o) *Id) (:B *B_h))
+      (&bbox.box (:key *O) (:B *B_o))
+      (box_extent (:B B_h) P *A (:N *N1))
+      (box_extent (:B B_o) P A (:N N1))
+      (perp A *A2)
+      (box_extent (:B B_h) P (:A A2) (:N *N2))
+      (box_extent (:B B_o) P (:A A2) (:N N2))))
+  (ALT $Size
+    (INIT &hole_size Cardinality
+      (key ((&holes.component (:key ^O) ^Id *P))
+        (member ((:m P))
+          (&holes.component (:key O) Id *P))))
+
+    (INIT &obj_size Cardinality
+      (key ((&obj.component (:Id ^O) *P))
+        (member ((:m P))
+          (&obj.component (:Id O) *P))))
+
+    (RULE &fits
+      (&hole_size.size (:key (:O *H_o) *Id) *N)
+      (&obj_size.size (:key *O) N))))
+
+(RULE &unfillable
+  (&holes.component (:key *O) *Id)
+  (NOT (&fits (:H_o O) Id)))
+
+(RULE &frame
+  (&hole *O)
+  (NOT (&unfillable O)))
+
+(RULE &output
+  (&frame (:O *F))
+  (&bbox.box (:key (:O F)) *B)
+  (OR ((&obj.component (:Id F) (:key *Col) (:P *P2)))
+      ((&holes.component (:key (:O F)) *Id (:P P2))
+       (&fits (:H_o F) Id *O)
+       (&obj.component (:Id O) (:key Col))))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

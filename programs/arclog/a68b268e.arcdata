@@ -1,0 +1,15 @@
+;; inputs e58b2373c2bd1a4043f60ca389aeb72af0998cfa93cd59a18ca26ad9cbe22a56 programs/solvers/a68b268e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a68b268e
+
+(param &bg Color (0))
+(param &gap number (1))
+(param &tiles number (2))
+(param &tile_dim number (4))
+(param &lex_corner DiagDir (DIAG_TL))
+(param &lex_axis Axis (AXIS_V))
+(param &prio (Position number)
+  (grid
+    (0 1)
+    (2 3)))
+(param &ink_rank (Color number) (7 0) (4 1) (8 2) (6 3))

@@ -1,0 +1,87 @@
+;; inputs 0c0f671a2826e56aaaef058e9d46ab632d17b503bb65113f9f903995d0b34b05 programs/solvers/de1cd16c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; de1cd16c
+
+(param &out_dim number (1))
+
+(alts $s
+  (alt $RarestSpeck
+    (witness tiny-region variant concept
+      (separates "Region 3 is 2x2, 4 cells, fewer than the 5 specks of color 4. The isolated-cell color is 4, and region 1 holds 3 specks, so the output is 1; the rarest color is 3, so color 4 is read as a region whose box holds the 4 cells of 3, and the output is 4.")
+      (input (grid
+        (1 1 1 1 1 5 5 8 8 8 8 8)
+        (1 1 1 1 1 5 5 8 8 8 8 8)
+        (1 1 4 1 1 5 5 8 8 8 8 8)
+        (1 1 1 1 1 5 5 8 8 4 8 8)
+        (1 1 1 1 1 5 5 8 8 8 8 8)
+        (1 1 4 1 1 3 3 8 8 8 8 8)
+        (1 1 1 1 1 3 3 8 8 8 8 8)
+        (1 1 1 1 1 6 6 8 8 8 8 8)
+        (1 1 1 1 1 6 6 8 8 4 8 8)
+        (1 1 4 1 1 6 6 8 8 8 8 8)
+        (1 1 1 1 1 6 6 8 8 8 8 8)
+        (1 1 1 1 1 6 6 8 8 8 8 8)))
+      (output $IsolatedSpeck (grid
+        (1)))
+      (output ($RarestSpeck $ColorRegion) (grid
+        (4)))
+      (output ($RarestSpeck $ComponentRegion) undefined))))
+
+(alts $r
+  (alt $ComponentRegion
+    (witness split-region borderline $ComponentRegion
+      (relaxed rectangular-regions)
+      (separates "Color 3 fills two separate rectangles with one speck each, and region 8 between them has 3. Read as one region, color 3's box spans the grid and holds all 5 specks, so the output is 3; read as connected regions, each part of color 3 holds 1, so the output is 8.")
+      (input (grid
+        (3 3 3 3 8 8 8 8 8 3 3 3 3)
+        (3 3 3 3 8 8 1 8 8 3 3 3 3)
+        (3 3 3 3 8 8 8 8 8 3 3 3 3)
+        (3 1 3 3 8 8 8 8 8 3 3 3 3)
+        (3 3 3 3 8 1 8 8 8 3 3 3 3)
+        (3 3 3 3 8 8 8 8 8 3 3 1 3)
+        (3 3 3 3 8 8 8 1 8 3 3 3 3)
+        (3 3 3 3 8 8 8 8 8 3 3 3 3)))
+      (output ($ColorRegion $BoxOwner) (grid
+        (3)))
+      (output $NeighborOwner $ComponentRegion (grid
+        (8))))))
+
+(alts $o
+  (alt $NeighborOwner
+    (witness edge-speck variant concept
+      (relaxed scattered-specks)
+      (separates "Two specks sit on the edge column of region 1, beside region 2. Counted by the region whose box holds them, region 1 has 3 specks and region 2 has 2, so the output is 1; counted toward every fill color beside them, region 2 has 4, so the output is 2.")
+      (input (grid
+        (1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 4 2 2 2 2 2)
+        (1 1 4 1 1 2 2 4 2 2)
+        (1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 4 2 2 2 2 2)
+        (1 1 1 1 1 2 2 4 2 2)
+        (1 1 1 1 1 2 2 2 2 2)))
+      (output $BoxOwner (grid
+        (1)))
+      (output $NeighborOwner (grid
+        (2))))))
+
+(alts $t
+  (alt $TieAll
+    (witness tied-most borderline $TieAll
+      (relaxed unique-most)
+      (separates "Regions 2 and 8 each hold 2 specks, and region 3 holds 1. With a unique most-speck region required, no output is defined; with every tied region given, the output holds a grid of 2 and a grid of 8.")
+      (input (grid
+        (2 2 2 2 2 3 3 3 3 3)
+        (2 2 2 2 2 3 3 6 3 3)
+        (2 2 6 2 2 3 3 3 3 3)
+        (2 2 2 2 2 3 3 3 3 3)
+        (2 2 2 2 2 8 8 8 8 8)
+        (2 6 2 2 2 8 6 8 8 8)
+        (2 2 2 2 2 8 8 8 6 8)
+        (2 2 2 2 2 8 8 8 8 8)))
+      (output $UniqueMost undefined)
+      (output $TieAll
+        (grid
+          (2))
+        (grid
+          (8))))))

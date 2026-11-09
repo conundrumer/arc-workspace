@@ -1,0 +1,71 @@
+;; inputs 6ff682b7d0b1127110a4f2e35ae223de529c4ce0457e4122648857e4e3634f6b programs/solvers/36d67576.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 36d67576
+
+(DET &bg DominantColor)
+
+(DET &shape UnchangedColor)
+
+(DET &anchor UnchangedColor)
+
+(INIT &parts Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &part_cell
+  (&parts.component *P *Id)
+  (input P *Col))
+
+(RULE &anchor_at
+  (&part_cell *Id *P *Col)
+  (&anchor (:C Col)))
+
+(RULE &anchored
+  (&part_cell *Id *P *Col)
+  (&anchor_at Id (:P *A))
+  (relative (:Base A) (:X P) (:X_rel *V)))
+
+(RULE &shape_cell
+  (&anchored *Id *V *Col)
+  (&shape (:C Col)))
+
+(RULE &mark_cell
+  (&anchored *Id *V *Col)
+  (NOT (&shape (:C Col)))
+  (NOT (&anchor (:C Col))))
+
+;; A part's pose: the D4 transform carrying the model's shape onto the part's
+;; own shape.
+(INIT &poses Inclusion
+  (pattern ((:pattern D) (:m V_img))
+    (&mark_cell (:Id *R))
+    (&shape_cell (:Id R) *V)
+    (apply *D (:P V) (:P_out *V_img)))
+  (observed ((:observed Id) (:m V))
+    (&shape_cell *Id *V)))
+
+(RULE &carried
+  (&mark_cell *V *Col)
+  (&poses.equal (:observed *Id) (:pattern *D))
+  (apply D (:P V) (:P_out *V_img))
+  (&anchor_at Id (:P *A))
+  (compose A (:B V_img) (:C *P)))
+
+(RULE &applied
+  (&carried *P *Col)
+  (input P (:Col *Col_cell))
+  (&bg (:C Col_cell)))
+
+(ALTS $choice "what a carried mark meets when it lands" $Fill
+  (ALT $Stamp
+    (RULE &applied
+      (&carried *P *Col))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&applied P *Col))
+      ((NOT (&applied P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,407 @@
+;; inputs 39a1feb40d4751152c8b2714ee199f18ead319384b37ce292963151a94f880f7 programs/solvers/f28a3cbb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f28a3cbb
+
+(INPUT background "every cell that is in no square and no stray holds the background color, 6.")
+
+(INPUT two-corner-squares "two solid squares of side 3, each of its own color, sit in the top-left and bottom-right corners of a 9×9 grid; each is the largest solid square of its color."
+
+  (DET &swapped
+    (ex_input *E *P (:Col *C1))
+    (ex_output E P (:Col *C))
+    (!= C1 C)
+    (ex_input E (:P *Q) (:Col C))
+    (ex_output E (:P Q) (:Col *C2))
+    (!= C2 C))
+
+  (DET &defect
+    (&swapped *C)
+    (ex_output *E)
+    (NOT (&swapped E C)))
+
+  (DET_OR_RULE &bg DominantColor
+    (&swapped *C)
+    (NOT (&defect C)))
+
+  (INIT &color_pieces Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (INIT &piece_size Cardinality
+    (key ((&color_pieces.component ^Id))
+      (member ((:m P))
+        (&color_pieces.component *P Id))
+      (domain ()
+        (&color_pieces.component Id))))
+
+  (INIT &largest_piece Order
+    (key ((&color_pieces.component (:key ^Col) *Id)
+          (&piece_size.size (:key Id) *N))
+      (member ((:t (:V Id) (:S N)))
+        (&color_pieces.component (:key Col) *Id)
+        (&piece_size.size (:key Id) *N))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&color_pieces.component (:key Col) *Id)
+        (&piece_size.size (:key Id) *N))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&color_pieces.component *P ^Id))
+      (cell (P)
+        (&color_pieces.component *P Id)))))
+
+(INPUT strays-of-square-colors "every other non-background cell is a stray: a cell of one of the two squares' colors, outside both squares and not touching its own square's side; strays may touch one another.")
+
+(OUTPUT squares-stay "each square stays where it is.")
+
+(OUTPUT stray-vacates "each stray's cell becomes background.")
+
+(OUTPUT stray-in-band-attaches "a stray in a row band or a column band of its square moves along that row or column toward the square until it touches the square's side; strays on one line pile outward from the side cell, the nearest first."
+
+  ;; The square spanned by two cells of one color on one diagonal.
+  (INIT &spans BoundingBox
+    (key ((input ^P *Col)
+          (input (:P ^Q) Col)
+          (NOT (&bg (:C Col)))
+          (!= P Q)
+          (diag_axis_elem (:Da *DA))
+          (same_line (:A DA) P Q))
+      (cell ((:P P2))
+        (OR ((input P *Col)
+             (input (:P Q) Col)
+             (NOT (&bg (:C Col)))
+             (!= P Q)
+             (diag_axis_elem (:Da *DA))
+             (same_line (:A DA) P Q)
+             (= *P2 P))
+            ((input P (:Col *Col2))
+             (input (:P Q) (:Col Col2))
+             (NOT (&bg (:C Col2)))
+             (!= P Q)
+             (diag_axis_elem (:Da *DA2))
+             (same_line (:A DA2) P Q)
+             (= P2 Q))))))
+
+  (RULE &breach
+    (&spans.box (:key *P) *B)
+    (input P *Col)
+    (input (:P *Q) (:Col *Col2))
+    (!= Col2 Col)
+    (inside (:A Q) B))
+
+  (RULE &solid
+    (&spans.box (:key *P) *B)
+    (input P *Col)
+    (NOT (&breach Col B))
+    (box_extent B P *A (:N *K)))
+
+  (INIT &largest_square Order
+    (key ((&solid ^Col *B *K))
+      (member ((:t (:V B) (:S K)))
+        (&solid Col *B *K))
+      (score ((:t (:V B) (:S K)) (:S K))
+        (&solid Col *B *K))))
+
+  (RULE &square_of
+    (&largest_square.maximal (:key *Col) (:t (:V *B))))
+
+  (RULE &side_cell
+    (&square_of *Col *B)
+    (input (:P *E))
+    (inside (:A E) B)
+    (same_dist *D (:P1 E) (:P2 B))
+    (neighbor (:P E) D (:Q *S)))
+
+  (RULE &in_band
+    (&side_cell *Col *S *D)
+    (input *P)
+    (axis_of D *A)
+    (same_line A P (:Q S))
+    (NOT (nearer D (:P S) (:Q P))))
+
+  (RULE &stray
+    (&square_of *Col *B)
+    (input *P Col)
+    (NOT (inside (:A P) B)))
+
+  (INIT &cell_id Quotient
+    (equivalent ((:a P) (:b P))
+      (&stray *P)))
+
+  (RULE &body
+    (&stray *Col *P)
+    (&cell_id.class (:a P) (:Id *B)))
+
+  (RULE &body_in_band
+    (&body *Col *B *P)
+    (&in_band Col P))
+
+  (RULE &corner_cell
+    (&square_of *Col *B)
+    (input (:P *E))
+    (inside (:A E) B)
+    (same_corner (:D *Dd) (:P1 E) (:P2 B))
+    (neighbor (:P E) (:D Dd) (:Q *C)))
+
+  (RULE &in_quadrant
+    (&corner_cell *Col *C *Dd)
+    (input *P)
+    (diag_dirs (:D Dd) *D1 *D2)
+    (NOT (nearer (:D D1) (:P C) (:Q P)))
+    (NOT (nearer (:D D2) (:P C) (:Q P))))
+
+  (RULE &approach_blocked
+    (&in_quadrant *Col *Dd)
+    (input *P)
+    (NOT (&in_quadrant Col P Dd)))
+
+  ;; The cells a diagonal step from a stray toward its square reaches before it leaves the quadrant.
+  (INIT &approach Ray
+    (key ((OR ((&stray ^Col *P)
+               (&in_quadrant Col P (:Dd ^DD)))
+              ((&in_quadrant Col (:Dd DD))
+               (diag_opposite (:D DD) (:Opp *D)))))
+      (source (P)
+        (&stray Col *P)
+        (&in_quadrant Col P (:Dd DD)))
+      (node (P)
+        (&in_quadrant Col (:Dd DD))
+        (diag_opposite (:D DD) (:Opp *D))
+        (input *P)
+        (NOT (&approach_blocked Col (:Dd DD) P)))
+      (dir (D)
+        (&in_quadrant Col (:Dd DD))
+        (diag_opposite (:D DD) (:Opp *D)))))
+
+  (INIT &approach_full Ray
+    (key ((OR ((&stray ^Col *P)
+               (&in_quadrant Col P (:Dd ^DD)))
+              ((&in_quadrant Col (:Dd DD))
+               (diag_opposite (:D DD) (:Opp *D)))))
+      (source (P)
+        (&stray Col *P)
+        (&in_quadrant Col P (:Dd DD)))
+      (node (P)
+        (&in_quadrant Col (:Dd DD))
+        (diag_opposite (:D DD) (:Opp *D))
+        (input *P))
+      (dir (D)
+        (&in_quadrant Col (:Dd DD))
+        (diag_opposite (:D DD) (:Opp *D)))))
+
+  (RULE &approach_stop_full
+    (&approach.end (:key *Col (:DD *Dd)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&approach_full.ray (:key Col (:DD Dd)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  ;; The diagonal steps that take a body off its quadrant: the least over its cells.
+  (INIT &leave Order
+    (key ((&body *Col (:B ^Id) *P)
+          (NOT (&body_in_band Col (:B Id)))
+          (&in_quadrant Col P (:Dd *DD))
+          (&approach_stop_full Col (:Dd DD) (:V3 *K) (:V4 P)))
+      (member ((:t K))
+        (&body *Col (:B Id) *P)
+        (NOT (&body_in_band Col (:B Id)))
+        (&in_quadrant Col P (:Dd *DD))
+        (&approach_stop_full Col (:Dd DD) (:V3 *K) (:V4 P)))
+      (score ((:t K) (:S K))
+        (&body *Col (:B Id) *P)
+        (NOT (&body_in_band Col (:B Id)))
+        (&in_quadrant Col P (:Dd *DD))
+        (&approach_stop_full Col (:Dd DD) (:V3 *K) (:V4 P)))))
+
+  (RULE &diagonal_shift
+    (&leave.minimal (:key (:Id *B)) (:t *K))
+    (&body *Col B *P)
+    (&in_quadrant Col P *Dd)
+    (diag_opposite (:D Dd) (:Opp *D))
+    (jump_offset D K *V))
+
+  (RULE &at_corner
+    (&diagonal_shift *Col *B *V)
+    (&body Col B *P)
+    (compose (:A P) (:B V) (:C *P2))
+    (&square_of Col (:B *B2))
+    (inside (:A P2) (:B B2)))
+
+  (RULE &placed
+    (OR ((&body_in_band *Col *B)
+         (&body Col B *P))
+        ((&diagonal_shift Col B *V)
+         (NOT (&at_corner Col B))
+         (&body Col B (:P *P3))
+         (compose (:A P3) (:B V) (:C P)))))
+
+  (RULE &heading
+    (&placed *Col *B *P)
+    (&in_band Col P *D)
+    (opposite D (:Opp *H)))
+
+  (RULE &square_cell
+    (&square_of *Col *B)
+    (input *P Col)
+    (inside (:A P) B))
+
+  (INIT &fall_stack Distance
+    (key ((&heading ^Col ^H))
+      (weight ((:a Id2) (:b Id) (:W K))
+        (&placed Col (:B *Id) *P)
+        (&heading Col (:B Id) H)
+        (&placed Col (:B *Id2) (:P *P2))
+        (&heading Col (:B Id2) H)
+        (!= Id Id2)
+        (gap (:D H) P (:Q P2) *K))
+      (source_distance ((:n Id) K)
+        (OR ((&placed Col (:B *Id) *P)
+             (&heading Col (:B Id) H)
+             (margin (:B P) (:D H) *K))
+            ((&placed Col (:B Id) (:P *P3))
+             (&heading Col (:B Id) H)
+             (&square_cell (:P *P2))
+             (gap (:D H) (:P P3) (:Q P2) K))))))
+
+  (INIT &stray_pieces Connectivity
+    (key ((&stray ^Col *P))
+      (node (P)
+        (&stray Col *P))))
+
+  (INIT &fall_alone Distance
+    (key ((OR ((&placed *Col (:B ^Id) *P)
+               (&heading Col (:B Id))
+               (&heading (:B Id) *H)
+               (margin (:B P) (:D H) *K))
+              ((&placed Col (:B Id) P)
+               (&heading Col (:B Id))
+               (&heading (:B Id) H)
+               (&square_cell (:P *P2))
+               (gap (:D H) P (:Q P2) K))))
+      (source_distance (K)
+        (OR ((&placed *Col (:B Id) *P)
+             (&heading Col (:B Id))
+             (&heading (:B Id) *H)
+             (margin (:B P) (:D H) *K))
+            ((&placed (:Col *Col2) (:B Id) (:P *P3))
+             (&heading (:Col Col2) (:B Id))
+             (&heading (:B Id) (:H *H2))
+             (&square_cell (:P *P2))
+             (gap (:D H2) (:P P3) (:Q P2) K)))))))
+
+(OUTPUT stray-off-band-diagonal "a stray in neither band steps diagonally toward its square until it enters a band, then lands as a stray in that band does; if it reaches the cell touching the square's corner first, it stays there.")
+
+(ALTS $c "How strays that come to one line meet." $Pile
+  (ALT $Merge
+    (OUTPUT stray-in-band-attaches "strays that land on one cell make one cell; defined wherever the concept is."
+
+      (RULE &fall_alone_travel_full
+        (&fall_alone.distance (:key (:Id *V0)) *K)
+        (&heading (:B V0) (:H *D))
+        (jump_offset D K (:V *V2))))
+    (RULE &landed
+      (OR ((&fall_alone_travel_full (:V0 *Id) (:V2 *V))
+           (&placed *Col (:B Id) (:P *P3))
+           (compose (:A P3) (:B V) (:C *P)))
+          ((&rested Col P))))))
+
+(ALTS $u "What moves as one unit." $PerCell
+  (ALT $RigidPieces
+    (OUTPUT stray-in-band-attaches "each 4-connected piece of strays of one color moves as one rigid body, straight along the band it overlaps, until one of its cells touches the square's side; undefined on a body that overlaps both bands."
+      (RULE &body
+        (&stray_pieces.component (:key *Col) *P (:Id *B))))
+    (OUTPUT stray-off-band-diagonal "a piece that overlaps neither band moves diagonally as one body until one of its cells enters a band or reaches the corner cell.")))
+
+(ALTS $l "Where a stray on the square's corner diagonal lands." $DiagonalApproach
+  (ALT $NearestSide
+    (OUTPUT stray-off-band-diagonal "the stray lands on each edge-adjacent cell of its square nearest it by Euclidean distance, painting both when two tie; defined wherever the concept is.")
+    ;; A body that reaches the corner cell lands on both side cells beside it.
+    (RULE &rested
+      (&at_corner *Col (:B *Id))
+      (&diagonal_shift Col (:B Id) (:Dd *DD) *V)
+      (neighbor (:P V) (:D DD) (:Q *V2))
+      (diag_dirs (:D DD) (:D1 *D))
+      (opposite D (:Opp *D_in))
+      (neighbor (:P V2) (:D D_in) (:Q *V3))
+      (&body Col (:B Id) (:P *P2))
+      (compose (:A P2) (:B V3) (:C *P)))))
+
+(ALTS $s "What a cell whose color has no square does." $SquarelessClears
+  (ALT $SquarelessKept
+    (OUTPUT squareless-kept "a non-background cell whose color has no square stays where it is."
+      (RULE &kept
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&square_of Col))))
+    (RULE &ink
+      (OR ((&square_cell *P *Col))
+          ((&landed Col P))
+          ((&kept P Col))))))
+
+(ALTS $q "How a color's square is identified." $LargestSquare
+  (ALT $LargestPiece
+    (INPUT two-corner-squares "a color's square is its largest 4-connected piece, when that piece is a solid square; undefined where two pieces tie for largest."
+      (RULE &piece_gap
+        (&piece_box.box (:key *Id) *B)
+        (input *P)
+        (inside (:A P) B)
+        (NOT (&color_pieces.component P Id)))
+
+      (RULE &square_of
+        (&largest_piece.maximal (:key *Col) (:t (:V *Id)))
+        (&piece_box.box (:key Id) *B)
+        (&color_pieces.component (:key Col) (:P *P1) Id)
+        (&color_pieces.component (:key Col) (:P *P2) Id)
+        (!= P1 P2)
+        (perp *A *A2)
+        (box_extent B (:P P1) A (:N *K))
+        (box_extent B (:P P1) (:A A2) (:N K))
+        (NOT (&piece_gap Id))))
+    (RULE &square_tie
+      (&largest_piece.maximal (:key *Col) (:t (:V *Id1)))
+      (&largest_piece.maximal (:key Col) (:t (:V *Id2)))
+      (!= Id1 Id2))))
+
+(RULE &fall_stack_travel_full
+  (&fall_stack.distance (:key *Col *H) (:n *V1) *K)
+  (&heading Col H)
+  (jump_offset (:D H) K (:V *V2)))
+
+(RULE &square_tie
+  (&largest_square.maximal (:key *Col) (:t (:V *B1)))
+  (&largest_square.maximal (:key Col) (:t (:V *B2)))
+  (!= B1 B2))
+
+(RULE &rested
+  (&at_corner *Col (:B *Id))
+  (&diagonal_shift Col (:B Id) (:Dd *DD) *V)
+  (neighbor (:P V) (:D DD) (:Q *V2))
+  (&body Col (:B Id) (:P *P3))
+  (compose (:A P3) (:B V2) (:C *P)))
+
+(RULE &landed
+  (OR ((&fall_stack_travel_full *Col *H (:V1 *Id) (:V2 *V))
+       (&heading Col (:B Id) H)
+       (&placed Col (:B Id) (:P *P3))
+       (compose (:A P3) (:B V) (:C *P)))
+      ((&rested Col P))))
+
+(RULE &undefined
+  (OR ((&square_tie))
+      ((&heading *Col (:B *Id) (:H *H1))
+       (&heading Col (:B Id) (:H *H2))
+       (!= H1 H2))))
+
+(RULE &ink
+  (OR ((&square_cell *P *Col))
+      ((&landed Col P))))
+
+(RULE &output
+  (OR ((&ink *P *Col)
+       (NOT (&undefined)))
+      ((NOT (&undefined))
+       (input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

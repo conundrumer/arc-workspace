@@ -1,0 +1,428 @@
+;; inputs e51a2e6bbd0edfe5c5e73e16b9c5cb74cc14a9083f213242e99cab3702cd0903 programs/solvers/fea12743.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fea12743
+
+(INPUT tile-layout "the grid is a 3 by 2 layout of square tiles of side tile_size, with a gutter-wide background border around and between them"
+
+  (DET &train
+    (ex_output *E))
+
+  (INIT &commonest_count Cardinality
+    (key ((&train ^E)
+          (ex_input E *P ^Col))
+      (member ((:m P))
+        (&train E)
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&commonest.maximal (:t *C))
+    (&train *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&background_defect C)))
+
+  (RULE &ink_line
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (split P *A (:Along *L)))
+
+  (RULE &gutters_divider
+    (input *P)
+    (split P *A (:Along *L))
+    (NOT (&ink_line A L)))
+
+  (RULE &gutters_on_divider
+    (input *P)
+    (&gutters_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &gutters_rank Order
+    (key ((OR ((&gutters_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&gutters_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&gutters_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &gutters_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&gutters_on_divider P A))
+    (margin (:B P) D *K)
+    (&gutters_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &gutters_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&gutters_part_idx *P D (:N *N1))
+    (&gutters_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &gutters_tile_of
+    (&gutters_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&gutters_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &block BoundingBox
+    (key ((&gutters_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&gutters_tile_of *P (:P_tile T)))))
+
+  (INIT &block_size Singleton
+    (key ((axis_elem ^A))
+      (member ((:v N))
+        (&block.box (:key *T) *B)
+        (&gutters_tile_of *P (:P_tile T))
+        (box_extent B P A *N)))))
+
+(INPUT one-ink "every tile is drawn in ink 2 on background; nothing else is drawn")
+
+(INPUT one-union "exactly one tile is the cell-wise union of two other tiles, and the two shapes it is the union of are one pair of shapes, though a shape of the pair may be drawn in more than one tile"
+
+  (INIT &margin Order
+    (key ((&train ^E)
+          (dir_elem ^D))
+      (member ((:t K))
+        (ex_input E *P *Col)
+        (NOT (&background (:C Col)))
+        (margin (:B P) D *K))
+      (score ((:t K) (:S K))
+        (ex_input E *P *Col)
+        (NOT (&background (:C Col)))
+        (margin (:B P) D *K))))
+
+  (INIT &border Singleton
+    (member ((:v K))
+      (&margin.minimal (:t *K))))
+
+  (DET_OR_RULE &gutter "The width of the background border around and between the tiles." SepThickness
+    (&border.value (:v *G)))
+
+  (DET &tile_size_cand
+    (&train *E)
+    (ex_input E *P)
+    (sub_extent P *A *K))
+
+  (INIT &covered_division Division
+    (key ((&gutter ^G)
+          (&tile_size_cand ^K))
+      (cell ((:P P_field))
+        (&train *E)
+        (ex_input E *P)
+        (uniform_inset (:K G) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_field)))
+      (side (A K)
+        (axis_elem *A))
+      (gap (A G)
+        (axis_elem *A))))
+
+  (DET &covered
+    (&train *E)
+    (ex_input E *P)
+    (&covered_division.tile (:key *K *G) (:P *P_field))
+    (uniform_inset (:K G) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel P_field)))
+
+  (DET &tile_size_defect
+    (&tile_size_cand *K)
+    (&train *E)
+    (OR ((NOT (&covered E K)))
+        ((ex_input E *P *Col)
+         (NOT (&background (:C Col)))
+         (NOT (&covered E K P)))))
+
+  (DET_OR_RULE &tile_size TileCount
+    (&tile_size_cand (:K *N))
+    (NOT (&tile_size_defect (:K N))))
+
+  (INIT &tile_cell_division Division
+    (key ((&gutter ^G)
+          (&tile_size (:N ^K)))
+      (cell ((:P P_field))
+        (input (:P *P_grid))
+        (uniform_inset (:K G) *B)
+        (inside (:A P_grid) B)
+        (relative (:Base B) (:X P_grid) (:X_rel *P_field)))
+      (side (A K)
+        (axis_elem *A))
+      (gap (A G)
+        (axis_elem *A))))
+
+  (RULE &tile_cell
+    (input (:P *P_grid))
+    (&tile_cell_division.tile (:key *G) (:P *P_field) (:P_outer *P_tile) (:P_inner *P_intile))
+    (uniform_inset (:K G) *B)
+    (inside (:A P_grid) B)
+    (relative (:Base B) (:X P_grid) (:X_rel P_field)))
+
+  (RULE &ink
+    (&tile_cell (:P_grid *P) *P_tile *P_intile)
+    (input P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &ink_count Cardinality
+    (key ((OR ((&ink (:P_tile ^T) (:P_intile *P)))
+              ((&tile_cell (:P_tile T)))))
+      (member ((:m P))
+        (&ink (:P_tile T) (:P_intile *P)))
+      (domain ()
+        (&tile_cell (:P_tile T)))))
+
+  (INIT &fullest Order
+    (member ((:t (:V T) (:S N)))
+      (&ink_count.size (:key *T) *N))
+    (score ((:t (:V T) (:S N)) (:S N))
+      (&ink_count.size (:key *T) *N))))
+
+(OUTPUT paint-parts "for each of the two shapes whose union is another tile, the first tile in copy_order that holds that shape, other than the union tile, has its ink recolored part_color"
+
+  ;; The scan order of the tiles: its start corner and its primary axis.
+  (DET &copy_order DiagDirAxisDomain)
+
+  (INIT &same Inclusion
+    (pattern ((:pattern T) (:m P))
+      (&ink (:P_tile *T) (:P_intile *P)))
+    (observed ((:observed T) (:m P))
+      (&ink (:P_tile *T) (:P_intile *P))))
+
+  (INIT &shape Quotient
+    (equivalent ((:a X) (:b Y))
+      (&same.equal (:observed *X) (:pattern *Y))))
+
+  (RULE &triple
+    (&tile_cell (:P_tile *U))
+    (&tile_cell (:P_tile *A))
+    (&tile_cell (:P_tile *B))
+    (!= U A)
+    (!= U B)
+    (!= A B))
+
+  (RULE &union_defect2
+    (&triple *U *A *B)
+    (OR ((&ink (:P_tile U) (:P_intile *P))
+         (NOT (&ink (:P_tile A) (:P_intile P)))
+         (NOT (&ink (:P_tile B) (:P_intile P))))
+        ((&ink (:P_tile A) (:P_intile P))
+         (NOT (&ink (:P_tile U) (:P_intile P))))
+        ((&ink (:P_tile B) (:P_intile P))
+         (NOT (&ink (:P_tile U) (:P_intile P))))))
+
+  (RULE &union_hit
+    (&triple *U *A *B)
+    (NOT (&union_defect2 U A B))
+    (&shape.class (:a A) (:Id *S_a))
+    (&shape.class (:a B) (:Id *S_b)))
+
+  (RULE &union_cand
+    (&union_hit (:U *P_tile) *S_a *S_b))
+
+  (RULE &union_clash
+    (&union_cand (:P_tile *U1) (:S_a *S1))
+    (&union_cand (:P_tile *U2) (:S_a *S2) (:S_b *S3))
+    (OR ((!= U1 U2))
+        ((!= S1 S2)
+         (!= S1 S3))))
+
+  (RULE &union
+    (&union_cand *P_tile (:S_a *S))
+    (NOT (&union_clash)))
+
+  (RULE &part_copy
+    (&union (:P_tile *U) *S)
+    (&shape.class (:a *P_tile) (:Id S))
+    (!= P_tile U))
+
+  (INIT &copy_order2 Order
+    (member ((:t T))
+      (&tile_cell (:P_tile *T)))
+    (before ((:a T) (:b T2))
+      (&tile_cell (:P_tile *T))
+      (&tile_cell (:P_tile *T2))
+      (&copy_order *D)
+      (&copy_order *A)
+      (OR ((corner_dir (:C D) A (:D *D2))
+           (nearer (:D D2) (:P T) (:Q T2)))
+          ((diag_dirs D A (:D1 D2) (:D2 *D22))
+           (same_dist (:D D2) (:P1 T) (:P2 T2))
+           (nearer (:D D22) (:P T) (:Q T2))))))
+
+  (RULE &ahead
+    (&tile_cell *P_tile)
+    (&tile_cell (:P_tile *Q_tile))
+    (perp_dir *D *D2)
+    (nearer D (:P Q_tile) (:Q P_tile))
+    (same_dist (:D D2) (:P1 P_tile) (:P2 Q_tile)))
+
+  (RULE &between_tile
+    (&ahead *P_tile *D (:Q_tile *T3))
+    (&ahead (:P_tile T3) D *Q_tile))
+
+  ;; Taxicab distance over the tiles: a step goes to the next tile in a row or
+  ;; column of tiles.
+  (INIT &tile_dist Distance
+    (edge ((:a T1) (:b T2))
+      (&union)
+      (&ahead (:P_tile *T1) *D (:Q_tile *T2))
+      (NOT (&between_tile (:P_tile T1) D (:Q_tile T2))))
+    (source ((:n U))
+      (&union (:P_tile *U))))
+
+  (INIT &farthest Order
+    (key ((&part_copy (:P_tile *T) ^S)
+          (&tile_dist.distance (:n T) (:K *N)))
+      (member ((:t (:V T) (:S N)))
+        (&part_copy (:P_tile *T) S)
+        (&tile_dist.distance (:n T) (:K *N)))
+      (score ((:t (:V T) (:S N)) (:S N))
+        (&part_copy (:P_tile *T) S)
+        (&tile_dist.distance (:n T) (:K *N))))))
+
+(OUTPUT paint-union "the tile that is that union has its ink recolored union_color")
+
+(OUTPUT keep-rest "every other cell is copied from the input")
+
+(ALTS $u "how the union tile is found" $OneUnion
+  (ALT $ProperUnion
+    (INPUT one-union "a union whose shape equals one of its parts' shapes is ignored; undefined where the remaining unions are not one tile with one shape pair"
+      (RULE &union_cand
+        (&union_hit (:U *P_tile) *S_a *S_b)
+        (&shape.class (:a P_tile) (:Id *S_u))
+        (!= S_u S_a)
+        (!= S_u S_b))))
+  (ALT $MaxCountUnion
+    (INPUT one-union "the union tile is the unique fullest tile, and its parts are the one shape pair whose union it is; undefined where the fullest count is tied, or where the fullest tile is not the union of exactly one shape pair"
+      (RULE &fullest_tie
+        (&fullest.maximal (:t (:V *T1)))
+        (&fullest.maximal (:t (:V *T2)))
+        (!= T1 T2))
+
+      (RULE &union_cand
+        (&fullest.maximal (:t (:V *P_tile)))
+        (NOT (&fullest_tie))
+        (&union_hit (:U P_tile) *S_a *S_b)))))
+
+(ALTS $c "which copy of a part shape drawn more than once gets painted" $FirstCopy
+  (ALT $FartherCopy
+    (OUTPUT paint-parts "the painted copy is the one farthest from the union tile, by taxicab distance over tile positions; undefined where the farthest copies tie"
+      (RULE &paint_tie
+        (&farthest.maximal (:key (:S *K_s)) (:t (:V *T1)))
+        (&farthest.maximal (:key (:S K_s)) (:t (:V *T2)))
+        (!= T1 T2)))
+    (RULE &painted
+      (&farthest.maximal (:t (:V *P_tile))))
+
+    (RULE &found
+      (&union)
+      (NOT (&paint_tie))
+      (NOT (&unpainted)))))
+
+(ALTS $f "where the tiles are" $StoredLayout
+  (ALT $GutterLayout
+    (INPUT tile-layout "the tiles are the maximal blocks between all-background rows and all-background columns; undefined where those blocks differ in size"
+      (RULE &tile_cell
+        (&gutters_tile_of (:P *P_grid) *P_tile)
+        (&block.box (:key (:T P_tile)) *B)
+        (inside (:A P_grid) B)
+        (relative (:Base B) (:X P_grid) (:X_rel *P_intile))
+        (NOT (&block_size.plural))))))
+
+(RULE &later_copy
+  (&part_copy *P_tile *S)
+  (&part_copy (:P_tile *T2) S)
+  (&copy_order2.before (:a T2) (:b P_tile)))
+
+(RULE &painted
+  (&part_copy *P_tile)
+  (NOT (&later_copy P_tile)))
+
+(DET &new_color
+  (&train *E)
+  (ex_output E (:Col *C))
+  (NOT (ex_input E (:Col C))))
+
+(INIT &new_count Cardinality
+  (key ((&new_color ^E (:C ^Col)))
+    (member ((:m P))
+      (ex_output E *P Col))))
+
+(DET &outnumbers
+  (&new_count.size (:key *E (:Col *C)) *N)
+  (&new_count.size (:key E (:Col *C2)) (:N *N2))
+  (> N N2))
+
+(DET &union_defect
+  (&new_color *C)
+  (&train *E)
+  (OR ((NOT (&new_color E C)))
+      ((&outnumbers E C))))
+
+(DET &union_color
+  (&new_color *C)
+  (NOT (&union_defect C)))
+
+(DET &part_defect
+  (&new_color *C)
+  (&train *E)
+  (OR ((NOT (&new_color E C)))
+      ((&outnumbers E (:C2 C)))))
+
+(DET &part_color
+  (&new_color *C)
+  (NOT (&part_defect C)))
+
+(RULE &recolor
+  (OR ((&union *P_tile)
+       (&union_color (:C *Col)))
+      ((&painted P_tile)
+       (&part_color (:C Col)))))
+
+(RULE &paint
+  (&recolor (:P_tile *T) *Col)
+  (&ink (:P_tile T) *P_intile)
+  (&tile_cell (:P_grid *P) (:P_tile T) P_intile))
+
+(RULE &painted_shape
+  (&painted (:P_tile *T))
+  (&shape.class (:a T) (:Id *S)))
+
+(RULE &unpainted
+  (&union *S)
+  (NOT (&painted_shape S)))
+
+(RULE &found
+  (&union)
+  (NOT (&unpainted)))
+
+(RULE &output
+  (&found)
+  (input *P (:Col *Col0))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

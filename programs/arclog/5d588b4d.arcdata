@@ -1,0 +1,8 @@
+;; inputs ef54b8be605cdbf0e3e494f3ab26c17595464df44a1bf535b031b6d1d7d78a3a programs/solvers/5d588b4d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5d588b4d
+
+(param &bg Color (0))
+(param &read_corner DiagDir (DIAG_TL))
+(param &read_axis Axis (AXIS_V))
+(param &span_axis Axis (AXIS_H))

@@ -1,0 +1,262 @@
+;; inputs e07cb7db14e56bd41f439d02107552a8dc3adcebede5e0421bc0cd9b93fb4e2c programs/solvers/b1986d4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b1986d4b
+
+(INPUT background "one color fills most of the grid.")
+
+(INPUT noise "scattered cells of one other color, alone or in small clumps, in more pieces than any other color.")
+
+(INPUT squares "every piece of each color other than the background and the noise is a solid square, apart from every other square.")
+
+(INPUT color-per-size "all squares of one size have one color, and different sizes have different colors.")
+
+(OUTPUT square-reading "the background is the commonest color, the noise color is the other color in the most pieces, and the squares are the pieces of the remaining colors.")
+
+(OUTPUT count-per-size "the number of squares of each size is read from the input, and every square counts.")
+
+(OUTPUT stacks "stack i, from 0, holds a square of each size whose count is greater than i, so the stacks hold fewer sizes from first to last.")
+
+(OUTPUT nesting "in a stack, each square sits in the `corner` of the stack, and a smaller square is drawn over a larger one, each in the color its size has in the input.")
+
+(OUTPUT layout "the stacks are laid in a line along `axis`, starting from the `corner` side, each as wide as its largest square, and each followed by a line of background `gap` wide, the last one included."
+
+  (DET &short
+    (ex_output *P)
+    (axis_extents P *A *N1 *N2)
+    (< N1 N2))
+
+  (DET &axis
+    (axis_elem *A)
+    (NOT (&short A)))
+
+  (DET &blank_corner
+    (ex_output *E *P *Col)
+    (corner_dist P *Diag (:K 0))
+    (ex_output E (:P *Q) Col)
+    (corner_dist (:P Q) (:Diag *Diag2) (:K 0))
+    (!= Diag2 Diag))
+
+  (DET &corner
+    (diag_dir_elem *D)
+    (NOT (&blank_corner (:Diag D))))
+
+  (RULE &corner_dirs
+    (&corner (:D *Diag))
+    (&axis *A)
+    (diag_dirs (:D Diag) A (:D1 *D_along) (:D2 *D_across)))
+
+  (INIT &bg_mode_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  (INIT &piece Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg_mode.maximal (:t Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg_mode.maximal (:t Col))))))
+
+  (INIT &scattered_count Cardinality
+    (key ((&piece.component (:key ^Col) *Id))
+      (member ((:m Id))
+        (&piece.component (:key Col) *Id))))
+
+  ;; The noise is the color in the most pieces.
+  (INIT &scattered Order
+    (member ((:t Col))
+      (&scattered_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&scattered_count.size (:key *Col) *N)))
+
+  (RULE &square
+    (&piece.component (:key *Col) *Id)
+    (NOT (&scattered.maximal (:t Col))))
+
+  (INIT &squares Cardinality
+    (key ((&square ^Col *Id))
+      (member ((:m Id))
+        (&square Col *Id))))
+
+  (INIT &most Order
+    (member ((:t N))
+      (&squares.size *N))
+    (score ((:t N) (:S N))
+      (&squares.size *N)))
+
+  ;; One cell per stack.
+  (INIT &line Frame
+    (key ((&axis ^A))
+      (extent (A N)
+        (&most.maximal (:t *N)))))
+
+  (RULE &holds
+    (&line.cell (:P *S))
+    (&corner_dirs (:D_along *D))
+    (margin (:B S) D (:K *I))
+    (&squares.size (:key *Col) *N)
+    (< I N))
+
+  (INIT &bbox BoundingBox
+    (key ((&square ^Col ^Id))
+      (cell (P)
+        (&piece.component (:key Col) *P Id))))
+
+  ;; The lines across the axis that hold a square, by distance from the far
+  ;; edge; the nearest is gap lines from it.
+  (INIT &inked Order
+    (key ((ex_output ^E *P *Col)
+          (NOT (&bg_mode.maximal E (:t Col)))
+          (&corner (:D *Diag))
+          (&axis *A)
+          (diag_dirs (:D Diag) A (:D2 *D))
+          (opposite D (:Opp *D_far))
+          (margin (:B P) (:D D_far) *K))
+      (member ((:t K))
+        (ex_output E *P *Col)
+        (NOT (&bg_mode.maximal E (:t Col)))
+        (&corner (:D *Diag))
+        (&axis *A)
+        (diag_dirs (:D Diag) A (:D2 *D))
+        (opposite D (:Opp *D_far))
+        (margin (:B P) (:D D_far) *K))
+      (score ((:t K) (:S K))
+        (ex_output E *P *Col)
+        (NOT (&bg_mode.maximal E (:t Col)))
+        (&corner (:D *Diag))
+        (&axis *A)
+        (diag_dirs (:D Diag) A (:D2 *D))
+        (opposite D (:Opp *D_far))
+        (margin (:B P) (:D D_far) *K))))
+
+  (INIT &gaps Singleton
+    (member ((:v K))
+      (&inked.minimal (:t *K))))
+
+  (DET &gap
+    (&gaps.value (:v *K)))
+
+  (RULE &slot_side
+    (&bbox.box (:key *Col *Id) *B)
+    (&piece.component (:key Col) *P Id)
+    (&corner (:D *Diag))
+    (diag_opposite (:D Diag) (:Opp *Diag_far))
+    (&gap (:K *G))
+    (corner_outset (:Diag Diag_far) (:K G) (:B *O))
+    (compose (:A B) (:B O) (:C *B_slot))
+    (box_extent (:B B_slot) P *A *N))
+
+  ;; A stack's slot is the slot of its largest square.
+  (INIT &widest Order
+    (key ((&holds ^S *Col)
+          (&axis *A)
+          (&slot_side Col A *N))
+      (member ((:t N))
+        (&holds S *Col)
+        (&axis *A)
+        (&slot_side Col A *N))
+      (score ((:t N) (:S N))
+        (&holds S *Col)
+        (&axis *A)
+        (&slot_side Col A *N))))
+
+  (INIT &slot Frame
+    (key ((&axis ^A)
+          (&widest.maximal (:key ^S) (:t *N)))
+      (extent (A N)
+        (&axis A)
+        (&widest.maximal (:key S) (:t *N)))))
+
+  ;; The slots' lines, in order from the start of the line.
+  (INIT &columns Order
+    (member ((:t (:Stack S) (:P T)))
+      (&slot.cell (:key *S) (:P *T)))
+    (score ((:t (:Stack S) (:P T)) (:S K))
+      (&slot.cell (:key *S) (:P *T))
+      (&corner_dirs (:D_along *D))
+      (margin (:B S) D *K))
+    (secondary_score ((:t (:Stack S) (:P T)) (:S K))
+      (&slot.cell (:key *S) (:P *T))
+      (&corner_dirs (:D_along *D))
+      (margin (:B T) D *K))))
+
+(OUTPUT extent "the output's extent across `axis` is the largest size plus `gap`, and every cell not in a square is background."
+
+  ;; The lines across the axis: the largest slot's.
+  (INIT &deepest Order
+    (member ((:t N))
+      (&axis *A)
+      (perp A *A2)
+      (&slot_side (:A A2) *N))
+    (score ((:t N) (:S N))
+      (&axis *A)
+      (perp A *A2)
+      (&slot_side (:A A2) *N))))
+
+(INIT &lines_size Cardinality
+  (member ((:m R))
+    (&columns.rank *R)))
+
+(INIT &lines_frame Frame
+  (extent (A N)
+    (&corner_dirs (:D_along *D))
+    (axis_of D *A)
+    (&lines_size.size *N)))
+
+(RULE &lines_pos
+  (&lines_frame.cell *P)
+  (&corner_dirs (:D_along *D))
+  (margin (:B P) D *K)
+  (&columns.rank (:R K)))
+
+(RULE &side
+  (&bbox.box (:key *Col *Id) *B)
+  (&piece.component (:key Col) *P Id)
+  (box_extent B P *A *N))
+
+(INIT &across Frame
+  (key ((&axis *A)
+        (perp A ^A2)
+        (&deepest.maximal (:t *N)))
+    (extent ((:A A2) N)
+      (&axis *A)
+      (perp A A2)
+      (&deepest.maximal (:t *N)))))
+
+(RULE &cover
+  (&slot.cell (:key *S *A) (:P *T))
+  (&across.cell (:key *A2) (:P *Q))
+  (&holds S *Col)
+  (&corner_dirs (:D_along *D1) (:D_across *D2))
+  (margin (:B T) (:D D1) (:K *K1))
+  (&side Col A (:N *N1))
+  (< K1 N1)
+  (margin (:B Q) (:D D2) (:K *K2))
+  (&side Col (:A A2) (:N *N2))
+  (< K2 N2))
+
+(RULE &hidden
+  (&cover *S *T *Q *Col)
+  (&cover S T Q (:Col *Col2))
+  (&axis *A)
+  (&side Col A *N)
+  (&side (:Col Col2) A (:N *N2))
+  (< N2 N))
+
+(RULE &output
+  (&columns.rank (:t (:Stack *S) (:P *T)) *R)
+  (&lines_pos (:K R) (:P *P_along))
+  (&across.cell (:P *Q))
+  (compose (:A P_along) (:B Q) (:C *P))
+  (OR ((&cover S T Q *Col)
+       (NOT (&hidden S T Q Col)))
+      ((NOT (&cover S T Q))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

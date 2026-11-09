@@ -1,0 +1,64 @@
+;; inputs cf1b0f285d5bac7b8bfc7db7498d20a8fb80a92f8e92c99c3d3c5292ab3c16c9 programs/solvers/f45f5ca7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f45f5ca7
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &off_edge
+  (&ink *P)
+  (dir_elem *D)
+  (NOT (margin (:B P) D (:K 0))))
+
+(RULE &mark_edge
+  (&ink)
+  (dir_elem *D)
+  (NOT (&off_edge D)))
+
+(DET &dir
+  (&mark_edge *D))
+
+(RULE &edge
+  (&dir *D))
+
+(DET &color_dist
+  (&ink *E *P (:Col *C))
+  (&dir *D)
+  (ex_output E (:P *Q) (:Col C))
+  (margin (:B Q) D *K)
+  (axis_of D *A)
+  (same_line A P Q))
+
+(ALTS $e "edge" $Dir
+  (ALT $Edge
+    (RULE &edge
+      (&mark_edge *D))))
+
+(ALTS $m "move" $Jump
+  (ALT $Seat
+    (RULE &moved
+      (&ink (:P *P2) *Col)
+      (&edge *D)
+      (&color_dist (:C Col) *K)
+      (input *P)
+      (margin (:B P) D K)
+      (axis_of D *A)
+      (same_line A (:P P2) (:Q P)))))
+
+(RULE &moved
+  (&ink (:P *P3) *Col)
+  (&edge *D)
+  (&color_dist (:C Col) *K)
+  (opposite D (:Opp *O))
+  (jump (:P P3) (:D O) K (:Q *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P)
+       (NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

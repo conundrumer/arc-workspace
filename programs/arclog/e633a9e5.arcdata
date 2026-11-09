@@ -1,0 +1,30 @@
+;; inputs 08ebe5a34d1209c08be4e32bb0f6bcc9d661640ec7fd60f8574678dd5a34a132 programs/solvers/e633a9e5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e633a9e5
+
+(param &fat number (2))
+(param &ext (Axis number Position)
+  (AXIS_V 2 (grid
+    (1)
+    (_)
+    (1)))
+  (AXIS_V 1 (grid
+    (_)
+    (1)
+    (_)))
+  (AXIS_H 2 (grid
+    (1 _ 1)))
+  (AXIS_H 1 (grid
+    (_ 1 _))))
+(param &src (Position Ident)
+  (grid
+    (0 1 2)
+    (3 4 5)
+    (6 7 8)))
+(param &dst (Position Ident)
+  (grid
+    (0 0 1 2 2)
+    (0 0 1 2 2)
+    (3 3 4 5 5)
+    (6 6 7 8 8)
+    (6 6 7 8 8)))

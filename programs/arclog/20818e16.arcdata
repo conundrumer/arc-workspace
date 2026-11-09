@@ -1,0 +1,5 @@
+;; inputs e9029a28fdebc5f17d5427d1922c67c646e1e7294943a2c1850ff7fc2d610846 programs/solvers/20818e16.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20818e16
+
+(param &corner DiagDir (DIAG_TL))

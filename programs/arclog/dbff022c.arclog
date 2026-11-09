@@ -1,0 +1,147 @@
+;; inputs fc7c96952344567a857f1ffc0524d5da9184cd4319053db68d8f18b04cfe4ff9 programs/solvers/dbff022c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dbff022c
+
+(INPUT legend "one block of cells of several colors, two lines thick, with one of its long sides on the grid edge; each cross line of the block is one pair of colors")
+
+(INPUT key-line "the line of the legend that lies on the grid edge holds the keys, and the other line holds the paints"
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col_out))
+    (!= C Col_out))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &objects Connectivity
+    (node (P)
+      (&ink *P)))
+
+  ;; The colors of each object: an outline has one, the legend several.
+  (INIT &object_color Singleton
+    (key ((&objects.component *P ^Id)
+          (&ink P *Col))
+      (member ((:v Col))
+        (&objects.component *P Id)
+        (&ink P *Col))))
+
+  (RULE &legend
+    (&objects.component *P *Id)
+    (&object_color.plural (:key Id))
+    (&ink P *Col))
+
+  (INIT &legend_box BoundingBox
+    (cell (P)
+      (&legend *P)))
+
+  (RULE &cross_line
+    (&legend_box.box *B)
+    (&legend *P)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (opposite D (:Opp *D2))
+    (neighbor P (:D D2) *Q)
+    (&legend (:P Q))
+    (inside (:A Q) B)
+    (same_dist (:D D2) (:P1 Q) (:P2 B)))
+
+  (INIT &nearest Order
+    (member ((:t (:V D) (:S N)))
+      (&cross_line *D)
+      (&legend_box.box *B)
+      (margin B D (:K *N)))
+    (score ((:t (:V D) (:S N)) (:S N))
+      (&cross_line *D)
+      (&legend_box.box *B)
+      (margin B D (:K *N)))))
+
+(INPUT outlines "apart from the legend, each object is drawn in one color on a field of &bg, and encloses one or more holes of bg cells that no 4-adjacent walk through bg cells reaches from the grid edge")
+
+(INPUT hole-wall "each hole meets the cells of one outline color only"
+
+  (INIT &holes Enclosure
+    (cell (P)
+      (input *P *Col)
+      (&bg (:C Col))))
+
+  ;; The color of each hole's wall.
+  (INIT &wall Singleton
+    (key ((&holes.enclosed *P ^Id)
+          (dir_elem *D)
+          (neighbor P D *Q)
+          (&ink (:P Q) *Col))
+      (member ((:v Col))
+        (&holes.enclosed *P Id)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&ink (:P Q) *Col))))
+
+  ;; The cells that the cells of one legend color close off from the grid edge.
+  (INIT &walled Enclosure
+    (key ((&legend (:Col ^C_key)))
+      (cell (P)
+        (input *P *Col)
+        (!= Col C_key)))))
+
+(OUTPUT fill-keyed-holes "each hole whose wall color is a key of the legend takes the paint paired with that key")
+
+(OUTPUT keep-rest "every other cell, the legend and the holes of outlines whose color is no key included, keeps its input color"
+
+  (RULE &key_side
+    (&cross_line *D)
+    (&legend_box.box *B)
+    (margin B D (:K 0)))
+
+  (RULE &key_tie
+    (&key_side *D)
+    (&key_side (:D *D2))
+    (!= D D2))
+
+  (RULE &key_paint
+    (&key_side *D)
+    (NOT (&key_tie))
+    (&cross_line D *P *Q)
+    (&legend P (:Col *C_key))
+    (&legend (:P Q) (:Col *C_paint))))
+
+(ALTS $k "which line of the legend holds the keys" $OnEdge
+  (ALT $KeyLineNearEdge
+    (INPUT key-line "among the legend's lines, the key line is the one with the least distance to the grid edge beyond it, and the other line holds the paints; undefined where two lines tie"
+      (RULE &key_side
+        (&nearest.minimal (:t (:V *D)))))))
+
+(ALTS $h "which cells an outline paints" $Enclosed
+  (ALT $PerColorWalls
+    (INPUT outlines "apart from the legend, each object is drawn in one color on a field of &bg")
+    (INPUT hole-wall "for each key color, the bg cells that no 4-adjacent walk through cells of other colors reaches from the grid edge are that key's holes; undefined where a cell is a hole of two keys")
+    (RULE &painted
+      (&walled.enclosed (:key *C_key) *P)
+      (input P (:Col *Bg))
+      (&bg (:C Bg))
+      (&key_paint C_key (:C_paint *Col)))
+
+    (RULE &output
+      (&key_paint)
+      (OR ((&painted *P *Col))
+          ((input P Col)
+           (NOT (&painted P)))))))
+
+(RULE &painted
+  (&holes.enclosed *P *Id)
+  (&wall.value (:key Id) (:v *C_key))
+  (&key_paint C_key (:C_paint *Col)))
+
+(RULE &unsettled
+  (&holes.enclosed *P *Id)
+  (&wall.plural (:key Id)))
+
+(RULE &output
+  (&key_paint)
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P))
+       (NOT (&unsettled P)))))
+
+(OUT (&output ^P ^Col))

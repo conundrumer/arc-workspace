@@ -1,0 +1,70 @@
+;; inputs c775a5550ed60bd476ce25b90db198f0f13b4211fad5dd31696a251ff422abfd programs/solvers/103eff5b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 103eff5b
+
+(DET &bg DominantColor)
+
+(DET &shape_col ChangedColor)
+
+;; The turn taking the key onto the shape.
+(DET &turn_to_shape D4Domain)
+
+(RULE &key_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&shape_col (:C Col))))
+
+(INIT &key_box BoundingBox
+  (cell (P)
+    (&key_cell *P)))
+
+(RULE &tile_col
+  (&key_cell *P *Col)
+  (&key_box.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_tile_key))
+  (&turn_to_shape *D)
+  (apply D (:P P_tile_key) (:P_out *P_tile)))
+
+(RULE &shape_cell
+  (input *P *Col)
+  (&shape_col (:C Col)))
+
+(INIT &shape_box BoundingBox
+  (cell (P)
+    (&shape_cell *P)))
+
+(RULE &box_view
+  (input (:P *P_grid))
+  (&shape_box.box *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+;; The shape's box divided into the key's block arrangement.
+(INIT &blocks Division
+  (cell ((:P P_inner))
+    (&box_view *P_inner))
+  (parts (A N)
+    (&tile_col *P_tile)
+    (frame_extent (:P P_tile) *A *N)))
+
+(ALTS $choice "whether the shape's own ink or the blown-up key supplies each block's mask" $Recolor
+  (ALT $Stamp
+    (RULE &output
+      (OR ((&box_view (:P_grid *P) *P_inner)
+           (&blocks.tile (:P P_inner) (:P_outer *P_tile))
+           (OR ((&tile_col P_tile *Col))
+               ((NOT (&tile_col P_tile))
+                (&bg (:C Col)))))
+          ((input P Col)
+           (NOT (&box_view (:P_grid P))))))))
+
+(RULE &output
+  (OR ((&shape_cell *P)
+       (&box_view (:P_grid P) *P_inner)
+       (&blocks.tile (:P P_inner) (:P_outer *P_tile))
+       (&tile_col P_tile *Col))
+      ((input P Col)
+       (NOT (&shape_col (:C Col))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,57 @@
+;; inputs 9236faacad06e5d478566562a8b52479d0af13eadb16fabba8d30b05a7622a04 programs/solvers/604001fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 604001fa
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(INIT &object Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &bbox BoundingBox
+  (key ((&object.component *P ^Id)
+        (input P *Col)
+        (&mark (:C Col)))
+    (cell (P)
+      (&object.component *P Id)
+      (input P *Col)
+      (&mark (:C Col)))))
+
+(RULE &filled_corner
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B)))
+
+(RULE &missing_corner
+  (&bbox.cell (:key *Id))
+  (diag_dir_elem (:D *Diag))
+  (NOT (&filled_corner Id Diag)))
+
+(RULE &shape_cell
+  (&object.component *P *Id)
+  (input P *Col)
+  (NOT (&mark (:C Col))))
+
+(DET &corner_color
+  (&missing_corner *E *Id *Diag)
+  (&shape_cell E *P Id)
+  (ex_output E P *Col))
+
+(RULE &output
+  (input *P)
+  (OR ((&shape_cell P *Id)
+       (&missing_corner Id *Diag)
+       (&corner_color Diag *Col))
+      ((NOT (&shape_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

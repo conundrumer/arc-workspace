@@ -1,0 +1,7 @@
+;; inputs 0f72d088ee9cf291111dc80e2ab90c13c2b041c98bb50880afb7a02d0868454f programs/solvers/94be5b80.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 94be5b80
+
+(param &bg Color (0))
+(param &stack_axis Axis (AXIS_V))
+(param &legend_sense Sense (SENSE_CC))

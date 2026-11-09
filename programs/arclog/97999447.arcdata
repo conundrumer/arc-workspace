@@ -1,0 +1,9 @@
+;; inputs 5dd355386e8b1ae7d999386b83ce71ae884fa7ac1761a34aa9ad3df98f761837 programs/solvers/97999447.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97999447
+
+(param &bg Color (0))
+(param &ray_dir Dir (DIR_R))
+(param &alt_color Color (5))
+(param &slot number (0) (1))
+(param &mask (Color number) (5 1))

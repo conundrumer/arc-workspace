@@ -1,0 +1,97 @@
+;; inputs 9fbb283259d0091b2937087e974fac49f82416ceea8b9bb7b5c488acc9e3b632 programs/solvers/694f12f3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 694f12f3
+
+(DET &bg UnchangedColor)
+
+(INIT &rects Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &size Cardinality
+  (key ((&rects.component *P ^Id))
+    (member ((:m P))
+      (&rects.component *P Id))))
+
+;; The size order, ascending; each anchor reads it from its own end.
+(INIT &order Order
+  (member ((:t Id))
+    (&size.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&size.size (:key *Id) *N)))
+
+(DET &rect_color
+  (&rects.component *E *P *Id)
+  (ex_input E P (:Col *C_in))
+  (ex_output E P *Col)
+  (!= Col C_in))
+
+(DET &large_color
+  (&order.dual_rank *E (:t *Id) *R)
+  (&rect_color E Id *Col))
+
+(RULE &fill
+  (&order.dual_rank (:t *Id) *R)
+  (&large_color R *Col))
+
+(INIT &bbox BoundingBox
+  (key ((&rects.component *P ^Id))
+    (cell (P)
+      (&rects.component *P Id))))
+
+(RULE &inner_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (interior (:A P) B))
+
+(ALTS $a "which end of the size order is first" $Large
+  (ALT $Small
+    (DET &small_color
+      (&order.rank *E (:t *Id) *R)
+      (&rect_color E Id *Col))
+
+    (RULE &fill
+      (&order.rank (:t *Id) *R)
+      (&small_color R *Col))
+    (ALT $Extreme
+      (DET &smallest_color AnyOutNewColor)
+
+      (DET &small_rest_color AnyOutNewColor)
+
+      (RULE &fill
+        (&order.member (:t *Id))
+        (IF ((&order.minimal (:t Id)))
+            ((&smallest_color (:C *Col)))
+            ((&small_rest_color (:C Col))))))))
+
+(ALTS $k "how the place picks the color" $Table
+  (ALT $Extreme
+    (DET &largest_color AnyOutNewColor)
+
+    (DET &large_rest_color AnyOutNewColor)
+
+    (RULE &fill
+      (&order.member (:t *Id))
+      (IF ((&order.maximal (:t Id)))
+          ((&largest_color (:C *Col)))
+          ((&large_rest_color (:C Col)))))))
+
+(ALTS $i "what the interior is" $Box
+  (ALT $Erode
+    (INIT &rim Boundary
+      (key ((&rects.component *P ^Id))
+        (cell (P)
+          (&rects.component *P Id))))
+
+    (RULE &inner_cell
+      (&rects.component *P *Id)
+      (NOT (&rim.boundary (:key Id) P)))))
+
+(RULE &output
+  (OR ((&inner_cell *Id *P)
+       (&fill Id *Col))
+      ((input P Col)
+       (NOT (&inner_cell P)))))
+
+(OUT (&output ^P ^Col))

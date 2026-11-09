@@ -1,0 +1,8 @@
+;; inputs 9392f76285a7e76821961e9f96cb5d64172ce11ddf3903287e2d13f4dbfca4d9 programs/solvers/d23f8c26.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d23f8c26
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_H))
+(param &divisor number (2))
+(param &divide_gap number (1))

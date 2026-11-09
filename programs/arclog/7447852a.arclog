@@ -1,0 +1,145 @@
+;; inputs c59fe0730d9ba66df8d48681f4b22f9bd10c28cb1a3afb2aef5ef4f3ab9d31b3 programs/solvers/7447852a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7447852a
+
+(DET &mark AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+;; The repetition runs from this edge.
+(DET &anchor DirDomain)
+
+;; The rhythm along the pocket sequence: mark_run marked pockets, then keep_run kept, repeating.
+(DET &mark_run DivisorRatio)
+
+(DET &keep_run TileCount)
+
+(INIT &pockets Connectivity
+  (node (P)
+    (input *P *Col)
+    (&bg (:C Col))))
+
+(INIT &pocket_box BoundingBox
+  (key ((&pockets.component *P ^Id))
+    (cell (P)
+      (&pockets.component *P Id))))
+
+(RULE &pocket_margin
+  (&anchor *D)
+  (&pocket_box.box (:key *Id) *B)
+  (margin B D *K))
+
+(INIT &seq Order
+  (member ((:t K))
+    (&pocket_margin *K))
+  (score ((:t K) (:S K))
+    (&pocket_margin *K)))
+
+(RULE &marked_pocket
+  (&pocket_margin *Id *K)
+  (&seq.rank (:t K) *R)
+  (&mark_run (:K *N))
+  (&keep_run (:N *G))
+  (divide (:T R) (:Side N) (:Gap G)))
+
+(RULE &mark_cell
+  (&marked_pocket *Id)
+  (&pockets.component *P Id))
+
+(ALTS $choice "what repeats" $Rank
+  (ALT $Stamp
+    (DET &seat
+      (&anchor *D))
+
+    (INIT &si Periods
+      (key ((ex_output ^E *P *Col))
+        (cell (P (:v Col))
+          (ex_output E *P *Col))))
+
+    (DET &min_period
+      (&anchor *D)
+      (axis_of D *A)
+      (&si.fundamental_period A *K))
+
+    ;; The stamp's frame: one period along the anchor's axis, the strip's
+    ;; extent across.
+    (INIT &frame Frame
+      (key ((OR ((ex_output ^E)
+                 (&anchor *D)
+                 (axis_of D (:A *A3))
+                 (&min_period *K))
+                ((ex_output E *P)
+                 (&anchor D)
+                 (axis_of D *A)
+                 (perp A (:A2 A3))
+                 (frame_extent P (:A A3) *N)))
+            (OR ((ex_output E)
+                 (&anchor (:D *D2))
+                 (axis_of (:D D2) (:A *A32))
+                 (&min_period (:K *K2)))
+                ((ex_output E (:P *P2))
+                 (&anchor (:D D2))
+                 (axis_of (:D D2) (:A *A2))
+                 (perp (:A A2) (:A2 A32))
+                 (frame_extent (:P P2) (:A A32) (:N *N2))))
+            (perp (:A A3) (:A2 A32)))
+        (extent (A (:N K))
+          (OR ((ex_output E)
+               (&anchor *D)
+               (axis_of D *A)
+               (&min_period *K))
+              ((ex_output E *P)
+               (&anchor (:D *D2))
+               (axis_of (:D D2) (:A *A3))
+               (perp (:A A3) (:A2 A))
+               (frame_extent P A (:N K)))))))
+
+    (DET &marked
+      (ex_input *E (:P *Q) (:Col *C_in))
+      (ex_output E (:P Q) (:Col *C_out))
+      (!= C_in C_out))
+
+    (DET &stamp
+      (&frame.cell (:key *E) *P)
+      (&anchor *D)
+      (&marked E *Q)
+      (same_slab D (:P1 P) (:P2 Q)))
+
+    (RIGID_DET &strip
+      (&stamp *P)
+      (&seat *D))
+
+    (RULE &period
+      (&strip.stamp (:Pose *D) *P)
+      (&strip.seat (:Pose D) (:D *S))
+      (axis_of (:D S) *A)
+      (frame_extent P A (:N *K)))
+
+    (RULE &placed
+      (input (:P *Q))
+      (&strip.stamp *Pose (:P *Pm))
+      (&anchor *D)
+      (&strip.seat Pose D)
+      (axis_of D *A)
+      (same_line A (:P Q) (:Q Pm))
+      (margin (:B Pm) D (:K *R))
+      (&period *K)
+      (margin (:B Q) D (:K *T))
+      (divide T (:Side K) (:Gap 0) (:Remainder R)))
+
+    (RULE &fouled
+      (&placed *Pose *Q)
+      (input (:P Q) *Col)
+      (NOT (&bg (:C Col))))
+
+    (RULE &mark_cell
+      (&placed *Pose (:Q *P))
+      (NOT (&fouled Pose)))))
+
+(RULE &output
+  (OR ((&mark_cell *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&mark_cell P)))))
+
+(OUT (&output ^P ^Col))

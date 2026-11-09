@@ -1,0 +1,88 @@
+;; inputs 9e30716f42c7476651976c7fc04803693be0b292827140935bf8698c289285c9 programs/solvers/80214e03.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 80214e03
+
+(DET &bg DominantColor)
+
+(RULE &line_color
+  (input (:P *P2) *Col)
+  (NOT (&bg (:C Col)))
+  (split (:P P2) *A (:Along *P)))
+
+(RULE &adjacent
+  (&line_color *A (:P *L))
+  (&line_color A (:P *L2))
+  (axis_of *D A)
+  (neighbor (:P L) D (:Q L2)))
+
+(INIT &content Inclusion
+  (pattern ((:pattern (:A L_a) (:P L_p)) (:m Col))
+    (&line_color (:A *L_a) (:P *L_p) *Col))
+  (observed ((:observed (:A L_a) (:P L_p)) (:m Col))
+    (&line_color (:A *L_a) (:P *L_p) *Col)))
+
+(RULE &separated
+  (&adjacent *A *L *L2)
+  (NOT (&content.equal (:observed A (:P L)) (:pattern A (:P L2)))))
+
+(DET &transform D4Domain)
+
+(ALTS $choice "what separates two adjacent lines" $Content
+  (ALT $Contrast
+    (RULE &separated
+      (input *P *Col)
+      (input (:P *Q) (:Col *Col2))
+      (NOT (&bg (:C Col)))
+      (NOT (&bg (:C Col2)))
+      (!= Col Col2)
+      (axis_of *D *A)
+      (neighbor P D Q)
+      (split P A (:Along *L))
+      (split (:P Q) A (:Along *L2)))))
+
+;; A block-line is a run of adjacent lines that no boundary separates.
+(INIT &block_line Quotient
+  (edge ((:a (:A L_a) (:P L_p)) (:b (:A L_a) P))
+    (OR ((&adjacent (:A *L_a) (:L *L_p) (:L2 *P))
+         (NOT (&separated (:A L_a) (:L L_p) (:L2 P))))
+        ((&line_color (:A L_a) (:P L_p))
+         (= P L_p)))))
+
+;; The frame the block-lines induce on each axis.
+(INIT &layout Order
+  (key ((axis_elem ^A)
+        (axis_of ^D A))
+    (member ((:t B))
+      (&block_line.class (:a A (:P *L)) (:Id *B)))
+    (before ((:a B) (:b B2))
+      (&block_line.class (:a A (:P *L)) (:Id *B))
+      (&block_line.class (:a A (:P *L2)) (:Id *B2))
+      (!= B B2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &tile_of
+  (input *P)
+  (perp *A *A2)
+  (split P A (:Along *L))
+  (split P (:A A2) (:Along *L2))
+  (&block_line.class (:a A (:P L)) (:Id *B))
+  (&block_line.class (:a (:A A2) (:P L2)) (:Id *B2))
+  (&layout_pos (:Key A) (:M B) (:P_pos *P_line))
+  (&layout_pos (:Key A2) (:M B2) (:P_pos *P_line2))
+  (compose (:A P_line) (:B P_line2) (:C *P_tile)))
+
+(RULE &output
+  (input (:P *P2) *Col)
+  (NOT (&bg (:C Col)))
+  (&tile_of (:P P2) *P_tile)
+  (&transform (:D *T))
+  (apply (:D T) (:P P_tile) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

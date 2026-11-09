@@ -1,0 +1,34 @@
+;; inputs 995e677aa24a74fb15271ae816c2c09b4d169d889c63e12c6fc91d48cae278ea programs/solvers/8e2edd66.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8e2edd66
+
+(INIT &out_cell_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &bg SharedColor)
+
+(RULE &bg_cell
+  (input *P (:Col *C))
+  (&bg C))
+
+(INIT &ink_at_tiling Tiling
+  (outer ((:P P_tile))
+    (&bg_cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&bg_cell (:P *P_intile))))
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &output
+  (OR ((&ink_at_tiling.cell *P)
+       (&ink *Col))
+      ((&out_cell_tiling.cell P)
+       (NOT (&ink_at_tiling.cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

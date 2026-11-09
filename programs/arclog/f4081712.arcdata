@@ -1,0 +1,7 @@
+;; inputs 30be24c8eb0bdf4f37d46ba574b0171897d4f1e2c34437e9e1538170578e7359 programs/solvers/f4081712.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f4081712
+
+(representative 67b4a34d)
+
+(param &mask Color (3))

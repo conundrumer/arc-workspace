@@ -1,0 +1,281 @@
+;; inputs 51bbe350ce928963a571669bd86f7650db67c2c455a1035bbfd4fa0578cdf5bb programs/solvers/b25e450b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b25e450b
+
+(param &trail_color Color (7))
+(param &block_color Color (0))
+(param &field_color Color (5) (7))
+
+(exclude ($CornerUndefined $RecolorTrack) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($CornerUndefined $NonFieldColor) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($CornerUndefined $AwayFromNearestEdge) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($CornerUndefined $SpanStays) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($CornerUndefined $Mirror) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($CornerUndefined $EightConnected) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($SpanUndefined $RecolorTrack) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($SpanUndefined $NonFieldColor) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($SpanUndefined $AwayFromNearestEdge) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($SpanUndefined $Diagonal) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($SpanUndefined $Mirror) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($SpanUndefined $EightConnected) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($TouchedEdge $SpanStays) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($TouchedEdge $Diagonal) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($TouchedEdge $Mirror) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($TouchedEdge $EightConnected) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($AwayFromNearestEdge $PerLine) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($Block $TouchedEdge $RecolorTrack) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+(exclude ($Block $TouchedEdge $NonFieldColor) "A case of $Block other than the concept case that takes $TouchedEdge, $CornerUndefined or $SpanUndefined is subsumed by the case that takes $AwayFromNearestEdge & $Band, $Diagonal or $SpanStays in its place: those branches only widen where the model is defined. $PerLine with $AwayFromNearestEdge fails Fit.")
+
+(alts $c
+  (alt $EightConnected
+    (witness corner-touch borderline concept
+      (relaxed blocks-apart)
+      (relaxed edge-blocks)
+      (separates "Two blocks at the left edge touch only at a corner. The concept moves each one to the right edge on its own; $EightConnected moves them as one block, so the narrower one stops short of the edge.")
+      (input (grid
+        (7 5 7 7 5 7 7 5 7)
+        (0 0 7 5 7 7 5 7 7)
+        (0 0 5 7 7 5 7 7 5)
+        (7 5 0 7 5 7 7 5 7)
+        (0 0 0 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output ($FourConnected $Translate) (grid
+        (7 5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 7 7 0)
+        (7 7 7 7 7 7 0 0 0)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output $EightConnected (grid
+        (7 5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0 7)
+        (7 7 7 7 7 7 0 0 7)
+        (7 7 7 7 7 7 7 7 0)
+        (7 7 7 7 7 7 0 0 0)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output $Mirror (grid
+        (7 5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 0 7 7)
+        (7 7 7 7 7 7 0 0 0)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output $PerLine (grid
+        (7 5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 7 0 0)
+        (7 5 0 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0 0)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7))))))
+
+(alts $l
+  (alt $Mirror
+    (witness shaped-block borderline concept
+      (relaxed edge-blocks)
+      (separates "A block at the left edge is not a rectangle. The concept translates it to the right edge; $Mirror lands it flipped left to right; $PerLine moves only the rows whose run touches the left edge and leaves the other row as it is.")
+      (input (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (0 0 5 7 7 5 7 7)
+        (0 0 0 7 5 7 7 5)
+        (7 0 7 5 7 7 5 7)
+        (5 7 7 7 5 7 7 5)
+        (7 7 5 7 7 5 7 7)))
+      (output $Translate (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 0 0 7)
+        (7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 7 0 7)
+        (5 7 7 7 5 7 7 5)
+        (7 7 5 7 7 5 7 7)))
+      (output $Mirror (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 7 0 7)
+        (5 7 7 7 5 7 7 5)
+        (7 7 5 7 7 5 7 7)))
+      (output $PerLine (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 0 0 0)
+        (7 0 7 5 7 7 5 7)
+        (5 7 7 7 5 7 7 5)
+        (7 7 5 7 7 5 7 7))))))
+
+(alts $k
+  (alt $Diagonal
+    (witness corner-block borderline $Diagonal
+      (relaxed edge-blocks)
+      (separates "A block sits in the top-left corner, touching two adjacent edges. The concept is undefined; $Diagonal moves it to the bottom-right corner and wipes its rows and its columns; $PerLine moves its row runs to the right edge and its column runs to the bottom edge.")
+      (input (grid
+        (0 0 7 5 7 7 5 7)
+        (0 0 5 7 7 5 7 7)
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)
+        (7 5 7 7 5 7 5 7)
+        (5 7 7 5 7 7 7 5)))
+      (output concept undefined)
+      (output $AwayFromNearestEdge (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 5 7 7 5)
+        (7 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)
+        (7 7 7 7 5 7 0 0)
+        (7 7 7 5 7 7 0 0)))
+      (output $PerLine (grid
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 5 7 7 5)
+        (7 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)
+        (0 0 7 7 5 7 5 7)
+        (0 0 7 5 7 7 7 5))))))
+
+(alts $s
+  (alt $SpanStays
+    (witness span-block foreign $SpanStays
+      (relaxed edge-blocks)
+      (separates "A block spans the grid from the left edge to the right edge. The concept is undefined; $SpanStays leaves it in place, as $PerLine does, since its runs touch both ends of their row or neither end of their column.")
+      (input (grid
+        (7 5 7 7 5 7 7)
+        (5 7 7 5 7 7 5)
+        (0 0 0 0 0 0 0)
+        (7 7 5 7 7 5 7)
+        (7 5 7 7 5 7 7)
+        (5 7 7 5 7 5 7)))
+      (output concept undefined)
+      (output $AwayFromNearestEdge $PerLine (grid
+        (7 5 7 7 5 7 7)
+        (5 7 7 5 7 7 5)
+        (0 0 0 0 0 0 0)
+        (7 7 5 7 7 5 7)
+        (7 5 7 7 5 7 7)
+        (5 7 7 5 7 5 7))))))
+
+(alts $u
+  (alt $PerLine
+    (witness shaped-block borderline concept)))
+
+(alts $e
+  (alt $SweptOnly
+    (witness floating-block borderline $AwayFromNearestEdge
+      (relaxed edge-blocks)
+      (separates "A block touches no edge of the grid. The concept is undefined. $AwayFromNearestEdge moves it to the edge opposite its nearest edge and wipes the whole band; with $SweptOnly only the cells from its place to its landing are wiped; $PerLine leaves it in place.")
+      (input (grid
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 0 0 7 5 7 7 5 7)
+        (5 0 0 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output concept undefined)
+      (output $SweptOnly (grid
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 7 7 7 7 7 7 0 0)
+        (5 7 7 7 7 7 7 0 0)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output $Band (grid
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 7 0 0)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)))
+      (output $PerLine (grid
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 0 0 7 5 7 7 5 7)
+        (5 0 0 5 7 7 5 7 7)
+        (7 7 5 7 7 5 7 7 5)
+        (7 5 7 7 5 7 7 5 7)
+        (5 7 7 5 7 7 5 7 7))))))
+
+(alts $h
+  (alt $AwayFromNearestEdge
+    (witness floating-block borderline $AwayFromNearestEdge)))
+
+(alts $t
+  (alt $RecolorTrack
+    (witness stray-color borderline concept
+      (relaxed speckled-field)
+      (separates "A single cell of a third color lies in a block's track. The concept paints it the trail color; $RecolorTrack keeps it; $NonFieldColor reads it as a block that touches no edge and is undefined.")
+      (input (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (0 0 5 7 7 5 7 7)
+        (0 0 7 7 3 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)))
+      (output $PaintAll ($PerLine $NonFieldColor) (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 0 0)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)))
+      (output ($AwayFromNearestEdge $NonFieldColor) (grid
+        (7 5 7 7 3 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 7 7 0 0)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)))
+      (output $RecolorTrack (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 5 7 7 5 7)
+        (7 7 7 7 7 7 0 0)
+        (7 7 7 7 3 7 0 0)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7))))))
+
+(alts $b
+  (alt $NonFieldColor
+    (witness second-hole-color borderline $NonFieldColor
+      (relaxed speckled-field)
+      (separates "A block of a color outside the field colors and the block color sits at the top edge. The concept leaves it in place; $NonFieldColor moves it to the bottom edge in its own color and wipes its band.")
+      (input (grid
+        (7 5 3 3 5 7 7 5)
+        (5 7 3 3 7 7 5 7)
+        (7 7 5 7 7 5 0 0)
+        (7 5 7 7 5 7 0 0)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)))
+      (output $OfBlockColor (grid
+        (7 5 3 3 5 7 7 5)
+        (5 7 3 3 7 7 5 7)
+        (0 0 7 7 7 7 7 7)
+        (0 0 7 7 7 7 7 7)
+        (5 7 7 5 7 7 5 7)
+        (7 7 5 7 7 5 7 7)))
+      (output $NonFieldColor (grid
+        (7 5 7 7 5 7 7 5)
+        (5 7 7 7 7 7 5 7)
+        (0 0 7 7 7 7 7 7)
+        (0 0 7 7 7 7 7 7)
+        (5 7 3 3 7 7 5 7)
+        (7 7 3 3 7 5 7 7))))))

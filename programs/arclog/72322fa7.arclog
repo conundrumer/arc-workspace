@@ -1,0 +1,76 @@
+;; inputs 99e59ffc5da34853fe5a2854fa190b47cf34a38e3f89902977f46cea993185d8 programs/solvers/72322fa7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 72322fa7
+
+(DET &bg DominantColor)
+
+(RULE &empty
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &template
+  (input *P (:Col *C_center))
+  (NOT (&bg (:C C_center)))
+  (dir8_opposite *D *D2)
+  (neighbor P D *Q)
+  (input (:P Q) (:Col *C_arm))
+  (NOT (&bg (:C C_arm)))
+  (!= C_arm C_center)
+  (neighbor P (:D D2) (:Q *Q2))
+  (input (:P Q2) (:Col C_arm))
+  (step_offset D *V))
+
+(ALTS $choice "what an intact figure is" $Line
+  (ALT $Figure
+    (INIT &figure Connectivity
+      (node (P)
+        (input *P *Col)
+        (NOT (&bg (:C Col))))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &touch
+      (&figure.component *P)
+      (neighbor P *D *Q))
+
+    (RULE &template
+      (&figure.component *P *Id)
+      (ALL ((&figure.component P (:Id *Idm))
+            (&figure.component (:P *Qm) (:Id Idm))
+            (!= Qm P))
+           ((&touch P (:Q Qm))))
+      (input P (:Col *C_center))
+      (&figure.component (:P *Q) Id)
+      (!= Q P)
+      (input (:P Q) (:Col *C_arm))
+      (!= C_arm C_center)
+      (relative (:Base P) (:X Q) (:X_rel *V)))))
+
+(INIT &arms Occurrences
+  (key ((OR ((&template (:C_center ^Cc))
+             (input *P *Col))
+            ((&template (:C_center Cc) *V (:C_arm *Ca)))))
+    (cell (P (:v Col))
+      (&template (:C_center Cc))
+      (input *P *Col))
+    (shape ((:P V) (:v Ca))
+      (&template (:C_center Cc) *V (:C_arm *Ca)))))
+
+(RULE &fill
+  ;; A center's empty arm cells take the arm color.
+  (OR ((input (:P *P2) (:Col *Cc))
+       (&template (:C_center Cc) *V (:C_arm *Col))
+       (compose (:A P2) (:B V) (:C *P))
+       (&empty P))
+      ((&arms.occurrence (:key (:Cc Col)) P)
+       (&empty P))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

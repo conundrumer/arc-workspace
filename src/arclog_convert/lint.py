@@ -4,12 +4,12 @@ docs/arcscene.md that the file decides alone, with the files it imports.
 
     uv run python -m arclog_convert.lint [--all] [FILE ...]
 
-With no file, checks every arclog and arcdata file under gen/ of
-`arclog_convert.out` and every arcscene file directly under
+With no file, checks every arclog and arcdata file of the converter's output (`GEN`, `programs/arclog/` by default)
+and every arcscene file directly under
 `arclog_convert.out`. An arcdata file reads the names
 of the arclog file of its stem, and an arcscene file reads the arclog and
-arcdata files of its stem under gen/. The command is `arclog_convert.lint_cli`: a file under
-gen/ is read through `arclog_convert.readback.read_checked`, and one that is not current gets the violation `stale`.
+arcdata files of its stem under `GEN`. The command is `arclog_convert.lint_cli`: a file under
+`GEN` is read through `arclog_convert.readback.read_checked`, and one that is not current gets the violation `stale`.
 Prints each
 violation as `file:line: code: message`, four per code over more than 20
 files unless --all, then a count per code; the exit status is 1 where there is a violation. The reader of the text
@@ -25,14 +25,14 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from arclog_convert import libmap, out
+from arclog_convert import corpus, libmap, out
 from arclog_convert.lint_alts import (
     CLAIMS, DECL_HEADS, Placed, alt_blocks, alt_repeats, alts_map, claims_of, placements, reads, restated_outs, unstated_combinations)
 from arclog_convert.lint_read import L, Str, Sym, flat, leaves, read, walk
 from arclog_convert.lint_source import bare_read_source
 from arclog_convert.lib import ALGEBRA_MODES, DET_COLS, PROPOSER_COLS, SIGNATURE, Lib, pascal, takes_set_mark
 
-GEN = out() / "gen"
+GEN = corpus(out())
 
 
 READER: Callable[[Path], str] = Path.read_text
@@ -198,7 +198,7 @@ class Linter:
                     except SyntaxError:
                         pass
             else:
-                self.err(0, "scene-arclog", f"no arclog file {arclog.name} under gen/")
+                self.err(0, "scene-arclog", f"no arclog file {arclog.name} among the converted solvers")
         self.prescan(forms)
         self.forms(forms, alt=False)
         self.records(forms)

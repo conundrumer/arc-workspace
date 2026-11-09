@@ -1,0 +1,122 @@
+;; inputs eda283188ebdb8575fe816ad1996809e14b73b644e5516edf745d478e3504181 programs/solvers/67c52801.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67c52801
+
+(DET &bg DominantColor)
+
+;; The edge the ground row lies along.
+(DET &ground_dir DirDomain)
+
+(RULE &ground
+  (input *P)
+  (&ground_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &marker
+  (input *P)
+  (&ground_dir *D)
+  (neighbor P D (:Q *G))
+  (&ground (:P G)))
+
+;; A slot: a maximal run of bg in the marker row.
+(INIT &slots Connectivity
+  (node (P)
+    (&marker *P)
+    (input P *Col)
+    (&bg (:C Col))))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&slots.component *P)
+    (frame_extent P *A *N)))
+
+(RULE &floor
+  (OR ((&ground *P))
+      ((&marker P))))
+
+(INIT &slot_box BoundingBox
+  (key ((&slots.component *P (:Id ^Sl)))
+    (cell (P)
+      (&slots.component *P (:Id Sl)))))
+
+;; A piece: a colored block above the floor.
+(INIT &pieces Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&floor P)))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&floor P)))))
+
+(INIT &piece_box BoundingBox
+  (key ((&pieces.component *P (:Id ^Pc)))
+    (cell (P)
+      (&pieces.component *P (:Id Pc)))))
+
+(RULE &fits
+  (&ground_dir *D)
+  (axis_of D (:A *A_v))
+  (perp (:A A_v) (:A2 *A))
+  (&slots.component *P (:Id *Sl))
+  (&slot_box.box (:key Sl) (:B *B_sl))
+  (box_extent (:B B_sl) P A (:N *W))
+  (&piece_box.box (:key *Pc) (:B *B_pc))
+  (perp (:A *A2) (:A2 *A3))
+  (box_extent (:B B_pc) P (:A A2) (:N W))
+  (box_extent (:B B_pc) P (:A A3) (:N *H)))
+
+(RULE &forcing_item
+  (&fits *Pc *Sl)
+  (OR ((&slots.component *P (:Id Sl)))
+      ((&pieces.component P (:Id Pc)))))
+
+(CHOOSE &forcing
+  (for ((&forcing_item ^P))
+    (from (&forcing_item P *Pc *Sl)))
+  (never
+    (&forcing_item *Pc *Sl)
+    (&forcing_item (:P *P2) (:Pc *Pc2) (:Sl *Sl2))
+    (&forcing_item (:P P2) Pc Sl)
+    (OR ((!= Pc Pc2))
+        ((!= Sl Sl2)))))
+
+(RULE &stand
+  (&forcing *Pc *Sl)
+  (&fits Pc Sl *H))
+
+;; The column above each slot cell.
+(INIT &rays Ray
+  (source (P)
+    (&slots.component *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir ((:D O))
+    (&ground_dir *D)
+    (opposite D (:Opp *O))))
+
+(ALTS $choice "what fixes a dropped piece's height" $Turn
+  (ALT $Fixed
+    (DET &height TileCount)
+
+    (RULE &stand
+      (&forcing *Pc *Sl)
+      (&height (:N *H)))))
+
+(RULE &filled
+  (&stand *Pc *Sl *H)
+  (&pieces.component (:key *Col) (:Id Pc))
+  (&slots.component (:P *M) (:Id Sl))
+  (&rays.ray *P *K (:Origin M))
+  (input P)
+  (< K H))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&filled P *Col))
+      ((NOT (&filled P))
+       (IF ((&floor P))
+           ((= Col C_in))
+           ((&bg (:C Col)))))))
+
+(OUT (&output ^P ^Col))

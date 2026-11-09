@@ -1,0 +1,136 @@
+;; inputs a226efce934254e96cfec9cf2adc45583dac7804aaf3abf292bad0fd88ac4e8e programs/solvers/d2acf2cb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d2acf2cb
+
+(param &marker Color (4))
+(param &recolor (Color Color) (0 8) (6 7))
+
+(exclude ($WithDiagonals $OneEnd))
+
+(alts $l
+  (alt $WithDiagonals
+    (witness diagonal-pair foreign $WithDiagonals
+      (relaxed marker-pairs)
+      (separates "two markers at the two ends of a diagonal: rows and columns alone leave the diagonal as it is, and diagonal lines recode its cells (1,3), (2,4), (3,5), (4,6)")
+      (input (grid
+        (0 6 4 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 0 0 6 6 6 6 0 4)
+        (0 6 6 6 0 6 6 0 4)))
+      (output ($Straight $EdgePair) (grid
+        (0 6 4 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 8 8 7 7 7 7 8 4)
+        (0 6 6 6 0 6 6 0 4)))
+      (output $WithDiagonals (grid
+        (0 6 4 0 0 6 6 0 0)
+        (6 6 6 7 6 6 6 6 6)
+        (0 6 6 6 7 0 0 0 0)
+        (6 6 0 0 0 7 6 0 0)
+        (0 6 6 6 0 0 7 0 6)
+        (4 8 8 7 7 7 7 8 4)
+        (0 6 6 6 0 6 6 0 4)))
+      (output $OneEnd (grid
+        (0 6 4 0 0 6 6 0 8)
+        (6 6 7 6 6 6 6 6 7)
+        (0 6 7 6 6 0 0 0 8)
+        (6 6 8 0 0 6 6 0 8)
+        (0 6 7 6 0 0 6 0 7)
+        (4 8 8 7 7 7 7 8 4)
+        (8 7 7 7 8 7 7 8 4))))))
+
+(alts $s
+  (alt $OneEnd
+    (witness lone-marker borderline concept
+      (relaxed marker-pairs)
+      (separates "a marker at one end of a row with no marker facing it: edge-to-edge pairs leave the row as it is, and one end recodes the row past the marker")
+      (input (grid
+        (0 6 0 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 0 0 6 6 6 6 0 0)
+        (0 6 6 6 0 6 6 0 0)))
+      (output $EdgePair (grid
+        (0 6 0 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 0 0 6 6 6 6 0 0)
+        (0 6 6 6 0 6 6 0 0)))
+      (output $OneEnd (grid
+        (0 6 0 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 8 8 7 7 7 7 8 8)
+        (0 6 6 6 0 6 6 0 0))))))
+
+(alts $u
+  (alt $KeepUnmapped
+    (witness third-color borderline $KeepUnmapped
+      (relaxed recodable-field)
+      (separates "a cell of a color that is no key of the map inside a marked row: the strict map is undefined and a kept unmapped color stays 2")
+      (input (grid
+        (0 6 0 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 0 0 6 2 6 6 0 4)
+        (0 6 6 6 0 6 6 0 0)))
+      (output ($Strict &marker=$Stored) undefined)
+      (output $KeepUnmapped (grid
+        (0 6 0 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 8 8 7 2 7 7 8 4)
+        (0 6 6 6 0 6 6 0 0)))
+      (output &marker=$Derived (grid
+        (0 6 0 0 0 6 6 0 0)
+        (6 6 6 6 6 6 6 6 6)
+        (0 6 6 6 6 0 0 0 0)
+        (6 6 0 0 0 6 6 0 0)
+        (0 6 6 6 0 0 6 0 6)
+        (4 0 0 6 2 6 6 0 4)
+        (0 6 6 6 0 6 6 0 0))))))
+
+(alts &marker
+  (alt &marker=$Derived
+    (witness marker=RarestColor variant concept
+      (separates "one 0 cell, fewer than the markers: the stored marker recodes row 5, and the rarest color makes 0 the marker, which marks no line")
+      (input (grid
+        (0 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (4 6 6 6 6 6 6 6 4)
+        (6 6 6 6 6 6 6 6 6)))
+      (output &marker=$Stored (grid
+        (0 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (4 7 7 7 7 7 7 7 4)
+        (6 6 6 6 6 6 6 6 6)))
+      (output &marker=$Derived (grid
+        (0 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (4 6 6 6 6 6 6 6 4)
+        (6 6 6 6 6 6 6 6 6))))))

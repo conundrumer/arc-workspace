@@ -1,0 +1,169 @@
+;; inputs cd9c238a755f99b35a41cab282653384bcb09cd58586c4b8f5173cf478ee1b1c programs/solvers/d8c310e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d8c310e9
+
+(INPUT background "every cell outside the pattern is bg")
+
+(INPUT segment-at-edge "the drawn segment starts at the edge opposite dir and runs toward dir, and every line across the segment (a column for dir right) holds a cell that is not bg; past the segment's end every cell is bg")
+
+(OUTPUT period "the tile length is the smallest period of the segment along dir: the least p >= 1 at which each line of the segment equals the line p further along dir, wherever both lie in the segment"
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C2 C))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &segment
+    (input *P)
+    (&ink (:P *Q))
+    (opposite *D (:Opp *O))
+    (margin (:B P) (:D O) (:K *T))
+    (margin (:B Q) (:D O) (:K *T2))
+    (<= T T2))
+
+  (INIT &seg Periods
+    (key ((&segment ^D *P)
+          (input P *Col))
+      (cell (P (:v Col))
+        (&segment D *P)
+        (input P *Col))))
+
+  (RULE_OR_DET &seg.fundamental_period)
+
+  ;; The segment's length along D, its period where it has no shorter one.
+  (INIT &seg_len Cardinality
+    (key ((&segment ^D *P)
+          (axis_of D *A)
+          (split P A (:Along *L)))
+      (member ((:m L))
+        (&segment D *P)
+        (axis_of D *A)
+        (split P A (:Along *L)))))
+
+  (RULE &run
+    (input *P)
+    (&ink (:P *Q))
+    (opposite *D (:Opp *O))
+    (axis_of D *A)
+    (split P A (:Across *Line))
+    (split (:P Q) A (:Across Line))
+    (margin (:B P) (:D O) (:K *T))
+    (margin (:B Q) (:D O) (:K *T2))
+    (<= T T2))
+
+  (INIT &run_len Cardinality
+    (key ((&run ^D (:Line ^Ky_line) *P)
+          (axis_of D *A)
+          (split P A (:Along *L2)))
+      (member ((:m L2))
+        (&run D (:Line Ky_line) *P)
+        (axis_of D *A)
+        (split P A (:Along *L2)))))
+
+  (INIT &run_inv Periods
+    (key ((&run ^D ^Line *P)
+          (input P *Col))
+      (cell (P (:v Col))
+        (&run D Line *P)
+        (input P *Col)))))
+
+(OUTPUT extend "each cell of the output takes the cell of the segment that lies a whole number of periods back toward the start edge, so the output is the tile repeated from the start edge to the far edge, cut off there"
+
+  (DET &in_reach
+    (ex_input *E *P *Col)
+    (NOT (&bg (:C Col)))
+    (margin (:B P) *D (:K 0)))
+
+  (DET &dir
+    (ex_output *E *P *Col)
+    (NOT (&bg (:C Col)))
+    (margin (:B P) *D (:K 0))
+    (NOT (&in_reach E D)))
+
+  (RULE &dir_at
+    (&dir *D)))
+
+(ALTS $d "where the direction of continuation comes from" $StoredDir
+  (ALT $DirFromScene
+    (INPUT segment-at-edge "dir is each direction d at which the ink touches the edge opposite d, stops short of the edge toward d, and is periodic along d with a period shorter than the segment; undefined where no direction is"
+      (RULE &reach
+        (&ink (:P *Q))
+        (margin (:B Q) *D (:K 0)))
+
+      (RULE &dir_at
+        (opposite *D (:Opp *O))
+        (&ink (:P *Q))
+        (margin (:B Q) (:D O) (:K 0))
+        (NOT (&reach D))
+        (axis_of D *A)
+        (&seg.fundamental_period (:key D) A)))))
+
+(ALTS $p "what the period is a period of" $Whole
+  (ALT $PerLine
+    (OUTPUT period "each line along dir has its own period, the smallest period of its run from the start edge to its last non-bg cell"
+      (RULE &run_period
+        (OR ((axis_of *D *A)
+             (&run_inv.fundamental_period (:key D *Line) A (:K *N)))
+            ((&run_len.size (:key D (:Ky_line Line)) N)
+             (axis_of D (:A *A2))
+             (NOT (&run_inv.fundamental_period (:key D Line) (:A A2)))))))
+    (OUTPUT extend "each line repeats its own run by its own period, and a line with no ink stays bg")
+
+    (RULE &output
+      ;; A line with no ink stays bg.
+      (OR ((&dir_at *D)
+           (axis_of D *A)
+           (input *P)
+           (split P A (:Across *L))
+           (NOT (&run D (:Line L)))
+           (&bg (:C *Col)))
+          ;; Each cell takes the input cell of its line that stands at its place within
+          ;; the period, counted from the start edge.
+          ((&dir_at (:D *D2))
+           (opposite (:D D2) (:Opp *O))
+           (axis_of (:D D2) (:A *A2))
+           (input P)
+           (split P (:A A2) (:Across *L2))
+           (&run_period (:D D2) (:Line L2) (:N *K))
+           (margin (:B P) (:D O) (:K *T))
+           (divide T (:Side K) (:Gap 0) (:Remainder *R))
+           (input (:P *Q) Col)
+           (split (:P Q) (:A A2) (:Across L2))
+           (margin (:B Q) (:D O) (:K R)))))))
+
+(RULE &line
+  (input *P)
+  (split P *A (:Across *L)))
+
+(RULE &seg_period
+  (OR ((axis_of *D *A)
+       (&seg.fundamental_period (:key D) A *K))
+      ((axis_of D (:A *A2))
+       (&seg_len.size (:key D) (:N K))
+       (NOT (&seg.fundamental_period (:key D) (:A A2))))))
+
+(RULE &period_at
+  (&seg_period *D *K)
+  (axis_of D *A)
+  (&line A *L))
+
+;; Each cell takes the input cell of its line that stands at its place within
+;; the period, counted from the start edge.
+(RULE &output
+  (&dir_at *D)
+  (opposite D (:Opp *O))
+  (axis_of D *A)
+  (input *P)
+  (split P A (:Across *L))
+  (&period_at D L *K)
+  (margin (:B P) (:D O) (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder *R))
+  (input (:P *Q) *Col)
+  (split (:P Q) A (:Across L))
+  (margin (:B Q) (:D O) (:K R)))
+
+(OUT (&output ^P ^Col))

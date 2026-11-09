@@ -40,7 +40,7 @@ def binding(ev,record,*,native_base,body_side='gold',report_role=None):
     names=None
     if body_side=='gold':
         names=json.dumps(record['relation_source_names']) if record.get('relation_source_names') else program.relation_source_names_json(
-            str(MAIN_ROOT / 'work/arclog/gen'),record['task'],record['case'])
+            str(MAIN_ROOT / 'programs/arclog'),record['task'],record['case'])
     export=json.loads(ev.arclog.study_program_export_json(program,names,source_program=program))
     views=[v for v in export['body_views'] if v['body_path']==record['point']]
     if len(views)!=1:raise Incomplete('exact gold BODY path unavailable or ambiguous')

@@ -1,0 +1,278 @@
+;; inputs 31e4413aeb95a17fb5fb379534627e419c5dddac476848bbdb8e1d132d22ecbd programs/solvers/e2092e0c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e2092e0c
+
+(INPUT corner-key "a 3 × 3 key sits at the top-left corner, and a line of 5 cells runs along its two inner sides and meets at the corner cell diagonal to the key, which fences it off from the rest of the grid."
+
+  (RULE &corner_line
+    (input *P)
+    (diag_dist P (:Diag *C) *A (:K1 *K) *K2)
+    (<= K2 K))
+
+  (RULE &fence2
+    (&corner_line *C *K *P)
+    (input P *Col)
+    (ALL ((&corner_line C K (:P *Pm))
+          (input (:P Pm) (:Col *Colm))
+          (&corner_line C K (:P *Q)))
+         ((input (:P Q) (:Col Colm)))))
+
+  (DET &mark_color
+    (ex_input *E *P (:Col *C1))
+    (ex_output E P (:Col *C))
+    (!= C1 C))
+
+  (INIT &least_mark Order
+    (key ((&fence2 ^C *K *Col)
+          (&mark_color (:C Col))
+          (> K 0))
+      (member ((:t K))
+        (&fence2 C *K *Col)
+        (&mark_color (:C Col))
+        (> K 0))
+      (score ((:t K) (:S K))
+        (&fence2 C *K *Col)
+        (&mark_color (:C Col))
+        (> K 0))))
+
+  ;; The fence is found by its shape alone: the least line of one color.
+  (INIT &least_any Order
+    (key ((&fence2 ^C *K)
+          (> K 0))
+      (member ((:t K))
+        (&fence2 C *K)
+        (> K 0))
+      (score ((:t K) (:S K))
+        (&fence2 C *K)
+        (> K 0)))))
+
+(INPUT scattered-field "every other cell is background 0 or a scattered color, in no shape.")
+
+(INPUT one-copy "outside the fenced region, the key's pattern occurs exactly once, cell for cell with background included, at a place where a ring one cell outside it stays in the grid.")
+
+(OUTPUT ring-copy "a one-cell-wide square ring of 5 is drawn just outside the copy, over whatever the ring's cells held."
+
+  (DET &line
+    (ex_output *E *P)
+    (ex_input E P)
+    (diag_dist P (:Diag *D) *A (:K1 *K) *K2)
+    (<= K2 K))
+
+  (DET &unfenced
+    (&line *E *D *K *P)
+    (ex_input E P (:Col *C))
+    (NOT (&mark_color C)))
+
+  (DET &fence
+    (&line *D *K)
+    (NOT (&unfenced D K)))
+
+  (INIT &least Order
+    (key ((&fence ^D *K)
+          (> K 0))
+      (member ((:t K))
+        (&fence D *K)
+        (> K 0))
+      (score ((:t K) (:S K))
+        (&fence D *K)
+        (> K 0))))
+
+  (DET &key_size
+    (&least.minimal (:t *K)))
+
+  (RULE &key_base
+    (diag_dir_elem (:D *C))
+    (&key_size *K)
+    (&mark_color (:C *Col)))
+
+  (DET &key_corner
+    (&fence *D))
+
+  (RULE &key_at
+    (&key_base *C *K *Col)
+    (&key_corner (:D C)))
+
+  (RULE &fence_gap
+    (&key_at *C *K *Col)
+    (&corner_line C (:K *K_gap))
+    (>= K_gap K)
+    (NOT (&fence2 C (:K K_gap) Col)))
+
+  (RULE &gap_before
+    (&fence_gap *C *K *Col *K_gap)
+    (&fence2 C (:K *K_line) Col)
+    (< K_gap K_line))
+
+  (RULE &fence_run
+    (&key_at *C *K *Col)
+    (&fence2 C (:K *K_line) Col)
+    (>= K_line K)
+    (NOT (&gap_before C K Col K_line)))
+
+  (INIT &fence_width Cardinality
+    (key ((&fence_run ^C ^K ^Col *K_line))
+      (member ((:m K_line))
+        (&fence_run C K Col *K_line)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  (RULE &key_cell
+    (&key_at *C *K)
+    (input *P)
+    (diag_dist P (:Diag C) *A *K1 *K2)
+    (< K1 K)
+    (< K2 K))
+
+  (RULE &fenced
+    (OR ((&key_cell *C *K *P))
+        ((&corner_line C K P))))
+
+  (INIT &key_box BoundingBox
+    (key ((&key_cell ^C ^K *P))
+      (cell (P)
+        (&key_cell C K *P))))
+
+  (RULE &xform_image
+    (d4_compose (:A *D) (:B D) (:C D)))
+
+  (RULE &key_image
+    (&key_cell *C *K *P)
+    (input P *Col)
+    (&key_box.box (:key C K) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (&xform_image *D)
+    (apply D (:P P_rel) (:P_out *P_inner)))
+
+  (INIT &occ Occurrences
+    (key ((OR ((&key_image ^C ^K ^D)
+               (input *P *Col))
+              ((&key_image C K D *P_inner Col))))
+      (cell (P (:v Col))
+        (&key_image C K D)
+        (input *P *Col))
+      (shape ((:P P_inner) (:v Col))
+        (&key_image C K D *P_inner *Col))))
+
+  (RULE &overlaps_fence
+    (&occ.occurrence (:key *C *K) (:P *M))
+    (&fenced C K *P)
+    (inside (:A P) (:B M)))
+
+  (RULE &copy
+    (&xform_image *D)
+    (&occ.occurrence (:key *C *K D) (:P *M))
+    (NOT (&overlaps_fence C K M)))
+
+  (RULE &case_copy
+    (&key_at *C *K)
+    (&copy C K *M)))
+
+(ALTS $cells "which cells of a placement must equal the key's" $AllCells
+  (ALT $MatchMarks
+    (INPUT one-copy "the key's non-background cells occur outside the fence, the key's background cells free."
+      (DET_OR_RULE &bg DominantColor RarestColor)
+
+      (INIT &occ Occurrences
+        (key ((OR ((&key_image ^C ^K ^D)
+                   (input *P *Col))
+                  ((&key_image C K D *P_inner Col)
+                   (NOT (&bg (:C Col))))))
+          (cell (P (:v Col))
+            (&key_image C K D)
+            (input *P *Col))
+          (shape ((:P P_inner) (:v Col))
+            (&key_image C K D *P_inner *Col)
+            (NOT (&bg (:C Col)))))))
+    (OUTPUT ring-copy "the ring is drawn around each place that holds the key's non-background cells.")))
+
+(ALTS $xform "the transforms under which a placement matches the key" $SameOrientation
+  (ALT $MatchTurned
+    (INPUT one-copy "the copy is any D4 image of the key."
+      (RULE &xform_image
+        (d4_elem *D)))))
+
+(ALTS $region "the placements that are searched" $OutsideFence
+  (ALT $SearchWholeGrid
+    (INPUT one-copy "the copy is at any place other than the key's own."
+      (RULE &copy
+        (&xform_image *D)
+        (&occ.occurrence (:key *C *K D) (:P *M))
+        (NOT (&key_box.box (:key C K) (:B M)))))))
+
+(ALTS $width "the width of the ring" $OneCell
+  (ALT $RingFenceWidth
+    (OUTPUT ring-copy "the ring is as wide as the fence, the count of lines of the fence color that run around the key from the key's side outward; undefined where no fence line stands at the key's side."
+      (RULE &undefined
+        (&key_at *C *K *Col)
+        (NOT (&fence_width.size (:key C K Col)))))
+    (RULE &ring_cell
+      (&case_copy *M)
+      (&key_at *C *K *Col)
+      (&fence_width.size (:key C K Col) (:N *W))
+      (uniform_outset (:K W) (:B *O))
+      (compose (:A M) (:B O) (:C *G))
+      (input *P)
+      (inside (:A P) (:B G))
+      (NOT (inside (:A P) (:B M))))
+
+    (RULE &output
+      (OR ((&key_at *Col)
+           (&ring_cell *P)
+           (NOT (&undefined)))
+          ((&key_at)
+           (input P Col)
+           (NOT (&ring_cell P))
+           (NOT (&undefined)))))))
+
+(ALTS $color "the ring's color" $StoredColor
+  (ALT $RingFenceColor
+    (OUTPUT ring-copy "the ring takes the one color of the fence line at the key's side in the key's corner; undefined where that line has more than one color."
+      (RULE &key_base
+        (&key_size *K)
+        (&fence2 *C K *Col)))
+    (ALT $KeySizeFromFence
+      (INPUT corner-key "the key's side is the least k at which the line k cells out from the key's corner, row k, cols 0..k, and col k, rows 0..k, holds the fence color; undefined where there is none."
+        (RULE &key_base
+          (&least_any.minimal (:key *C) (:t *K))
+          (&fence2 C K *Col))))))
+
+(ALTS $size "the key's side" $StoredSize
+  (ALT $KeySizeFromFence
+    (INPUT corner-key "the key's side is the least k at which the line k cells out from the key's corner, row k, cols 0..k, and col k, rows 0..k, holds the fence color; undefined where there is none."
+      (RULE &key_base
+        (&least_mark.minimal (:key *C) (:t *K))
+        (&mark_color (:C *Col))))))
+
+(ALTS $corner "the corner that holds the key" $StoredCorner
+  (ALT $KeyCornerFromFence
+    (INPUT corner-key "the key's corner is the one corner whose line at the key's side holds the fence color; undefined where no corner, or more than one, has it."
+      (RULE &fenced_corner
+        (&key_base *C *K *Col)
+        (&fence2 C K Col))
+
+      (RULE &two_fenced
+        (&fenced_corner (:C *C1))
+        (&fenced_corner (:C *C2))
+        (!= C1 C2))
+
+      (RULE &key_at
+        (&fenced_corner *C)
+        (&key_base C *K *Col)
+        (NOT (&two_fenced))))))
+
+(RULE &ring_cell
+  (&case_copy *M)
+  (input *P)
+  (NOT (inside (:A P) (:B M)))
+  (neighbor P *D (:Q *P2))
+  (inside (:A P2) (:B M)))
+
+(RULE &output
+  (OR ((&key_at *Col)
+       (&ring_cell *P))
+      ((&key_at)
+       (input P Col)
+       (NOT (&ring_cell P)))))
+
+(OUT (&output ^P ^Col))

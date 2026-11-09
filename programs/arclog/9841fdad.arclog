@@ -1,0 +1,162 @@
+;; inputs 1cd705d57e13b452bdc006e164e16825d99a9570be51c9fc02ef4a475627fe7f programs/solvers/9841fdad.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9841fdad
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A uniform line spans the grid, so it divides panels rather than sit in one.
+(INIT &cut_rank Order
+  (key ((OR ((&line_color.value (:key *A *L))
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&line_color.value (:key *A *L))
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &panel BoundingBox
+  (key ((&cut_tile_of *P ^P_tile))
+    (cell (P)
+      (&cut_tile_of *P P_tile))))
+
+(INIT &ground_count Cardinality
+  (key ((&panel.cell (:key ^P_tile) *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&panel.cell (:key P_tile) *P)
+      (input P Col))))
+
+(RULE &panel_cell
+  (&panel.cell (:key *P_tile) *P)
+  (&panel.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; the color a panel is filled with
+(INIT &ground Order
+  (key ((&ground_count.size (:key ^P_tile *Col)))
+    (member ((:t Col))
+      (&ground_count.size (:key P_tile *Col)))
+    (score ((:t Col) (:S N))
+      (&ground_count.size (:key P_tile *Col) *N))))
+
+(INIT &rect Connectivity
+  (key ((&panel.cell (:key ^P_tile) *P)
+        (input P ^Col)
+        (NOT (&ground.maximal (:key P_tile) (:t Col))))
+    (node (P)
+      (&panel.cell (:key P_tile) *P)
+      (input P Col)
+      (NOT (&ground.maximal (:key P_tile) (:t Col))))))
+
+(RULE &rect_cell
+  (&rect.component (:key *P_tile) *P *Id)
+  (&panel_cell P_tile P *P_inner))
+
+(INIT &rect_box BoundingBox
+  (key ((&rect_cell ^Id *P_inner))
+    (cell ((:P P_inner))
+      (&rect_cell Id *P_inner))))
+
+(RULE &attached
+  (&rect_box.box (:key *Id) *B)
+  (dist_pair (:P B) *D (:K *K1) *K2)
+  (<= K1 K2))
+
+(ALTS $choice "what attaches a rectangle to a side of its panel" $Nearer
+  (ALT $Extreme
+    ;; how deep each rectangle of a panel lies from each side of that panel
+    (INIT &depth Order
+      (key ((&rect.component *Id (:key ^P_tile))
+            (&rect_box.box (:key Id) *B)
+            (dir_elem ^D)
+            (margin B D *K))
+        (member ((:t (:V Id) (:S K)))
+          (&rect.component *Id (:key P_tile))
+          (&rect_box.box (:key Id) *B)
+          (margin B D *K))
+        (score ((:t (:V Id) (:S K)) (:S K))
+          (&rect.component *Id (:key P_tile))
+          (&rect_box.box (:key Id) *B)
+          (margin B D *K))))
+
+    ;; the shallowest: no rectangle of the panel lies nearer that side
+    (RULE &attached
+      (&depth.minimal (:key *D) (:t (:V *Id))))))
+
+(RULE &anchor
+  (&attached *Id *D)
+  (opposite D (:Opp *D2))
+  (NOT (&attached Id (:D D2))))
+
+(RULE &seat_axis
+  (&panel_cell *P_tile *P *P_inner)
+  (&rect.component *Id (:key (:P_tile *P_src)))
+  (!= P_tile P_src)
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (OR ((&anchor Id D)
+       (&rect_cell Id (:P_inner *Q))
+       (same_dist D (:P1 Q) (:P2 P_inner)))
+      ((NOT (&anchor Id D))
+       (NOT (&anchor Id (:D D2)))
+       (&rect_box.box (:key Id) *B)
+       (split (:P B) A (:Along *B_along))
+       (inside (:A P_inner) (:B B_along)))))
+
+(RULE &seated
+  (&seat_axis *Id *A *P)
+  (perp A *A2)
+  (&seat_axis Id (:A A2) P)
+  (&rect.component Id (:key *Col)))
+
+(RULE &output
+  (input *P (:Col *Col0))
+  (OR ((&seated P *Col))
+      ((NOT (&seated P))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

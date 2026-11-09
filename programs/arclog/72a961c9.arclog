@@ -1,0 +1,106 @@
+;; inputs d61cd8b4aa6bcb7b11649ae5d0e75cd0e06ee3d938a19e84cc9ab5e5ba0fe5b1 programs/solvers/72a961c9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 72a961c9
+
+(DET &bg DominantColor)
+
+(RULE &cell
+  (input *P *Col))
+
+(DET &line SharedColor)
+
+(RULE &line2
+  (&line (:C *Col)))
+
+(DET &line3
+  (ex_input *E)
+  (&line (:C *Col)))
+
+(DET &mark2
+  (&cell *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line3 E Col)))
+
+(INIT &rays_frame2 Frame
+  (key ((&mark2 ^E *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&mark2 E *P)
+      (frame_extent P *A *N))))
+
+(DET &dir DirDomain)
+
+(INIT &rays2 Ray
+  (key ((OR ((&mark2 ^E *P))
+            ((&cell E)
+             (&dir *D))
+            ((&rays_frame2.cell (:key E) P))))
+    (source (P)
+      (&mark2 E *P))
+    (node (P)
+      (&rays_frame2.cell (:key E) *P))
+    (dir (D)
+      (&cell E)
+      (&dir *D))))
+
+(DET &reach
+  (&rays2.ray (:key *E) *P *K (:Origin *M))
+  (&cell E P)
+  (!= K 0)
+  (&mark2 E (:P M) *Col)
+  (ex_output E P Col))
+
+(ALTS $choice "The cases differ on where the line's color comes from" $Stored
+  (ALT $Dominant
+    (INIT &tally_count Cardinality
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (member ((:m P))
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &tally Order
+      (member ((:t Col))
+        (&tally_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&tally_count.size (:key *Col) *N)))
+
+    (RULE &line2
+      (&tally.maximal (:t *Col)))))
+
+(RULE &mark
+  (&cell *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line2 Col)))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&mark *P)
+    (frame_extent P *A *N)))
+
+(INIT &rays Ray
+  (source (P)
+    (&mark *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir (D)
+    (&cell)
+    (&dir *D)))
+
+(RULE &paint
+  (&rays.ray *P *K (:Origin *M))
+  (&cell P)
+  (!= K 0)
+  (&mark (:P M) (:Col *Col_m))
+  (&reach (:Col Col_m) (:K *R))
+  (OR ((< K R)
+       (&line2 *Col))
+      ((= K R)
+       (= Col Col_m))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,8 @@
+;; inputs 2488ca971ec7fb078f06cd3ec4894ede964cbf113c156495cbeab8c34af8cd8a programs/solvers/1c56ad9f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1c56ad9f
+
+(param &bg Color (0))
+(param &anchor Dir (DIR_B))
+(param &period number (4))
+(param &wave (number Sense) (1 SENSE_CW) (3 SENSE_CC))

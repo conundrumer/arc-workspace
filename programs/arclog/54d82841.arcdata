@@ -1,0 +1,7 @@
+;; inputs 5193760537f76dc16436077c71dccdbc70afc09d149c723c60655926f3f15821 programs/solvers/54d82841.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 54d82841
+
+(param &bg Color (0))
+(param &mark Color (4))
+(param &fall Dir (DIR_B))

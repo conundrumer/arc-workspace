@@ -1,0 +1,86 @@
+;; inputs 14d6a6e3a1488c17fb20010300b3bf1950cbb1b5fb9914f6cf289f3426561ad4 programs/solvers/1818057f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1818057f
+
+(DET &field RarestColor)
+
+(DET &mark AnyOutNewColor)
+
+(RULE &field_at
+  (input *P *Col)
+  (&field (:C Col)))
+
+(DET &changed
+  (ex_input *E *P (:Col *C1))
+  (&field (:C C1))
+  (ex_output E P (:Col *C2))
+  (&mark (:C C2)))
+
+(INIT &comps Connectivity
+  (key ((&changed ^E *P))
+    (node (P)
+      (&changed E *P))))
+
+(INIT &comp_size Cardinality
+  (key ((&comps.component (:key ^E) ^Id *P))
+    (member ((:m P))
+      (&comps.component (:key E) Id *P))))
+
+(INIT &smallest Order
+  (member ((:t (:E K_e) (:Id K_id) (:S N)))
+    (&comp_size.size (:key (:E *K_e) (:Id *K_id)) *N))
+  (score ((:t (:E K_e) (:Id K_id) (:S N)) (:S N))
+    (&comp_size.size (:key (:E *K_e) (:Id *K_id)) *N)))
+
+;; The smallest changed component is a single stamp.
+(INIT &frame BoundingBox
+  (key ((&smallest.minimal (:t ^E ^Id)))
+    (cell (P)
+      (&comps.component (:key E) Id *P))))
+
+(DET &shape
+  (&frame.cell (:key (:E *K_e) (:Id *K_id)) (:P *P2))
+  (&frame.box (:key (:E K_e) (:Id K_id)) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(INIT &occ Occurrences
+  (cell (P)
+    (&field_at *P))
+  (shape (P)
+    (&shape *P)))
+
+(RULE &shape_covered
+  (&occ.occurrence (:P *M))
+  (&shape (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+(ALTS $choice "how the plus footprint is found" $Shape
+  (ALT $Flank
+    (INIT &exposed Boundary
+      (cell (P)
+        (&field_at *P)))
+
+    (RULE &flanked
+      (&field_at *P)
+      (NOT (&exposed.boundary P)))
+
+    (RULE &flank_covered
+      (OR ((&flanked *P))
+          ((&flanked (:P *P3))
+           (dir_elem *D)
+           (neighbor (:P P3) D (:Q P)))))
+
+    (RULE &output
+      (OR ((&flank_covered *P)
+           (&mark (:C *Col)))
+          ((input P Col)
+           (NOT (&flank_covered P)))))))
+
+(RULE &output
+  (OR ((&shape_covered *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&shape_covered P)))))
+
+(OUT (&output ^P ^Col))

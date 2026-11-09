@@ -1,0 +1,146 @@
+;; inputs fdb7cb689956b12c18134f17e151c4a10b442a74c644dcd145c6742b3d9b5d67 programs/solvers/e3fe1151.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e3fe1151
+
+(INPUT cross "one full row and one full column of divider_color (7) split the grid into four quadrants of 2 × 2 cells.")
+
+(INPUT blanks "each quadrant holds 1 cell of divider_color (7), and its other cells hold no divider_color.")
+
+(INPUT shared-multiset "each quadrant, with its blanks filled, holds the same multiset of colors, and the quadrants' blanks sit so that each color of that multiset shows its full count in some quadrant.")
+
+(OUTPUT keep "every cell that is not a blank keeps its color.")
+
+(OUTPUT fill-missing "each blank takes the color its quadrant lacks against the multiset union of the four quadrants' non-blank colors (each color at the highest count it has in one quadrant)."
+
+  ;; the color of the center lines, across every input
+  (INIT &center Singleton
+    (member ((:v C))
+      (ex_input *P (:Col *C))
+      (dist_pair P *K (:K2 K))))
+
+  (DET_OR_RULE &divider_color DominantColor
+    (&center.value (:v *C)))
+
+  (RULE &cross
+    (input *P)
+    (dist_pair P *D *K (:K2 K))
+    (axis_of D (:A *A2))
+    (perp (:A A2) (:A2 *A)))
+
+  (RULE &side
+    (axis_of *D (:A *A2))
+    (perp (:A A2) (:A2 *A))
+    (&cross A (:P *Q))
+    (input *P)
+    (nearer D P Q))
+
+  (RULE &quad
+    (diag_dirs (:D *Q) *D1 *D2)
+    (&side *P (:D D1))
+    (&side P (:D D2)))
+
+  (RULE &blank_color2
+    (&divider_color *C))
+
+  (RULE &blank
+    (&quad *P)
+    (input P (:Col *C))
+    (&blank_color2 C))
+
+  (RULE &content
+    (&quad *P *Q)
+    (input P (:Col *C))
+    (NOT (&blank P)))
+
+  ;; each quadrant's count of each content color
+  (INIT &counts Cardinality
+    (key ((OR ((&content *P ^Q ^C))
+              ((&quad Q)
+               (&content C))))
+      (member ((:m P))
+        (&content *P Q C))
+      (domain ()
+        (&quad Q)
+        (&content C))))
+
+  ;; the multiset union: each color at its highest count in one quadrant
+  (INIT &union Order
+    (key ((&counts.size (:key ^C) *N))
+      (member ((:t N))
+        (&counts.size (:key C) *N))
+      (score ((:t N) (:S N))
+        (&counts.size (:key C) *N))))
+
+  (RULE &fill
+    (&blank *P)
+    (&quad P *Q)
+    (&counts.size (:key Q *C) *N)
+    (&union.maximal (:key C) (:t *M))
+    (< N M))
+
+  ;; each quadrant's count of each color once its blanks are filled
+  (INIT &filled Cardinality
+    (key ((OR ((&content *P ^Q ^C))
+              ((&fill P C)
+               (&quad P Q))
+              ((&counts.domain (:key Q C)))))
+      (member ((:m P))
+        (OR ((&content *P Q C))
+            ((&fill P C)
+             (&quad P Q))))
+      (domain ()
+        (&counts.domain (:key Q C))))))
+
+(ALTS $b "what marks a blank cell" $DividerBlank
+  (ALT $OwnBlankColor
+    (INPUT blanks "each quadrant holds 1 cell of blank_color, stored apart from divider_color; undefined where the concept is undefined, at blank_color in place of divider_color."
+      ;; the color of the cells the outputs change
+      (INIT &changed Singleton
+        (member ((:v C))
+          (ex_input *E *P (:Col *C))
+          (ex_output E P (:Col *C2))
+          (!= C C2)))
+
+      (DET_OR_RULE &blank_color DominantColor
+        (&changed.value (:v *C)))
+
+      (RULE &blank_color2
+        (&blank_color *C)))))
+
+(ALTS $x "where the cross lies" $CenterCross
+  (ALT $LineCross
+    (INPUT cross "the one full row and the one full column of divider_color split the grid into four quadrants; undefined where the grid holds no full row or column of that color, or more than one."
+      (RULE &broken_line
+        (input *P)
+        (axis_elem *A)
+        (input (:P *Q) (:Col *C))
+        (same_line A P Q)
+        (NOT (&divider_color C)))
+
+      (RULE &cross
+        (input *P)
+        (axis_elem *A)
+        (NOT (&broken_line A P))))))
+
+(RULE &bad_cross
+  (OR ((axis_elem *A)
+       (NOT (&cross A)))
+      ((&cross (:A *A3) *P)
+       (&cross (:A A3) (:P *Q))
+       (axis_of *D (:A *A2))
+       (perp (:A A3) A2)
+       (nearer D P Q))))
+
+(RULE &mismatch
+  (&filled.size (:key *C) *N)
+  (&union.maximal (:key C) (:t *M))
+  (!= N M))
+
+(RULE &output
+  (NOT (&bad_cross))
+  (NOT (&mismatch))
+  (OR ((input *P *Col)
+       (NOT (&blank P)))
+      ((&fill P (:C Col)))))
+
+(OUT (&output ^P ^Col))

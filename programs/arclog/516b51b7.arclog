@@ -1,0 +1,131 @@
+;; inputs 1cec5746f55891320d98803260ff92b109e6c0342c8005bda29354e63152d980 programs/solvers/516b51b7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 516b51b7
+
+(DET &bg UnchangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&ink *P)))
+
+(INIT &rim_depth2 CellDistance
+  (node (P)
+    (&ink *P))
+  (source (P)
+    (&rim.boundary *P)))
+
+(INIT &rim2 Boundary
+  (key ((ex_input ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (ex_input E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &rim_depth CellDistance
+  (key ((OR ((&rim2.boundary (:key (:E ^Ky)) *P))
+            ((ex_input (:E Ky) P *Col)
+             (NOT (&bg (:C Col))))))
+    (node (P)
+      (ex_input (:E Ky) *P *Col)
+      (NOT (&bg (:C Col))))
+    (source (P)
+      (&rim2.boundary (:key (:E Ky)) *P))))
+
+(RULE &depth
+  (&rim_depth2.distance *P *K))
+
+(DET &ring_at
+  (&rim_depth.distance (:key (:Ky *E)) *P *K)
+  (!= K 0)
+  (ex_output E P *Col))
+
+;; The colors carried at each phase of a candidate repeat length.
+(INIT &phase_color Singleton
+  (key ((&ring_at (:K ^W))
+        (&ring_at *K *Col)
+        (divide (:T K) (:Side W) (:Gap 0) (:Remainder ^R)))
+    (member ((:v Col))
+      (&ring_at (:K W))
+      (&ring_at *K *Col)
+      (divide (:T K) (:Side W) (:Gap 0) (:Remainder R)))))
+
+;; The shortest repeat the depths allow.
+(INIT &repeat Order
+  (member ((:t W))
+    (&ring_at (:K *W))
+    (NOT (&phase_color.plural (:key W))))
+  (score ((:t W) (:S W))
+    (&ring_at (:K *W))
+    (NOT (&phase_color.plural (:key W)))))
+
+(DET &ring
+  (&ring_at (:K *K2) *Col)
+  (&repeat.minimal (:t *W))
+  (divide (:T K2) (:Side W) (:Gap 0) (:Remainder *K)))
+
+;; The length of &ring's repeat.
+(INIT &period Cardinality
+  (member ((:m K))
+    (&ring *K))
+  (domain ()))
+
+(ALTS $m "how deep a cell lies (the two metrics agree on this task, since every object is a solid rectangle; a ragged object would split them)" $Peel
+  (ALT $Box
+    (INIT &objs Connectivity
+      (node (P)
+        (&ink *P)))
+
+    (INIT &bbox BoundingBox
+      (key ((&objs.component *P ^Id))
+        (cell (P)
+          (&objs.component *P Id))))
+
+    ;; Depth in the box: the least distance to a box edge.
+    (INIT &box_depth Order
+      (key ((&objs.component ^P *Id)
+            (&bbox.box (:key Id) *B)
+            (inside (:A P) B)
+            (relative (:Base B) (:X P) (:X_rel *P_inner))
+            (margin (:B P_inner) *D *K))
+        (member ((:t K))
+          (&objs.component P *Id)
+          (&bbox.box (:key Id) *B)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (margin (:B P_inner) *D *K))
+        (score ((:t K) (:S K))
+          (&objs.component P *Id)
+          (&bbox.box (:key Id) *B)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (margin (:B P_inner) *D *K))))
+
+    (RULE &depth
+      (&box_depth.minimal (:key *P) (:t *K)))))
+
+(ALTS $p "the color at a depth" $Cycle
+  (ALT $Table
+    (RULE &output
+      (OR ((&depth *P *K)
+           (&ring_at K *Col))
+          ;; The background and every object's outline keep their color.
+          ((input P Col)
+           (OR ((NOT (&ink P)))
+               ((&depth P (:K 0)))))))))
+
+(RULE &output
+  ;; The background and every object's outline keep their color.
+  (OR ((input *P *Col)
+       (OR ((NOT (&ink P)))
+           ((&depth P (:K 0)))))
+      ((&depth P *K)
+       (!= K 0)
+       (&period.size (:N *W))
+       (divide (:T K) (:Side W) (:Gap 0) (:Remainder *Idx))
+       (&ring (:K Idx) Col))))
+
+(OUT (&output ^P ^Col))

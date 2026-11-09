@@ -1,0 +1,226 @@
+;; inputs ce4fc43e84f61fb4eda4aaad0d5c2f5210d37940071f756bc819ab9f2d82b2f3 programs/solvers/c87289bb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c87289bb
+
+(INPUT streams-from-edge "vertical streams of `stream_color` (8), each one column wide, run from the edge opposite `fall_dir` (down) toward `fall_dir` and stop short of the far edge"
+
+  (DET &changed
+    (ex_input *E *P (:Col *Col_in))
+    (ex_output E P (:Col *Col_out))
+    (!= Col_out Col_in))
+
+  (DET &stream_color
+    (&changed (:Col_out *C)))
+
+  (RULE &stream
+    (input *P *Col)
+    (&stream_color (:C Col)))
+
+  (INIT &streams Connectivity
+    (node (P)
+      (&stream *P))))
+
+(INPUT bars-in-one-line "bars of `bar_color` (2), each one cell deep along `fall_dir` and one or more cells wide, lie in one line across `fall_dir`, past the end of every stream")
+
+(INPUT exits-in-grid "the cell past each end of a bar lies in the grid")
+
+(OUTPUT straight-fall "a stream whose line holds no bar past its end extends in `fall_dir` to the far edge")
+
+(OUTPUT detour-nearer-end "a stream whose line meets a bar extends to the cell before the bar, runs across along that line of cells toward the bar's nearer end to the first cell past that end, and from there falls on in `fall_dir` by these rules"
+
+  (DET &fall_dir
+    (&stream_color (:C *Col))
+    (ex_input *E *P Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&changed E (:P Q) (:Col_out Col)))
+
+  (DET_OR_RULE &bar_color RarestColor
+    (&stream_color (:C *S))
+    (&fall_dir (:D *F))
+    (ex_output *E *P (:Col S))
+    (neighbor P (:D F) *Q)
+    (ex_output E (:P Q) (:Col *C))
+    (!= C S))
+
+  ;; the turn from `fall_dir` to the side a stream takes at a bar's middle cell
+  (DET &tie_sense SenseDomain)
+
+  (RULE &bar
+    (input *P *Col)
+    (&bar_color (:C Col))
+    (NOT (&stream P)))
+
+  (INIT &bars Connectivity
+    (node (P)
+      (&bar *P)))
+
+  (INIT &bar_box BoundingBox
+    (key ((&bars.component *P ^Id))
+      (cell (P)
+        (&bars.component *P Id))))
+
+  (RULE &fall
+    (&fall_dir *D))
+
+  (RULE &fall_step
+    (&fall (:D *F))
+    (input *P)
+    (neighbor P (:D F) *Q)
+    (input (:P Q)))
+
+  (RULE &meet
+    (&fall_step *P *Q)
+    (&bars.component (:P Q) *Id))
+
+  (RULE &end_dist
+    (&meet *P *Q *Id)
+    (&bar_box.box (:key Id) *B)
+    (inside (:A Q) B)
+    (relative (:Base B) (:X Q) (:X_rel *Q_rel))
+    (&fall (:D *F))
+    (perp_dir (:D F) (:D2 *D))
+    (dist_pair (:P Q_rel) D *K *K2))
+
+  (RULE &side
+    (OR ((&end_dist *P *D (:K *K1) *K2)
+         (< K1 K2))
+        ;; At the bar's middle cell, the stream turns from the fall direction by
+        ;; `tie_sense`.
+        ((&end_dist P *K (:K2 K))
+         (&fall (:D *F))
+         (&tie_sense *S)
+         (turn S (:D F) (:D2 D)))))
+
+  (RULE &exit
+    (&end_dist *P *D *K)
+    (jump P D K (:Q *R))
+    (neighbor (:P R) D (:Q *X)))
+
+  (RULE &detour_side
+    (&side *P *D))
+
+  (RULE &flow_exit
+    (&detour_side *P *D)
+    (&exit P D *X)
+    (input (:P X)))
+
+  ;; The streams' cells, and the cells their falls and detours reach.
+  (INIT &flow Propagation
+    (source ((:n P))
+      (&stream *P))
+    (edge ((:a P) (:b Q))
+      (OR ((&fall_step *P *Q)
+           (NOT (&bar (:P Q))))
+          ((&flow_exit P (:X Q)))))))
+
+(OUTPUT tie-side "a stream that meets a bar at a cell equally far from its two ends runs toward the side a quarter turn from `fall_dir` in `tie_sense` (counterclockwise: right, where the streams fall down)")
+
+(OUTPUT keep-input "a cell the streams do not cover keeps its color, and the streams cover no bar cell")
+
+(ALTS $t "the side a stream takes when it meets a bar at the bar's middle cell" $TieDir
+  (ALT $TieNearerEdge
+    (OUTPUT tie-side "a stream that meets a bar at its middle cell runs toward the grid edge nearer to its line; undefined where that line is the grid's center line"
+      (RULE &side
+        ;; At the bar's middle cell, the stream runs toward the grid edge nearer its
+        ;; line.
+        (OR ((&end_dist *P *D *K (:K2 K))
+             (dist_pair P D (:K *K1) *K2)
+             (< K1 K2))
+            ((&end_dist P D (:K *K12) (:K2 *K22))
+             (< K12 K22)))))))
+
+(ALTS $e "what a stream does where the cell past the bar's end it runs toward lies outside the grid" $EdgeLeave
+  (ALT $EdgeOtherSide
+    (OUTPUT edge-other-side "where the cell past the end a stream runs toward lies outside the grid, the stream runs toward the bar's other end instead"
+      (RULE &detour_side
+        (&side *P (:D *D0))
+        (&exit P (:D D0) *X)
+        (OR ((NOT (input (:P X)))
+             (opposite (:D D0) (:Opp *D)))
+            ((input (:P X))
+             (= D D0)))))))
+
+(ALTS $l "what a stream does after a detour when its new line meets another bar" $EveryDetour
+  (ALT $OneDetour
+    (OUTPUT detour-nearer-end "after its first detour, the stream falls straight on to the far edge, passing over bar cells, which keep their color"
+      ;; The streams' cells, and the cells their falls and detours reach.
+      (INIT &flow Propagation
+        (source ((:n P))
+          (&stream *P))
+        (edge ((:a P) (:b Q))
+          (&fall_step *P *Q)
+          (NOT (&bar (:P Q)))))
+
+      ;; After its first detour, a stream falls straight from the exit cell over
+      ;; every cell but the bars'.
+      (INIT &after Ray
+        (source ((:P X))
+          (&flow.reached (:n *P))
+          (&flow_exit P *X))
+        (node (P)
+          (input *P))
+        (dir ((:D F))
+          (&fall (:D *F))))
+
+      (RULE &after_cell
+        (input *P)
+        (NOT (&bar P))))
+    (RULE &painted
+      (OR ((&flow.reached (:n *P)))
+          ((&flow.reached (:n *P2))
+           (&detour_side (:P P2) *D)
+           (&run (:P P2) D (:R P)))
+          ((&after.ray P)
+           (&after_cell P))))))
+
+(ALTS $f "the direction in which the streams fall" $FallStored
+  (ALT $FallFromEdge
+    (INPUT streams-from-edge "every stream touches one edge, and the streams fall away from it; undefined where every stream touches two edges, or where there is no stream"
+      (RULE &touches
+        (&streams.component *P *Id)
+        (margin (:B P) (:D *E1) (:K 0)))
+
+      (RULE &misses
+        (&streams.component *Id)
+        (dir_elem (:D *E1))
+        (NOT (&touches Id E1)))
+
+      (RULE &source_edge
+        (dir_elem (:D *E1))
+        (NOT (&misses E1)))
+
+      (RULE &fall
+        (&source_edge (:E1 *E))
+        (ALL ((&source_edge (:E1 *Em))
+              (&source_edge (:E1 *E2)))
+             ((= Em E2)))
+        (opposite (:D E) (:Opp *D))))))
+
+(RULE &run
+  (&meet *P *Id)
+  (&meet (:P *R) Id)
+  (dir_elem *D)
+  (nearer D (:P R) (:Q P)))
+
+(RULE &painted
+  (OR ((&flow.reached (:n *P)))
+      ((&flow.reached (:n *P2))
+       (&detour_side (:P P2) *D)
+       (&run (:P P2) D (:R P)))))
+
+(RULE &undefined
+  (OR ((NOT (&fall)))
+      ((&flow.reached (:n *P))
+       (&meet P)
+       (NOT (&side P)))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (NOT (&undefined))
+       (&stream_color (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P))
+       (NOT (&undefined)))))
+
+(OUT (&output ^P ^Col))

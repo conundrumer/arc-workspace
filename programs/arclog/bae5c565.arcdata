@@ -1,0 +1,252 @@
+;; inputs 438e57bdf035e40f43623c638d53afc84504690985650215af7d717dc8ae04ff programs/solvers/bae5c565.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bae5c565
+
+(param &background Color (5))
+(param &palette_side Dir (DIR_T))
+(param &stalk_color Color (8))
+
+(alts $side
+  (alt $PaletteSideFromInput
+    (witness palette-on-left variant $PaletteSideFromInput
+      (relaxed palette-row)
+      (separates "the palette is the left column and the stalk runs along the middle row from the right edge; the stored top side finds no stalk, the side derived from the most non-background cells builds the mountain out from the right edge")
+      (input (grid
+        (0 5 5 5 5 5 5 5 5)
+        (1 5 5 5 5 5 5 5 5)
+        (6 5 5 5 5 5 5 5 5)
+        (9 5 5 5 5 5 5 5 5)
+        (5 5 5 8 8 8 8 8 8)
+        (9 5 5 5 5 5 5 5 5)
+        (6 5 5 5 5 5 5 5 5)
+        (1 5 5 5 5 5 5 5 5)
+        (0 5 5 5 5 5 5 5 5)))
+      (output $StoredSide undefined)
+      (output $PaletteSideFromInput (grid
+        (5 5 5 5 5 5 5 0 0)
+        (5 5 5 5 5 5 1 1 1)
+        (5 5 5 5 5 6 6 6 6)
+        (5 5 5 5 9 9 9 9 9)
+        (5 5 5 8 8 8 8 8 8)
+        (5 5 5 5 9 9 9 9 9)
+        (5 5 5 5 5 6 6 6 6)
+        (5 5 5 5 5 5 1 1 1)
+        (5 5 5 5 5 5 5 0 0))))))
+
+(alts $find
+  (alt $StalkByColor
+    (witness stray-cell foreign $StalkByColor
+      (relaxed background-field)
+      (separates "a stray 3 sits at (1,0) in the gap under the palette; the concept reads it as part of the stalk and is undefined, the stalk found by its color clears it")
+      (input (grid
+        (0 1 6 9 5 9 6 1 0)
+        (3 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)))
+      (output $NonBackground undefined)
+      (output $StalkByColor (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 9 8 9 5 5 5)
+        (5 5 6 9 8 9 6 5 5)
+        (5 1 6 9 8 9 6 1 5)
+        (0 1 6 9 8 9 6 1 0)
+        (0 1 6 9 8 9 6 1 0))))
+    (witness stalk-recolored variant concept
+      (relaxed stalk)
+      (separates "the stalk is 2 rather than 8; the stalk found as the non-background cells off the palette row keeps it and builds the mountain, the stalk found by color 8 finds none and is undefined")
+      (input (grid
+        (0 1 6 9 5 9 6 1 0)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)))
+      (output $NonBackground (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 2 5 5 5 5)
+        (5 5 5 9 2 9 5 5 5)
+        (5 5 6 9 2 9 6 5 5)
+        (5 1 6 9 2 9 6 1 5)
+        (0 1 6 9 2 9 6 1 0)
+        (0 1 6 9 2 9 6 1 0)))
+      (output $StalkByColor undefined))))
+
+(alts $extent
+  (alt $FillToStalkEnd
+    (witness floating-stalk borderline $FillToStalkEnd
+      (relaxed stalk)
+      (separates "the stalk stops two rows short of the bottom edge; the concept fills each column down to the bottom edge, one reading stops each column at the stalk's lower end, and one stacks each column from the bottom edge to the stalk's length less its distance")
+      (input (grid
+        (0 1 6 9 5 9 6 1 0)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)))
+      (output $ToFarEdge (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 9 8 9 5 5 5)
+        (5 5 6 9 8 9 6 5 5)
+        (5 1 6 9 8 9 6 1 5)
+        (0 1 6 9 5 9 6 1 0)
+        (0 1 6 9 5 9 6 1 0)))
+      (output $FillToStalkEnd (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 9 8 9 5 5 5)
+        (5 5 6 9 8 9 6 5 5)
+        (5 1 6 9 8 9 6 1 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)))
+      (output $HeightFromStalkLength (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 9 8 9 5 5 5)
+        (5 5 6 9 5 9 6 5 5)
+        (5 1 6 9 5 9 6 1 5)))))
+  (alt $HeightFromStalkLength
+    (witness floating-stalk borderline $FillToStalkEnd)))
+
+(alts $origin
+  (alt $DistanceFromCenter
+    (witness off-center-stalk borderline concept
+      (relaxed stalk)
+      (separates "the stalk stands in column 3 of a 9-wide grid; the concept steps the columns down from the stalk, the other reading steps them from the center column")
+      (input (grid
+        (0 1 6 5 9 9 6 1 0)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)))
+      (output $FromStalk (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5)
+        (5 5 6 8 9 5 5 5 5)
+        (5 1 6 8 9 9 5 5 5)
+        (0 1 6 8 9 9 6 5 5)
+        (0 1 6 8 9 9 6 1 5)
+        (0 1 6 8 9 9 6 1 0)))
+      (output $DistanceFromCenter (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 8 9 5 5 5 5)
+        (5 5 5 8 9 9 5 5 5)
+        (5 5 6 8 9 9 6 5 5)
+        (5 1 6 8 9 9 6 1 5)
+        (0 1 6 8 9 9 6 1 0)
+        (0 1 6 8 9 9 6 1 0))))))
+
+(alts $paint
+  (alt $StalkTakesPaletteColor
+    (witness stalk-palette-color borderline concept
+      (relaxed palette-row)
+      (separates "the palette cell above the stalk is 3 rather than background; the concept keeps the stalk 8, the other reading paints it 3")
+      (input (grid
+        (0 1 6 9 3 9 6 1 0)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)))
+      (output $KeepStalkColor (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 9 8 9 5 5 5)
+        (5 5 6 9 8 9 6 5 5)
+        (5 1 6 9 8 9 6 1 5)
+        (0 1 6 9 8 9 6 1 0)
+        (0 1 6 9 8 9 6 1 0)))
+      (output $StalkTakesPaletteColor (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 3 5 5 5 5)
+        (5 5 5 9 3 9 5 5 5)
+        (5 5 6 9 3 9 6 5 5)
+        (5 1 6 9 3 9 6 1 5)
+        (0 1 6 9 3 9 6 1 0)
+        (0 1 6 9 3 9 6 1 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background-field)
+      (separates "the field is 4 rather than 5; the stored background reads every cell as non-background and finds no stalk, the derived background reads 4")
+      (input (grid
+        (0 1 6 9 4 9 6 1 0)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)))
+      (output ($NonBackground &background=$Stored) undefined)
+      (output &background=$Derived (grid
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 8 4 4 4 4)
+        (4 4 4 9 8 9 4 4 4)
+        (4 4 6 9 8 9 6 4 4)
+        (4 1 6 9 8 9 6 1 4)
+        (0 1 6 9 8 9 6 1 0)
+        (0 1 6 9 8 9 6 1 0)))
+      (output ($StalkByColor $KeepStalkColor) (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 8 5 5 5 5)
+        (5 5 5 9 8 9 5 5 5)
+        (5 5 6 9 8 9 6 5 5)
+        (5 1 6 9 8 9 6 1 5)
+        (0 1 6 9 8 9 6 1 0)
+        (0 1 6 9 8 9 6 1 0)))
+      (output ($StalkByColor $StalkTakesPaletteColor) (grid
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 4 5 5 5 5)
+        (5 5 5 9 4 9 5 5 5)
+        (5 5 6 9 4 9 6 5 5)
+        (5 1 6 9 4 9 6 1 5)
+        (0 1 6 9 4 9 6 1 0)
+        (0 1 6 9 4 9 6 1 0))))))

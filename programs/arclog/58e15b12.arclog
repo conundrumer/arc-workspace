@@ -1,0 +1,49 @@
+;; inputs f445cd6e5de08d00b25b90f2070a52214effb8ce407fbd70bca8e04ab78698ac programs/solvers/58e15b12.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58e15b12
+
+(DET &bg DominantColor)
+
+(DET &bar_axis AxisDomain)
+
+(DET &overlap AnyOutNewColor)
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &trace
+  (&bar_axis *A)
+  (perp A *A2)
+  (&bbox.cell (:key *Col) (:P *P2))
+  (&bbox.box (:key Col) *B)
+  (box_extent B (:P P2) A *N)
+  (inside (:A P2) B)
+  (same_dist (:D *D_out) (:P1 P2) (:P2 B))
+  (axis_of (:D D_out) (:A A2))
+  (opposite (:D D_out) (:Opp *O_out))
+  (axis_of (:D *D_step) A)
+  (opposite (:D D_step) (:Opp *O_step))
+  (input *P)
+  (relative (:Base P2) (:X P) (:X_rel *V))
+  (margin (:B V) (:D O_out) *K)
+  (margin (:B V) (:D O_step) (:K *T))
+  (divide T (:Side N) (:Gap 0) (:Part K) (:Remainder 0)))
+
+(INIT &drawn Singleton
+  (key ((&trace *Col ^P))
+    (member ((:v Col))
+      (&trace *Col P))))
+
+(RULE &output
+  (input *P)
+  (OR ((&drawn.value (:key P) (:v *Col)))
+      ((&drawn.plural (:key P))
+       (&overlap (:C Col)))
+      ((NOT (&drawn.member (:key P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

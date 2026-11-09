@@ -1,0 +1,119 @@
+;; inputs 6a1a9b612fa275168dbaa77595b7e4fb1a85646d0f0a7160c32d685b8ab5017b programs/solvers/f15e1fac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f15e1fac
+
+(INPUT seeds-on-one-edge "cells of the seed color (8) lie on one edge of the grid, the seed edge, and on no other edge line.")
+
+(INPUT markers-on-adjacent-edge "cells of the marker color (2) lie on one edge perpendicular to the seed edge, the marker edge, and not on the seed edge.")
+
+(OUTPUT ray-across "each seed starts a line of the seed color that runs from the seed edge across the grid, perpendicular to the seed edge.")
+
+(OUTPUT kink-at-marker "at each marker's line across the rays (the row or column it sits on, parallel to the seed edge), every ray, from that line on, steps `step` cells away from that marker's own edge; the steps add up marker by marker.")
+
+(OUTPUT clip-off-grid "the part of a ray that steps past the grid's edge is dropped, with no wrap.")
+
+(OUTPUT markers-kept "markers stay as they are, and every other cell is background.")
+
+(DET &seed_color
+  (ex_output *E *P (:Col *C))
+  (NOT (ex_input E P (:Col C))))
+
+(RULE &seed_edge
+  (&seed_color (:C *Col))
+  (input *P Col)
+  (margin (:B P) *D (:K 0)))
+
+(DET &changed
+  (ex_input *E *P (:Col *C))
+  (ex_output E P)
+  (NOT (ex_output E P (:Col C))))
+
+(DET &marker_color
+  (ex_input *E (:Col *C))
+  (ex_output E)
+  (NOT (&changed C))
+  (NOT (&seed_color C)))
+
+(RULE &marker
+  (&marker_color (:C *Col))
+  (input (:P *M) Col)
+  (&seed_edge (:D *D_s))
+  (perp_dir (:D D_s) (:D2 *D))
+  (margin (:B M) D (:K 0)))
+
+(RULE &marker_line
+  (input *P)
+  (&seed_edge (:D *D_s))
+  (&marker *M (:D *D_m))
+  (same_dist (:D D_s) (:P1 P) (:P2 M)))
+
+(RULE &kink
+  (&marker_line *P *D_m)
+  (opposite (:D D_m) (:Opp *D)))
+
+(RULE &kinked
+  (&kink *P *D)
+  (opposite D (:Opp *D2))
+  (NOT (&kink P (:D D2))))
+
+(DET &ray_out
+  (ex_output *E *P *Col)
+  (&seed_color (:C Col)))
+
+(DET &advance
+  (&marker_line *E (:P *Q0) *D_m)
+  (ex_output E)
+  (opposite (:D D_m) (:Opp *D))
+  (&seed_edge E (:D *D_s))
+  (opposite (:D D_s) (:Opp *D_r))
+  (&ray_out E *P)
+  (neighbor P (:D D_r) (:Q Q0)))
+
+(DET &cand
+  (&advance *E *Q0 *D)
+  (axis_of D *A)
+  (sub_extent (:P Q0) A *K))
+
+(DET &contradicted
+  (OR ((&cand *K)
+       (&advance *E *Q0 *D)
+       (jump (:P Q0) D K *Q)
+       (ex_output E (:P Q))
+       (NOT (&ray_out E (:P Q))))
+      ((&cand K)
+       (&marker_line (:E *E2) (:P *Q2) *D_m)
+       (ex_output (:E E2))
+       (&ray_out (:E E2) (:P Q2))
+       (jump (:P Q2) (:D D_m) K (:Q *Q02))
+       (opposite (:D D_m) (:Opp *D2))
+       (NOT (&advance (:E E2) (:Q0 Q02) (:D D2))))))
+
+(DET &step
+  (&cand *K)
+  (NOT (&contradicted K)))
+
+;; Each ray advances one line away from the seed edge, and steps sideways on a
+;; kinked line. A ray cell off the grid advances no further.
+(INIT &ray Propagation
+  (source ((:n P))
+    (&seed_color (:C *Col))
+    (input *P Col))
+  (edge ((:a P) (:b Q))
+    (input *P)
+    (&seed_edge (:D *D_s))
+    (opposite (:D D_s) (:Opp *D_r))
+    (neighbor P (:D D_r) (:Q *Q0))
+    (OR ((&kinked (:P Q0) *D)
+         (&step *K)
+         (jump (:P Q0) D K *Q))
+        ((NOT (&kinked (:P Q0)))
+         (= Q Q0)))))
+
+(RULE &output
+  (OR ((&ray.reached (:n *P))
+       (input P)
+       (&seed_color (:C *Col)))
+      ((input P Col)
+       (NOT (&ray.reached (:n P))))))
+
+(OUT (&output ^P ^Col))

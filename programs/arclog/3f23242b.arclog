@@ -1,0 +1,188 @@
+;; inputs 7c77e52e6381578217c16d8411c1c4f1ad0fb32cbf12d9ff3e13c64c479ce483 programs/solvers/3f23242b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3f23242b
+
+(DET &mark RarestColor)
+
+;; The side of the mark the line runs along, which fixes the bracket's pose, and the line's color.
+(DET &ground_dir DirDomain)
+
+(DET &ground_paint AnyOutNewColor)
+
+(DET &mark_at
+  (ex_input *E *P *Col)
+  (&mark (:C Col)))
+
+(DET &painted
+  (ex_output *E *P *Col)
+  (OR ((&mark_at E P))
+      ((ex_input E P (:Col *Col_in))
+       (!= Col_in Col))))
+
+(DET &ink
+  (&painted *E *P *Col)
+  (NOT (&ground_paint (:C Col))))
+
+(DET &cand
+  (&ink *E *P *Col)
+  (&mark_at E (:P *M))
+  (relative (:Base M) (:X P) (:X_rel *Off)))
+
+(DET &missed
+  (&cand *Off *Col)
+  (ex_output *E)
+  (&mark_at E (:P *M))
+  (compose (:A M) (:B Off) (:C *P))
+  (NOT (&ink E P Col)))
+
+;; The bracket's frame is the ink's bounding box, and the mark sits at
+;; the offsets' origin.
+(INIT &frame BoundingBox
+  (cell ((:P Off))
+    (&cand *Off *Col)
+    (NOT (&missed Off Col))))
+
+(DET &seat
+  (&frame.box *B)
+  (inside (:A 0) B)
+  (relative (:Base B) (:X 0) (:X_rel *P)))
+
+(DET &shape
+  (&painted *E (:P *P2) *Col)
+  (&mark_at E (:P *M))
+  (relative (:Base M) (:X P2) (:X_rel *Off))
+  (&frame.box *B)
+  (inside (:A Off) B)
+  (relative (:Base B) (:X Off) (:X_rel *P)))
+
+(DET &arm
+  (&shape *P *Col)
+  (interior (:A P) (:B 0))
+  (&seat (:P *P_seat))
+  (dir_elem *D)
+  (neighbor (:P P_seat) D (:Q P)))
+
+(DET &arm_dir
+  (&arm *D))
+
+(DET &corner
+  (&shape (:P *P_box))
+  (same_corner (:D *Diag) (:P1 P_box) (:P2 0)))
+
+(DET &edge_paint
+  (&shape *P *Col)
+  (margin (:B P) *D (:K 0))
+  (NOT (&corner (:P_box P))))
+
+(DET &face_axis AxisDomain)
+
+(DET &ground DirDomain)
+
+;; The bracket in its own frame.
+(RIGID_DET &bracket
+  (&seat *P)
+  (&ground *D)
+  (&shape *P *Col)
+  (&edge_paint *D *Col)
+  (&face_axis *A)
+  (&arm_dir *D))
+
+;; The bracket's own frame, read off the seat, at each pose whose ground edge
+;; faces the line's side.
+(INIT &box Frame
+  (key ((&bracket.ground (:Pose ^G) *D)
+        (&ground_dir D)
+        (&bracket.seat (:Pose G) *P)
+        (frame_extent P *A *N)
+        (&bracket.ground (:Pose G) (:D *D2))
+        (&ground_dir (:D D2))
+        (&bracket.seat (:Pose G) (:P *P2))
+        (frame_extent (:P P2) (:A *A2) (:N *N2))
+        (perp A A2))
+    (extent (A N)
+      (&bracket.ground (:Pose G) *D)
+      (&ground_dir D)
+      (&bracket.seat (:Pose G) *P)
+      (frame_extent P *A *N))))
+
+(RULE &placed
+  (input (:P *Q) (:Col *Col_mark))
+  (&mark (:C Col_mark))
+  (&box.cell (:key *G) (:P *P_box))
+  (&bracket.seat (:Pose G) (:P *P_seat))
+  (relative (:Base P_seat) (:X P_box) (:X_rel *Off))
+  (compose (:A Q) (:B Off) (:C *P_grid))
+  (input (:P P_grid)))
+
+(RULE &line_cell
+  (&placed *G *P_box (:P_grid *P_ground))
+  (&bracket.ground (:Pose G) *D)
+  (margin (:B P_box) D (:K 0))
+  (input *P)
+  (same_dist D (:P1 P_ground) (:P2 P))
+  (NOT (&placed (:P_grid P))))
+
+(RULE &paint
+  (OR ((&line_cell *P)
+       (&ground_paint (:C *Col)))
+      ((&placed *G *P_box (:P_grid P))
+       (&bracket.shape (:Pose G) (:P P_box) Col))))
+
+(ALTS $choice "how the bracket's ink is derived" $Lookup
+  (ALT $Frame
+    (INIT &stalk_frame Frame
+      (key ((&bracket.seat (:Pose ^G) *P)
+            (frame_extent P *A *N))
+        (extent (A N)
+          (&bracket.seat (:Pose G) *P)
+          (frame_extent P *A *N))))
+
+    (RULE &on_edge
+      (&box.cell (:key *G) (:P *P_box))
+      (margin (:B P_box) *D (:K 0)))
+
+    ;; The stalk the mark casts, which the bracket's edges halt.
+    (INIT &stalk Ray
+      (key ((OR ((&bracket.seat (:Pose ^G) *P))
+                ((&bracket.arm_dir (:Pose G) *D))
+                ((&stalk_frame.cell (:key G) P)
+                 (NOT (&on_edge G (:P_box P))))))
+        (source (P)
+          (&bracket.seat (:Pose G) *P))
+        (node (P)
+          (&stalk_frame.cell (:key G) *P)
+          (NOT (&on_edge G (:P_box P))))
+        (dir (D)
+          (&bracket.arm_dir (:Pose G) *D))))
+
+    (RULE &on_face
+      (&on_edge *G *P_box *D)
+      (&bracket.face_axis (:Pose G) *A)
+      (axis_of D A))
+
+    (DET &arm_paint
+      (&arm *Col))
+
+    (RULE &frame_ink
+      (OR ((&on_edge *G *P_box *D)
+           (&bracket.edge_paint (:Pose G) D *Col)
+           (&bracket.face_axis (:Pose G) *A)
+           (OR ((axis_of D A))
+               ((NOT (&on_face G P_box)))))
+          ((&stalk.ray (:key G) (:P P_box) *K)
+           (&box.cell (:key G) (:P P_box))
+           (!= K 0)
+           (&arm_paint Col))))
+
+    (RULE &paint
+      (OR ((&placed *G *P_box (:P_grid *P))
+           (&frame_ink G P_box *Col))
+          ((&line_cell P)
+           (&ground_paint (:C Col)))))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

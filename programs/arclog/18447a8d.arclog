@@ -1,0 +1,163 @@
+;; inputs f6c867125020d524083f97242590dd641b41143711053bc9b06c9d93c17190b9 programs/solvers/18447a8d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 18447a8d
+
+;; The edge the loose pieces are anchored at.
+(DET &piece_dir DirDomain)
+
+(RULE &band_axis
+  (&piece_dir *D)
+  (axis_of D (:A *A2))
+  (perp (:A A2) (:A2 *A)))
+
+(DET &bg DominantColor)
+
+(RULE &line_ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&band_axis *A)
+  (split P A (:Along *L)))
+
+(RULE &frame_divider
+  (input *P)
+  (&band_axis *A)
+  (split P A (:Along *L))
+  (NOT (&line_ink L)))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D *K)
+  (&frame_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; The staircase color.
+(DET &base UnchangedColor)
+
+;; The block's margin from the piece edge.
+(DET &block_margin TileCount)
+
+(RULE &band_cell
+  (&frame_part_of *P *A (:P_part *P_band))
+  (&band_axis A))
+
+(INIT &bbox BoundingBox
+  (key ((&band_cell ^P_band *P))
+    (cell (P)
+      (&band_cell P_band *P))))
+
+(RULE &band_view
+  (&band_cell *P_band *P)
+  (&bbox.box (:key P_band) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &base_cell
+  (&band_view *P_band *P *P_inner)
+  (input P *Col)
+  (&base (:C Col)))
+
+(RULE &piece_cell
+  (&band_view *P_band *P *P_inner)
+  (input P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&base (:C Col))))
+
+(RULE &margin_cand
+  (&band_view *P_inner)
+  (&piece_dir *D)
+  (axis_of D *A)
+  (sub_extent (:P P_inner) A *K))
+
+(RULE &landed
+  (&piece_cell *P_band (:P_inner *P_piece) *Col)
+  (&margin_cand *K)
+  (&piece_dir *D)
+  (opposite D (:Opp *D_in))
+  (jump (:P P_piece) (:D D_in) K (:Q *P_inner)))
+
+;; The hole a band's staircase leaves in the block, against a band's landed
+;; piece.
+(INIT &exact Inclusion
+  (pattern ((:pattern P_band K) (:m P_inner))
+    (&landed *P_band *K *P_inner))
+  (observed ((:observed P_band K) (:m P_inner))
+    (&band_view *P_band *P_inner)
+    (&margin_cand *K)
+    (&piece_dir *D)
+    (margin (:B P_inner) D (:K *K2))
+    (>= K2 K)
+    (NOT (&base_cell P_band P_inner))))
+
+(RULE &fits
+  (&exact.equal (:observed *P_band *K) (:pattern (:P_band *Piece_band) K)))
+
+(RULE &pair
+  (&fits *P_band *Piece_band *K)
+  (&block_margin (:N K)))
+
+(ALTS $choice "how the block's margin from the piece edge is known" $Given
+  (ALT $Common
+    (RULE &unmatched
+      (&margin_cand *K)
+      (&band_cell *P_band)
+      (NOT (&fits P_band K)))
+
+    (RULE &pair
+      (&fits *P_band *Piece_band *K)
+      (NOT (&unmatched K)))))
+
+(RULE &filled
+  (&pair *P_band (:Piece_band *P_band2) *K)
+  (&landed (:P_band P_band2) K *P_inner *Col)
+  (&band_view P_band *P P_inner))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&filled P *Col))
+      ((&base (:C Col_in))
+       (= Col Col_in))
+      ((NOT (&filled P))
+       (NOT (&base (:C Col_in)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

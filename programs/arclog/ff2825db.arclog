@@ -1,0 +1,155 @@
+;; inputs 9b0eaf214d825434c83e79eee4b56aa0f5c35437d41425392751a8e91293827c programs/solvers/ff2825db.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ff2825db
+
+(INPUT palette-strip "the line of the grid at &strip_side (top) is the strip 1 1 2 2 3 3 4 4 5 5, identical in every input"
+
+  ;; The edge the palette strip lies on.
+  (DET &strip_side DirDomain)
+
+  ;; The colors each edge line holds.
+  (INIT &edge_colors Cardinality
+    (key ((dir_elem ^D)
+          (input *P *Col)
+          (margin (:B P) D (:K 0)))
+      (member ((:m Col))
+        (input *P *Col)
+        (margin (:B P) D (:K 0)))))
+
+  (INIT &most_colors Order
+    (member ((:t (:V D) (:S N)))
+      (&edge_colors.size (:key *D) *N))
+    (score ((:t (:V D) (:S N)) (:S N))
+      (&edge_colors.size (:key *D) *N)))
+
+  ;; The one edge line with the most colors; a tie leaves none.
+  (INIT &strip_edge Singleton
+    (member ((:v D))
+      (&most_colors.maximal (:t (:V *D))))))
+
+(INPUT frame "past the strip, a 1-wide frame of one color runs around the rest of the grid, and encloses the box")
+
+(INPUT scattered-cells "inside the frame the box is &background, with scattered cells of exactly 2 other colors, neither of them the frame's color"
+
+  (DET &background ColorDomain))
+
+(INPUT distinct-counts "the two scattered colors have different cell counts")
+
+(OUTPUT winner "the winner is the scattered color with the most cells in the box"
+
+  (RULE &strip_dir
+    (&strip_side *D))
+
+  (RULE &strip
+    (&strip_dir *D)
+    (input *P)
+    (margin (:B P) D (:K 0)))
+
+  ;; The frame is the rim of the cells past the strip, and the box lies
+  ;; inside it.
+  (INIT &rest Boundary
+    (cell (P)
+      (&strip_dir)
+      (input *P)
+      (NOT (&strip P))))
+
+  (RULE &box
+    (&rest.cell *P)
+    (NOT (&rest.boundary P))
+    (input P *Col))
+
+  (RULE &scattered
+    (&box *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &votes_count Cardinality
+    (key ((&scattered *P ^Col))
+      (member ((:m P))
+        (&scattered *P Col))))
+
+  (INIT &votes Order
+    (member ((:t Col))
+      (&votes_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&votes_count.size (:key *Col) *N)))
+
+  ;; The one commonest color; a tie leaves none.
+  (INIT &plurality Singleton
+    (member ((:v Col))
+      (&votes.maximal (:t *Col)))))
+
+(OUTPUT keep-strip "the palette strip is copied unchanged")
+
+(OUTPUT recolor-frame "every frame cell takes the winner's color")
+
+(OUTPUT bbox-outline "the cells on the edge of the bounding box of the winner's cells take the winner's color"
+
+  (INIT &ink_box BoundingBox
+    (key ((&scattered *P ^Col))
+      (cell (P)
+        (&scattered *P Col)))))
+
+(OUTPUT clear-rest "every other cell inside the frame is &background")
+
+(ALTS $side "how the program locates the palette strip, and so the frame and the box" $StripSideStored
+  (ALT $StripSideDerived
+    (INPUT palette-strip "the strip is the edge line that holds the most colors; undefined where two edge lines tie for the most"
+      (RULE &strip_dir
+        (&strip_edge.value (:v *D))))))
+
+(ALTS $tie "what the plurality gives when two colors tie for the most cells" $TieUndefined
+  (ALT $TieBoth
+    (INPUT distinct-counts "two scattered colors may tie for the most cells; undefined where more than two tie")
+    (OUTPUT winner "each color tied for the most cells is a winner, and gives one output grid"
+      (RULE &three_way
+        (&votes.maximal (:t *C1))
+        (&votes.maximal (:t *C2))
+        (&votes.maximal (:t *C3))
+        (!= C1 C2)
+        (!= C1 C3)
+        (!= C2 C3)))
+    (RULE &winner
+      (&votes.maximal (:t *Col))
+      (NOT (&three_way)))))
+
+(ALTS $region "which cells the winner count reads" $CountBox
+  (ALT $CountWithStrip
+    (OUTPUT winner "the count reads the strip's cells as well as the box's"
+      (INIT &votes_count Cardinality
+        (key ((OR ((&scattered *P ^Col))
+                  ((&strip P)
+                   (input P Col)
+                   (NOT (&background (:C Col))))))
+          (member ((:m P))
+            (OR ((&scattered *P Col))
+                ((&strip P)
+                 (input P Col)
+                 (NOT (&background (:C Col)))))))))))
+
+(RULE &winner
+  (&plurality.value (:v *Col)))
+
+(RULE &outline
+  (&ink_box.box (:key *Col) *B)
+  (&box *P)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B)))
+
+(RULE &resolution
+  (&winner (:Col *W))
+  (ONE))
+
+(RULE &output
+  (&resolution *W)
+  (input *P (:Col *Col_in))
+  (OR ((&box P)
+       (NOT (&outline (:Col W) P))
+       (&background (:C *Col)))
+      ((&strip P)
+       (= Col Col_in))
+      ((&rest.boundary P)
+       (= Col W))
+      ((&outline (:Col W) P)
+       (= Col W))))
+
+(OUT (&output ^P ^Col))

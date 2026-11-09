@@ -1,0 +1,262 @@
+;; inputs e19069d08a1a03683b25d5cec7fcc47bdbf5fbfc9d80d4ff1fe17d3702aa973a programs/solvers/edcc2ff0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; edcc2ff0
+
+(INPUT legend-panel "a full-width panel of &panel_color sits on one side of the grid (DIR_T, 7 rows deep) and holds one single-cell marker per listed color at the edge opposite &bar_dir, on rows 1, 3 and 5, each marker a distinct color."
+
+  (DET &line_mixed
+    (ex_input *E *P (:Col *C1))
+    (ex_input E (:P *Q) (:Col *C2))
+    (!= C1 C2)
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (DET &line_color
+    (ex_input *E *P (:Col *C))
+    (axis_elem *A)
+    (NOT (&line_mixed E P A)))
+
+  (DET &panel_color_defect
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (&line_color E C)))
+
+  (DET &panel_color
+    (ex_input (:Col *C))
+    (NOT (&panel_color_defect C)))
+
+  (DET &line_has_panel
+    (ex_input *E *P)
+    (&panel_color (:C *Pc))
+    (ex_input E (:P *Q) (:Col Pc))
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (DET &field_cell
+    (ex_input *E *P)
+    (axis_elem *A)
+    (NOT (&line_has_panel E P A)))
+
+  (DET &marker
+    (ex_input *E *P (:Col *C))
+    (NOT (&panel_color C))
+    (NOT (&field_cell E P)))
+
+  (DET &marker_edge
+    (&marker *E *P)
+    (margin (:B P) *D (:K 0)))
+
+  (DET &bar_dir_defect
+    (opposite *D (:Opp *O))
+    (ex_input *E)
+    (NOT (&marker_edge E (:D O))))
+
+  (DET &bar_dir
+    (dir_elem *D)
+    (NOT (&bar_dir_defect D))))
+
+(INPUT field "the rest of the grid, the cells with a row or column that holds no &panel_color cell, is a field of one background color, its commonest color, which varies by input and is neither &panel_color nor a listed color; the field holds no &panel_color cell.")
+
+(INPUT field-objects "the field holds separate solid objects, each of one color, no two of a color touching; some are of listed colors and some of unlisted ones."
+
+  (RULE &panel_color2
+    (&panel_color *C))
+
+  (RULE_OR_DET &line_has_panel2 "The line through p along axis a holds a panel cell."
+    (&panel_color2 *C)
+    (input (:P *Q) (:Col C))
+    (input *P)
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (RULE_OR_DET &field "A field cell: some line through it holds no panel cell."
+    (input *P)
+    (&panel_color2)
+    (axis_elem *A)
+    (NOT (&line_has_panel2 P A)))
+
+  (INIT &field_mode_count Cardinality
+    (key ((&field *P)
+          (input P (:Col ^C)))
+      (member ((:m P))
+        (&field *P)
+        (input P (:Col C)))))
+
+  (INIT &field_mode Order
+    (member ((:t C))
+      (&field_mode_count.size (:key *C)))
+    (score ((:t C) (:S N))
+      (&field_mode_count.size (:key *C) *N)))
+
+  (RULE &object_cell
+    (&field *P)
+    (input P (:Col *C))
+    (&field_mode.maximal)
+    (NOT (&field_mode.maximal (:t C))))
+
+  (RULE &object_node
+    (&object_cell *P (:C *K)))
+
+  (INIT &comps8 Connectivity
+    (key ((&object_node (:K ^C) *P))
+      (node (P)
+        (&object_node (:K C) *P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT drop-unlisted "every field object whose color no legend marker has becomes field background; objects of listed colors stay as they are.")
+
+(OUTPUT tally-bars "each legend marker becomes a bar on its line, starting at the marker's cell and running toward &bar_dir, whose length is the number of field objects of the marker's color; a count of zero erases the marker to &panel_color."
+
+  (RULE &panel
+    (input *P)
+    (&panel_color2)
+    (NOT (&field P)))
+
+  (RULE &marker2
+    (&panel *P)
+    (input P (:Col *C))
+    (NOT (&panel_color2 C)))
+
+  (INIT &comps4 Connectivity
+    (key ((&object_node (:K ^C) *P))
+      (node (P)
+        (&object_node (:K C) *P))))
+
+  ;; The objects of each color: those holding a cell of that color. A color with
+  ;; no object has no tally, so its marker draws no bar.
+  (INIT &objects Cardinality
+    (key ((&comps4.component (:key ^C) *P *Id)
+          (input P (:Col C)))
+      (member ((:m Id))
+        (&comps4.component (:key C) *P *Id)
+        (input P (:Col C)))))
+
+  (RULE &marker_dir
+    (&marker2 (:P *M))
+    (&bar_dir *D))
+
+  (INIT &ray Ray
+    (source ((:P M))
+      (&marker_dir *M))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&marker_dir *D)))
+
+  (RULE_OR_DET &ray.source)
+
+  (RULE_OR_DET &ray_cell
+    (input *P)))
+
+(OUTPUT keep-rest "every other cell keeps its input color.")
+
+(ALTS $adj "how cells join into one object" $Objects4
+  (ALT $Objects8
+    (INPUT field-objects "an object is an 8-connected component of one color.")
+    (OUTPUT tally-bars "the count is of 8-connected components."
+      ;; The objects of each color: those holding a cell of that color. A color with
+      ;; no object has no tally, so its marker draws no bar.
+      (INIT &objects Cardinality
+        (key ((&comps8.component (:key ^C) *P *Id)
+              (input P (:Col C)))
+          (member ((:m Id))
+            (&comps8.component (:key C) *P *Id)
+            (input P (:Col C))))))))
+
+(ALTS $group "which colors one object holds" $OneColor
+  (ALT $ObjectsAnyColor
+    (OUTPUT tally-bars "an object is a 4-connected component of non-background field cells of any color, counted once under each color it holds."
+      (RULE &object_node
+        (&object_cell *P)
+        (&object_cell (:C *K))))))
+
+(ALTS $dir "where the direction of a bar comes from" $BarDirStored
+  (ALT $BarDirFromEdge
+    (OUTPUT tally-bars "each bar runs away from the one grid edge its marker lies on; undefined where a marker lies on no edge or on a corner."
+      (RULE &marker_dir
+        (&marker2 (:P *M))
+        (ALL ((margin (:B M) (:D *E1) (:K 0))
+              (margin (:B M) (:D *E2) (:K 0)))
+             ((= E1 E2)))
+        (margin (:B M) (:D *E) (:K 0))
+        (opposite (:D E) (:Opp *D))))))
+
+(ALTS $panel "where the panel's color comes from" $PanelColorStored
+  (ALT $PanelColorFromCorner
+    (INPUT legend-panel "the panel's color is the color of the grid's corner cell at &panel_corner."
+      (DET &panel_corner_defect
+        (OR ((ex_input *E *P (:Col *C))
+             (inside (:A P) (:B 0))
+             (same_corner *D (:P1 P) (:P2 0))
+             (NOT (&panel_color C)))
+            (
+             (&bar_dir (:D *B))
+             (opposite (:D B) (:Opp *O))
+             (ex_input (:P *P2))
+             (inside (:A P2) (:B 0))
+             (same_corner D (:P1 P2) (:P2 0))
+             (NOT (margin (:B P2) (:D O) (:K 0))))))
+
+      (DET &panel_corner
+        (diag_dir_elem *D)
+        (NOT (&panel_corner_defect D)))
+
+      (RULE &panel_color2
+        (&panel_corner *D)
+        (input *P (:Col *C))
+        (inside (:A P) (:B 0))
+        (same_corner D (:P1 P) (:P2 0))))))
+
+(ALTS $bg "which field cells give the field background" $FieldBgCommonest
+  (ALT $FieldBgFromBoundaryRow
+    (INPUT field "the background is the commonest color of the field cells next to the panel; undefined where those cells tie or there is no panel."
+      (INIT &field_mode_count Cardinality
+        (key ((&field *P)
+              (input P (:Col ^C))
+              (neighbor P *D *Q)
+              (dir_elem D)
+              (&panel (:P Q)))
+          (member ((:m P))
+            (&field *P)
+            (input P (:Col C))
+            (neighbor P *D *Q)
+            (dir_elem D)
+            (&panel (:P Q)))))))
+  (ALT $FieldBgGridCommonest
+    (INPUT field "the background is the commonest color of the whole grid."
+      (INIT &field_mode_count Cardinality
+        (key ((&panel_color2)
+              (input *P (:Col ^C)))
+          (member ((:m P))
+            (&panel_color2)
+            (input *P (:Col C))))))))
+
+(RULE &bar
+  (&marker2 (:P *M) *C)
+  (&marker_dir M *D)
+  (&objects.size (:key C) *N)
+  (&ray.ray *P D *K (:Origin M))
+  (&ray_cell P)
+  (< K N))
+
+(RULE &output
+  (OR ((&bar *P (:C *Col)))
+      ;; A panel cell off every bar; a marker with no direction gives no cell.
+      ((&panel P)
+       (NOT (&bar P))
+       (&panel_color2 (:C Col))
+       (OR ((NOT (&marker2 P)))
+           ((&marker_dir (:M P)))))
+      ;; A field cell keeps a listed color and takes the background otherwise.
+      ((&field P)
+       (input P (:Col *C))
+       (&field_mode.maximal (:t *B))
+       (IF ((&marker2 C))
+           ((= Col C))
+           ((= Col B))))))
+
+(OUT (&output ^P ^Col))

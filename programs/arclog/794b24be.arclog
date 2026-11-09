@@ -1,0 +1,49 @@
+;; inputs ae9a261d1fe35b01af03af61e308c6d3d1627873543cb7a35eac3a7185fa8b97 programs/solvers/794b24be.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 794b24be
+
+(DET &bg DominantColor)
+
+(DET &mark AnyOutNewColor)
+
+(INIT &ink Cardinality
+  (member ((:m P))
+    (input *P (:Col *C))
+    (NOT (&bg C)))
+  (domain ()
+    (input)))
+
+(DET &count_cells
+  (&ink.size *E *N)
+  (ex_output E *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; A cell's place is the least count whose output inks it.
+(INIT &place Order
+  (key ((&count_cells *N ^P))
+    (member ((:t N))
+      (&count_cells *N P))
+    (score ((:t N) (:S N))
+      (&count_cells *N P))))
+
+(DET &fill_seq
+  (&place.minimal (:key *P) (:t *K)))
+
+(RULE &inked
+  (&ink.size *N)
+  (&fill_seq *P *K)
+  (<= K N))
+
+(ALTS $choice "Two models pick the cells that render the count" $Order
+  (ALT $Table
+    (RULE &inked
+      (&ink.size *N)
+      (&count_cells N *P))))
+
+(RULE &output
+  (input *P)
+  (IF ((&inked P))
+      ((&mark (:C *Col)))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,69 @@
+;; inputs 698f3989c7c8419523d2e8986dfddc5a98b9bff8192f983e75bbe97ca8915b86 programs/solvers/e179c5f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e179c5f4
+
+(DET &bg ChangedColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &axis AxisDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &travel_axis
+  (&axis *A))
+
+(RULE &paint
+  (&mark *Col))
+
+(ALTS $t "travel axis — the walls beside it reflect" $Axis
+  (ALT $Long
+    (RULE &travel_axis
+      (&mark *P)
+      (axis_extents P *A *N1 *N2)
+      (> N1 N2))))
+
+(ALTS $f "ball color" $Mark
+  (ALT $Ink
+    (DET &ink RarestColor)
+
+    (RULE &paint
+      (&ink (:C *Col)))))
+
+(RULE &launch
+  (&mark *P)
+  (&travel_axis *A)
+  (axis_of (:D *Et) A)
+  (margin (:B P) (:D Et) (:K 0))
+  (opposite (:D Et) (:Opp *D_travel))
+  (perp A *A2)
+  (axis_of (:D *Eb) (:A A2))
+  (margin (:B P) (:D Eb) (:K 0))
+  (opposite (:D Eb) (:Opp *D_bounce)))
+
+;; One travel step per cell, side component toward d; the wall reflects it.
+(INIT &walk Propagation
+  (source ((:n P D))
+    (&launch *P (:D_bounce *D)))
+  (edge ((:a P D) (:b (:P P2) (:D D_out)))
+    (&launch (:D_travel *Dt))
+    (input *P)
+    (perp_dir (:D Dt) (:D2 *D))
+    (OR ((margin (:B P) D (:K 0))
+         (opposite D (:Opp *D_out)))
+        ((NOT (margin (:B P) D (:K 0)))
+         (= D_out D)))
+    (neighbor P (:D Dt) (:Q *M))
+    (neighbor (:P M) (:D D_out) (:Q *P2))
+    (input (:P P2))))
+
+(RULE &output
+  (OR ((&walk.reached (:n *P))
+       (&paint *Col))
+      ((input P)
+       (NOT (&walk.reached (:n P)))
+       (&fill (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,189 @@
+;; inputs 2a8d63701a24393d90b31f5fd714f196cae682d987afefd8c0d6df27fb623226 programs/solvers/f1bcbc2c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f1bcbc2c
+
+(INPUT two-walls "two separate 7 walls, each a 4-connected staircase path of straight runs and right-angle bends, run side by side from one grid edge to another.")
+
+(INPUT pipe "between the two walls lies a one-cell-wide corridor of non-wall cells, the one non-wall component that touches both walls; it opens on the top edge at one end and on another edge at the other.")
+
+(INPUT at-most-one-plug "the corridor holds at most one 9 cell, which lies inside the corridor, away from both openings; all its other cells are 0.")
+
+(OUTPUT fill-from-source "each corridor cell that a walk through the corridor from its opening on the `source_edge` edge reaches is painted `fill_color`."
+
+  (DET &changed
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= Col2 C))
+
+  (DET &wall_color
+    (ex_input (:Col *C))
+    (NOT (&changed C)))
+
+  (INIT &regions Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&wall_color (:C Col)))))
+
+  (INIT &walls Connectivity
+    (node (P)
+      (input *P *Col)
+      (&wall_color (:C Col))))
+
+  (RULE &touches
+    (&regions.component *P (:Id *R))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&walls.component (:P Q) (:Id *W)))
+
+  (RULE &corridor
+    (&regions.component *P (:Id *R))
+    (&touches R (:W *W1))
+    (&touches R (:W *W2))
+    (!= W1 W2))
+
+  (DET &repeated
+    (ex_input *E *P (:Col *C))
+    (ex_input E (:P *Q) (:Col C))
+    (!= P Q))
+
+  (DET_OR_RULE &plug_color RarestColor
+    (ex_input (:Col *C))
+    (NOT (&repeated C)))
+
+  (RULE &plug
+    (&corridor *P)
+    (input P *Col)
+    (&plug_color (:C Col)))
+
+  (RULE &wall_side
+    (&corridor *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) *Col)
+    (&wall_color (:C Col)))
+
+  (RULE &blocker
+    (&plug *P)
+    (&wall_side P *D)
+    (perp_dir D *D2)
+    (&wall_side P (:D D2)))
+
+  ;; the grid edge the pouring end of the corridor opens on
+  (DET &source_edge DirDomain)
+
+  (RULE &opening
+    (&corridor *P)
+    (margin (:B P) *D (:K 0)))
+
+  (RULE &source
+    (&opening *P)
+    (&source_edge *D)
+    (margin (:B P) D (:K 0)))
+
+  ;; the walk runs through the corridor and stops at blocking plugs
+  (INIT &flow Flood
+    (node (P)
+      (&corridor *P)
+      (NOT (&blocker P)))
+    (source (P)
+      (&source *P)))
+
+  (INIT &nearest Order
+    (member ((:t (:V P) (:S K)))
+      (&opening *P)
+      (&source_edge *D)
+      (margin (:B P) D *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&opening *P)
+      (&source_edge *D)
+      (margin (:B P) D *K))))
+
+(OUTPUT plug-at-bend-blocks "a plug with wall cells on two adjacent sides (it sits at a bend) stops the walk: it keeps `plug_color`, and the corridor beyond it keeps its input color.")
+
+(OUTPUT plug-on-straight-passes "a plug with wall cells on two opposite sides (it sits on a straight run) lets the walk pass through it, and is painted `fill_color` with the rest.")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color."
+
+  (INIT &flow_label Connectivity
+    (node (P)
+      (&corridor *P)
+      (NOT (&blocker P)))))
+
+(ALTS $t "what decides whether a plug stops the walk" $PlugTestByWalls
+  (ALT $PlugTestByOpenSides
+    (OUTPUT plug-at-bend-blocks "a plug blocks unless it has exactly two corridor neighbors and they are collinear."
+      (RULE &open_side
+        (&corridor *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&corridor (:P Q)))
+
+      (RULE &bent
+        (&open_side *P *D)
+        (perp_dir D *D2)
+        (&open_side P (:D D2)))
+
+      (RULE &straight
+        (&open_side *P *D)
+        (opposite D (:Opp *D2))
+        (&open_side P (:D D2))
+        (NOT (&bent P)))
+
+      (RULE &blocker
+        (&plug *P)
+        (NOT (&straight P))))
+    (OUTPUT plug-on-straight-passes "a plug with exactly two corridor neighbors, collinear, passes and is painted `fill_color`.")))
+
+(ALTS $s "where the walk enters the corridor" $SourceEdge
+  (ALT $SourceUpperEnd
+    (OUTPUT fill-from-source "the walk starts at the corridor's opening nearest the `source_edge` edge; undefined where two openings tie for nearest."
+      (RULE &source
+        (&nearest.minimal (:t (:V *P)))
+        (ALL ((&nearest.minimal (:t (:V *P1)))
+              (&nearest.minimal (:t (:V *P2))))
+             ((= P1 P2))))))
+  (ALT $FillLongerPart
+    (OUTPUT fill-from-source "where blocking plugs split the corridor, its largest part fills, and otherwise the whole corridor fills; undefined where two parts tie for largest."
+      (INIT &longer_count Cardinality
+        (key ((&flow_label.component *P ^Id))
+          (member ((:m P))
+            (&flow_label.component *P Id))))
+
+      ;; the largest part of the corridor that the blocking plugs leave
+      (INIT &longer Order
+        (member ((:t Id))
+          (&longer_count.size (:key *Id)))
+        (score ((:t Id) (:S N))
+          (&longer_count.size (:key *Id) *N)))
+
+      (RULE &longer_tie
+        (&longer.maximal (:t *I1))
+        (&longer.maximal (:t *I2))
+        (!= I1 I2)))
+    (RULE &filled
+      (&longer.maximal (:t *I))
+      (NOT (&longer_tie))
+      (&flow_label.component *P (:Id I)))
+
+    (RULE &defined
+      (&longer.maximal)
+      (NOT (&longer_tie)))))
+
+(RULE &filled
+  (&flow.reached *P))
+
+(RULE &defined
+  (&source))
+
+(DET &fill_color
+  (ex_output (:Col *C))
+  (NOT (ex_input (:Col C))))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill_color (:C *Col)))
+      ((&defined)
+       (input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

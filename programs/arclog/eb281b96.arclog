@@ -1,0 +1,161 @@
+;; inputs 61ed080d0842fc2e484b870efb54fedafe447d51c8df4ab2c0ae881ef584ea42 programs/solvers/eb281b96.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; eb281b96
+
+(DET &tile_axis AxisDomain)
+
+(DET &across_moved
+  (ex_input *P)
+  (&tile_axis *A)
+  (apply *D P (:P_out *P_img))
+  (split P A (:Across *P_across))
+  (split (:P P_img) A (:Across *P_across2))
+  (!= P_across P_across2))
+
+(DET &axial
+  (d4_elem *D)
+  (NOT (&across_moved D)))
+
+(DET &tile_count Period)
+
+;; The tile arrangement.
+(INIT &arr Frame
+  (key ((&tile_axis ^A))
+    (extent (A N)
+      (&tile_count (:K *N)))))
+
+(INIT &tile_gap_divisions ExtentDivisions
+  (key ((ex_output ^E (:P *P_out)))
+    (frame ((:P P_out))
+      (ex_output E (:P *P_out)))))
+
+(DET &tile_size
+  (ex_input *E *P)
+  (&tile_axis *A)
+  (frame_extent P A (:N *K)))
+
+(DET &tile_gap
+  (&tile_axis *A)
+  (&tile_count (:K *N))
+  (&tile_gap_divisions.division (:key *E) A N *K *G)
+  (&tile_size E K))
+
+(INIT &tile_map_tiling Tiling
+  (key ((OR ((&arr.cell (:key ^A) (:P *P_tile)))
+            ((ex_input *E (:P *P_intile))
+             (&arr.cell (:key A))
+             (ex_output E))
+            ((&arr.cell (:key A))
+             (&tile_gap *G))))
+    (outer ((:P P_tile))
+      (&arr.cell (:key A) (:P *P_tile)))
+    (inner ((:P P_intile))
+      (ex_input *E (:P *P_intile))
+      (&arr.cell (:key A))
+      (ex_output E))
+    (gap (A G)
+      (&arr.cell (:key A))
+      (&tile_gap *G))))
+
+(INIT &tile_map Agreement
+  (key ((OR ((ex_input ^E *P *Col)
+             (ex_output E)
+             (&arr.cell (:P ^P_tile)))
+            ((ex_input E (:P *P_intile))
+             (&arr.cell (:key *A) (:P P_tile))
+             (&tile_map_tiling.cell (:key A) (:P_outer P_tile) (:P_inner P_intile) (:P *P_grid))
+             (ex_output E (:P P_grid) Col))))
+    (source (P (:v Col))
+      (ex_input E *P *Col)
+      (ex_output E)
+      (&arr.cell (:P P_tile)))
+    (target ((:P P_intile) (:v Col))
+      (ex_input E (:P *P_intile))
+      (&arr.cell (:key *A) (:P P_tile))
+      (&tile_map_tiling.cell (:key A) (:P_outer P_tile) (:P_inner P_intile) (:P *P_grid))
+      (ex_output E (:P P_grid) *Col))))
+
+(DET &broken
+  (&tile_map.mismatch (:key *P_tile) *D)
+  (&axial D))
+
+(DET &tile_map_src
+  (ex_input *E *P (:Col *V))
+  (ex_output E)
+  (&arr.cell (:P *P_tile)))
+
+(DET &tile
+  (&tile_map_src (:P_tile *P))
+  (d4_elem *D)
+  (NOT (&tile_map.mismatch (:key (:P_tile P)) D))
+  (&axial D)
+  (NOT (&broken (:P_tile P) D)))
+
+(INIT &output_tiling Tiling
+  (key ((OR ((&tile (:P *P_tile) ^D))
+            ((input (:P *P_in))
+             (&tile D)
+             (apply D (:P P_in) (:P_out *P_intile)))
+            ((&tile D)
+             (&tile_axis *A)
+             (&tile_gap *G))))
+    (outer ((:P P_tile))
+      (&tile (:P *P_tile) D))
+    (inner ((:P P_intile))
+      (input (:P *P_in))
+      (&tile D)
+      (apply D (:P P_in) (:P_out *P_intile)))
+    (gap (A G)
+      (&tile D)
+      (&tile_axis *A)
+      (&tile_gap *G))))
+
+(ALTS $choice "how each tile's content is produced, data-equivalent on this task" $Lookup
+  (ALT $Unfold
+    (DET &anchor DirDomain)
+
+    ;; The input reflected across the shared boundary row, once per tile step
+    ;; away from the anchor-end tile.
+    (INIT &reflect Walk
+      (successor ((:p P) (:p_next P_img))
+        (input *P)
+        (&tile_axis *A)
+        (axis_inversion A (:T *F))
+        (apply (:D F) P (:P_out *P_img)))
+      (steps ((:N K))
+        (&arr.cell (:P *T))
+        (&anchor *D)
+        (margin (:B T) D *K)))
+
+    (INIT &output_tiling2 Tiling
+      (key ((OR ((&arr.cell (:key ^A) (:P *T)))
+                ((&arr.cell (:key A))
+                 (&reflect.walk (:p0 *P) (:p *P_intile))
+                 (input P))
+                ((&arr.cell (:key A))
+                 (&tile_gap *G))))
+        (outer ((:P T))
+          (&arr.cell (:key A) (:P *T)))
+        (inner ((:P P_intile))
+          (&arr.cell (:key A))
+          (&reflect.walk (:p0 *P) (:p *P_intile))
+          (input P))
+        (gap (A G)
+          (&arr.cell (:key A))
+          (&tile_gap *G))))
+
+    (RULE &output
+      (&arr.cell (:key *A) (:P *T))
+      (&anchor *D)
+      (margin (:B T) D *K)
+      (&reflect.walk (:p0 *P2) (:N K) (:p *P_intile))
+      (input (:P P2) *Col)
+      (&output_tiling2.cell (:key A) (:P_outer T) (:P_inner P_intile) *P))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&tile (:P *P_tile) *D)
+  (apply D (:P P_in) (:P_out *P_intile))
+  (&output_tiling.cell (:key D) (:P_outer P_tile) (:P_inner P_intile) *P))
+
+(OUT (&output ^P ^Col))

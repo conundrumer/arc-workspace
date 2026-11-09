@@ -1,0 +1,143 @@
+;; inputs 243bbc7a6147ee764fc0a1d02b4ff3708f7a3daf08d0071bc58eb3b7f04dee57 programs/solvers/caa06a1f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; caa06a1f
+
+(param &block_corner DiagDir (DIAG_TL))
+(param &shift_step number (1))
+(param &shift_axis_set Axis (AXIS_H) (AXIS_V))
+(param &follow_dir Dir (DIR_R))
+
+(alts $r
+  (alt $ColorSuccessor
+    (witness three-color-cycle ordinary any
+      (separates "The block holds a 3-color cycle that repeats every 3 columns and every 2 rows, as in the test input. The concept and $DeriveCorner give the pattern moved one cell left and the pattern moved one cell up. $ColorSuccessor recolors each cell to the color that follows it along a row and gives only the left move.")
+      (input (grid
+        (2 4 9 2 4 9 1 1 1 1)
+        (4 9 2 4 9 2 1 1 1 1)
+        (2 4 9 2 4 9 1 1 1 1)
+        (4 9 2 4 9 2 1 1 1 1)
+        (2 4 9 2 4 9 1 1 1 1)
+        (4 9 2 4 9 2 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)))
+      (output $Shift
+        (grid
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2))
+        (grid
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)))
+      (output $ColorSuccessor (grid
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9))))))
+
+(alts $c
+  (alt $DeriveCorner
+    (witness block-bottom-left variant $DeriveCorner
+      (relaxed periodic-block)
+      (relaxed background-band)
+      (separates "The block sits at the bottom-left corner. With the corner stored as top-left, the color at the bottom-right corner is a band color, the cells of other colors do not sit at the top-left, and the concept and $ColorSuccessor are undefined. $DeriveCorner finds the block at the bottom-left and gives the pattern moved one cell left and the pattern moved one cell down, which equals the pattern moved one cell up since the rows repeat every 2.")
+      (input (grid
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (2 4 9 2 4 9 1 1 1 1)
+        (4 9 2 4 9 2 1 1 1 1)
+        (2 4 9 2 4 9 1 1 1 1)
+        (4 9 2 4 9 2 1 1 1 1)
+        (2 4 9 2 4 9 1 1 1 1)
+        (4 9 2 4 9 2 1 1 1 1)))
+      (output ($StoredCorner &block_at=$Derived) undefined)
+      (output ($Shift &block_at=$Stored) ($Shift $DeriveCorner)
+        (grid
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2)
+          (4 9 2 4 9 2 4 9 2 4)
+          (2 4 9 2 4 9 2 4 9 2))
+        (grid
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)
+          (4 9 2 4 9 2 4 9 2 4)
+          (9 2 4 9 2 4 9 2 4 9)))
+      (output ($ColorSuccessor &block_at=$Stored) ($ColorSuccessor $DeriveCorner) (grid
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9)
+        (4 9 2 4 9 2 4 9 2 4)
+        (9 2 4 9 2 4 9 2 4 9))))))
+
+(alts &block_at
+  (alt &block_at=$Stored
+    (witness parse.block_at=stored variant &block_at=$Stored
+      (relaxed periodic-block)
+      (relaxed background-band)
+      (separates "`parse.block_at=stored` from the derived value: train 0 turned a quarter turn clockwise")
+      (input (grid
+        (3 3 3 3 6 7 6 7 6 7 6)
+        (3 3 3 3 7 6 7 6 7 6 7)
+        (3 3 3 3 6 7 6 7 6 7 6)
+        (3 3 3 3 7 6 7 6 7 6 7)
+        (3 3 3 3 6 7 6 7 6 7 6)
+        (3 3 3 3 7 6 7 6 7 6 7)
+        (3 3 3 3 6 7 6 7 6 7 6)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)))
+      (output ($StoredCorner &block_at=$Derived) undefined)
+      (output &block_at=$Stored $DeriveCorner (grid
+        (7 6 7 6 7 6 7 6 7 6 7)
+        (6 7 6 7 6 7 6 7 6 7 6)
+        (7 6 7 6 7 6 7 6 7 6 7)
+        (6 7 6 7 6 7 6 7 6 7 6)
+        (7 6 7 6 7 6 7 6 7 6 7)
+        (6 7 6 7 6 7 6 7 6 7 6)
+        (7 6 7 6 7 6 7 6 7 6 7)
+        (6 7 6 7 6 7 6 7 6 7 6)
+        (7 6 7 6 7 6 7 6 7 6 7)
+        (6 7 6 7 6 7 6 7 6 7 6)
+        (7 6 7 6 7 6 7 6 7 6 7))))))

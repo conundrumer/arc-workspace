@@ -1,0 +1,12 @@
+;; inputs bff20398b9aae22eb7a75fc20ece3d4e8e8dcfd775b9c033fe84ad5a8b387354 programs/solvers/85fa5666.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 85fa5666
+
+(param &bg Color (0))
+(param &square Color (2))
+(param &turn D4 (D4_CW))
+(param &corner_from (DiagDir DiagDir)
+  (DIAG_TL DIAG_BL)
+  (DIAG_TR DIAG_TL)
+  (DIAG_BR DIAG_TR)
+  (DIAG_BL DIAG_BR))

@@ -1,0 +1,8 @@
+;; inputs 18c006e3a42799bbb91d2f5223a9514d178ebe790bf839e7d330e9d68016d2e1 programs/solvers/1acc24af.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1acc24af
+
+(param &wall Color (1))
+(param &piece Color (5))
+(param &mark Color (2))
+(param &open_dir Dir (DIR_B))

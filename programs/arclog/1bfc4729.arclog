@@ -1,0 +1,52 @@
+;; inputs acd24dffffca7a8974063d7c0722df217c748ce72e9d326e195c51c147ba27b8 programs/solvers/1bfc4729.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1bfc4729
+
+(DET &bg DominantColor)
+
+;; The axis the two halves stack along.
+(DET &axis AxisDomain)
+
+;; The line's distance from the half's outer edge.
+(DET &line_dist SepThickness)
+
+(RULE &half
+  (input *P)
+  (&axis *A)
+  (axis_of *D A)
+  (dist_pair P D *K *K2)
+  (< K K2))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&half P *D))
+
+(RULE &ink
+  ;; The grid's border, in the color of the half it runs through.
+  (OR ((&half *P *D)
+       (&mark D *Col)
+       (margin (:B P) (:D *D2) (:K 0)))
+      ((&half P (:D *D3))
+       (&mark (:D D3) Col)
+       (&line_dist (:G *K))
+       (margin (:B P) (:D D3) K))))
+
+(ALTS $choice "where each half's line sits; data-equivalent on this task, since every mark sits two cells in from its half's outer edge" $StoredLine
+  (ALT $MarkLine
+    (RULE &ink
+      (OR ((&half *P *D)
+           (&mark D *Col (:P *P_mark))
+           (same_dist D (:P1 P) (:P2 P_mark)))
+          ;; The grid's border, in the color of the half it runs through.
+          ((&half P (:D *D3))
+           (&mark (:D D3) Col)
+           (margin (:B P) (:D *D2) (:K 0)))))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

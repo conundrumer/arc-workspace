@@ -1,0 +1,188 @@
+;; inputs 4fa1562f7f24a399ffced3fe68f2e186fd15e7b44c958bfec9f4bec6940b1bc0 programs/solvers/aa62e3f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aa62e3f4
+
+(INPUT one-object "one 4-connected object of non-background cells sits on a field of &background"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &object
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &piece4 Connectivity
+    (node (P)
+      (&object *P)))
+
+  (INIT &piece8 Connectivity
+    (node (P)
+      (&object *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT rare-color "one color of the object has fewer cells than every other color of the object"
+
+  (RULE &field
+    (input *P *Col)
+    (&background (:C Col)))
+
+  ;; Every object cell in one class.
+  (INIT &whole Quotient
+    (equivalent ((:a P) (:b Q))
+      (&object *P)
+      (&object (:P *Q))))
+
+  (RULE &member
+    (&whole.class (:a *P) (:Id *G)))
+
+  (RULE &look
+    (&member *G *P)
+    (input P *Col))
+
+  ;; A color's level less one: its hops from the colors beside the background
+  ;; or the off-grid border.
+  (INIT &hops Distance
+    (key ((OR ((&look (:G ^Id) *P *Col)
+               (dir_elem *D)
+               (OR ((margin (:B P) D (:K 0)))
+                   ((neighbor P D *Q)
+                    (&field (:P Q)))))
+              ((&look (:G Id) P (:Col *A))
+               (dir_elem D)
+               (neighbor P D (:Q *Q2))
+               (&member (:G Id) (:P Q2))
+               (input (:P Q2) (:Col *B)))))
+      (edge ((:a A) (:b B))
+        (&look (:G Id) *P (:Col *A))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&member (:G Id) (:P Q))
+        (input (:P Q) (:Col *B)))
+      (source ((:n Col))
+        (&look (:G Id) *P *Col)
+        (dir_elem *D)
+        (OR ((margin (:B P) D (:K 0)))
+            ((neighbor P D *Q)
+             (&field (:P Q)))))))
+
+  (INIT &deepest Order
+    (key ((&hops.distance (:key ^Id) (:n *Col) *K))
+      (member ((:t (:V Col) (:S K)))
+        (&hops.distance (:key Id) (:n *Col) *K))
+      (score ((:t (:V Col) (:S K)) (:S K))
+        (&hops.distance (:key Id) (:n *Col) *K))))
+
+  (INIT &innermost Singleton
+    (key ((&deepest.maximal (:key ^Id) (:t (:V *Col))))
+      (member ((:v Col))
+        (&deepest.maximal (:key Id) (:t (:V *Col)))))))
+
+(OUTPUT erase "every cell of the object takes &background")
+
+(OUTPUT halo "every background cell 4-adjacent to a cell of the object takes the object's rare color"
+
+  (RULE &beside
+    (&field *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&object (:P Q)))
+
+  ;; The cells each pool counts.
+  (RULE &cell
+    (&member (:G *Key) *P)
+    (input P *Col))
+
+  (INIT &hue_count Cardinality
+    (key ((&cell (:Key ^K) *P ^Col))
+      (member ((:m P))
+        (&cell (:Key K) *P Col))))
+
+  (INIT &fewest Order
+    (key ((&hue_count.size (:key (:K ^Id) *Col) *N))
+      (member ((:t (:V Col) (:S N)))
+        (&hue_count.size (:key (:K Id) *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&hue_count.size (:key (:K Id) *Col) *N))))
+
+  (INIT &rare Singleton
+    (key ((&fewest.minimal (:key ^Id) (:t (:V *Col))))
+      (member ((:v Col))
+        (&fewest.minimal (:key Id) (:t (:V *Col))))))
+
+  (RULE &group_color
+    (&rare.value (:key (:Id *G)) (:v *Col)))
+
+  ;; The color of each halo cell; two groups that give one cell different
+  ;; colors leave it none.
+  (INIT &paint Singleton
+    (key ((&beside ^P *Q)
+          (&member (:G *Id) (:P Q))
+          (&group_color (:G Id) *Col))
+      (member ((:v Col))
+        (&beside P *Q)
+        (&member (:G *Id) (:P Q))
+        (&group_color (:G Id) *Col))))
+
+  ;; The background cells that reach the grid edge through background.
+  (INIT &outside Flood
+    (node (P)
+      (&field *P))
+    (source (P)
+      (&field *P)
+      (margin (:B P) *D (:K 0)))))
+
+(OUTPUT rest "every other cell keeps its input color")
+
+(ALTS $color "which color the halo takes" $RareColor
+  (ALT $RareColor
+    (ALTS $bg "whether the background's cells take part in the count under RareColor" $ObjectCount
+      (ALT $RarestWithBackground
+        (OUTPUT halo "the count also takes in the background's cells over the whole grid, so when the background is the rarest color the halo takes the background color; undefined when two colors tie for the fewest cells"
+          (RULE &cell
+            (OR ((&member (:G *Key))
+                 (&field *P *Col))
+                ;; The cells each pool counts.
+                ((&member (:G Key) P)
+                 (input P Col))))))))
+  (ALT $InnermostColor
+    (INPUT rare-color "one color of the object is innermost. A color's level is 1 more than the lowest level of a color its cells touch, the background and the off-grid border are level 0, and the innermost color is the one at the highest level")
+    (OUTPUT halo "every background cell 4-adjacent to a cell of the object takes the object's innermost color; undefined when two colors share the highest level"
+      (RULE &group_color
+        (&innermost.value (:key (:Id *G)) (:v *Col))))))
+
+(ALTS $region "which background cells join the halo" $Touching
+  (ALT $ExteriorHalo
+    (OUTPUT halo "a background cell 4-adjacent to a cell of the object joins the halo only when it is 4-connected through background cells to the grid edge")
+    (RULE &halo
+      (&beside *P)
+      (&outside.reached P))))
+
+(ALTS $scope "over which cells the halo color is chosen" $AllCells
+  (ALT $PerObject
+    (INPUT one-object "4-connected objects of non-background cells sit on a field of &background")
+    (OUTPUT halo "every background cell 4-adjacent to a cell of an object takes that object's rare color; undefined where a cell touches two objects that give different colors"
+      (RULE &member
+        (&piece4.component *P (:Id *G))))
+    (ALTS $conn "how the cells of one object connect under PerObject" $Conn4
+      (ALT $PerObject8
+        (INPUT one-object "the objects are 8-connected"
+          (RULE &member
+            (&piece8.component *P (:Id *G))))))))
+
+(RULE &halo
+  (&beside *P))
+
+(RULE &output
+  (input *P (:Col *Col0))
+  (OR ((&object P)
+       (&background (:C *Col)))
+      ((&halo P)
+       (&paint.value (:key P) (:v Col)))
+      ((NOT (&object P))
+       (NOT (&halo P))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

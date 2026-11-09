@@ -1,0 +1,151 @@
+;; inputs a065a8a2ebcf84db2d6f16da6c14d8a3f43a47fac8859319083b284e91359924 programs/solvers/1190bc91.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1190bc91
+
+(DET &bg DominantColor)
+
+(INIT &obj Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &exposed Boundary
+  (cell (P)
+    (&obj.node *P)))
+
+(RULE &seq
+  (&obj.component *P *Id)
+  (&obj.component (:P *P_far) Id)
+  (margin (:B P_far) *D (:K 0))
+  (neighbor P D (:Q *P2))
+  (&obj.component (:P P2) Id)
+  (&obj.component (:P *Anchor) Id)
+  (opposite D (:Opp *D_back))
+  (&exposed.exposed (:P Anchor) (:D D_back)))
+
+(INIT &walk_frame Frame
+  (extent (A N)
+    (&seq (:Anchor *P))
+    (frame_extent P *A *N)))
+
+;; Sequence cells indexed by their distance from the anchor.
+(INIT &walk Ray
+  (source (P)
+    (&seq (:Anchor *P)))
+  (node (P)
+    (&walk_frame.cell *P))
+  (dir (D)
+    (&seq *D)))
+
+(RULE &walk_cell
+  (&obj.component *P *Id)
+  (&seq Id))
+
+(RULE &seq_idx
+  (&walk.ray *P *K)
+  (&walk_cell P))
+
+(RULE &arm_cell
+  (&seq_idx (:K *Key))
+  (input *P))
+
+(RULE &arm_dir
+  (&seq_idx (:K *Key))
+  (diag_dir_elem *D))
+
+(INIT &arm_frame Frame
+  (key ((&seq_idx *P ^K)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&seq_idx *P K)
+      (frame_extent P *A *N))))
+
+(INIT &arm_full Ray
+  (key ((OR ((&seq_idx *P ^K))
+            ((&arm_dir (:Key K) *D))
+            ((&arm_frame.cell (:key K) P))))
+    (source (P)
+      (&seq_idx *P K))
+    (node (P)
+      (&arm_frame.cell (:key K) *P))
+    (dir (D)
+      (&arm_dir (:Key K) *D))))
+
+;; A cell a nearer sequence cell already lit.
+(RULE &arm_blocked
+  (&seq_idx (:K *Key))
+  (&arm_full.ray (:key (:K *J)) *P)
+  (&arm_cell (:Key J) P)
+  (< J Key))
+
+(INIT &arm Ray
+  (key ((OR ((&seq_idx *P ^K))
+            ((&arm_dir (:Key K) *D))
+            ((&arm_frame.cell (:key K) P)
+             (NOT (&arm_blocked (:Key K) P)))))
+    (source (P)
+      (&seq_idx *P K))
+    (node (P)
+      (&arm_frame.cell (:key K) *P)
+      (NOT (&arm_blocked (:Key K) P)))
+    (dir (D)
+      (&arm_dir (:Key K) *D))))
+
+(RULE &arm_stop_full
+  (&arm.end (:key (:K *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&arm_full.ray (:key (:K V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &marker
+  (input *P *Col)
+  (&obj.component P *Id)
+  (NOT (&seq Id)))
+
+;; Where the lit rays overlap, the nearest sequence cell wins. A ray reaches
+;; its blocking cell and stops there.
+(INIT &nearest Order
+  (key ((OR ((&arm.ray (:key *K) ^P)
+             (&arm_cell (:Key K) P))
+            ((&arm_stop_full (:V0 K) (:V1 P)))))
+    (member ((:t K))
+      (OR ((&arm.ray (:key *K) P)
+           (&arm_cell (:Key K) P))
+          ((&arm_stop_full (:V0 K) (:V1 P)))))
+    (score ((:t K) (:S K))
+      (OR ((&arm.ray (:key *K) P)
+           (&arm_cell (:Key K) P))
+          ((&arm_stop_full (:V0 K) (:V1 P)))))))
+
+(RULE &cross
+  (&seq (:Anchor *A))
+  (&seq_idx (:P A) *K)
+  (&arm_full.ray (:key K) *P)
+  (&arm_cell (:Key K) P))
+
+(INIT &area Connectivity
+  (node (P)
+    (input *P)
+    (NOT (&cross P))))
+
+(ALTS $choice "how the unlit cells take a marker color" $Sector
+  (ALT $Flood
+    (INIT &area Connectivity
+      (node (P)
+        (input *P)
+        (NOT (&nearest.minimal (:key P)))))))
+
+(RULE &fill
+  (&marker *P *Col)
+  (&area.component P *Id))
+
+(RULE &output
+  (OR ((&nearest.minimal (:key *P) (:t *K))
+       (&seq_idx (:P *P_seq) K)
+       (input (:P P_seq) *Col))
+      ((&area.component P *Id)
+       (NOT (&nearest.minimal (:key P)))
+       (OR ((&fill Id Col))
+           ((NOT (&fill Id))
+            (&bg (:C Col)))))))
+
+(OUT (&output ^P ^Col))

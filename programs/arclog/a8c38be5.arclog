@@ -1,0 +1,293 @@
+;; inputs 45335a726f9a6e273fcdf14d97cc1a1a2b067fbdeb8f8e446dd35f8907322312 programs/solvers/a8c38be5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a8c38be5
+
+(INPUT pieces "the input holds nine &piece_size squares on a field of &bg, and every other cell belongs to one square, a piece. Pieces can touch, but no &piece_size square that crosses two pieces is free of &bg"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &piece_size TileCount))
+
+(INPUT marks "each piece is &fill except for its marks, cells of one other color. One piece has no marks. In each other piece the marks lie on one side of the piece center: an L of three cells at a corner, or a T of four cells along an edge"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (INIT &out_mode_count Cardinality
+    (key ((ex_output ^E *P ^Col))
+      (member ((:m P))
+        (ex_output E *P Col))))
+
+  ;; The commonest color of each output, taken as the fill when every output
+  ;; agrees.
+  (INIT &out_mode Order
+    (key ((&out_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&out_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&out_mode_count.size (:key E *Col) *N))))
+
+  (DET &fill_contradicted
+    (&out_mode.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&out_mode.maximal (:key E) (:t C))))
+
+  (DET &fill
+    (&out_mode.maximal (:t *C))
+    (NOT (&fill_contradicted C)))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N))))
+
+(INPUT one-per-position "the nine pieces point to the nine blocks of a 3×3 arrangement, and the piece with no marks points to the center")
+
+(OUTPUT direction "a piece points to the block given by the side, on each axis, whose half of the piece holds more of its marks than the opposite half, a half being the cells nearer that side's edge than the opposite edge; on an axis where the two halves hold equally many, and for a piece with no marks, the middle"
+
+  ;; The color of a piece's unmarked cells under each reading; undefined when
+  ;; the reading gives two.
+  (INIT &fill2 Singleton
+    (member ((:v Col))
+      (&fill (:C *Col))))
+
+  (RULE &trial
+    (&piece_size *N))
+
+  (RULE &side
+    (&trial *N))
+
+  ;; The cells of a square of each side, in its own frame.
+  (INIT &frame Frame
+    (key ((&trial ^N)
+          (perp *A *A2))
+      (extent (A N)
+        (&trial N)
+        (axis_elem *A))))
+
+  ;; The squares free of &bg, each by the box it covers.
+  (INIT &squares Occurrences
+    (key ((&trial ^N))
+      (shape (P)
+        (&frame.cell (:key N) *P)))
+    (cell (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (RULE &window_color
+    (&side *N)
+    (&squares.occurrence (:key N) (:P *B))
+    (&frame.cell (:key N) *P)
+    (compose (:A B) (:B P) (:C *P2))
+    (input (:P P2) *Col))
+
+  (RULE &mark
+    (&fill2.value)
+    (&window_color *B *P *Col)
+    (NOT (&fill2.value (:v Col))))
+
+  (RULE &half_mark
+    (&mark *B (:P *M))
+    (dist_pair (:P M) *D (:K *K1) *K2)
+    (< K1 K2))
+
+  (INIT &lean Excess
+    (key ((OR ((&half_mark ^B ^D (:M *P)))
+              ((&half_mark B (:D *O) (:M P))
+               (opposite D (:Opp O)))))
+      (plus ((:m P))
+        (&half_mark B D (:M *P)))
+      (minus ((:m P))
+        (&half_mark B (:D *O) (:M *P))
+        (opposite D (:Opp O)))))
+
+  (INIT &mark_box BoundingBox
+    (key ((&mark ^B *P))
+      (cell (P)
+        (&mark B *P))))
+
+  (RULE &edge_mark
+    (&mark *B (:P *M))
+    (margin (:B M) *D (:K 0)))
+
+  (INIT &edge_excess Excess
+    (key ((OR ((&edge_mark ^B ^D (:M *P)))
+              ((&edge_mark B (:D *O) (:M P))
+               (opposite D (:Opp O)))))
+      (plus ((:m P))
+        (&edge_mark B D (:M *P)))
+      (minus ((:m P))
+        (&edge_mark B (:D *O) (:M *P))
+        (opposite D (:Opp O))))))
+
+(OUTPUT assemble "the output is the 3×3 arrangement of &piece_size blocks, with no gap. Each piece is copied unchanged into the block it points to"
+
+  (RULE &window
+    (&side (:N *K))
+    (&squares.occurrence (:key (:N K)) (:P *B)))
+
+  (RULE &candidate
+    (&window *B)
+    (&fill2.value)))
+
+(ALTS $fill_free "where a piece with no &fill cell goes" $FillFreeCenter
+  (ALT $NeedsFill
+    (OUTPUT needs-fill "a piece with no &fill cell is dropped"
+      (RULE &candidate
+        (&window *B)
+        (&window_color B *Col)
+        (&fill2.value (:v Col))))))
+
+(ALTS $unmarked "where a piece with no marks goes" $UnmarkedCenter
+  (ALT $SkipUnmarked
+    (OUTPUT skip-unmarked "a piece with no marks is dropped")
+    (RULE &member
+      (&candidate *B)
+      (&mark B))))
+
+(ALTS $direction "how a piece's marks give the block it points to" $HalfCount
+  (ALT $BboxCenter
+    (OUTPUT direction "a piece points to the block given by the side, on each axis, that the center of its marks' bounding box lies on from the piece center")
+    (RULE &toward
+      (&mark_box.box (:key *B) (:B *B_marks))
+      (dist_pair (:P B_marks) *D (:K *K1) *K2)
+      (< K1 K2)))
+  (ALT $EdgeCount
+    (OUTPUT direction "a piece points to the block given by the side, on each axis, whose edge line holds more of its marks than the opposite edge line")
+    (RULE &toward
+      (&edge_excess.excess (:key *B *D))))
+  (ALT $EdgeTouch
+    (OUTPUT direction "a piece points to the block given by the side, on each axis, whose edge line holds a mark when the opposite edge line holds none")
+    (RULE &toward
+      (&edge_mark *B *D)
+      (opposite D (:Opp *O))
+      (NOT (&edge_mark B (:D O))))))
+
+(ALTS $empty "what fills a block that no piece points to" $EmptyUndefined
+  (ALT $FillDefault
+    (OUTPUT fill-default "a block that no piece points to is all &fill"
+
+      (RULE &empty_cell
+        (&fill2.value (:v *Col))
+        (&side (:N *K))
+        (&frame.cell (:key (:N K)) (:P *P_inner)))
+
+      (INIT &output_tiling2 Tiling
+        (outer ((:P S))
+          (&vacant *S))
+        (inner ((:P P_inner))
+          (&empty_cell *P_inner))))
+    (RULE &output
+      (OR ((&placed *B *S)
+           (&window_color B (:P *P_inner) *Col)
+           (&output_tiling.cell (:key B) (:P_outer S) P_inner *P))
+          ((&vacant (:S *S2))
+           (&empty_cell (:P_inner *P_inner2) Col)
+           (&output_tiling2.cell (:P_outer S2) (:P_inner P_inner2) P)))))
+  (ALT $BgDefault
+    (OUTPUT bg-default "a block that no piece points to is all &bg"
+      (RULE &empty_color
+        (&fill2.value)
+        (&bg (:C *Col)))
+
+      (RULE &empty_cell
+        (&empty_color *Col)
+        (&side (:N *K))
+        (&frame.cell (:key (:N K)) (:P *P_inner)))
+
+      (INIT &output_tiling2 Tiling
+        (outer ((:P S))
+          (&vacant *S))
+        (inner ((:P P_inner))
+          (&empty_cell *P_inner))))
+    (RULE &output
+      (OR ((&placed *B *S)
+           (&window_color B (:P *P_inner) *Col)
+           (&output_tiling.cell (:key B) (:P_outer S) P_inner *P))
+          ((&vacant (:S *S2))
+           (&empty_cell (:P_inner *P_inner2) Col)
+           (&output_tiling2.cell (:P_outer S2) (:P_inner P_inner2) P))))))
+
+(ALTS $fill "the color of a piece's unmarked cells" $StoredFill
+  (ALT $FillDerived
+    (INPUT marks "&fill is the most frequent color of the input other than &bg; undefined when two colors tie"
+      ;; The color of a piece's unmarked cells under each reading; undefined when
+      ;; the reading gives two.
+      (INIT &fill2 Singleton
+        (member ((:v Col))
+          (&commonest.maximal (:t *Col)))))))
+
+(ALTS $size "the side of a piece" $StoredSize
+  (ALT $SizeDerived
+    (INPUT pieces "&piece_size is the largest side of a square free of &bg"
+      (RULE &trial
+        (input *P)
+        (axis_elem *A)
+        (OR ((sub_extent P A (:K *N)))
+            ((frame_extent P A N))))
+
+      (INIT &largest Order
+        (member ((:t K))
+          (&squares.occurrence (:key (:N *K))))
+        (score ((:t K) (:S K))
+          (&squares.occurrence (:key (:N *K)))))
+
+      (RULE &side
+        (&largest.maximal (:t *N))))))
+
+(RULE &member
+  (&candidate *B))
+
+;; The blocks on each axis of the arrangement: one at each side, and the middle.
+(DET &arrangement TileCount)
+
+(INIT &slot_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&arrangement *N)))
+
+(RULE &toward
+  (&lean.excess (:key *B *D)))
+
+(RULE &misfit
+  (&fill2.value)
+  (&window *B)
+  (&slot_frame.cell (:P *S))
+  (dir_elem *D)
+  (IF ((margin (:B S) D (:K 0)))
+      ((NOT (&toward B D)))
+      ((&toward B D))))
+
+(RULE &points
+  (&fill2.value)
+  (&window *B)
+  (&slot_frame.cell (:P *S))
+  (NOT (&misfit B S)))
+
+(RULE &placed
+  (&member *B)
+  (&points B *S))
+
+(INIT &output_tiling Tiling
+  (key ((OR ((&placed ^B *S))
+            ((&window_color B (:P *P_inner)))))
+    (outer ((:P S))
+      (&placed B *S))
+    (inner ((:P P_inner))
+      (&window_color B (:P *P_inner)))))
+
+(RULE &vacant
+  (&slot_frame.cell (:P *S))
+  (NOT (&placed S)))
+
+(RULE &output
+  (&placed *B *S)
+  (&window_color B (:P *P_inner) *Col)
+  (&output_tiling.cell (:key B) (:P_outer S) P_inner *P))
+
+(OUT (&output ^P ^Col))

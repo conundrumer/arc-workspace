@@ -1,0 +1,165 @@
+;; inputs 323597b6d9f8f6ad8024a426b46869a3ac4326b20153743839400d5312a8fe33 programs/solvers/78332cb0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 78332cb0
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(DET &sep SharedColor)
+
+(RULE &tiling_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (&sep (:C Col)))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&tiling_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The tiling the separator lines cut.
+(INIT &tiling_rank Order
+  (key ((OR ((&tiling_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiling_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiling_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &gap TileDim)
+
+(DET &bg DominantColor)
+
+;; Each tile's own box.
+(INIT &tile BoundingBox
+  (key ((&tiling_tile_of *P ^P_tile))
+    (cell (P)
+      (&tiling_tile_of *P P_tile))))
+
+(RULE &port
+  (&tile.cell (:key *P_tile) *P)
+  (input P *Col)
+  (NOT (&bg (:C Col)))
+  (&tile.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile))
+  (margin (:B P_intile) *D (:K 0))
+  (axis_of D *A)
+  (split (:P P_intile) A *Across))
+
+(RULE &link
+  (&port (:P_tile *X) *D *Across)
+  (opposite D (:Opp *D2))
+  (&port (:P_tile *Y) (:D D2) Across)
+  (!= X Y))
+
+(INIT &onward Propagation
+  (key ((&link ^D)
+        (&tile.box (:key (:P_tile ^X))))
+    (source ((:n X))
+      (&link D)
+      (&tile.box (:key (:P_tile X))))
+    (edge ((:a X2) (:b Y))
+      (&link (:X *X2) D *Y)
+      (&tile.box (:key (:P_tile X))))))
+
+;; The tiles ordered along the chain, read toward d.
+(INIT &chain Order
+  (key ((OR ((&link ^D)
+             (&tile.cell (:key (:P_tile *X))))
+            ((&onward.reached (:key D X) (:n *Y))
+             (!= X Y))))
+    (member ((:t X))
+      (&link D)
+      (&tile.cell (:key (:P_tile *X))))
+    (before ((:a X) (:b Y))
+      (&onward.reached (:key D *X) (:n *Y))
+      (!= X Y))))
+
+(RULE &seat
+  (&chain.dual_rank (:key *D) (:t *X) (:R *K1))
+  (&chain.rank (:key D) (:t X) (:R *K2))
+  (axis_of D *A)
+  (axis_inset D K1 K2 (:B *P_tile)))
+
+(INIT &placed_tiling Tiling
+  (key ((OR ((&seat ^A *P_tile))
+            ((&seat *X A)
+             (&tile.cell (:key (:P_tile X)) *P)
+             (input P)
+             (&tile.box (:key (:P_tile X)) *B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel *P_intile)))
+            ((&seat A)
+             (&gap (:D *G)))))
+    (outer ((:P P_tile))
+      (&seat A *P_tile))
+    (inner ((:P P_intile))
+      (&seat *X A)
+      (&tile.cell (:key (:P_tile X)) *P)
+      (input P)
+      (&tile.box (:key (:P_tile X)) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_intile)))
+    (gap (A G)
+      (&seat A)
+      (&gap (:D *G)))))
+
+(RULE &placed
+  (&seat *X *A *P_tile)
+  (&tile.cell (:key (:P_tile X)) (:P *P2))
+  (input (:P P2) *Col)
+  (&tile.box (:key (:P_tile X)) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P_intile))
+  (&placed_tiling.cell (:key A) (:P_outer P_tile) (:P_inner P_intile) *P))
+
+(INIT &sheet Frame
+  (extent (A N)
+    (&placed *P)
+    (frame_extent P *A *N)))
+
+(RULE &output
+  (&sheet.cell *P)
+  (OR ((&placed P *Col))
+      ((NOT (&placed P))
+       (&sep (:C Col)))))
+
+(OUT (&output ^P ^Col))

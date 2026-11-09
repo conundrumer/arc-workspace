@@ -1,0 +1,224 @@
+;; inputs 438e57bdf035e40f43623c638d53afc84504690985650215af7d717dc8ae04ff programs/solvers/bae5c565.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bae5c565
+
+(INPUT palette-row "the row on edge `palette_side` holds a color in every cell, and that color is `background` only in the stalk's column"
+
+  (DET &palette_side DirDomain)
+
+  (DET_OR_RULE &background DominantColor
+    (ex_output *E *P (:Col *C))
+    (&palette_side (:D *S))
+    (margin (:B P) (:D S) (:K 0)))
+
+  (INIT &edge_ink Cardinality
+    (key ((input *P *Col)
+          (NOT (&background (:C Col)))
+          (dir_elem ^D)
+          (margin (:B P) D (:K 0)))
+      (member ((:m P))
+        (input *P *Col)
+        (NOT (&background (:C Col)))
+        (margin (:B P) D (:K 0)))))
+
+  (INIT &fullest Order
+    (member ((:t (:V D) (:S N)))
+      (&edge_ink.size (:key *D) *N))
+    (score ((:t (:V D) (:S N)) (:S N))
+      (&edge_ink.size (:key *D) *N)))
+
+  (INIT &palette_edge Singleton
+    (member ((:v D))
+      (&fullest.maximal (:t (:V *D))))))
+
+(INPUT stalk "one straight line of color 8 (`stalk_color`) runs along the center column, from the edge opposite `palette_side` toward `palette_side`, and stops at least one row short of the palette row")
+
+(INPUT background-field "every cell that is not in the palette row or the stalk is `background`")
+
+(OUTPUT clear-palette "the palette row becomes `background`")
+
+(OUTPUT keep-stalk "the stalk stays as it is")
+
+(OUTPUT stepped-fill "in each column other than the stalk's, at distance d from the stalk's column, the cells from d rows past the stalk's end nearest the palette row to the edge opposite `palette_side` take that column's palette color"
+
+  (RULE &side
+    (&palette_side (:D *S)))
+
+  (RULE &cell
+    (&side)
+    (input))
+
+  (RULE &ink
+    (&cell)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (&side *S)
+    (NOT (margin (:B P) (:D S) (:K 0))))
+
+  (RULE &stalk
+    (&ink *P *Col))
+
+  ;; The stalk set down on the edge opposite the palette.
+  (INIT &drop Distance
+    (source_distance (K)
+      (&stalk *P)
+      (&side *S)
+      (opposite (:D S) (:Opp *D))
+      (margin (:B P) D *K))))
+
+(OUTPUT rest-background "every other cell is `background`"
+
+  (RULE &column_of
+    (&side *S)
+    (axis_of (:D S) *A)
+    (input *P)
+    (split P A (:Across *L)))
+
+  (RULE &column_color
+    (&column_of (:P *Q) *L)
+    (&side *S)
+    (margin (:B Q) (:D S) (:K 0))
+    (input (:P Q) *Col))
+
+  ;; The stalk's end nearest the palette; absent unless the stalk is one
+  ;; unbroken run along a column.
+  (INIT &stalk_end Singleton
+    (member ((:v P))
+      (&stalk *P)
+      (&side *S)
+      (neighbor P (:D S) *Q)
+      (NOT (&stalk (:P Q)))))
+
+  (RULE &base
+    (&stalk_end.value (:v *T))))
+
+(ALTS $side "which edge holds the palette row" $StoredSide
+  (ALT $PaletteSideFromInput
+    (INPUT palette-row "the palette row is the line on the edge that holds the most non-`background` cells; undefined where two edges tie"
+      (RULE &side
+        (&palette_edge.value (:v *S))))))
+
+(ALTS $find "which cells off the palette row are the stalk" $NonBackground
+  (ALT $StalkByColor
+    (OUTPUT keep-stalk "the stalk is the cells of `stalk_color` off the palette row, and any other cell there that no rule paints becomes `background`; undefined where those cells are not one unbroken run along a column"
+
+      (DET &edge2
+        (ex_input)
+        (&palette_side (:D *S)))
+
+      (DET &ink2
+        (ex_input *E *P *Col)
+        (NOT (&background (:C Col)))
+        (&edge2 *S)
+        (NOT (margin (:B P) (:D S) (:K 0))))
+
+      (DET &stalk_color
+        (&ink2 (:Col *C)))
+
+      (RULE &stalk
+        (&side *S)
+        (input *P *Col)
+        (&stalk_color (:C Col))
+        (NOT (margin (:B P) (:D S) (:K 0)))))))
+
+(ALTS $extent "where each column's run starts and stops" $ToFarEdge
+  (ALT $FillToStalkEnd
+    (OUTPUT stepped-fill "each column's run stops at the row of the stalk's end farthest from the palette"
+      ;; The cells farther from the palette than the stalk's far end.
+      (RULE &cut
+        (&stalk (:P *B))
+        (&side *S)
+        (opposite (:D S) (:Opp *D))
+        (neighbor (:P B) D *Q)
+        (NOT (&stalk (:P Q)))
+        (input *P)
+        (nearer D P (:Q B))))
+    (RULE &fill
+      (&slope *Q)
+      (&column_of (:P Q) *L)
+      (&column_of *P L)
+      (&side *S)
+      (NOT (nearer (:D S) P Q))
+      (NOT (&cut P))
+      (NOT (&stalk_column P))
+      (&column_color L *Col)))
+  (ALT $HeightFromStalkLength
+    (OUTPUT stepped-fill "a column at distance d less than the stalk's length L gets L - d cells stacked from the edge opposite `palette_side`"
+      (RULE &drop_dir
+        (&stalk)
+        (&side *S)
+        (opposite (:D S) (:Opp *D)))
+
+      (RULE &drop_travel_full
+        (&drop.distance *K)
+        (&drop_dir *D)
+        (jump_offset D K (:V *V2)))
+
+      (RULE &base
+        (&stalk_end.value (:v *T0))
+        (&drop_travel_full (:V2 *V))
+        (compose (:A T0) (:B V) (:C *T))))))
+
+(ALTS $origin "the column the distance d is measured from" $FromStalk
+  (ALT $DistanceFromCenter
+    (OUTPUT stepped-fill "d is the distance from the grid's center column; undefined on an even width")
+    (RULE &apex
+      (&base *T)
+      (&side *S)
+      (input (:P *Q))
+      (same_dist (:D S) (:P1 Q) (:P2 T))
+      (perp_dir (:D S) (:D2 *D))
+      (dist_pair (:P Q) D (:K *K12) (:K2 K12)))))
+
+(ALTS $paint "the color the stalk keeps" $KeepStalkColor
+  (ALT $StalkTakesPaletteColor
+    (OUTPUT keep-stalk "the stalk takes the palette color of its column where that color is not `background`")
+    (RULE &stalk_paint
+      (&stalk *P (:Col *C0))
+      (&column_of P *L)
+      (&column_color L (:Col *C1))
+      (OR ((NOT (&background (:C C1)))
+           (= *Col C1))
+          ((&background (:C C1))
+           (= Col C0))))))
+
+(RULE &stalk_column
+  (&stalk_end.value (:v *T))
+  (&column_of (:P T) *L)
+  (&column_of *P L))
+
+(RULE &apex
+  (&base (:T *Q)))
+
+(RULE &slope
+  (&apex (:Q *A))
+  (&side *S)
+  (input (:P *Q))
+  (diag_axis_elem *Da)
+  (same_line (:A Da) (:P Q) (:Q A))
+  (NOT (nearer (:D S) (:P Q) (:Q A))))
+
+(RULE &fill
+  (&slope *Q)
+  (&column_of (:P Q) *L)
+  (&column_of *P L)
+  (&side *S)
+  (NOT (nearer (:D S) P Q))
+  (NOT (&stalk_column P))
+  (&column_color L *Col))
+
+(RULE &stalk_paint
+  (&stalk *P *Col))
+
+(RULE &painted
+  (OR ((&fill *P *Col))
+      ((&stalk_paint P Col))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((&apex)
+       (input P)
+       (NOT (&painted P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

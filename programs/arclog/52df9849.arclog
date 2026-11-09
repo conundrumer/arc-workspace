@@ -1,0 +1,47 @@
+;; inputs e8cd9454a4474fe2cc4aa7b59a9a853fb31a7073632cdf64fb04ec130f9dd48f programs/solvers/52df9849.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 52df9849
+
+(DET &bg DominantColor)
+
+(RULE &obj
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &passed
+  (&obj (:P *Q) *Col)
+  (&obj (:P *Q2) Col)
+  (nearer *D (:P Q2) Q))
+
+(RULE &extreme
+  (&obj (:P *Q) *Col)
+  (dir8_elem *D)
+  (NOT (&passed Col D Q)))
+
+(RULE &sweep
+  (input *P)
+  (&obj (:P *Q) *Col)
+  (same_line *A P Q)
+  (axis4_of *D A)
+  (dir8_opposite D *D2)
+  (&extreme Col D (:Q *E1))
+  (NOT (nearer D P (:Q E1)))
+  (&extreme Col (:D D2) (:Q *E2))
+  (NOT (nearer (:D D2) P (:Q E2))))
+
+(RULE &unsupported
+  (&sweep *Col *A *P)
+  (input P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &hidden
+  (&sweep *Col *A *P)
+  (NOT (&unsupported Col A))
+  (NOT (input P Col)))
+
+(RULE &output
+  (OR ((&hidden *P *Col))
+      ((input P Col)
+       (NOT (&hidden P)))))
+
+(OUT (&output ^P ^Col))

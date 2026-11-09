@@ -1,0 +1,135 @@
+;; inputs 060bb7a4c4da778f8e38a6754e1dfb718b4f3789168c8b96aa11ea061a6135d9 programs/solvers/d56f2372.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d56f2372
+
+(INPUT shapes-on-background "every input holds several shapes on a field of &background, each shape one color, and no two shapes share a color."
+
+  (DET &lacking
+    (ex_output *Col)
+    (ex_output *E)
+    (NOT (ex_output E Col)))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_output (:Col *C))
+    (NOT (&lacking (:Col C))))
+
+  (INIT &pieces Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT one-symmetric-shape "exactly one shape is unchanged under the &symmetry reflection of its bounding box, and every other shape is changed by it."
+
+  ;; The reflection of its own box that keeps the chosen shape.
+  (DET &symmetry D4Domain)
+
+  (INIT &classes Quotient
+    (equivalent ((:a P) (:b Q))
+      (input *P *Col)
+      (input (:P *Q) Col)
+      (NOT (&background (:C Col)))))
+
+  (RULE &shape_cell
+    (&classes.class (:a *P) (:Id *S))
+    (input P *Col))
+
+  (INIT &bbox BoundingBox
+    (key ((&shape_cell (:S ^Id) *P))
+      (cell (P)
+        (&shape_cell (:S Id) *P))))
+
+  (RULE &drawn
+    (&bbox.box (:key (:Id *S)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))
+    (OR ((&shape_cell S P *Col))
+        ((NOT (&shape_cell S P))
+         (&background (:C Col)))))
+
+  ;; The symmetries of each drawn shape.
+  (INIT &sym Agreement
+    (key ((&drawn (:S ^Id) (:P_inner *P) *Col))
+      (source (P (:v Col))
+        (&drawn (:S Id) (:P_inner *P) *Col))
+      (target (P (:v Col))
+        (&drawn (:S Id) (:P_inner *P) *Col))))
+
+  (INIT &sym_sets Inclusion
+    (pattern ((:pattern S) (:m D))
+      (&drawn *S)
+      (d4_elem *D)
+      (NOT (&sym.mismatch (:key (:Id S)) D)))
+    (observed ((:observed S) (:m D))
+      (&drawn *S)
+      (d4_elem *D)
+      (NOT (&sym.mismatch (:key (:Id S)) D)))))
+
+(OUTPUT crop-symmetric-shape "the output is the bounding box of the shape that &symmetry keeps, with the shape's cells in its color and every other cell &background."
+
+  (RULE &kept
+    (&symmetry *D)
+    (&drawn *S)
+    (d4_elem D)
+    (NOT (&sym.mismatch (:key (:Id S)) D)))
+
+  (RULE &rivaled
+    (&kept (:S *Id))
+    (&kept (:S *Id2))
+    (!= Id Id2))
+
+  (RULE &chosen
+    (&kept (:S *Id))
+    (NOT (&rivaled))))
+
+(ALTS $s "which shape is kept" $Stored
+  (ALT $AnySym
+    (INPUT one-symmetric-shape "exactly one shape is unchanged under some non-identity D4 element of its bounding box.")
+    (OUTPUT crop-symmetric-shape "the output is the bounding box of the shape some non-identity D4 element keeps, drawn on &background; undefined where the number of such shapes is not one."
+      (RULE &sym_has_sym_full
+        (&drawn (:S *V0))
+        (d4_elem *D)
+        (NOT (d4_identity D))
+        (NOT (&sym.mismatch (:key (:Id V0)) D)))
+
+      (RULE &kept
+        (&sym_has_sym_full (:V0 *S)))))
+  (ALT $OddSym
+    (INPUT one-symmetric-shape "exactly one shape has a set of D4 symmetries that no other shape of the input has.")
+    (OUTPUT crop-symmetric-shape "the output is the bounding box of that shape, drawn on &background; undefined where the number of such shapes is not one."
+      (RULE &sym_shared
+        (&sym_sets.equal (:observed *S) (:pattern *Id2))
+        (!= S Id2))
+
+      (RULE &kept
+        (&bbox.box (:key (:Id *S)))
+        (NOT (&sym_shared S))))))
+
+(ALTS $p "what a shape is" $ColorClass
+  (ALT $Components8
+    (INPUT shapes-on-background "a shape is one 8-connected piece of one color; undefined where the number of pieces kept is not one."
+      (RULE &shape_cell
+        (&pieces.component (:key *Col) *P (:Id *S))))))
+
+(ALTS $o "what the output holds within the kept shape's box" $Drawn
+  (ALT $GridWindow
+    (OUTPUT crop-symmetric-shape "the output is the input's window at the kept shape's bounding box, other shapes' cells included.")
+    (RULE &output
+      (&chosen *Id)
+      (&bbox.box (:key Id) *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))))
+
+(RULE &output
+  (&chosen *Id)
+  (&drawn (:S Id) (:P_inner *P) *Col))
+
+(OUT (&output ^P ^Col))

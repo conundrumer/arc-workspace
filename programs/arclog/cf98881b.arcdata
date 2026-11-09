@@ -1,0 +1,16 @@
+;; inputs 863929cf103a71e4c3a07457bb4c87a5d7fa3d56cfc88e40b97a3649a6a201b3 programs/solvers/cf98881b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cf98881b
+
+(param &frame_dim number (4))
+(param &bg Color (0))
+(param &arr_dim (Axis number) (AXIS_V 1) (AXIS_H 3))
+(param &gap number (1))
+(param &divide_axis Axis (AXIS_H))
+(param &divide_gap number (1))
+(param &divisor number (3))
+(param &stack_dir Dir (DIR_L))
+(param &ink_rank (Color number) (4 0) (9 1) (1 2))
+(param &pane_rank (Position number)
+  (grid
+    (0 1 2)))

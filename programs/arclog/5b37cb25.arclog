@@ -1,0 +1,72 @@
+;; inputs f1abf226804ddddfad81e3ec13112ac514245d4a1617a50a596a371401955e6b programs/solvers/5b37cb25.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5b37cb25
+
+(RULE &canvas
+  (input *P)
+  (interior (:A P) (:B 0)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((&canvas *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&canvas *P)
+      (input P Col))))
+
+(RULE &edge_color
+  (input *P *Col)
+  (margin (:B P) *D (:K 0))
+  (opposite D (:Opp *D_in))
+  (neighbor P (:D D_in) *Q)
+  (&canvas (:P Q)))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ground
+  (&canvas *P)
+  (input P *Col)
+  (&bg_mode.maximal (:t Col)))
+
+(RULE &blob
+  (&canvas *P)
+  (NOT (&ground P)))
+
+(INIT &ground_rim Boundary
+  (cell (P)
+    (&ground *P)))
+
+(RULE &diamond
+  (&ground *P)
+  (NOT (&ground_rim.boundary P)))
+
+(RULE &closed
+  (&diamond *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (neighbor (:P Q) D (:Q *R))
+  (&blob (:P R)))
+
+;; A diamond open on two sides is no bite, and `bite.value` drops it.
+(INIT &bite Singleton
+  (key ((&diamond ^P))
+    (member ((:v D))
+      (dir_elem *D)
+      (NOT (&closed P D)))))
+
+(RULE &paint
+  (&bite.value (:key (:P *P2)) (:v *D))
+  (&edge_color D *Col)
+  (OR ((dir_elem (:D *D2))
+       (neighbor (:P P2) (:D D2) (:Q *P)))
+      ((= P P2))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

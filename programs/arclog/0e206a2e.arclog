@@ -1,0 +1,93 @@
+;; inputs fd502201eb0fd25106c3cfba68e8800afae71aae9cb88186478ead0a453e3938 programs/solvers/0e206a2e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0e206a2e
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &parts Connectivity
+  (node (P)
+    (&ink *P)))
+
+;; An object is a part with more than one cell; a lone cell is a marker.
+(INIT &part_cell Singleton
+  (key ((&parts.component *P ^Id))
+    (member ((:v P))
+      (&parts.component *P Id))))
+
+(RULE &object_cell
+  (&parts.component *P *Id)
+  (&part_cell.plural (:key Id))
+  (&ink P *Col))
+
+(INIT &common_count Cardinality
+  (key ((&object_cell ^Id *P ^Col))
+    (member ((:m P))
+      (&object_cell Id *P Col))))
+
+(RULE &marker
+  (&part_cell.value (:v *P))
+  (&ink P *Col))
+
+(INIT &common Order
+  (key ((&common_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&common_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&common_count.size (:key Id *Col) *N))))
+
+(RULE &anchor
+  (&object_cell *Id *P *Col)
+  (NOT (&common.maximal (:key Id) (:t Col))))
+
+(ALTS $a "which object cells are anchors" $Minority
+  (ALT $Marked
+    (RULE &anchor
+      (&object_cell *Id *P *Col)
+      (&marker Col))))
+
+(ALTS $m "a marker no object lands on" $Consumed
+  (ALT $Kept
+    (RULE &output
+      (OR ((&vacant *P)
+           (OR ((&marker P *Col))
+               ((NOT (&marker P))
+                (&bg (:C Col)))))
+          ((&placed P Col))))))
+
+;; Seek each pose among the markers, color for color; an occurrence is a
+;; seating of the object.
+(INIT &seat Occurrences
+  (key ((OR ((&anchor ^Id *P *Col)
+             (d4_elem ^D)
+             (apply D P (:P_out *P_img)))
+            ((&anchor Id)
+             (d4_elem D)
+             (&marker (:P *M) Col))))
+    (cell ((:P M) (:v Col))
+      (&anchor Id)
+      (d4_elem D)
+      (&marker (:P *M) *Col))
+    (shape ((:P P_img) (:v Col))
+      (&anchor Id *P *Col)
+      (apply D P (:P_out *P_img)))))
+
+(RULE &placed
+  (&seat.occurrence (:key *Id *D) (:P *Sh))
+  (&object_cell Id (:P *P2) *Col)
+  (apply D (:P P2) (:P_out *P_img))
+  (compose (:A Sh) (:B P_img) (:C *P)))
+
+(RULE &vacant
+  (input *P)
+  (NOT (&placed P)))
+
+(RULE &output
+  (OR ((&placed *P *Col))
+      ((&vacant P)
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

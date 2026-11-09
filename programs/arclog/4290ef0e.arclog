@@ -1,0 +1,189 @@
+;; inputs 1f0dbd6bfe7f0da81c97849e7a724c1567f4d8567a9f76f29bb718da1802d387 programs/solvers/4290ef0e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4290ef0e
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field the rings sit on.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &ring
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &line_cell
+  (&ring *Col *P)
+  (split P *A (:Across *L)))
+
+;; A line crosses the ring's two arms, with a hollow side between them.
+(INIT &side Ray
+  (key ((OR ((&line_cell ^Col ^A ^L *P))
+            ((&line_cell Col A L)
+             (axis4_of *D A))
+            ((&line_cell Col A L)
+             (input P))))
+    (source (P)
+      (&line_cell Col A L *P))
+    (node (P)
+      (&line_cell Col A L)
+      (input *P))
+    (dir (D)
+      (&line_cell Col A L)
+      (axis4_of *D A))))
+
+(RULE &side_between
+  (&line_cell *Col *A *L)
+  (input *P)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&side.ray (:key Col A L) P D)
+  (&side.ray (:key Col A L) P (:D O)))
+
+;; The ring's center on that line — the middle cell of the hollow.
+(INIT &gap BoundingBox
+  (key ((&side_between ^Col ^A ^L *P)
+        (NOT (&line_cell Col A L P)))
+    (cell (P)
+      (&side_between Col A L *P)
+      (NOT (&line_cell Col A L P)))))
+
+(RULE &center
+  (&gap.cell (:key *Col *A *L) *P)
+  (&gap.box (:key Col A L) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (axis_of *D A)
+  (dist_pair (:P P_inner) D *K (:K2 K)))
+
+(RULE &mirror
+  (&center *Col *A *L (:P *M))
+  (&line_cell Col A L *P)
+  (relative (:Base P) (:X M) (:X_rel *V))
+  (compose (:A M) (:B V) (:C *Q)))
+
+(INIT &reach BoundingBox
+  (key ((OR ((&mirror ^Col ^A ^L *P))
+            ((&mirror Col A L *Q))))
+    (cell (P)
+      (OR ((&mirror Col A L *P))
+          ((&mirror Col A L (:Q P)))))))
+
+(INIT &ring_box BoundingBox
+  (key ((&ring ^Col *P))
+    (cell (P)
+      (&ring Col *P))))
+
+;; A ring is at least as wide as the cells it shows, and at least as wide as
+;; any line's mirrored reach.
+(INIT &size Order
+  (key ((OR ((&ring ^Col *P)
+             (&ring_box.box (:key Col) *B)
+             (box_extent B P *N))
+            ((&reach.cell (:key Col *A *L) P)
+             (&reach.box (:key Col A L) B)
+             (box_extent B P A N))))
+    (member ((:t N))
+      (OR ((&ring Col *P)
+           (&ring_box.box (:key Col) *B)
+           (box_extent B P *N))
+          ((&reach.cell (:key Col *A *L) (:P *P2))
+           (&reach.box (:key Col A L) (:B *B2))
+           (box_extent (:B B2) (:P P2) A N))))
+    (score ((:t N) (:S N))
+      (OR ((&ring Col *P)
+           (&ring_box.box (:key Col) *B)
+           (box_extent B P *N))
+          ((&reach.cell (:key Col *A *L) (:P *P2))
+           (&reach.box (:key Col A L) (:B *B2))
+           (box_extent (:B B2) (:P P2) A N))))))
+
+;; The canvas is the widest ring's frame.
+(INIT &widest Order
+  (member ((:t N))
+    (&size.maximal (:t *N)))
+  (score ((:t N) (:S N))
+    (&size.maximal (:t *N))))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (&widest.maximal (:t *N))
+    (axis_elem *A)))
+
+;; The canvas peels into concentric frames, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (&canvas.cell *P)))
+
+(INIT &peel_depth CellDistance
+  (node (P)
+    (&canvas.cell *P))
+  (source (P)
+    (&peel.boundary *P)))
+
+;; The arms are the runs a line cuts the ring into.
+(INIT &run Connectivity
+  (key ((&line_cell ^Col ^A ^L *P))
+    (node (P)
+      (&line_cell Col A L *P))))
+
+(INIT &run_size Cardinality
+  (key ((&run.component (:key (:Col ^Ky_col) (:A ^Ky_a) (:L ^Ky_l)) *P ^Id))
+    (member ((:m P))
+      (&run.component (:key (:Col Ky_col) (:A Ky_a) (:L Ky_l)) *P Id))))
+
+(INIT &arm Order
+  (key ((&run_size.size (:key (:Ky_col ^Col)) *N))
+    (member ((:t N))
+      (&run_size.size (:key (:Ky_col Col)) *N))
+    (score ((:t N) (:S N))
+      (&run_size.size (:key (:Ky_col Col)) *N))))
+
+(INIT &nest BoundingBox
+  (key ((&peel_depth.distance *P (:K ^R)))
+    (cell (P)
+      (&peel_depth.distance *P (:K R)))))
+
+(RULE &depth_ring
+  (&nest.cell (:key *R) *P)
+  (&nest.box (:key R) *B)
+  (box_extent B P *N)
+  (&size.maximal (:key *Col) (:t N)))
+
+(ALTS $choice "which depth a ring lands on" $Size
+  (ALT $Rank
+    (INIT &order Order
+      (member ((:t N))
+        (&size.maximal (:t *N)))
+      (score ((:t N) (:S N))
+        (&size.maximal (:t *N))))
+
+    (RULE &depth_ring
+      (&size.maximal (:key *Col) (:t *N))
+      (&order.dual_rank (:t N) *R))))
+
+(RULE &paint
+  (&nest.cell (:key *R) *P)
+  (&nest.box (:key R) *B)
+  (&depth_ring R *Col)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B))
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (perp_dir D *D2)
+  (margin (:B P_inner) (:D D2) *K)
+  (&arm.maximal (:key Col) (:t *K_arm))
+  (< K K_arm))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&canvas.cell P)
+       (NOT (&paint P))
+       (&field.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,8 @@
+;; inputs a11f0bc75e1b9eee18d817d9c09eb68a1b119668f2ec98fb3e38f906bba92eda programs/solvers/95a58926.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 95a58926
+
+(param &bg Color (0))
+(param &mesh Color (5))
+(param &anchor DiagDir (DIAG_TL))
+(param &sep_width number (1))

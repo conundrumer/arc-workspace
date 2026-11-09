@@ -1,0 +1,18 @@
+;; inputs ed30e51aa1ecbce98eed44d3ea42242604351a30cb5749c61fe4820b0f25b176 programs/solvers/913fb3ed.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 913fb3ed
+
+(param &border (Color Color) (2 1) (3 6) (8 4))
+(param &template (Color Offset Color)
+  (2 (grid
+    (1 1 1)
+    (1 @_ 1)
+    (1 1 1)))
+  (3 (grid
+    (6 6 6)
+    (6 @_ 6)
+    (6 6 6)))
+  (8 (grid
+    (4 4 4)
+    (4 @_ 4)
+    (4 4 4))))

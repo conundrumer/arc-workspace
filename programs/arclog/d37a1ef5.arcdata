@@ -1,0 +1,283 @@
+;; inputs 7b698b19ccfcb096f7fd0c20dc9cf3665af562034ef176b604ad3728900eda10 programs/solvers/d37a1ef5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d37a1ef5
+
+(param &background Color (0))
+(param &frame_color Color (2))
+(param &mark_color Color (5))
+
+(exclude ($MarkColorStored &frame_color=$Derived) "fails Fit at train0: the background color 0 closes the frame off from the grid edge, and the fill at 0 erases the frame")
+(exclude ($InteriorByFrameBox &frame_color=$Derived) "fails Fit at train2: the box of the 5 cells holds (5,5), which the fill at 5 turns to 5")
+
+(alts $marks
+  (alt $MarkColorStored
+    (witness other-color-mark borderline concept
+      (relaxed marks-inside)
+      (separates "A 3 cell sits inside the frame beside the 5 marks, outside their box. The concept and the branches that take every non-background interior cell as a mark keep the box over the 5s and the 3; $MarkColorStored keeps the box over the 5s alone and fills over the 3; mark_color=RarestColor takes the 3 as the one mark color and fills over the 5s.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 5 0 0 3 0 2 0)
+        (0 2 0 0 5 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $NonBackgroundMarks (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 5 0 0 3 2 2 0)
+        (0 2 2 0 5 0 0 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($MarkColorStored &mark_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 5 0 2 2 2 2 0)
+        (0 2 2 0 5 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output &mark_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 3 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $scope
+  (alt $GlobalMarksBox
+    (witness stray-mark-outside borderline concept
+      (relaxed background)
+      (separates "A 5 cell sits outside the frame. The concept keeps the box over the marks inside the frame; $GlobalMarksBox keeps the box over every mark of the grid, which stretches to the stray cell, and fills less of the interior.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 5 0 0 0 2 0)
+        (0 2 0 0 0 5 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 5)))
+      (output $InteriorMarks (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 5 0 2 2 2 0)
+        (0 2 2 2 0 5 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 5)))
+      (output $GlobalMarksBox (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 5 0 0 0 2 0)
+        (0 2 2 2 0 5 0 0 2 0)
+        (0 2 2 2 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 5))))))
+
+(alts $interior
+  (alt $InteriorByFrameBox
+    (witness broken-outline foreign $InteriorByFrameBox
+      (relaxed one-frame)
+      (separates "The frame's top side misses one cell, so no region is closed off. The concept finds no interior and returns the input; $InteriorByFrameBox takes the cells inside the frame cells' box as the interior and fills it outside the marks' box; $FrameColorFromOutline finds no color that closes a region off and is undefined.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 5 0 0 0 0 2 0)
+        (0 2 0 0 0 5 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($EnclosedInterior $StoredFrameColor) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 5 0 0 0 0 2 0)
+        (0 2 0 0 0 5 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $FrameColorFromOutline undefined)
+      (output $InteriorByFrameBox (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 5 0 0 2 2 2 0)
+        (0 2 2 0 0 5 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $empty
+  (alt $EmptyFrameKept
+    (witness empty-frame borderline concept
+      (relaxed marks-inside)
+      (separates "The frame holds no mark. The concept fills the whole interior; $EmptyFrameKept leaves it empty.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EmptyFrameFilled (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EmptyFrameKept (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $frame
+  (alt $FrameColorFromOutline
+    (witness recolored-frame variant $FrameColorFromOutline
+      (relaxed one-frame)
+      (separates "The frame is drawn in 3. The concept, with frame_color 2, finds no frame and returns the input; $FrameColorFromOutline takes 3 as the frame color and fills the interior in 3 outside the marks' box.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 3 0 0 0 0 0 0 3 0)
+        (0 3 0 5 0 0 0 0 3 0)
+        (0 3 0 0 0 5 0 0 3 0)
+        (0 3 0 0 0 0 0 0 3 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($StoredFrameColor &frame_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 3 0 0 0 0 0 0 3 0)
+        (0 3 0 5 0 0 0 0 3 0)
+        (0 3 0 0 0 5 0 0 3 0)
+        (0 3 0 0 0 0 0 0 3 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $FrameColorFromOutline &frame_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 3 3 5 0 0 3 3 3 0)
+        (0 3 3 0 0 5 3 3 3 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "The frame runs along the grid edge, so 2 is the commonest color. The concept fills the interior outside the marks' box; background=DominantColor takes 2 as background, takes every interior cell as a mark, and returns the input; $FrameColorFromOutline takes the corner color 2 as background, finds 0 as the outline color, and returns the input.")
+      (input (grid
+        (2 2 2 2 2 2)
+        (2 0 0 0 0 2)
+        (2 0 5 5 0 2)
+        (2 0 0 0 0 2)
+        (2 2 2 2 2 2)))
+      (output ($StoredFrameColor &background=$Stored) (grid
+        (2 2 2 2 2 2)
+        (2 2 2 2 2 2)
+        (2 2 5 5 2 2)
+        (2 2 2 2 2 2)
+        (2 2 2 2 2 2)))
+      (output $FrameColorFromOutline &background=$Derived (grid
+        (2 2 2 2 2 2)
+        (2 0 0 0 0 2)
+        (2 0 5 5 0 2)
+        (2 0 0 0 0 2)
+        (2 2 2 2 2 2))))))
+
+(alts &frame_color
+  (alt &frame_color=$Derived
+    (witness frame_color=SharedColor variant &frame_color=$Derived
+      (relaxed one-frame)
+      (separates "`frame_color=SharedColor` from the stored value: train 0 with 2 and 1 swapped")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 1 0 0 0 0 0 0 1 0 0)
+        (0 1 0 5 0 0 5 0 1 0 0)
+        (0 1 0 0 0 5 0 0 1 0 0)
+        (0 1 0 0 0 0 0 0 1 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($StoredFrameColor &frame_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 1 0 0 0 0 0 0 1 0 0)
+        (0 1 0 5 0 0 5 0 1 0 0)
+        (0 1 0 0 0 5 0 0 1 0 0)
+        (0 1 0 0 0 0 0 0 1 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $FrameColorFromOutline &frame_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 1 1 5 0 0 5 1 1 0 0)
+        (0 1 1 0 0 5 0 1 1 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 1 1 1 1 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &mark_color
+  (alt &mark_color=$Derived
+    (witness mark_color=RarestColor borderline concept
+      (relaxed background)
+      (separates "A 3 cell sits in the background outside the frame, and 3 is the rarest color. The concept and $MarkColorStored keep the box over the 5 marks; mark_color=RarestColor finds no 3 inside the frame and fills the whole interior; $GlobalMarksBox stretches the box out to the 3 and fills less.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 0 5 0 0 0 0 2 0)
+        (0 2 0 0 0 5 0 0 2 0)
+        (0 2 0 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output ($InteriorMarks &mark_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 5 0 0 2 2 2 0)
+        (0 2 2 0 0 5 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output &mark_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output $GlobalMarksBox (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 2 2 5 0 0 0 0 2 0)
+        (0 2 2 0 0 5 0 0 2 0)
+        (0 2 2 0 0 0 0 0 2 0)
+        (0 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 3))))))

@@ -1,0 +1,411 @@
+;; inputs 678fbcd95aff7c453e52326e78151855a86d50ef8977515d93542a506d81a201 programs/solvers/dc46ea44.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc46ea44
+
+(INPUT background "every cell that is not the divider, the hook or the object has the background color")
+
+(INPUT divider "one full line of the divider color, across the lift direction, cuts the grid into two halves of equal size, and the half toward the lift direction is all background")
+
+(INPUT hook "the other half holds one 8-connected object of the hook color: a stem of three cells along the lift direction, a foot cell one step past the stem's end away from the lift direction and one step toward the tip side, and a tip cell one step from the foot toward the lift direction and one step toward the tip side; at lift up and tip side left, its cells are (0,0), (1,0), (2,0), (3,-1), (2,-2) from the stem's top cell"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &divider UnchangedColor)
+
+  (RULE &divider2
+    (input *P *Col)
+    (&divider (:C Col)))
+
+  (RULE &short_of
+    (&divider2 (:P *Q))
+    (input *P)
+    (dir_elem *D)
+    (NOT (nearer D P Q)))
+
+  (RULE &half
+    (&divider2)
+    (input *P)
+    (dir_elem *D)
+    (NOT (&short_of D P)))
+
+  (RULE &ink
+    (&half (:D *K) *P)
+    (input P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &larger_count Cardinality
+    (key ((&ink ^K *P ^Col))
+      (member ((:m P))
+        (&ink K *P Col))))
+
+  (DET &hook2 SharedColor)
+
+  (DET &hook_in
+    (ex_input *E *P *Col)
+    (&hook2 (:C Col)))
+
+  (DET &up2
+    (&hook_in *E *P)
+    (ex_input E (:P *Q) *Col)
+    (&divider (:C Col))
+    (axis_of *D *A)
+    (split P A (:Across *L))
+    (split (:P Q) A (:Across L))
+    (nearer D (:P Q) (:Q P)))
+
+  (DET &below_top
+    (&hook_in *E *P)
+    (&up2 E *D)
+    (&hook_in E (:P *Q))
+    (nearer D (:P Q) (:Q P)))
+
+  (DET &top
+    (&hook_in *E *P)
+    (&up2 E)
+    (NOT (&below_top E P)))
+
+  (DET &shape
+    (&top *E (:P *T))
+    (&hook_in E *P)
+    (relative (:Base T) (:X P) (:X_rel *V)))
+
+  (DET &side
+    (&top *E (:P *T))
+    (&up2 E (:D *Up))
+    (perp_dir (:D Up) (:D2 *D))
+    (&hook_in E (:P *Q))
+    (nearer D (:P Q) (:Q T)))
+
+  (DET &up
+    (&up2 *E *D))
+
+  ;; The hook's cells from the stem's top cell, with the lift direction and
+  ;; the tip side of that pose.
+  (RIGID_DET &hook
+    (instance ((OR ((&shape ^E)) ((&up E)) ((&side E))))
+      (&shape E *V)
+      (&up E *D)
+      (&side E *D)))
+
+  (INIT &comps Connectivity
+    (key ((&ink (:K ^D) *P))
+      (node (P)
+        (&ink (:K D) *P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &occ Occurrences
+    (key ((OR ((&comps.component (:key (:D ^K)) *P ^Id)
+               (&hook.shape (:Pose ^G)))
+              ((&comps.component (:key (:D K)) Id)
+               (&hook.shape (:Pose G) (:V *S)))))
+      (cell (P)
+        (&comps.component (:key (:D K)) *P Id)
+        (&hook.shape (:Pose G)))
+      (shape ((:P S))
+        (&comps.component (:key (:D K)) Id)
+        (&hook.shape (:Pose G) (:V *S)))))
+
+  (INIT &larger Order
+    (key ((&larger_count.size (:key (:K ^D) *Col)))
+      (member ((:t Col))
+        (&larger_count.size (:key (:K D) *Col)))
+      (score ((:t Col) (:S N))
+        (&larger_count.size (:key (:K D) *Col) *N)))))
+
+(INPUT object "that half holds one more 8-connected object apart from the hook, of one color that is not the hook, divider or background color")
+
+(OUTPUT clear-source "every cell of the half that held the hook becomes background")
+
+(OUTPUT keep-divider "the divider stays as it is")
+
+(OUTPUT hook-across "the hook is translated toward the lift direction by the size of one half plus the divider, so that it takes the same place in the other half that it had in its own"
+
+  (INIT &halfbox BoundingBox
+    (key ((&half ^D *P))
+      (cell (P)
+        (&half D *P)))))
+
+(OUTPUT hang-object "the object is translated so that one corner of its bounding box lies on the hook's tip, the hook's cell farthest toward the tip side; that corner is the one away from the lift direction and away from the tip side; the object's cells are drawn over the hook"
+
+  ;; The direction from the hook's half to the empty half.
+  (DET &lift_dir DirDomain)
+
+  ;; The side of the hook's stem that holds its tip.
+  (DET &tip_dir DirDomain)
+
+  (RULE &lift
+    (&divider2)
+    (&lift_dir *D))
+
+  (RULE &lifting
+    (&lift *D)
+    (opposite D (:Opp *K)))
+
+  (RULE &hook3
+    (&lifting *K)
+    (&ink K *P *Col)
+    (&hook2 (:C Col)))
+
+  (RULE &obj
+    (&lifting *K)
+    (&ink K *P *Col)
+    (NOT (&hook3 P)))
+
+  (RULE &tip_side
+    (&tip_dir *D))
+
+  (INIT &objbox BoundingBox
+    (cell (P)
+      (&obj *P))))
+
+(ALTS $h "what tells the hook from the object" $ByColor
+  (ALT $HookByShape
+    (INPUT hook "the hook is the object of the stored shape, placed by the lift direction and the tip side, whatever its color; undefined where no object or more than one object has that shape"
+      (RULE &spare
+        (&occ.occurrence (:key (:K *D) *Id *G) (:P *M))
+        (&comps.component (:key D) *P Id)
+        (relative (:Base M) (:X P) (:X_rel *S))
+        (NOT (&hook.shape (:Pose G) (:V S))))
+
+      (RULE &posed
+        (&occ.occurrence (:key *K *Id *G) (:P *M))
+        (NOT (&spare (:D K) Id G M))
+        (&hook.up (:Pose G) (:D *Up))
+        (&hook.side (:Pose G) (:D *Side)))
+
+      (RULE &hook3
+        (&lifting (:D *Up) *K)
+        (&tip_dir (:D *Side))
+        (&posed K *Id Up Side)
+        (&comps.component (:key (:D K)) *P Id)))
+    (ALT $TipSideDerived
+      (INPUT hook "the tip side is the side of the stem, the hook's line along the lift direction with the most cells, on which the hook's other cells lie; undefined where they lie on both sides"
+        (RULE &hook3
+          (&lifting (:D *Up) *K)
+          (&posed K *Id Up)
+          (&comps.component (:key (:D K)) *P Id)))))
+  (ALT $HookLarger
+    (INPUT hook "the hook is the one of the two colors of the hook's half with more cells; undefined where the two counts are equal"
+      (RULE &hook3
+        (&lifting *K)
+        (&larger.maximal (:key (:D K)) (:t *Col))
+        (&ink K *P Col)))))
+
+(ALTS $r "how far the hook travels" $Across
+  (ALT $LiftToEdge
+    (OUTPUT hook-across "the hook slides toward the lift direction until it meets the frame edge"
+      (INIT &slide Distance
+        (source_distance (K)
+          (&hook3 *P)
+          (&lifting (:D *Up))
+          (margin (:B P) (:D Up) *K)))
+
+      (RULE &slide_travel_full
+        (&slide.distance *K)
+        (&lifting *D)
+        (jump_offset D K (:V *V2))))
+    (RULE &travel
+      (&slide_travel_full (:V2 *V)))))
+
+(ALTS $x "which cell is the hook's tip" $Farthest
+  (ALT $TipByOffset
+    (OUTPUT hang-object "the tip is the cell two steps away from the lift direction and two steps toward the tip side from the stem's top cell"
+      (RULE &below_top2
+        (&hook3 *P)
+        (&lifting (:D *Up))
+        (&hook3 (:P *Q))
+        (nearer (:D Up) (:P Q) (:Q P)))
+
+      (DET &hook_out
+        (ex_output *E *P *Col)
+        (&hook2 (:C Col)))
+
+      (DET &below_top_out
+        (&hook_out *E *P)
+        (&up2 E *D)
+        (&hook_out E (:P *Q))
+        (nearer D (:P Q) (:Q P)))
+
+      (DET &top_out
+        (&hook_out *E *P)
+        (&up2 E)
+        (NOT (&below_top_out E P)))
+
+      ;; The box of the object where the output hangs it.
+      (INIT &hung BoundingBox
+        (key ((ex_output ^E *P *Col)
+              (NOT (&bg (:C Col)))
+              (NOT (&hook2 (:C Col)))
+              (NOT (&divider (:C Col))))
+          (cell (P)
+            (ex_output E *P *Col)
+            (NOT (&bg (:C Col)))
+            (NOT (&hook2 (:C Col)))
+            (NOT (&divider (:C Col))))))
+
+      (DET &tip_offset
+        (&hung.box (:key *E) *B)
+        (&up2 E (:D *Up))
+        (opposite (:D Up) (:Opp *Back))
+        (&side E (:D *Side))
+        (opposite (:D Side) (:Opp *Away))
+        (diag_dirs (:D *C) (:D1 Back) (:D2 Away))
+        (ex_output E (:P *P_c))
+        (inside (:A P_c) B)
+        (same_corner (:D C) (:P1 P_c) (:P2 B))
+        (&top_out E (:P *T))
+        (relative (:Base T) (:X P_c) (:X_rel *V))
+        (margin (:B V) (:D Up) (:K *K_back))
+        (margin (:B V) (:D Away) (:K *K_side))))
+    (RULE &tip
+      (&hook3 (:P *P_top))
+      (NOT (&below_top2 (:P P_top)))
+      (&lifting (:D *Up))
+      (opposite (:D Up) (:Opp *Back))
+      (&tip_side (:D *Side))
+      (&tip_offset *K_back *K_side)
+      (jump (:P P_top) (:D Back) (:K K_back) *Q)
+      (jump (:P Q) (:D Side) (:K K_side) (:Q *P)))))
+
+(ALTS $dv "what the divider is" $DividerStored
+  (ALT $DividerDerived
+    (INPUT divider "the divider is the one full line of one color that is not background; undefined where no such line or more than one exists"
+      (RULE &full_line
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (split P *A (:Along *L))
+        (ALL ((input (:P *Pm) (:Col *C1))
+              (input (:P *Q) (:Col *C2))
+              (split (:P Pm) A (:Along L))
+              (split (:P Q) A (:Along L)))
+             ((= C1 C2))))
+
+      (RULE &second_line
+        (&full_line *A *L)
+        (&full_line (:A *A2) (:L *L2))
+        (OR ((!= A A2))
+            ((!= L L2))))
+
+      (RULE &divider2
+        (&full_line *A *L)
+        (NOT (&second_line A L))
+        (input *P)
+        (split P A (:Along L))))))
+
+(ALTS $l "the lift direction" $LiftStored
+  (ALT $LiftTowardEmpty
+    (INPUT divider "the lift direction is the direction from the half that holds content to the half that is all background; undefined where both halves or neither are all background"
+
+      (RULE &lift
+        (&half *D)
+        (NOT (&ink (:K D)))
+        (opposite D (:Opp *D_src))
+        (&ink (:K D_src))))))
+
+(ALTS $s "the tip side" $SideStored
+  (ALT $TipSideDerived
+    (INPUT hook "the tip side is the side of the stem, the hook's line along the lift direction with the most cells, on which the hook's other cells lie; undefined where they lie on both sides"
+      (INIT &stem_count Cardinality
+        (key ((&hook3 *P)
+              (&lifting (:D *Up))
+              (axis_of (:D Up) *A)
+              (split P A (:Across ^L_stem)))
+          (member ((:m P))
+            (&hook3 *P)
+            (&lifting (:D *Up))
+            (axis_of (:D Up) *A)
+            (split P A (:Across L_stem)))))
+
+      ;; The hook's lines along the lift direction, each named by its cells'
+      ;; component across it.
+      (INIT &stem Order
+        (member ((:t L_stem))
+          (&stem_count.size (:key *L_stem)))
+        (score ((:t L_stem) (:S N))
+          (&stem_count.size (:key *L_stem) *N)))
+
+      (RULE &tip_side
+        (&stem.maximal (:t *L_stem))
+        (&hook3 (:P *P_stem))
+        (&lifting (:D *Up))
+        (axis_of (:D Up) *A)
+        (split (:P P_stem) A (:Across L_stem))
+        (perp_dir (:D Up) (:D2 *D))
+        (&hook3 (:P *Q))
+        (nearer D (:P Q) (:Q P_stem))))))
+
+(RULE_OR_DET &hang_corner "The corner of the object's box that goes on the tip: away from the lift direction and away from the tip side."
+  (&lifting (:D *Up))
+  (opposite (:D Up) (:Opp *D1))
+  (&tip_side (:D *Side))
+  (opposite (:D Side) (:Opp *D2))
+  (diag_dirs (:D *C) D1 D2))
+
+(RULE &outdone
+  (&hook3 *P)
+  (&tip_side *D)
+  (&hook3 (:P *Q))
+  (nearer D (:P Q) (:Q P)))
+
+(RULE &tip
+  (&hook3 *P)
+  (NOT (&outdone P)))
+
+(RULE &travel
+  (&lifting (:D *Up) *K)
+  (&halfbox.box (:key (:D K)) (:B *B_src))
+  (&halfbox.box (:key (:D Up)) (:B *B_dst))
+  (relative (:Base B_src) (:X B_dst) (:X_rel *V)))
+
+(RULE &place
+  (&objbox.box *B)
+  (&hang_corner *C)
+  (input (:P *P_c))
+  (inside (:A P_c) B)
+  (same_corner (:D C) (:P1 P_c) (:P2 B))
+  (&tip (:P *P_t))
+  (&travel *V)
+  (compose (:A P_t) (:B V) (:C *P_lift))
+  (relative (:Base P_c) (:X P_lift) (:X_rel *W)))
+
+(RULE &two_places
+  (&place (:W *W1))
+  (&place (:W *W2))
+  (!= W1 W2))
+
+(RULE &lifted
+  (&hook3 (:P *P2))
+  (input (:P P2) *Col)
+  (&travel *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &hung2
+  (&obj (:P *P2) *Col)
+  (&place *W)
+  (compose (:A P2) (:B W) (:C *P)))
+
+(RULE &source
+  (&lifting (:K *D_src))
+  (&half (:D D_src) *P))
+
+(RULE &output
+  (&place)
+  (NOT (&two_places))
+  (input *P (:Col *C0))
+  (OR ((&hung2 P *Col))
+      ((&lifted P Col)
+       (NOT (&hung2 P)))
+      ((&source P)
+       (NOT (&hung2 P))
+       (NOT (&lifted P))
+       (&bg (:C Col)))
+      ((NOT (&hung2 P))
+       (NOT (&lifted P))
+       (NOT (&source P))
+       (= Col C0))))
+
+(OUT (&output ^P ^Col))

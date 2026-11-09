@@ -1,0 +1,73 @@
+;; inputs 7a1ebb645b2657d593995634e3ce8c9cc29fbcbb424fbf8f67ba8109adcc66da programs/solvers/952a094c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 952a094c
+
+(DET &bg DominantColor)
+
+;; The corner a mark heads for, as the transform of the corner it leaves.
+(DET &eject D4Domain)
+
+(RULE &drawn
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The drawn rectangle.
+(INIT &bb BoundingBox
+  (cell (P)
+    (&drawn *P)))
+
+(RULE &corner
+  (&bb.box *B)
+  (&drawn *P)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B)))
+
+(RULE &inner
+  (&corner *D (:P *P_c))
+  (diag_opposite D (:Opp *D_in))
+  (neighbor (:P P_c) (:D D_in) (:Q *P)))
+
+(RULE &mark
+  (&inner *D *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(ALTS $choice "what a mark is, and which corner it leaves from" $Corner
+  (ALT $Quadrant
+    (RULE &enclosed
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (&bb.box *B)
+      (interior (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+    (RULE &quad_nearer
+      (&enclosed (:P_rel *P))
+      (dist_pair P *D *K *K2)
+      (< K K2))
+
+    (RULE &quad_quadrant
+      (diag_dirs (:D *Diag) *D1 *D2)
+      (&quad_nearer *P (:D D1))
+      (&quad_nearer P (:D D2)))
+
+    (RULE &mark
+      (&enclosed *P *Col *P_rel)
+      (&quad_quadrant (:P P_rel) (:Diag *D)))))
+
+(RULE &landing
+  (&mark *D *Col)
+  (&eject (:D *R))
+  (apply_diag_dir (:D R) (:Dir D) (:Dir_out *D_out))
+  (&corner (:D D_out) (:P *P_c))
+  (neighbor (:P P_c) (:D D_out) (:Q *P)))
+
+(RULE &output
+  (OR ((&landing *P *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&landing P))
+       (IF ((&mark P))
+           ((&bg (:C Col)))
+           ((= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

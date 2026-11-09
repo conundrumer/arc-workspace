@@ -1,0 +1,72 @@
+;; inputs 69816014f83981aa9fff02d8ac817e8a8ceff601a6f141e35b6fe93b9a8b7239 programs/solvers/58c02a16.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58c02a16
+
+(DET &bg DominantColor)
+
+;; The corner the pattern block sits in.
+(DET &corner DiagDirDomain)
+
+;; The corner box: the pattern block with the separator lines that close it.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &sep_cell
+  (&corner *D)
+  (diag_opposite D (:Opp *D_far))
+  (corner_dir (:C D_far) (:D *D_away))
+  (&bbox.cell *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (same_dist (:D D_away) (:P1 P) (:P2 B)))
+
+(RULE &sep
+  (&sep_cell *P)
+  (input P *Col))
+
+(RULE &pat_cell
+  (&bbox.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&sep_cell P)))
+
+;; The block's own size is the period of the layout.
+(INIT &block BoundingBox
+  (cell (P)
+    (&pat_cell *P)))
+
+(RULE &phase
+  (input *P)
+  (&pat_cell (:P *P_fine))
+  (&pat_cell (:P *P_coarse))
+  (&corner *D)
+  (diag_dist P (:Diag D) *A (:K1 *T1) (:K2 *T2))
+  (&block.box *B)
+  (perp A *A2)
+  (box_extent B P A (:N *N1))
+  (box_extent B P (:A A2) (:N *N2))
+  (divide (:T T1) (:Side N1) (:Gap 0) (:Part *B1) (:Remainder *F1))
+  (divide (:T B1) (:Side N1) (:Gap 0) (:Remainder *C1))
+  (divide (:T T2) (:Side N2) (:Gap 0) (:Part *B2) (:Remainder *F2))
+  (divide (:T B2) (:Side N2) (:Gap 0) (:Remainder *C2))
+  (diag_dist (:P P_fine) (:Diag D) A (:K1 F1) (:K2 F2))
+  (diag_dist (:P P_coarse) (:Diag D) A (:K1 C1) (:K2 C2)))
+
+(RULE &block_ink
+  (&pat_cell (:P *P_coarse))
+  (input (:P P_coarse) (:Col *C))
+  (OR ((&bg C)
+       (&sep *Col))
+      ((NOT (&bg C))
+       (= Col C))))
+
+(RULE &output
+  (&phase *P *P_fine *P_coarse)
+  (input (:P P_fine) (:Col *C))
+  (IF ((&bg C))
+      ((&bg (:C *Col)))
+      ((&block_ink P_coarse Col))))
+
+(OUT (&output ^P ^Col))

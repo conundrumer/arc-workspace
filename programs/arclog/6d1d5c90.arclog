@@ -1,0 +1,97 @@
+;; inputs 6aad2d5b4f52784b11249e390d5ad2a8dba696f54bf5dfcb68fc42c4fc8a39fa programs/solvers/6d1d5c90.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6d1d5c90
+
+(DET &shift_dir DirDomain)
+
+(RULE &row_origin
+  (&shift_dir (:D *SD))
+  (opposite (:D SD) (:Opp *D)))
+
+(RULE &row_idx
+  (input *P)
+  (&row_origin (:D *FE))
+  (margin (:B P) (:D FE) *K))
+
+;; Rows placed back on the shift axis by index.
+(INIT &rows_size Cardinality
+  (member ((:m K))
+    (&row_idx *K)))
+
+(INIT &rows_frame Frame
+  (extent (A N)
+    (&row_origin (:D *FE))
+    (axis_of (:D FE) *A)
+    (&rows_size.size *N)))
+
+(RULE &rows_pos
+  (&rows_frame.cell *P)
+  (&row_origin (:D *FE))
+  (margin (:B P) (:D FE) *K)
+  (&row_idx K))
+
+(DET &marker_edge DirDomain)
+
+(DET &band_width DimDiff)
+
+(DET &marker_color RarestColor)
+
+(RULE &marker
+  (input *P *Col)
+  (&marker_edge *D)
+  (margin (:B P) D (:K 0))
+  (&marker_color (:C Col)))
+
+(INIT &row_cycle Order
+  (member ((:t K))
+    (&row_idx *K))
+  (score ((:t K) (:S K))
+    (&row_idx *K)))
+
+(ALTS $choice "Two models for which cell is the marker, tagged on out's Choice" $Marked
+  (ALT $Singleton
+    (DET &marker_count DimDiff)
+
+    (RULE &band_cell
+      (input *P *Col)
+      (&marker_edge *D)
+      (margin (:B P) D (:K 0)))
+
+    (INIT &band_count Cardinality
+      (key ((&band_cell *P ^Col))
+        (member ((:m P))
+          (&band_cell *P Col))))
+
+    (RULE &marker
+      (&band_cell *P *Col)
+      (&marker_count (:D *N))
+      (&band_count.size (:key Col) N))))
+
+(RULE &shift_amt
+  (&marker *P)
+  (&row_origin (:D *FE))
+  (margin (:B P) (:D FE) (:K *M)))
+
+(INIT &rot Walk
+  (successor ((:p K) (:p_next K2))
+    (&row_cycle.cyclic_successor (:a *K) (:b *K2)))
+  (steps ((:N M))
+    (&shift_amt *M)))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&marker_edge (:D *ME))
+  (&band_width (:D *K))
+  (edge_inset (:D ME) K *B)
+  (inside (:A P_in) B)
+  (relative (:Base B) (:X P_in) (:X_rel *P_kept))
+  (&row_origin (:D *FE))
+  (margin (:B P_in) (:D FE) (:K *K_in))
+  (&shift_amt *M)
+  (&rot.walk (:p0 K_in) (:N M) (:p *K_out))
+  (&rows_pos (:K K_out) (:P *P_v_out))
+  (axis_of (:D ME) *A)
+  (split (:P P_kept) A (:Along *P_col))
+  (compose (:A P_v_out) (:B P_col) (:C *P)))
+
+(OUT (&output ^P ^Col))

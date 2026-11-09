@@ -1,0 +1,12 @@
+;; inputs d3e5085c72115a62947ee9d8b31bed64f8c633432d24562cf1a55d80c1860e85 programs/solvers/137eaa0f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 137eaa0f
+
+(param &bg Color (0))
+(param &key Color (5))
+(param &frame_dim number (3))
+(param &anchor Position
+  (grid
+    (_ _ _)
+    (_ 1 _)
+    (_ _ _)))

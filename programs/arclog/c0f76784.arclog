@@ -1,0 +1,325 @@
+;; inputs 15e59618196393c940b64a0fa653d5c72427719dec64428bf46bffca79a5d2f1 programs/solvers/c0f76784.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c0f76784
+
+(INPUT square-outlines "the input holds several one-cell-thick square outlines of color 5 on a field of &background, each enclosing a square hole of &background cells"
+
+  (DET &changed
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (DET_OR_RULE &background DominantColor
+    (&changed (:Col *C))))
+
+(INPUT outlines-apart "no two outlines touch, even at a corner")
+
+(INPUT hole-sizes-keyed "the side of each hole is a key of &fill_by_side"
+
+  ;; The holes of the train inputs: the cells each train pair changes.
+  (INIT &hole Connectivity
+    (key ((&changed ^E *P))
+      (node (P)
+        (&changed E *P))))
+
+  (DET &hole_fill
+    (&hole.component (:key *E) *P *Id)
+    (ex_output E P *Col))
+
+  (INIT &hole_box BoundingBox
+    (key ((&hole.component (:key ^E) *P ^Id))
+      (cell (P)
+        (&hole.component (:key E) *P Id))))
+
+  (DET &hole_side
+    (&hole_box.box (:key *E *Id) *B)
+    (&hole.component (:key E) *P Id)
+    (box_extent B P *A *N))
+
+  (DET &fill_by_side
+    (&hole_side (:E *H_e) (:Id *H_id) *N)
+    (&hole_fill (:E H_e) (:Id H_id) (:Col *C))))
+
+(OUTPUT fill-hole-by-side "each cell of an outline's hole takes the color that &fill_by_side gives for that hole's side length"
+
+  (DET_OR_RULE &frame_color RarestColor
+    (&changed *E *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (ex_output E (:P Q) (:Col C)))
+
+  (RULE &blank
+    (input *P *Col)
+    (&background (:C Col)))
+
+  (INIT &closed4 Enclosure
+    (cell (P)
+      (&blank *P)))
+
+  (RULE &hole_cell
+    (&closed4.enclosed *P *Id))
+
+  (INIT &hole_box2 BoundingBox
+    (key ((&hole_cell ^Id *P))
+      (cell (P)
+        (&hole_cell Id *P))))
+
+  (RULE &gap
+    (&hole_box2.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&hole_cell Id P)))
+
+  (RULE &hole_extent
+    (&hole_box2.box (:key *Id) *B)
+    (&hole_cell Id *P)
+    (box_extent B P *A *N))
+
+  (RULE &hole_length
+    (&hole_extent *Id *A *N)
+    (perp A *A2)
+    (&hole_extent Id (:A A2) N)
+    (NOT (&gap Id)))
+
+  ;; The blank cells an 8-step walk through blank cells reaches from the edge.
+  (INIT &flood8 Flood
+    (node (P)
+      (&blank *P))
+    (source (P)
+      (&blank *P)
+      (margin (:B P) *D (:K 0)))
+    (step ((:Delta S))
+      (OR ((step_offset *D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &closed8 Connectivity
+    (node (P)
+      (&blank *P)
+      (NOT (&flood8.reached P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &walled Enclosure
+    (cell (P)
+      (input *P *Col)
+      (NOT (&frame_color (:C Col)))))
+
+  (INIT &obj8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (&frame_color (:C Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &obj_cell
+    (&obj8.component *P *Id))
+
+  (INIT &obj4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (INIT &obj_box BoundingBox
+    (key ((&obj_cell ^Id *P))
+      (cell (P)
+        (&obj_cell Id *P))))
+
+  (RULE &measure
+    (&hole_length *Id *N))
+
+  (INIT &hole_size Cardinality
+    (key ((&hole_cell ^Id *P))
+      (member ((:m P))
+        (&hole_cell Id *P))))
+
+  (INIT &obj_size Cardinality
+    (key ((&obj_cell (:Id ^O) *P))
+      (member ((:m P))
+        (&obj_cell (:Id O) *P))))
+
+  (INIT &size_rank Order
+    (member ((:t N))
+      (&measure *N))
+    (score ((:t N) (:S N))
+      (&measure *N))))
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $measure "what of a hole keys the fill table" $HoleSide
+  (ALT $KeyByArea
+    (INPUT hole-sizes-keyed "the cell count of each hole is a key of &fill_by_area")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_area gives for the hole's cell count; undefined where that count is no key"
+      (RULE &measure
+        (&hole_size.size (:key *Id) *N))
+
+      (INIT &hole_area Cardinality
+        (key ((&hole.component (:key ^E) *P ^Id))
+          (member ((:m P))
+            (&hole.component (:key E) *P Id))))
+
+      (DET &fill_by_area
+        (&hole_area.size (:key (:E *H_e) (:Id *H_id)) *N)
+        (&hole_fill (:E H_e) (:Id H_id) (:Col *C))))
+    (RULE &keyed
+      (&hole_size.size (:key *Id) *N)
+      (&fill_by_area N (:C *Col))))
+  (ALT $KeyByMinSide
+    (INPUT hole-sizes-keyed "the shorter side of each hole's bounding box is a key of &fill_by_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_side gives for the shorter side of the hole's bounding box; undefined where it is no key"
+      (RULE &hole_length
+        (&hole_extent *Id *A *N)
+        (perp A *A2)
+        (&hole_extent Id (:A A2) (:N *N2))
+        (<= N N2))))
+  (ALT $KeyByMaxSide
+    (INPUT hole-sizes-keyed "the longer side of each hole's bounding box is a key of &fill_by_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_side gives for the longer side of the hole's bounding box; undefined where it is no key"
+      (RULE &hole_length
+        (&hole_extent *Id *A *N)
+        (perp A *A2)
+        (&hole_extent Id (:A A2) (:N *N2))
+        (>= N N2))))
+  (ALT $KeyByOutlineSide
+    (INPUT hole-sizes-keyed "the side of each outline object is a key of &fill_by_outline_side")
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_outline_side gives for the side of the &frame_color object that borders the hole; undefined where that object's bounding box is not square, or its side is no key"
+      (RULE &border2
+        (&hole_cell *Id *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&obj_cell (:Id *O) (:P Q)))
+
+      (RULE &obj_side
+        (&obj_box.box (:key (:Id *O)) *B)
+        (&obj_cell (:Id O) *P)
+        (perp (:A *Ax) (:A2 *Ax2))
+        (box_extent B P (:A Ax) *N)
+        (box_extent B P (:A Ax2) N))
+
+      (RULE &measure
+        (&border2 *Id *O)
+        (&obj_side O *N))
+
+      (DET &frame_color_determined
+        (&changed *E *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (ex_input E (:P Q) (:Col *C))
+        (ex_output E (:P Q) (:Col C)))
+
+      ;; The outlines of the train inputs: the objects of the frame color.
+      (INIT &outline Connectivity
+        (key ((ex_output ^E))
+          (node (P)
+            (ex_input E *P *Col)
+            (&frame_color_determined (:C Col))))
+        (step ((:Delta S))
+          (OR ((diag_dir_elem *D)
+               (step_offset D (:V *S)))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) (:V S))))))
+
+      (DET &border
+        (&hole.component (:key *E) *P (:Id *H))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&outline.component (:key E) (:P Q) (:Id *O)))
+
+      (INIT &outline_box BoundingBox
+        (key ((&outline.component (:key ^E) *P (:Id ^O)))
+          (cell (P)
+            (&outline.component (:key E) *P (:Id O)))))
+
+      (DET &fill_by_outline_side
+        (&border *E (:H *Id) *O)
+        (&outline_box.box (:key E O) *B)
+        (&outline.component (:key E) *P (:Id O))
+        (box_extent B P *A *N)
+        (&hole_fill E Id (:Col *C))))
+    (RULE &keyed
+      (&border2 *Id *O)
+      (&obj_side O *N)
+      (&fill_by_outline_side N (:C *Col)))
+    (ALTS $m "which measure of the outline object bordering a hole keys the fill table" $OutlineSide
+      (ALT $KeyByOutlineCount
+        (OUTPUT fill-hole-by-side "the cell count of that object keys &fill_by_outline_count; undefined where the count is no key"
+          (RULE &measure
+            (&border2 *Id *O)
+            (&obj_size.size (:key O) *N))
+          (INIT &outline_count Cardinality
+            (key ((&outline.component (:key ^E) *P (:Id ^O)))
+              (member ((:m P))
+                (&outline.component (:key E) *P (:Id O)))))
+          (DET &fill_by_outline_count
+            (&border *E (:H *Id) *O)
+            (&outline_count.size (:key E O) *N)
+            (&hole_fill E Id (:Col *C))))
+        (RULE &keyed
+          (&border2 *Id *O)
+          (&obj_size.size (:key O) *N)
+          (&fill_by_outline_count N (:C *Col)))))
+    (ALTS $adj "which frame-color cells join one outline object" $OutlineAdj8
+      (ALT $OutlineAdj4
+        (OUTPUT fill-hole-by-side "the outline objects are the 4-adjacent components of &frame_color"
+          (RULE &obj_cell
+            (&obj4.component *P *Id)))))))
+
+(ALTS $key "what the fill table is keyed by" $MeasureKey
+  (ALT $RankBySize
+    (OUTPUT fill-hole-by-side "each cell of a hole takes the color that &fill_by_rank gives for the dense rank, largest first, of the hole's measure among the measures of every hole; undefined where some hole has no measure or a rank is no key"
+      ;; The rank of each hole's side among the sides of its train input's
+      ;; holes, largest first.
+      (INIT &side_rank Order
+        (key ((&hole_side ^E *N))
+          (member ((:t N))
+            (&hole_side E *N))
+          (score ((:t N) (:S N))
+            (&hole_side E *N))))
+
+      (DET &fill_by_rank
+        (&hole_side *E *Id *N)
+        (&side_rank.dual_rank (:key E) (:t N) (:R *K))
+        (&hole_fill E Id (:Col *C))))
+    (RULE &fill
+      (&measure *Id *N)
+      (&size_rank.dual_rank (:t N) (:R *K))
+      (&fill_by_rank K (:C *Col)))))
+
+(ALTS $region "which cells form a hole" $Enclose4
+  (ALT $Enclose8
+    (OUTPUT fill-hole-by-side "a hole is the &background cells that no walk through &background, stepping to the 8 neighbors, reaches from the grid edge"
+      (RULE &hole_cell
+        (&closed8.component *P *Id))))
+  (ALT $WallsOfFrameColor
+    (OUTPUT fill-hole-by-side "a hole is the &background cells of a region that no walk through cells other than &frame_color reaches from the grid edge"
+      (RULE &hole_cell
+        (&walled.enclosed *P *Id)
+        (&blank P))))
+  (ALT $FillBboxInterior
+    (OUTPUT fill-hole-by-side "a hole is the &background cells inside the bounding box of a &frame_color object, one cell in from its edge"
+      (RULE &hole_cell
+        (&obj_box.box (:key *Id) *B)
+        (&blank *P)
+        (interior (:A P) B)))))
+
+(RULE &keyed
+  (&hole_length *Id *N)
+  (&fill_by_side N (:C *Col)))
+
+(RULE &fill
+  (&keyed *Id *Col))
+
+(RULE &output
+  (OR ((&fill *Id *Col)
+       (&hole_cell Id *P))
+      ((input P Col)
+       (NOT (&hole_cell P)))))
+
+(OUT (&output ^P ^Col))

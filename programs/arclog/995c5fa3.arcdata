@@ -1,0 +1,307 @@
+;; inputs ac62b3e8f97eb555ef8b3600cde19bac93502e82e58d5a2e1f912e0bc13c05b4 programs/solvers/995c5fa3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 995c5fa3
+
+(param &tile_axis Axis (AXIS_H))
+(param &tile_gap number (1))
+(param &tile_dir Dir (DIR_L))
+(param &row_dir Dir (DIR_T))
+(param &tile_count number (3))
+(param &tile_size number (4))
+(param &mapping_member (Ident Position Color)
+  (0 (grid
+    (5 5 5 5)
+    (5 5 5 5)
+    (5 5 5 5)
+    (5 5 5 5)))
+  (1 (grid
+    (5 5 5 5)
+    (5 0 0 5)
+    (5 0 0 5)
+    (5 5 5 5)))
+  (2 (grid
+    (5 5 5 5)
+    (0 5 5 0)
+    (0 5 5 0)
+    (5 5 5 5)))
+  (3 (grid
+    (5 5 5 5)
+    (5 5 5 5)
+    (5 0 0 5)
+    (5 0 0 5))))
+(param &mapping_out (Ident Color) (0 2) (1 8) (2 3) (3 4))
+(param &bg Color (0))
+(param &box_color (Box Color) ((1 1 1 1) 8) ((2 0 1 1) 4) ((1 1 0 0) 3))
+(param &full_color Color (2))
+
+(exclude ($HoleBox &tile_size=TileCount) "fails Fit: the extra tile sizes give a second color to a row on train 2 and test 0")
+(exclude ($HoleBox &tile_size=TileDim) "fails Fit: the extra tile sizes give a second color to a row on train 2 and test 0")
+
+(alts $cl
+  (alt $HoleBox
+    (witness l-hole borderline $HoleBox
+      (relaxed catalog)
+      (separates "$HoleBox from the concept: the middle tile's hole is three cells of the 2×2 center block. No catalog pattern matches it, so the concept gives no output; $HoleBox reads the hole's box as the center hole and gives 8.")
+      (input (grid
+        (5 5 5 5 0 5 5 5 5 0 5 5 5 5)
+        (5 5 5 5 0 5 0 0 5 0 0 5 5 0)
+        (5 5 5 5 0 5 0 5 5 0 0 5 5 0)
+        (5 5 5 5 0 5 5 5 5 0 5 5 5 5)))
+      (output $Lookup undefined)
+      (output $HoleBox (grid
+        (2 2 2)
+        (8 8 8)
+        (3 3 3))))))
+
+(alts $d
+  (alt $Size
+    (witness bg-margin borderline $Size
+      (relaxed tiles)
+      (separates "$Size from $Count: three tiles stand left of a blank band one tile and one gap wide. The Count split into three parts gives tiles five cells wide, which match no pattern, so $Count gives no output; the Size split finds four tiles and reads the first three.")
+      (input (grid
+        (5 5 5 5 0 5 5 5 5 0 5 5 5 5 0 0 0 0 0)
+        (5 5 5 5 0 5 0 0 5 0 0 5 5 0 0 0 0 0 0)
+        (5 5 5 5 0 5 0 0 5 0 0 5 5 0 0 0 0 0 0)
+        (5 5 5 5 0 5 5 5 5 0 5 5 5 5 0 0 0 0 0)))
+      (output concept ($Count &row_tile=$Derived) undefined)
+      (output ($Lookup $Size) (grid
+        (2 2 2)
+        (8 8 8)
+        (3 3 3)))
+      (output ($HoleBox &row_tile=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2))))))
+
+(alts &tile_gap
+  (alt &tile_gap=$Derived
+    (witness tile_gap=SepThickness borderline &tile_gap=$Derived
+      (relaxed tiles)
+      (separates "tile_gap=SepThickness from the stored gap: the separators are two columns wide. The stored gap of 1 splits nothing, so the stored-gap cases give no output; the derived gap reads the separators as 2 and finds the three tiles.")
+      (input (grid
+        (5 5 5 5 0 0 5 5 5 5 0 0 5 5 5 5)
+        (5 0 0 5 0 0 0 5 5 0 0 0 5 5 5 5)
+        (5 0 0 5 0 0 0 5 5 0 0 0 5 0 0 5)
+        (5 5 5 5 0 0 5 5 5 5 0 0 5 0 0 5)))
+      (output ($Lookup &tile_gap=$Stored) (&tile_gap=$Stored &row_tile=$Derived) undefined)
+      (output &tile_gap=$Derived (grid
+        (8 8 8)
+        (3 3 3)
+        (4 4 4)))
+      (output ($HoleBox &row_tile=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2))))))
+
+(alts &tile_size
+  (alt &tile_size=ConstInDim
+    (witness tile_size=ConstInDim variant &tile_size=ConstInDim
+      (separates "tile_size=ConstInDim from the stored tile size, at a catalog of 5×5 patterns: the tiles are 5 wide. The stored size of 4 splits nothing, so $Size gives no output; the derived size includes 5 and finds the three tiles.")
+      (assign &mapping_member
+        (0 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)))
+        (1 (grid
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 5 5 5 5)))
+        (2 (grid
+          (5 5 5 5 5)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (5 5 5 5 5)))
+        (3 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5))))
+      (input (grid
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 0 0 0 5)))
+      (output $Count &tile_size=ConstInDim &tile_size=SepTileDim &tile_size=TileCount &tile_size=TileDim (grid
+        (8 8 8)
+        (3 3 3)
+        (4 4 4)))
+      (output ($Lookup $Size &tile_size=$Stored) undefined)
+      (output ($HoleBox $Size &tile_size=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2)))))
+  (alt &tile_size=SepTileDim
+    (witness tile_size=SepTileDim variant &tile_size=SepTileDim
+      (separates "tile_size=SepTileDim from the stored tile size, at a catalog of 5×5 patterns: the tiles are 5 wide. The stored size of 4 splits nothing, so $Size gives no output; the derived size includes 5 and finds the three tiles.")
+      (assign &mapping_member
+        (0 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)))
+        (1 (grid
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 5 5 5 5)))
+        (2 (grid
+          (5 5 5 5 5)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (5 5 5 5 5)))
+        (3 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5))))
+      (input (grid
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 0 0 0 5)))
+      (output $Count &tile_size=ConstInDim &tile_size=SepTileDim &tile_size=TileCount &tile_size=TileDim (grid
+        (8 8 8)
+        (3 3 3)
+        (4 4 4)))
+      (output ($Lookup $Size &tile_size=$Stored) undefined)
+      (output ($HoleBox $Size &tile_size=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2)))))
+  (alt &tile_size=TileCount
+    (witness tile_size=TileCount variant &tile_size=TileCount
+      (separates "tile_size=TileCount from the stored tile size, at a catalog of 5×5 patterns: the tiles are 5 wide. The stored size of 4 splits nothing, so $Size gives no output; the derived size includes 5 and finds the three tiles.")
+      (assign &mapping_member
+        (0 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)))
+        (1 (grid
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 5 5 5 5)))
+        (2 (grid
+          (5 5 5 5 5)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (5 5 5 5 5)))
+        (3 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5))))
+      (input (grid
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 0 0 0 5)))
+      (output $Count &tile_size=ConstInDim &tile_size=SepTileDim &tile_size=TileCount &tile_size=TileDim (grid
+        (8 8 8)
+        (3 3 3)
+        (4 4 4)))
+      (output ($Lookup $Size &tile_size=$Stored) undefined)
+      (output ($HoleBox $Size &tile_size=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2)))))
+  (alt &tile_size=TileDim
+    (witness tile_size=TileDim variant &tile_size=TileDim
+      (separates "tile_size=TileDim from the stored tile size, at a catalog of 5×5 patterns: the tiles are 5 wide. The stored size of 4 splits nothing, so $Size gives no output; the derived size includes 5 and finds the three tiles.")
+      (assign &mapping_member
+        (0 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 5 5 5 5)))
+        (1 (grid
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 5 5 5 5)))
+        (2 (grid
+          (5 5 5 5 5)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (0 5 5 5 0)
+          (5 5 5 5 5)))
+        (3 (grid
+          (5 5 5 5 5)
+          (5 5 5 5 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5)
+          (5 0 0 0 5))))
+      (input (grid
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 5 5 5 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 0 0 0 5 0 0 5 5 5 0 0 5 0 0 0 5)
+        (5 5 5 5 5 0 5 5 5 5 5 0 5 0 0 0 5)))
+      (output $Count &tile_size=ConstInDim &tile_size=SepTileDim &tile_size=TileCount &tile_size=TileDim (grid
+        (8 8 8)
+        (3 3 3)
+        (4 4 4)))
+      (output ($Lookup $Size &tile_size=$Stored) undefined)
+      (output ($HoleBox $Size &tile_size=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=RarestColor variant &bg=$Derived
+      (relaxed catalog)
+      (separates "`bg=RarestColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (5 5 5 5 1 5 5 5 5 1 5 5 5 5)
+        (5 5 5 5 1 5 1 1 5 1 1 5 5 1)
+        (5 5 5 5 1 5 1 1 5 1 1 5 5 1)
+        (5 5 5 5 1 5 5 5 5 1 5 5 5 5)))
+      (output $Lookup undefined)
+      (output ($HoleBox &bg=$Stored) (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2)))
+      (output &bg=$Derived (grid
+        (2 2 2)
+        (8 8 8)
+        (3 3 3))))))
+
+(alts &row_tile
+  (alt &row_tile=$Stored
+    (witness row_tile=stored borderline &row_tile=$Stored
+      (separates "row_tile=stored from the derived correspondence, at a stored correspondence that sends row 0 to the middle tile and row 1 to the first: the derived correspondence matches each row to the tile at its index and gives 2, 8, 3; the stored one gives 8, 2, 3.")
+      (assign &row_tile ((0 2 0 2) (0 0 1 1)) ((0 2 1 1) (0 0 1 1)) ((0 2 2 0) (0 0 1 1)) ((1 1 0 2) (0 0 0 2)) ((1 1 1 1) (0 0 0 2)) ((1 1 2 0) (0 0 0 2)) ((2 0 0 2) (0 0 2 0)) ((2 0 1 1) (0 0 2 0)) ((2 0 2 0) (0 0 2 0)))
+      (input (grid
+        (5 5 5 5 0 5 5 5 5 0 5 5 5 5)
+        (5 5 5 5 0 5 0 0 5 0 0 5 5 0)
+        (5 5 5 5 0 5 0 0 5 0 0 5 5 0)
+        (5 5 5 5 0 5 5 5 5 0 5 5 5 5)))
+      (output &row_tile=$Derived (grid
+        (2 2 2)
+        (8 8 8)
+        (3 3 3)))
+      (output &row_tile=$Stored (grid
+        (8 8 8)
+        (2 2 2)
+        (3 3 3))))))

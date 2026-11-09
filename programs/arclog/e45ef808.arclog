@@ -1,0 +1,416 @@
+;; inputs 5de31c2d29a1079acadade3808e7524bf96b15ada039af227eaa50c2418e2646 programs/solvers/e45ef808.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e45ef808
+
+(INPUT border-row "the line at the edge opposite &ground_side is all 0, the border color."
+
+  (DET &edge_mixed
+    (ex_output *E)
+    (ex_input E *P *Col)
+    (margin (:B P) *D (:K 0))
+    (OR ((ex_input E (:P *P2) (:Col *Col2))
+         (margin (:B P2) D (:K 0))
+         (!= Col Col2))
+        ((ex_input E (:P *Q) Col)
+         (NOT (margin (:B Q) D (:K 0))))))
+
+  (DET &ground_side
+    (opposite (:D *D2) (:Opp *D))
+    (NOT (&edge_mixed (:D D2)))))
+
+(INPUT sky-and-ground "every other cell is &sky_color or &ground_color."
+
+  (DET_OR_RULE &sky_color DominantColor
+    (ex_output *E *P (:Col *Col2))
+    (ex_input E P (:Col *C))
+    (!= C Col2))
+
+  (DET &ground_color UnchangedColor)
+
+  (RULE &ground_side2
+    (&ground_side *D))
+
+  (RULE &border_cell
+    (&ground_side2 *D)
+    (opposite D (:Opp *E))
+    (input *P)
+    (margin (:B P) (:D E) (:K 0))))
+
+(INPUT solid-ground "in each column, the &ground_color cells are one run that starts at the &ground_side edge, so each column has a ground height."
+
+  (RULE &sky_color2
+    (&sky_color *C))
+
+  (RULE &sky_cell
+    (&sky_color2 (:C *Col))
+    (input *P Col)))
+
+(INPUT sky-in-every-column "each column has at least one &sky_color cell, and at least one &ground_color cell.")
+
+(INPUT one-deepest-valley "exactly one column has the least ground height.")
+
+(OUTPUT peak-line "the column with the greatest ground height takes &peak_color in each of its &sky_color cells. Where columns tie for the greatest height, the one nearest the &tie_side edge takes it."
+
+  (DET &peak_color AnyOutNewColor)
+
+  (DET &valley_color AnyOutNewColor)
+
+  ;; The edge whose nearest column wins a tie.
+  (DET &tie_side DirDomain)
+
+  (RULE &column
+    (&ground_side2 *D)
+    (axis_of D *A)
+    (input *P)
+    (split P A (:Across *C)))
+
+  (RULE &ground_color2
+    (&ground_color *C))
+
+  (RULE &ground_cell
+    (&ground_color2 (:C *Col))
+    (input *P Col))
+
+  (INIT &ground_top Order
+    (key ((&ground_cell *P)
+          (&column P ^C)
+          (&ground_side2 *D)
+          (margin (:B P) D *K))
+      (member ((:t K))
+        (&ground_cell *P)
+        (&column P C)
+        (&ground_side2 *D)
+        (margin (:B P) D *K))
+      (score ((:t K) (:S K))
+        (&ground_cell *P)
+        (&column P C)
+        (&ground_side2 *D)
+        (margin (:B P) D *K))))
+
+  ;; A column's height counts its cells from the ground edge through its
+  ;; farthest ground cell, so a column with no ground counts 0.
+  (INIT &ground_span Cardinality
+    (key ((&column ^C))
+      (member ((:m Q))
+        (&ground_top.maximal (:key C) (:t *K))
+        (&column (:P *Q) C)
+        (&ground_side2 *D)
+        (margin (:B Q) D (:K *J))
+        (<= J K))
+      (domain ()
+        (&column C))))
+
+  (RULE &col_height
+    (&ground_span.size (:key *C) (:N *K)))
+
+  (INIT &rank Order
+    (member ((:t (:V C) (:S K)))
+      (&col_height *C *K))
+    (score ((:t (:V C) (:S K)) (:S K))
+      (&col_height *C *K)))
+
+  (RULE &valley_tied
+    (&rank.minimal (:t (:V *C)))
+    (&rank.minimal (:t (:V *C2)))
+    (!= C C2))
+
+  (RULE &peak_side_beaten
+    (&rank.maximal (:t (:V *C)))
+    (&rank.maximal (:t (:V *C2)))
+    (&tie_side *D)
+    (nearer D (:P C2) (:Q C)))
+
+  (RULE &peak_first
+    (&rank.maximal (:t (:V *C)))
+    (NOT (&peak_side_beaten C)))
+
+  (RULE &valley_first
+    (&rank.minimal (:t (:V *C)))
+    (NOT (&valley_tied)))
+
+  (RULE &peak
+    (&peak_first *C))
+
+  (RULE &valley
+    (&valley_first *C))
+
+  (RULE &peak_multi
+    (&peak *C)
+    (&peak (:C *C2))
+    (!= C C2))
+
+  (RULE &valley_multi
+    (&valley *C)
+    (&valley (:C *C2))
+    (!= C C2))
+
+  (RULE &defined
+    (&peak)
+    (&valley)
+    (NOT (&peak_multi))
+    (NOT (&valley_multi)))
+
+  (RULE &line
+    (OR ((&defined)
+         (&peak *C)
+         (&peak_color (:C *Col)))
+        ((&defined)
+         (&valley C)
+         (&valley_color (:C Col))))))
+
+(OUTPUT valley-line "the column with the least ground height takes &valley_color in each of its &sky_color cells.")
+
+(OUTPUT rest-kept "every other cell keeps its input color.")
+
+(ALTS $peak "how a tie for the highest peak is broken" $NearTieSide
+  (ALT $TieFarFromValley
+    (OUTPUT peak-line "the tied column farthest from the valley column wins; undefined where two tied columns are equally far from it, or where the valley is undefined"
+      (RULE &peak_tied
+        (&rank.maximal (:t (:V *C)))
+        (&rank.maximal (:t (:V *C2)))
+        (!= C C2))
+
+      (RULE &valley_first_multi
+        (&valley_first *C)
+        (&valley_first (:C *C2))
+        (!= C C2))
+
+      (RULE &from_valley_mark
+        (&peak_tied)
+        (&valley_first (:C *P))
+        (NOT (&valley_first_multi)))
+
+      (INIT &from_valley_frame Frame
+        (extent (A N)
+          (&from_valley_mark *P)
+          (frame_extent P *A *N)))
+
+      (RULE &peak_first
+        (&rank.maximal (:t (:V *C)))
+        (NOT (&peak_tied)))
+
+      ;; Each tied peak column's distance from the valley column.
+      (INIT &from_valley Ray
+        (source (P)
+          (&from_valley_mark *P))
+        (node (P)
+          (&from_valley_frame.cell *P))
+        (dir (D)
+          (&from_valley_mark)
+          (&ground_side2 (:D *G))
+          (perp_dir (:D G) (:D2 *D))))
+
+      (INIT &far_from_valley Order
+        (member ((:t (:V C) (:S K)))
+          (&from_valley.ray (:P *C) *K)
+          (&rank.maximal (:t (:V C))))
+        (score ((:t (:V C) (:S K)) (:S K))
+          (&from_valley.ray (:P *C) *K)
+          (&rank.maximal (:t (:V C)))))
+
+      (RULE &peak
+        (OR ((&peak_first *C))
+            ((&far_from_valley.maximal (:t (:V C))))))))
+  (ALT $TieNearEdge
+    (OUTPUT peak-line "the tied column nearest a grid edge, whichever edge, wins; undefined where two tied columns are equally near the edges"
+      ;; The tied columns, scored by their distance to each edge across the ground axis.
+      (INIT &near_edge Order
+        (member ((:t (:V C) (:S K)))
+          (&rank.maximal (:t (:V *C)))
+          (&ground_side2 (:D *G))
+          (perp_dir (:D G) (:D2 *D))
+          (margin (:B C) D *K))
+        (score ((:t (:V C) (:S K)) (:S K))
+          (&rank.maximal (:t (:V *C)))
+          (&ground_side2 (:D *G))
+          (perp_dir (:D G) (:D2 *D))
+          (margin (:B C) D *K)))
+
+      (RULE &peak_first
+        (&near_edge.minimal (:t (:V *C)))))))
+
+(ALTS $valley "how a tie for the deepest valley is broken" $UniqueValley
+  (ALT $ValleyTieSide
+    (INPUT one-deepest-valley "columns may tie for the least ground height")
+    (OUTPUT valley-line "among the tied columns, the one nearest the &tie_side edge takes the valley line"
+      (RULE &valley_side_beaten
+        (&rank.minimal (:t (:V *C)))
+        (&rank.minimal (:t (:V *C2)))
+        (&tie_side *D)
+        (nearer D (:P C2) (:Q C)))
+
+      (RULE &valley_first
+        (&rank.minimal (:t (:V *C)))
+        (NOT (&valley_side_beaten C)))))
+  (ALT $ValleyTieAll
+    (INPUT one-deepest-valley "columns may tie for the least ground height")
+    (OUTPUT valley-line "every tied column takes the valley line"
+      (RULE &valley_first
+        (&rank.minimal (:t (:V *C))))
+
+      (RULE &every_valley)
+
+      (RULE &valley_multi
+        (&valley *C)
+        (&valley (:C *C2))
+        (!= C C2)
+        (NOT (&every_valley)))))
+  (ALT $ValleyTieFarFromPeak
+    (INPUT one-deepest-valley "columns may tie for the least ground height")
+    (OUTPUT valley-line "the tied column farthest from the peak column takes the valley line; undefined where two tied columns are equally far from it, or where the peak is undefined"
+      (RULE &peak_first_multi
+        (&peak_first *C)
+        (&peak_first (:C *C2))
+        (!= C C2))
+
+      (RULE &from_peak_mark
+        (&valley_tied)
+        (&peak_first (:C *P))
+        (NOT (&peak_first_multi)))
+
+      (INIT &from_peak_frame Frame
+        (extent (A N)
+          (&from_peak_mark *P)
+          (frame_extent P *A *N)))
+
+      ;; Each tied valley column's distance from the peak column.
+      (INIT &from_peak Ray
+        (source (P)
+          (&from_peak_mark *P))
+        (node (P)
+          (&from_peak_frame.cell *P))
+        (dir (D)
+          (&from_peak_mark)
+          (&ground_side2 (:D *G))
+          (perp_dir (:D G) (:D2 *D))))
+
+      (INIT &far_from_peak Order
+        (member ((:t (:V C) (:S K)))
+          (&from_peak.ray (:P *C) *K)
+          (&rank.minimal (:t (:V C))))
+        (score ((:t (:V C) (:S K)) (:S K))
+          (&from_peak.ray (:P *C) *K)
+          (&rank.minimal (:t (:V C)))))
+
+      (RULE &valley
+        (OR ((&valley_first *C))
+            ((&far_from_peak.maximal (:t (:V C)))))))))
+
+(ALTS $height "what a column's height measures" $GroundBased
+  (ALT $GroundBased
+    (ALTS $m "how the ground of a column gives its height" $FarthestGround
+      (ALT $GroundCount
+        (OUTPUT peak-line "a column's height is its count of &ground_color cells; valley-line likewise"
+          (INIT &ground_count Cardinality
+            (key ((&column ^C))
+              (member ((:m P))
+                (&ground_cell *P)
+                (&column P C))
+              (domain ()
+                (&column C))))
+          (RULE &col_height
+            (&ground_count.size (:key *C) (:N *K)))))))
+  (ALT $LowestSky
+    (OUTPUT peak-line "a column's height is the distance from the &ground_side edge to its &sky_color cell nearest that edge; valley-line likewise"
+      (INIT &sky_bottom Order
+        (key ((&sky_cell *P)
+              (&column P ^C)
+              (&ground_side2 *D)
+              (margin (:B P) D *K))
+          (member ((:t K))
+            (&sky_cell *P)
+            (&column P C)
+            (&ground_side2 *D)
+            (margin (:B P) D *K))
+          (score ((:t K) (:S K))
+            (&sky_cell *P)
+            (&column P C)
+            (&ground_side2 *D)
+            (margin (:B P) D *K))))
+
+      (RULE &col_height
+        (&sky_bottom.minimal (:key *C) (:t *K))))))
+
+(ALTS $extent "which cells of the chosen column take the line color" $EverySky
+  (ALT $CastFromBorder
+    (OUTPUT peak-line "the line runs from the border edge toward &ground_side, paints &sky_color cells, and stops at the first &ground_color cell; valley-line likewise"
+
+      ;; Each line runs from the border toward the ground until a ground cell.
+      (INIT &drop Ray
+        (source (P)
+          (&line *C)
+          (&column *P C)
+          (&border_cell P))
+        (node (P)
+          (input *P)
+          (NOT (&ground_cell P)))
+        (dir (D)
+          (&ground_side2 *D))))
+    (RULE &paint
+      (&drop.ray *P (:Origin *Src))
+      (&sky_cell P)
+      (&column (:P Src) *C)
+      (&line C *Col))))
+
+(ALTS $side "where the ground side comes from" $StoredSide
+  (ALT $GroundSideFromBorder
+    (INPUT border-row "the ground side is the edge opposite the one edge line that is all 0; undefined where no edge line, or more than one, is all 0"
+      (DET_OR_RULE &border_color RarestColor
+        (dir_elem *D)
+        (NOT (&edge_mixed D))
+        (ex_input *P (:Col *C))
+        (margin (:B P) D (:K 0)))
+
+      (RULE &off_border
+        (input *P *Col)
+        (margin (:B P) (:D *E1) (:K 0))
+        (NOT (&border_color (:C Col))))
+
+      (RULE &border_edge
+        (dir_elem (:D *E1))
+        (NOT (&off_border E1)))
+
+      (RULE &ground_side2
+        (&border_edge (:E1 *E))
+        (ALL ((&border_edge (:E1 *Em))
+              (&border_edge (:E1 *E2)))
+             ((= Em E2)))
+        (opposite (:D E) (:Opp *D))))))
+
+(ALTS $sky "where the sky color comes from" $StoredSky
+  (ALT $SkyColorFromLayout
+    (INPUT sky-and-ground "the sky color is the color of the line next to the border line, on the ground side; undefined where that line has more than one color"
+      (INIT &layout_sky Singleton
+        (member ((:v Col))
+          (&border_cell *P)
+          (&ground_side2 *D)
+          (neighbor P D *Q)
+          (input (:P Q) *Col)))
+
+      (RULE &sky_color2
+        (&layout_sky.value (:v *C))))))
+
+(ALTS $ground "where the ground color comes from" $StoredGround
+  (ALT $GroundColorFromLayout
+    (INPUT sky-and-ground "the ground color is the color of the line at the ground edge; undefined where that line has more than one color"
+      (INIT &layout_ground Singleton
+        (member ((:v Col))
+          (&ground_side2 *D)
+          (input *P *Col)
+          (margin (:B P) D (:K 0))))
+
+      (RULE &ground_color2
+        (&layout_ground.value (:v *C))))))
+
+(RULE &paint
+  (&line *C *Col)
+  (&column *P C)
+  (&sky_cell P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&defined)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

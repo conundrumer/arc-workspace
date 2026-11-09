@@ -1,0 +1,182 @@
+;; inputs d18b5001284b8c34badcebf3f573f1eb0337153a0db268b95d8d1a5bc65f6897 programs/solvers/a04b2602.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a04b2602
+
+(INPUT field "the grid is a field of &background"
+
+  (DET &background SharedColor))
+
+(INPUT blocks "solid rectangles of &block_color stand on the field; every cell of a rectangle is &block_color or &mark_color, and each of its four sides holds a &block_color cell"
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &ink_mode_count Cardinality
+    (key ((&ink *P ^Col))
+      (member ((:m P))
+        (&ink *P Col))))
+
+  (DET &block_color SharedColor)
+
+  (DET_OR_RULE &mark_color RarestColor)
+
+  (INIT &ink_mode Order
+    (member ((:t Col))
+      (&ink_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ink_mode_count.size (:key *Col) *N)))
+
+  (INIT &block_ink Singleton
+    (member ((:v Col))
+      (&ink_mode.maximal (:t *Col))))
+
+  (INIT &mark_ink Singleton
+    (member ((:v Col))
+      (&ink *Col)
+      (NOT (&block_ink.value (:v Col)))))
+
+  (RULE_OR_DET &mark_ink.value))
+
+(OUTPUT inside-mark "a rectangle is the smallest box that holds the bounding boxes of one or two 4-connected components of &block_color and holds only &block_color and &mark_color cells; a &mark_color cell is an inside mark when it lies inside a rectangle; a &mark_color cell outside every rectangle is a stray mark and triggers nothing"
+
+  (RULE &roles
+    (&block_color (:C *C_block))
+    (&mark_color (:C *C_mark)))
+
+  (RULE &block
+    (input *P *Col)
+    (&roles (:C_block Col)))
+
+  (RULE &mark
+    (input *P *Col)
+    (&roles (:C_mark Col)))
+
+  (INIT &block4 Connectivity
+    (node (P)
+      (&block *P)))
+
+  (INIT &box4 BoundingBox
+    (key ((&block4.component *P ^Id))
+      (cell (P)
+        (&block4.component *P Id))))
+
+  ;; The smallest box that holds the boxes of a span's blocks.
+  (INIT &span BoundingBox
+    (key ((&box4.box (:key (:Id ^A)) (:B *B_a))
+          (&box4.box (:key (:Id ^B)) (:B *B_b))
+          (OR ((= *B_part B_a))
+              ((= B_part B_b))))
+      (cell ((:P B_part))
+        (&box4.box (:key (:Id A)) (:B *B_a))
+        (&box4.box (:key (:Id B)) (:B *B_b))
+        (OR ((= *B_part B_a))
+            ((= B_part B_b))))))
+
+  (INIT &block8 Connectivity
+    (node (P)
+      (&block *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &box8 BoundingBox
+    (key ((&block8.component *P ^Id))
+      (cell (P)
+        (&block8.component *P Id))))
+
+  ;; The smallest box that holds a block's box and a mark.
+  (INIT &hull BoundingBox
+    (key ((&box4.box (:key ^Id) *B)
+          (&mark ^P)
+          (OR ((= *B_part B))
+              ((= B_part P))))
+      (cell ((:P B_part))
+        (&box4.box (:key Id) *B)
+        (&mark P)
+        (OR ((= *B_part B))
+            ((= B_part P)))))))
+
+(OUTPUT halo "each inside mark paints &halo_color on the eight cells around it, clipped to the grid; the halo covers block, field, and stray mark cells alike"
+
+  (DET &halo_color AnyOutNewColor))
+
+(OUTPUT marks-kept "inside marks keep &mark_color, also where the halo of a neighboring inside mark covers them")
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $trigger "which mark cells get a halo" $InBox
+  (ALT $InBox
+    (ALTS $r "the region that counts as a rectangle" $Spanned
+      (ALT $FourConnected
+        (OUTPUT inside-mark "a &mark_color cell is an inside mark when it lies in the bounding box of a 4-connected component of &block_color")
+        (RULE &inside_mark
+          (&mark *P)
+          (&box4.box *B)
+          (inside (:A P) B)))
+      (ALT $EightConnected
+        (OUTPUT inside-mark "a &mark_color cell is an inside mark when it lies in the bounding box of an 8-connected component of &block_color")
+        (RULE &inside_mark
+          (&mark *P)
+          (&box8.box *B)
+          (inside (:A P) B)))
+      (ALT $NonzeroBox
+        (OUTPUT inside-mark "a &mark_color cell is an inside mark when the smallest box that holds it and the bounding box of a 4-connected component of &block_color holds no &background cell outside that component's box"
+          (RULE &hull_field
+            (&hull.box (:key *Id *P) (:B *B_h))
+            (&box4.box (:key Id) *B)
+            (input (:P *Q) *Col)
+            (&background (:C Col))
+            (inside (:A Q) (:B B_h))
+            (NOT (inside (:A Q) B))))
+        (RULE &inside_mark
+          (&hull.box (:key *Id *P))
+          (NOT (&hull_field Id P))))))
+  (ALT $ThreeNeighbours
+    (OUTPUT inside-mark "a &mark_color cell is an inside mark when at least two of its four neighbours are &block_color")
+    (RULE &inside_mark
+      (&mark *P)
+      (dir_elem (:D *D1))
+      (neighbor P (:D D1) (:Q *Q1))
+      (&block (:P Q1))
+      (dir_elem (:D *D2))
+      (neighbor P (:D D2) (:Q *Q2))
+      (&block (:P Q2))
+      (!= D1 D2))))
+
+(ALTS $roles "where the block and mark colors come from" $StoredRoles
+  (ALT $DerivedRoles
+    (INPUT blocks "the grid holds two colors besides &background; the more frequent is the block color and the other the mark color; a grid with another count of such colors, or with two equally frequent, has no reading"
+      (RULE &roles
+        (&block_ink.value (:v *C_block))
+        (&mark_ink.value (:v *C_mark))))))
+
+(RULE &span_field
+  (&span.box (:key *A *B) (:B *B_s))
+  (input (:P *Q))
+  (inside (:A Q) (:B B_s))
+  (NOT (&block (:P Q)))
+  (NOT (&mark (:P Q))))
+
+(RULE &inside_mark
+  (&mark *P)
+  (&span.box (:key *A *B) (:B *B_s))
+  (NOT (&span_field A B))
+  (inside (:A P) (:B B_s)))
+
+(RULE &halo
+  (&inside_mark (:P *P2))
+  (neighbor (:P P2) (:Q *P))
+  (input P)
+  (NOT (&inside_mark P)))
+
+(RULE &output
+  (OR ((&halo *P)
+       (&halo_color (:C *Col)))
+      ((input P Col)
+       (&roles)
+       (NOT (&halo P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,74 @@
+;; inputs 291d45b4b82ffc85f7abadd054604e81066de63d9687037608c9582763211626 programs/solvers/484b58aa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 484b58aa
+
+(DET &hole ChangedColor)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(INIT &si Periods
+  (cell (P (:v Col))
+    (&intact *P *Col)))
+
+(RULE &period_at
+  (input *P)
+  (&si.fundamental_period *A *K))
+
+(ALTS $choice "the scope the period is measured over" $Periodic
+  (ALT $Lines
+    (DET &axis AxisDomain)
+
+    (INIT &si_line Periods
+      (key ((&intact *P *Col)
+            (&axis *A)
+            (split P A (:Across ^L)))
+        (cell (P (:v Col))
+          (&intact *P *Col)
+          (&axis *A)
+          (split P A (:Across L)))))
+
+    (RULE &period_at
+      (input *P)
+      (&axis *A)
+      (split P A (:Across *L))
+      (&si_line.fundamental_period (:key L) A *K))))
+
+(RULE &orbit_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (input (:P *Key))
+  (axis_of D (:A *A4))
+  (margin (:B Key) D (:K *T))
+  (OR ((&period_at (:P Key) (:A A4) *K)
+       (divide T (:Side K) (:Gap 0) (:Remainder *R)))
+      ((NOT (&period_at (:P Key) (:A A4)))
+       (= R T)))
+  (axis_of (:D D2) (:A *A2))
+  (margin (:B Key) (:D D2) (:K *T2))
+  (OR ((&period_at (:P Key) (:A A2) (:K *K2))
+       (divide (:T T2) (:Side K2) (:Gap 0) (:Remainder *R2)))
+      ((NOT (&period_at (:P Key) (:A A2)))
+       (= R2 T2)))
+  (axis_inset D (:K1 R) (:K2 R2) *B))
+
+(RULE &orbit
+  (&orbit_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&orbit_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &orbit_color
+  (&orbit (:Key *Q) *B)
+  (&intact (:P Q) *Col))
+
+(RULE &output
+  ;; Intact cells pass through under every case.
+  (OR ((&intact *P *Col))
+      ((input P (:Col *Hole))
+       (&hole (:C Hole))
+       (&orbit (:Key P) *B)
+       (&orbit_color B Col))))
+
+(OUT (&output ^P ^Col))

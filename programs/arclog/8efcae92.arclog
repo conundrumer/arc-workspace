@@ -1,0 +1,41 @@
+;; inputs 8ade5eaf933279182d371aa42c9252b16ac8d97dad2af3b45f1b3e24871c4846 programs/solvers/8efcae92.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8efcae92
+
+(DET &bg VanishedColor)
+
+;; A rectangle is a component of the non-bg cells.
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(DET &mark RarestColor)
+
+(INIT &winner_count Cardinality
+  (key ((&comps.component *P ^Id)
+        (input P *Col)
+        (&mark (:C Col)))
+    (member ((:m P))
+      (&comps.component *P Id)
+      (input P *Col)
+      (&mark (:C Col)))))
+
+(INIT &winner Order
+  (member ((:t Id))
+    (&winner_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&winner_count.size (:key *Id) *N)))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&winner.maximal (:t *Id))
+    (&comps.component *P Id)))
+
+(RULE &output
+  (input (:P *P2) *Col)
+  (&view.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

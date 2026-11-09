@@ -1,0 +1,184 @@
+;; inputs b2cd373f851a45b318d3f9a7cb7612ac889312bc0d24360e647bc4454fa6e824 programs/solvers/f25ffba3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f25ffba3
+
+(DET &bg DominantColor)
+
+(DET &pair_cell
+  (ex_input *E *P *Col)
+  (ex_output E))
+
+(INIT &slab BoundingBox
+  (key ((&pair_cell ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (&pair_cell E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &data_dir
+  (&slab.box *B)
+  (dist_pair (:P B) *D *K *K2)
+  (< K K2))
+
+(DET &slab_depth
+  (&data_dir *D)
+  (axis_of D *A)
+  (&slab.cell (:key *E) *P)
+  (&slab.box (:key E) *B)
+  (box_extent B P A *N))
+
+(RULE &tile_axis
+  (&data_dir *D)
+  (axis_of D *A))
+
+(INIT &out_cell_division Division
+  (cell ((:P P_grid))
+    (ex_output (:P *P_grid)))
+  (side (A K)
+    (&tile_axis *A)
+    (&slab_depth (:N *K))))
+
+;; The stamps: the transforms each output is invariant under.
+(INIT &stamp Agreement
+  (key ((ex_output ^E *P *Col))
+    (source (P (:v Col))
+      (ex_output E *P *Col))
+    (target (P (:v Col))
+      (ex_output E *P *Col))))
+
+(DET &stamps
+  (d4_elem *D)
+  (NOT (&stamp.mismatch D)))
+
+(DET &out_cell
+  (ex_output *E (:P *P_grid) *Col)
+  (&out_cell_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+;; The output keeps the data tile at the data edge, and each output
+;; tile is an image of it.
+(INIT &tile Agreement
+  (key ((OR ((&out_cell ^E (:P_tile *P_data) *P_intile *Col)
+             (&data_dir *D)
+             (margin (:B P_data) D (:K 0))
+             (&out_cell E ^P_tile))
+            ((&out_cell E P_tile P_intile Col))))
+    (source ((:P P_intile) (:v Col))
+      (&out_cell E (:P_tile *P_data) *P_intile *Col)
+      (&data_dir *D)
+      (margin (:B P_data) D (:K 0))
+      (&out_cell E P_tile))
+    (target ((:P P_intile) (:v Col))
+      (&out_cell E P_tile *P_intile *Col))))
+
+(DET &tile_d4
+  (&out_cell *P_tile)
+  (d4_elem *D)
+  (NOT (&tile.mismatch (:key P_tile) D)))
+
+(ALTS $choice "how the slab's images are placed" $Stamp
+  (ALT $Augment
+    (RULE &augment_ink
+      (input (:P *P_in) *Col)
+      (NOT (&bg (:C Col)))
+      (&stamps *D)
+      (apply D (:P P_in) (:P_out *P)))
+
+    (RULE &output
+      (OR ((&augment_ink *P *Col))
+          ((input P)
+           (&bg (:C Col))
+           (NOT (&augment_ink P))))))
+  (ALT $TileCount
+    (DET &slab_cut
+      (&data_dir *D)
+      (axis_of D *A)
+      (&slab_depth (:N *K)))
+
+    (INIT &n_tiles_division Division
+      (key ((OR ((&pair_cell (:P *P_grid))
+                 (&slab_cut ^A))
+                ((&slab_cut A *K))))
+        (cell ((:P P_grid))
+          (&pair_cell (:P *P_grid))
+          (&slab_cut A))
+        (side (A K)
+          (&slab_cut A *K))))
+
+    (DET &n_tiles
+      (&n_tiles_division.tile (:key *A) *P_outer)
+      (frame_extent (:P P_outer) A *N))
+
+    (INIT &data_cell_division Division
+      (cell ((:P P_grid_in))
+        (input (:P *P_grid_in)))
+      (parts ((:A A_tile) N)
+        (&tile_axis (:A *A_tile))
+        (&n_tiles *N)))
+
+    (RULE &data_cell
+      (input (:P *P_grid_in) *Col)
+      (&data_cell_division.tile (:P P_grid_in) (:P_outer *P_in_outer) (:P_inner *P_intile))
+      (&data_dir (:D *D_data))
+      (margin (:B P_in_outer) (:D D_data) (:K 0)))
+
+    (RULE &output
+      (&data_cell *P_intile *Col)
+      (&tile_d4 (:P_tile *P_out_outer) *D)
+      (apply D (:P P_intile) (:P_out *P_out_intile))
+      (&tile_axis)
+      (&output_tiling.cell (:key D) (:P_outer P_out_outer) (:P_inner P_out_intile) *P))
+
+    (INIT &output_tiling Tiling
+      (key ((OR ((&tile_d4 (:P_tile *P_out_outer) ^D))
+                ((&data_cell *P_intile)
+                 (&tile_d4 D)
+                 (apply D (:P P_intile) (:P_out *P_out_intile)))))
+        (outer ((:P P_out_outer))
+          (&tile_d4 (:P_tile *P_out_outer) D))
+        (inner ((:P P_out_intile))
+          (&data_cell *P_intile)
+          (&tile_d4 D)
+          (apply D (:P P_intile) (:P_out *P_out_intile))))))
+  (ALT $TileSize
+    (INIT &data_cell_division2 Division
+      (cell ((:P P_grid_in))
+        (input (:P *P_grid_in)))
+      (side ((:A A_tile) K)
+        (&tile_axis (:A *A_tile))
+        (&slab_depth (:N *K))))
+
+    (RULE &data_cell
+      (input (:P *P_grid_in) *Col)
+      (&data_cell_division2.tile (:P P_grid_in) (:P_outer *P_in_outer) (:P_inner *P_intile))
+      (&data_dir (:D *D_data))
+      (margin (:B P_in_outer) (:D D_data) (:K 0)))
+
+    (RULE &output
+      (&data_cell *P_intile *Col)
+      (&tile_d4 (:P_tile *P_out_outer) *D)
+      (apply D (:P P_intile) (:P_out *P_out_intile))
+      (&tile_axis)
+      (&output_tiling.cell (:key D) (:P_outer P_out_outer) (:P_inner P_out_intile) *P))
+
+    (INIT &output_tiling Tiling
+      (key ((OR ((&tile_d4 (:P_tile *P_out_outer) ^D))
+                ((&data_cell *P_intile)
+                 (&tile_d4 D)
+                 (apply D (:P P_intile) (:P_out *P_out_intile)))))
+        (outer ((:P P_out_outer))
+          (&tile_d4 (:P_tile *P_out_outer) D))
+        (inner ((:P P_out_intile))
+          (&data_cell *P_intile)
+          (&tile_d4 D)
+          (apply D (:P P_intile) (:P_out *P_out_intile)))))))
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&data_dir (:D *D_data))
+  (margin (:B P_grid_in) (:D D_data) *K)
+  (&slab_depth (:N *Depth))
+  (< K Depth)
+  (&stamps *D)
+  (apply D (:P P_grid_in) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

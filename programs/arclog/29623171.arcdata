@@ -1,0 +1,8 @@
+;; inputs 4dd1f12e5424e98ee591c712092548eb0edd76c8d4dda2f9afe4283418701af9 programs/solvers/29623171.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 29623171
+
+(param &gap number (1))
+(param &bg Color (0))
+(param &tile_count number (3))
+(param &tile_dim number (3))

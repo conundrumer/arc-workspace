@@ -1,0 +1,64 @@
+;; inputs 0089b1ea51aade69b8e65fa276563d5abefdef13cfb40f667612cbfc6cc8c041 programs/solvers/1da012fc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1da012fc
+
+(param &bg Color (0))
+(param &legend Color (5))
+(param &corner DiagDir (DIAG_TL))
+(param &axis Axis (AXIS_V))
+
+(approximated place
+  (witness spanning-shape variant other
+    (relaxed bands)
+    (separates "The legend shows one marker on the left at mid height and two markers on the right, one high and one low. Outside it a tall shape on the left spans the height of two shapes stacked on the right, so the left shape and each right shape meet along the reading axis without covering the same extent of it. Both cases read the constellations as one sequence: the left shape leads, so it takes the high right marker's color and the high right shape takes the left marker's color. The two constellations have the same arrangement, so the generator pairs the left shape with the left marker and each right shape with the right marker at its own height.")
+    (input (grid
+      (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+      (0 2 2 0 0 0 2 2 2 0 0 0 5 5 5 5 5 5 5 0)
+      (0 2 2 0 0 0 2 2 2 0 0 0 5 5 5 5 5 3 5 0)
+      (0 2 2 0 0 0 2 2 2 0 0 0 5 5 5 5 5 5 5 0)
+      (0 2 2 0 0 0 0 0 0 0 0 0 5 5 5 5 5 5 5 0)
+      (0 2 2 0 0 0 0 0 0 0 0 0 5 4 5 5 5 5 5 0)
+      (0 2 2 0 0 0 2 2 2 0 0 0 5 5 5 5 5 5 5 0)
+      (0 2 2 0 0 0 2 2 2 0 0 0 5 5 5 5 5 5 5 0)
+      (0 2 2 0 0 0 2 2 2 0 0 0 5 5 5 5 5 6 5 0)
+      (0 0 0 0 0 0 0 0 0 0 0 0 5 5 5 5 5 5 5 0)
+      (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+    (output (grid
+      (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+      (0 4 4 0 0 0 3 3 3 0 0 0 5 5 5 5 5 5 5 0)
+      (0 4 4 0 0 0 3 3 3 0 0 0 5 5 5 5 5 3 5 0)
+      (0 4 4 0 0 0 3 3 3 0 0 0 5 5 5 5 5 5 5 0)
+      (0 4 4 0 0 0 0 0 0 0 0 0 5 5 5 5 5 5 5 0)
+      (0 4 4 0 0 0 0 0 0 0 0 0 5 4 5 5 5 5 5 0)
+      (0 4 4 0 0 0 6 6 6 0 0 0 5 5 5 5 5 5 5 0)
+      (0 4 4 0 0 0 6 6 6 0 0 0 5 5 5 5 5 5 5 0)
+      (0 4 4 0 0 0 6 6 6 0 0 0 5 5 5 5 5 6 5 0)
+      (0 0 0 0 0 0 0 0 0 0 0 0 5 5 5 5 5 5 5 0)
+      (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))))
+
+(alts $choice
+  (alt $Anchor
+    (witness side-by-side variant concept
+      (relaxed bands)
+      (separates "Two shapes stand side by side and meet along the reading axis without covering the same extent of it. $Separated reads them across, so the left one comes first; $Anchor reads them by the top of each bounding box, so the taller one, which starts higher, comes first.")
+      (input (grid
+        (0 0 0 0 8 8 0 0 5 5 5 5 5)
+        (0 0 0 0 8 8 0 0 5 2 5 5 5)
+        (8 8 0 0 8 8 0 0 5 5 5 5 5)
+        (8 8 0 0 8 8 0 0 5 5 5 3 5)
+        (0 0 0 0 8 8 0 0 5 5 5 5 5)
+        (0 0 0 0 8 8 0 0 0 0 0 0 0)))
+      (output concept (grid
+        (0 0 0 0 3 3 0 0 5 5 5 5 5)
+        (0 0 0 0 3 3 0 0 5 2 5 5 5)
+        (2 2 0 0 3 3 0 0 5 5 5 5 5)
+        (2 2 0 0 3 3 0 0 5 5 5 3 5)
+        (0 0 0 0 3 3 0 0 5 5 5 5 5)
+        (0 0 0 0 3 3 0 0 0 0 0 0 0)))
+      (output $Anchor (grid
+        (0 0 0 0 2 2 0 0 5 5 5 5 5)
+        (0 0 0 0 2 2 0 0 5 2 5 5 5)
+        (3 3 0 0 2 2 0 0 5 5 5 5 5)
+        (3 3 0 0 2 2 0 0 5 5 5 3 5)
+        (0 0 0 0 2 2 0 0 5 5 5 5 5)
+        (0 0 0 0 2 2 0 0 0 0 0 0 0))))))

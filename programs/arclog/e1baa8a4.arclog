@@ -1,0 +1,51 @@
+;; inputs f976190e02ee5a1310a83b109e329341f162deca45df64ba767b915914cf7900 programs/solvers/e1baa8a4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e1baa8a4
+
+(RULE &line
+  (input *P)
+  (split P *A (:Along *L)))
+
+(RULE &line_dist
+  (&line *L)
+  (margin (:B L) *D *K))
+
+(RULE &boundary
+  (input *P (:Col *C1))
+  (margin (:B P) *D *K)
+  (neighbor P D (:Q *P2))
+  (input (:P P2) (:Col *C2))
+  (!= C1 C2))
+
+(INIT &bands Cardinality
+  (key ((&line_dist ^D ^K))
+    (member ((:m K2))
+      (&boundary D (:K *K2))
+      (<= K2 K))))
+
+(RULE &place_edge
+  (&line_dist (:L *Key) *D (:K *K2))
+  (&bands.size (:key D (:K K2)) (:N *K)))
+
+(RULE &place_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&place_edge *Key D (:K *K1))
+  (&place_edge Key (:D D2) (:K *K2))
+  (axis_inset D K1 K2 *B))
+
+(RULE &place
+  (&place_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&place_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+;; A cell's place in the output: the places of its two lines composed.
+(RULE &output
+  (input (:P *P2) *Col)
+  (split (:P P2) *A (:Along *L1) (:Across *L2))
+  (&place (:Key L1) (:B *B1))
+  (&place (:Key L2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *P)))
+
+(OUT (&output ^P ^Col))

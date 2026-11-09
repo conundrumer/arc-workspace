@@ -1,0 +1,69 @@
+;; inputs cab521075fb55978777e2c197dc9f70343be57a8aaf561a1b0c83bf8527fcd5c programs/solvers/776ffc46.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 776ffc46
+
+(DET &bg DominantColor)
+
+(DET &frame SharedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col))))
+
+;; The rectangles drawn in the frame color, and their insides.
+(INIT &drect Outlines
+  (node (P)
+    (input *P *Col)
+    (&frame (:C Col))))
+
+(RULE &rect_hole
+  (&drect.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+;; Each rectangle's reference shape, with its bounding box.
+(INIT &ref BoundingBox
+  (key ((&rect_hole ^B *P)
+        (&ink P))
+    (cell (P)
+      (&rect_hole B *P)
+      (&ink P))))
+
+;; The loose shapes: ink components outside every rectangle.
+(INIT &loose Connectivity
+  (node (P)
+    (&ink *P)
+    (NOT (&rect_hole P))))
+
+(INIT &shape BoundingBox
+  (key ((&loose.component *P ^Id))
+    (cell (P)
+      (&loose.component *P Id))))
+
+;; A loose shape matches a reference when their box-relative cell sets agree.
+(INIT &same_shape Inclusion
+  (pattern ((:pattern B) (:m P_inner))
+    (&ref.cell (:key *B) *P)
+    (&ref.box (:key B) (:B *B_ref))
+    (inside (:A P) (:B B_ref))
+    (relative (:Base B_ref) (:X P) (:X_rel *P_inner)))
+  (observed ((:observed Id) (:m P_inner))
+    (&shape.cell (:key *Id) *P)
+    (&shape.box (:key Id) (:B *B_shape))
+    (inside (:A P) (:B B_shape))
+    (relative (:Base B_shape) (:X P) (:X_rel *P_inner))))
+
+(RULE &recolor
+  (&loose.component *P *Id)
+  (&same_shape.equal (:observed Id) (:pattern *B))
+  (&ref.cell (:key B) (:P *P_ref))
+  (&ink (:P P_ref) *Col))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&recolor P *Col))
+      ((NOT (&recolor P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

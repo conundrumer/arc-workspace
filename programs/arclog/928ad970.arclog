@@ -1,0 +1,122 @@
+;; inputs e611b3093f52e0ba31f29e16ef655eda96cefa4a2cf1ba8dfb862454c7d0b80b programs/solvers/928ad970.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 928ad970
+
+(DET &drawn
+  (ex_input *E *P (:Col *C_in))
+  (ex_output E P *Col)
+  (!= Col C_in))
+
+(DET &bg
+  (ex_input *E *P (:Col *C))
+  (&drawn E P))
+
+(RULE &fg
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &mark_col
+  (ex_output *E)
+  (ex_input E (:Col *C))
+  (NOT (&bg C))
+  (NOT (&drawn E (:Col C))))
+
+(RULE &mark
+  (&fg *P *Col)
+  (&mark_col (:C Col)))
+
+(RULE &ink
+  (&fg *Col)
+  (NOT (&mark_col (:C Col))))
+
+(INIT &rect_box BoundingBox
+  (key ((&drawn ^E *P))
+    (cell (P)
+      (&drawn E *P))))
+
+(DET &spanned
+  (ex_input *E *P *Col)
+  (&mark_col (:C Col)))
+
+(ALTS $m "What tells the markers from the shape." $Named
+  (ALT $Lone
+    (RULE &touching
+      (&fg *P)
+      (neighbor P *D *Q)
+      (&fg (:P Q)))
+
+    (RULE &mark
+      (&fg *P)
+      (NOT (&touching P)))
+
+    (RULE &ink
+      (&fg *P *Col)
+      (&touching P))))
+
+(ALTS $s "The cells the box spans." $Markers
+  (ALT $Content
+    (RULE &spanned2
+      (&fg *P))
+
+    (DET &content_inset
+      (&inset *K))
+
+    (RULE &inset2
+      (&content_inset *K))
+
+    (DET &spanned
+      (ex_input *E *P *Col)
+      (NOT (&bg (:C Col))))
+
+    (DET &inset
+      (&span_box.box (:key *E) *B)
+      (&rect_box.box (:key E) (:B *B_rect))
+      (relative (:Base B) (:X B_rect) (:X_rel *V))
+      (margin (:B V) *D *K))
+
+    (DET &mark_inset
+      (&inset *K))))
+
+(RULE &spanned2
+  (&mark *P))
+
+(INIT &span_box BoundingBox
+  (key ((&spanned ^E *P))
+    (cell (P)
+      (&spanned E *P))))
+
+(DET &inset
+  (&span_box.box (:key *E) *B)
+  (&rect_box.box (:key E) (:B *B_rect))
+  (relative (:Base B) (:X B_rect) (:X_rel *V))
+  (margin (:B V) *D *K))
+
+(DET &mark_inset
+  (&inset *K))
+
+(RULE &inset2
+  (&mark_inset *K))
+
+(INIT &span_box2 BoundingBox
+  (cell (P)
+    (&spanned2 *P)))
+
+(RULE &rect
+  (&span_box2.box (:B *B2))
+  (&inset2 *K)
+  (uniform_inset K (:B *V))
+  (compose (:A B2) (:B V) (:C *B)))
+
+(RULE &drawn2
+  (input *P)
+  (&rect *B)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(RULE &output
+  (OR ((&drawn2 *P)
+       (&ink *Col))
+      ((input P Col)
+       (NOT (&drawn2 P)))))
+
+(OUT (&output ^P ^Col))

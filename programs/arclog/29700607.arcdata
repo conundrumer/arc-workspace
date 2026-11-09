@@ -1,0 +1,6 @@
+;; inputs 8b614225ece0057e72e5e99dc5e585b668c098f35911091790c0a67ffbeb0125 programs/solvers/29700607.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 29700607
+
+(param &bg Color (0))
+(param &head_dir Dir (DIR_T))

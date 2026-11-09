@@ -1,0 +1,114 @@
+;; inputs 88d0c177017b02061379225190d87c1d69717a6db2fa86e9469dfefc183a207a programs/solvers/ca8f78db.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ca8f78db
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(INIT &si2 Periods
+  (cell (P (:v Col))
+    (&clean *P *Col)))
+
+(ALTS $choice "how a corrupted cell's replacement is found" $Shift
+  (ALT $Period
+    (DET &si_cand_full
+      (ex_output (:E *V0) *P)
+      (frame_offset P (:A *V1) (:K *V2) (:V *V3)))
+
+    (INIT &si Periods
+      (key ((ex_output ^E *P *Col))
+        (cell (P (:v Col))
+          (ex_output E *P *Col))))
+
+    (DET &si_mismatch_full
+      (ex_output (:E *V0) *P)
+      (frame_offset P (:A *V1) (:K *V2))
+      (NOT (&si.period (:key (:E V0)) (:A V1) (:K V2))))
+
+    (INIT &unbroken Order
+      (key ((&si_cand_full (:V1 ^A) (:V2 *K))
+            (NOT (&si_mismatch_full (:V1 A) (:V2 K))))
+        (member ((:t K))
+          (&si_cand_full (:V1 A) (:V2 *K))
+          (NOT (&si_mismatch_full (:V1 A) (:V2 K))))
+        (score ((:t K) (:S K))
+          (&si_cand_full (:V1 A) (:V2 *K))
+          (NOT (&si_mismatch_full (:V1 A) (:V2 K))))))
+
+    (DET &period
+      (&unbroken.minimal (:key *A) (:t *K)))
+
+    (RULE &peer
+      (input *P (:Col *N))
+      (&noise (:C N))
+      (&period *A *K)
+      (axis_of *D A)
+      (&clean (:P *Q) *Col)
+      (same_line A P Q)
+      (margin (:B P) D (:K *T_p))
+      (divide (:T T_p) (:Side K) (:Gap 0) (:Remainder *R))
+      (margin (:B Q) D (:K *T_q))
+      (divide (:T T_q) (:Side K) (:Gap 0) (:Remainder R)))
+
+    (RULE &output
+      (OR ((&peer *P *Col))
+          ;; Clean cells pass through under every case.
+          ((&clean P Col)))))
+  (ALT $Rows
+    (DET &bg DominantColor)
+
+    (DET &line_cell
+      (ex_output *E *P *Col)
+      (split P *A *Along *Across))
+
+    (DET &pattern_line
+      (&line_cell *E *A *Across *Col)
+      (NOT (&bg (:C Col))))
+
+    ;; The colors the pattern lines carry at each position along the line.
+    (INIT &pattern_at Singleton
+      (key ((&line_cell ^E ^A *Across ^Along *Col)
+            (&pattern_line E A Across))
+        (member ((:v Col))
+          (&line_cell E A *Across Along *Col)
+          (&pattern_line E A Across))))
+
+    (DET &axis
+      (axis_elem *A)
+      (NOT (&pattern_at.plural (:key A))))
+
+    (RULE &pattern_row
+      (&clean *P *Col)
+      (NOT (&bg (:C Col)))
+      (&axis *A)
+      (split P A *Across))
+
+    (RULE &output
+      (OR ((input *P (:Col *N))
+           (&noise (:C N))
+           (&axis *A)
+           (split P A *Along *Across)
+           (OR ((NOT (&pattern_row Across))
+                (&bg (:C *Col)))
+               ((&pattern_row Across)
+                (&clean (:P *Q) Col)
+                (split (:P Q) A Along (:Across *Across2))
+                (&pattern_row (:Across Across2)))))
+          ;; Clean cells pass through under every case.
+          ((&clean P Col))))))
+
+(RULE &output
+  ;; Clean cells pass through under every case.
+  (OR ((&clean *P *Col))
+      ((input P (:Col *N))
+       (&noise (:C N))
+       (&si2.period *A *K)
+       (axis_of *D A)
+       (jump_offset D K (:V *Delta))
+       (compose (:A P) (:B Delta) (:C *P2))
+       (&clean (:P P2) Col))))
+
+(OUT (&output ^P ^Col))

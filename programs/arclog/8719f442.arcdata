@@ -1,0 +1,7 @@
+;; inputs 4c55bbc160512d7107ded5117e3535a067a1e6cfc709be5b1bd6f91eb1301504 programs/solvers/8719f442.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8719f442
+
+(param &bg Color (0))
+(param &ring_width number (1))
+(param &fill Color (5))

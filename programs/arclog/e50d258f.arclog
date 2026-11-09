@@ -1,0 +1,138 @@
+;; inputs 1dace9e33c44655c7d18f6c26ec65064138456a4c69e0f5bd8504df07f8a3cf6 programs/solvers/e50d258f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e50d258f
+
+(INPUT rect-patches "each input holds two or more solid rectangles of non-0 cells on a field of 0, and no two rectangles touch, diagonals included."
+
+  (DET &broken
+    (ex_input *E *P (:Col *C))
+    (axis_elem *A)
+    (ex_input E (:P *Q) (:Col *C2))
+    (same_line A P Q)
+    (!= C2 C))
+
+  (DET &full_line
+    (ex_input *E *P (:Col *C))
+    (axis_elem *A)
+    (NOT (&broken E P A)))
+
+  (DET &lacks
+    (&full_line *C)
+    (ex_input *E)
+    (NOT (&full_line E C)))
+
+  (DET &bg
+    (&full_line *C)
+    (NOT (&lacks C)))
+
+  (INIT &comps8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT unique-max "one patch holds strictly more cells of color 2 than every other patch.")
+
+(OUTPUT pick-most "the selected patch is the one with the most cells of &count_color."
+
+  (DET &count_color ColorDomain)
+
+  (INIT &comps4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (RULE &patch
+    (&comps4.component *P *Id))
+
+  (DET &minus_color ColorDomain)
+
+  (RULE &rival
+    (&patch (:Id *X))
+    (&patch (:Id *Y))
+    (!= X Y))
+
+  ;; x's score beats y's: x's count_color cells with y's minus_color cells
+  ;; outnumber y's count_color cells with x's minus_color cells.
+  (INIT &beats Excess
+    (key ((&rival ^X ^Y))
+      (plus ((:m P))
+        (input *P *Col)
+        (OR ((&patch P (:Id X))
+             (&count_color (:C Col)))
+            ((&patch P (:Id Y))
+             (&minus_color (:C Col)))))
+      (minus ((:m P))
+        (input *P *Col)
+        (OR ((&patch P (:Id Y))
+             (&count_color (:C Col)))
+            ((&patch P (:Id X))
+             (&minus_color (:C Col))))))))
+
+(OUTPUT crop "the output is the selected patch's bounding box, cell for cell."
+
+  (INIT &most_count Cardinality
+    (key ((&patch *P ^Id)
+          (input P *Col)
+          (&count_color (:C Col)))
+      (member ((:m P))
+        (&patch *P Id)
+        (input P *Col)
+        (&count_color (:C Col)))))
+
+  (INIT &patch_box BoundingBox
+    (key ((&patch *P ^Id))
+      (cell (P)
+        (&patch *P Id))))
+
+  (INIT &most Order
+    (member ((:t Id))
+      (&most_count.size (:key *Id)))
+    (score ((:t Id) (:S N))
+      (&most_count.size (:key *Id) *N)))
+
+  (RULE &chosen
+    (&most.maximal (:t *Id))))
+
+(ALTS $s "what ranks the patches" $MostMark
+  (ALT $ExcessOverMark
+    (OUTPUT pick-most "the selected patch is the one whose count of count_color cells less its count of &minus_color cells is highest; undefined where the concept is."
+      (RULE &beaten
+        (&rival *X *Y)
+        (NOT (&beats.excess (:key X Y))))
+
+      (RULE &chosen
+        (&patch *Id)
+        (NOT (&beaten (:X Id)))))))
+
+(ALTS $a "which neighbors join cells into one patch" $Cardinal
+  (ALT $DiagJoined
+    (INPUT rect-patches "a patch is an 8-connected component of non-0 cells."
+      (RULE &patch
+        (&comps8.component *P *Id)))))
+
+(ALTS $c "what fills the output box" $WholeBox
+  (ALT $CropOwnCells
+    (OUTPUT crop "the output is the selected patch's own cells, with &bg on every other cell of its box.")
+    (RULE &output
+      (&chosen *Id)
+      (&patch_box.box (:key Id) *B)
+      (input (:P *P2))
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P))
+      (IF ((&patch (:P P2) Id))
+          ((input (:P P2) *Col))
+          ((&bg (:C Col)))))))
+
+(RULE &output
+  (&chosen *Id)
+  (&patch_box.box (:key Id) *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

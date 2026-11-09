@@ -1,0 +1,365 @@
+;; inputs 8fcc7a259745a609301e2e112d329a11ddd19ff2b28ab39f6edb66402a86fb60 programs/solvers/ddf7fa4f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ddf7fa4f
+
+(INPUT marker-line "the line of cells at the &marker_edge edge (top) holds the markers, single cells of colors other than &bg and &block_color, with &bg between them; the line next to it holds only &bg."
+
+  ;; The commonest color of every input that has an output.
+  (INIT &color_count Cardinality
+    (key ((ex_input ^E (:Col ^C))
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P (:Col C))
+        (ex_output E))
+      (domain ()
+        (ex_input E (:Col C))
+        (ex_output E))))
+
+  (INIT &commonest Order
+    (key ((&color_count.size (:key ^E *C) *N))
+      (member ((:t (:V C) (:S N)))
+        (&color_count.size (:key E *C) *N))
+      (score ((:t (:V C) (:S N)) (:S N))
+        (&color_count.size (:key E *C) *N))))
+
+  (DET &not_commonest
+    (&commonest.maximal (:t (:V *C)))
+    (&commonest.member (:key *E))
+    (NOT (&commonest.maximal (:key E) (:t (:V C)))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&commonest.maximal (:t (:V *C)))
+    (NOT (&not_commonest C)))
+
+  (DET &marker_edge DirDomain)
+
+  (DET &changed
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET &mixed
+    (&changed (:C *C1))
+    (&changed (:C *C2))
+    (!= C1 C2))
+
+  (DET &block_color
+    (&changed *C)
+    (NOT (&mixed))))
+
+(INPUT blocks "the rest of the grid holds solid rectangles of &block_color (5) on &bg (0), each one 4-connected component; two blocks can touch at a corner."
+
+  (INIT &field_count Cardinality
+    (key ((input (:Col ^C))
+          (NOT (&bg C)))
+      (member ((:m P))
+        (input *P (:Col C))
+        (NOT (&bg C)))
+      (domain ()
+        (input (:Col C))
+        (NOT (&bg C)))))
+
+  (INIT &commonest2 Order
+    (member ((:t (:V C) (:S N)))
+      (&field_count.size (:key *C) *N))
+    (score ((:t (:V C) (:S N)) (:S N))
+      (&field_count.size (:key *C) *N))))
+
+(INPUT one-marker-per-block "the span of each block along the marker line holds exactly one marker, and each marker stands over exactly one block.")
+
+(OUTPUT recolor-by-marker "each block cell takes the color of the marker whose cell on the marker line falls in the block's span along that line."
+
+  (RULE &block_color2
+    (&block_color *C))
+
+  (RULE &blocks_ok
+    (&block_color2))
+
+  (RULE &other_ink
+    (input *P (:Col *C))
+    (NOT (&bg C))
+    (&blocks_ok)
+    (NOT (&block_color2 C)))
+
+  (RULE &marker_edge2
+    (&blocks_ok)
+    (&marker_edge *D))
+
+  (RULE &setup
+    (&marker_edge2))
+
+  (RULE &marker
+    (&marker_edge2 *D)
+    (&other_ink *P)
+    (margin (:B P) D (:K 0))
+    (input P (:Col *C)))
+
+  (RULE &block_node
+    (&setup)
+    (&block_color2 (:C *Bk))
+    (input *P (:Col Bk)))
+
+  (INIT &blocks Connectivity
+    (key ((&block_node (:Bk ^C) *P))
+      (node (P)
+        (&block_node (:Bk C) *P))))
+
+  (INIT &first_hit Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (&marker_edge2 *D)
+      (opposite D (:Opp *D2))
+      (input *P)
+      (NOT (&blocks.component P)))
+    (dir ((:D D2))
+      (&setup)
+      (&marker_edge2 *D)
+      (opposite D (:Opp *D2))))
+
+  (RULE &rank_side
+    (&setup)
+    (&marker_edge2 (:D *D3))
+    (perp_dir (:D D3) (:D2 *D)))
+
+  (INIT &span_edge Order
+    (key ((&blocks.component ^Id *P)
+          (&rank_side ^D)
+          (margin (:B P) D *K))
+      (member ((:t K))
+        (&blocks.component Id *P)
+        (&rank_side D)
+        (margin (:B P) D *K))
+      (score ((:t K) (:S K))
+        (&blocks.component Id *P)
+        (&rank_side D)
+        (margin (:B P) D *K))))
+
+  (INIT &block_rank Order
+    (key ((&span_edge.minimal (:key *Id ^D)))
+      (member ((:t Id))
+        (&span_edge.minimal (:key *Id D)))
+      (score ((:t Id) (:S K))
+        (&span_edge.minimal (:key *Id D) (:t *K)))))
+
+  (INIT &marker_rank Order
+    (key ((&rank_side ^D))
+      (score ((:t P) (:S K))
+        (&marker *P)
+        (margin (:B P) D *K)))
+    (member ((:t P))
+      (&marker *P))))
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  (RULE &line_axis
+    (&setup)
+    (&marker_edge2 *D)
+    (axis_of D *A))
+
+  (RULE &reach_hit
+    (&blocks.component *Id *P)
+    (&line_axis *A)
+    (split P A (:Across *Q))
+    (&marker (:P *P_marker) *C)
+    (split (:P P_marker) A (:Across Q)))
+
+  (RULE &unreached
+    (&blocks.component *Id)
+    (NOT (&reach_hit Id)))
+
+  (RULE &gap
+    (&blocks.component *Id *P)
+    (&line_axis *A)
+    (split P A (:Across *Q))
+    (&marker (:P *P_marker))
+    (split (:P P_marker) A (:Across *Q_m))
+    (relative (:Base Q_m) (:X Q) (:X_rel *V))
+    (axis_of *D A)
+    (perp_dir D *D2)
+    (margin (:B V) (:D D2) *K)
+    (>= K 0))
+
+  (INIT &nearest Order
+    (key ((&gap ^Id (:P_marker *P_m) *K))
+      (member ((:t (:V P_m) (:S K)))
+        (&gap Id (:P_marker *P_m) *K))
+      (score ((:t (:V P_m) (:S K)) (:S K))
+        (&gap Id (:P_marker *P_m) *K)))))
+
+(ALTS $m "how a block is paired with a marker" $Span
+  (ALT $Span
+    (ALTS $r "which blocks a marker reaches" $AllHit
+      (ALT $FirstHit
+        (OUTPUT recolor-by-marker "each marker paints the first block its column meets going away from the marker line; undefined where two markers' columns meet one block."
+          (INIT &first_hit_full Ray
+            (source (P)
+              (&marker *P))
+            (node (P)
+              (&marker_edge2 *D)
+              (opposite D (:Opp *D2))
+              (input *P))
+            (dir ((:D D2))
+              (&setup)
+              (&marker_edge2 *D)
+              (opposite D (:Opp *D2))))
+          (RULE &first_hit_stop_full
+            (&first_hit.end (:P *E1) (:D *V2) (:Origin *V4))
+            (neighbor (:P E1) (:D V2) (:Q *V1))
+            (&first_hit_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+          (RULE &reach_hit
+            (&first_hit_stop_full (:V1 *P) (:V4 *P_marker))
+            (&blocks.component *Id P)
+            (&marker (:P P_marker) *C)))))
+    (ALTS $u "what a block that no marker reaches takes" $NoFill
+      (ALT $KeepUnmarked
+        (OUTPUT keep-unmarked "a block that no marker reaches keeps its color.")
+        (RULE &fill
+          (OR ((&unreached *Id)
+               (&blocks.component Id *P)
+               (input P (:Col *C)))
+              ((&reach_hit (:Id *Id2) C)
+               (NOT (&multi_hit (:Id Id2)))
+               (&blocks.component (:Id Id2) P)))))
+      (ALT $NearestMarker
+        (OUTPUT nearest-marker "a block that no marker reaches takes the color of the marker nearest its span along the marker line; undefined where two markers tie."
+          (RULE &nearest_tie
+            (&nearest.minimal (:key *Id) (:t (:V *P1)))
+            (&nearest.minimal (:key Id) (:t (:V *P2)))
+            (!= P1 P2)))
+        (RULE &fill
+          (OR ((&unreached *Id)
+               (NOT (&nearest_tie Id))
+               (&nearest.minimal (:key Id) (:t (:V *P_m)))
+               (&marker (:P P_m) *C)
+               (&blocks.component Id *P))
+              ((&reach_hit (:Id *Id2) C)
+               (NOT (&multi_hit (:Id Id2)))
+               (&blocks.component (:Id Id2) P)))))))
+  (ALT $Rank
+    (OUTPUT recolor-by-marker "the blocks, ordered by their span's edge on either side along the marker line, pair one to one with the markers ordered from that side; undefined where the counts differ, two blocks or two markers tie, or the two sides give different outputs.")
+    (RULE &broken
+      ;; The ranks do not pair blocks and markers one to one: $Rank is undefined.
+      (OR ((&block_rank.rank (:key *D) (:t *Id1) (:R *N))
+           (&block_rank.rank (:key D) (:t *Id2) (:R N))
+           (!= Id1 Id2))
+          ((&marker_rank.rank (:key (:D *D2)) (:t *P1) (:R *N2))
+           (&marker_rank.rank (:key (:D D2)) (:t *P2) (:R N2))
+           (!= P1 P2))
+          ((&block_rank.rank (:key (:D *D3)) (:R *N3))
+           (NOT (&marker_rank.rank (:key (:D D3)) (:R N3))))
+          ((&marker_rank.rank (:key (:D *D4)) (:R *N4))
+           (NOT (&block_rank.rank (:key (:D D4)) (:R N4))))
+          ((NOT (&setup)))))
+
+    (RULE &fill
+      (&block_rank.rank (:key *D) (:t *Id) (:R *N))
+      (&marker_rank.rank (:key D) (:t *P_m) (:R N))
+      (&marker (:P P_m) *C)
+      (&blocks.component Id *P))))
+
+(ALTS $s "which cells are markers" $MarkerLine
+  (ALT $MarkersAnywhere
+    (INPUT marker-line "every cell of a color other than &bg and the block color is a marker, wherever it lies, at its place along the marker line's axis; undefined where a block's span holds two of them."
+      (RULE &marker
+        (&marker_edge2)
+        (&other_ink *P)
+        (input P (:Col *C))))
+    (ALT $AnyBlockColor
+      (INPUT blocks "the blocks are the one-color 4-connected components of any color other than &bg off the marker line; with $MarkersAnywhere, the single-cell components are markers, not blocks."
+        (RULE &kin_neighbor
+          (input *P (:Col *C))
+          (dir_elem *D)
+          (neighbor P D *Q)
+          (input (:P Q) (:Col C)))
+
+        (RULE &lone
+          (input *P (:Col *C))
+          (NOT (&bg C))
+          (NOT (&kin_neighbor P)))
+
+        (RULE &marker
+          (&marker_edge2 *D)
+          (&other_ink *P)
+          (input P (:Col *C))
+          (IF ((margin (:B P) D (:K 0)))
+              ()
+              ((&lone P))))
+        (RULE &block_node
+          (&field_cell *P (:C *Bk))
+          (NOT (&lone P)))))))
+
+(ALTS $k "which cells form the blocks" $StoredBlockColor
+  (ALT $BlockColorFromField
+    (INPUT blocks "the block color is the commonest color other than &bg; undefined where two colors tie."
+      (RULE &block_color2
+        (&commonest2.maximal (:t (:V *C)))
+        (ALL ((&commonest2.maximal (:t (:V *C1)))
+              (&commonest2.maximal (:t (:V *C2))))
+             ((= C1 C2))))))
+  (ALT $AnyBlockColor
+    (INPUT blocks "the blocks are the one-color 4-connected components of any color other than &bg off the marker line; with $MarkersAnywhere, the single-cell components are markers, not blocks."
+      (RULE &blocks_ok)
+
+      (RULE &other_ink
+        (input *P (:Col *C))
+        (NOT (&bg C))
+        (&blocks_ok))
+
+      (RULE &field_cell
+        (&marker_edge2 *D)
+        (input *P (:Col *C))
+        (NOT (&bg C))
+        (NOT (margin (:B P) D (:K 0))))
+
+      (RULE &block_node
+        (&field_cell *P (:C *Bk))))))
+
+(ALTS $e "which edge holds the markers" $StoredEdge
+  (ALT $EdgeFromMarkers
+    (INPUT marker-line "the marker edge is the one edge whose line holds a cell of a color other than &bg and the block color and whose next line holds only &bg; undefined where no edge or more than one does."
+      (RULE &edge_has_ink
+        (&other_ink *P)
+        (margin (:B P) *D (:K 0)))
+
+      (RULE &next_line_ink
+        (input *P)
+        (margin (:B P) *D (:K 0))
+        (opposite D (:Opp *D2))
+        (neighbor P (:D D2) *Q)
+        (input (:P Q) (:Col *C))
+        (NOT (&bg C)))
+
+      (RULE &edge_cand
+        (&edge_has_ink *D)
+        (NOT (&next_line_ink D)))
+
+      (RULE &edge_multi
+        (&edge_cand (:D *D1))
+        (&edge_cand (:D *D2))
+        (!= D1 D2))
+
+      (RULE &marker_edge2
+        (&edge_cand *D)
+        (NOT (&edge_multi))))))
+
+(RULE &multi_hit
+  (&reach_hit *Id (:P_marker *P1))
+  (&reach_hit Id (:P_marker *P2))
+  (!= P1 P2))
+
+(RULE &fill
+  (&reach_hit *Id *C)
+  (NOT (&multi_hit Id))
+  (&blocks.component Id *P))
+
+(RULE &broken
+  (NOT (&setup)))
+
+(RULE &output
+  (OR ((&fill *P (:C *Col)))
+      ((NOT (&broken))
+       (input P Col)
+       (NOT (&blocks.component P)))))
+
+(OUT (&output ^P ^Col))

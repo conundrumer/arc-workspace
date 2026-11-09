@@ -1,0 +1,174 @@
+;; inputs eedbca7105a2863400041b9a79812740389a52fe62b561325d9e6684269d1aa2 programs/solvers/aee291af.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aee291af
+
+(INPUT field "a field of background (1), with stray cells of frame_color (8) scattered over it, some of them touching a box")
+
+(INPUT boxes "several disjoint square boxes of one size, each with a 1-wide border of frame_color and an interior of frame_color and mark_color cells, where the marks span the whole interior"
+
+  (DET_OR_RULE &mark_color RarestColor SharedColor)
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &blobs Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &marks Connectivity
+    (node (P)
+      (input *P *Col)
+      (&mark_color (:C Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT one-odd "every box but one has the same interior pattern, and the one left has another pattern")
+
+(OUTPUT odd-box "the output is the box whose pattern no other box shares, border included"
+
+  (DET &frame_color ColorDomain)
+
+  (INIT &outline Outlines
+    (node (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (RULE &foreign_cell
+    (&outline.box *B)
+    (input *P *Col)
+    (interior (:A P) B)
+    (NOT (&frame_color (:C Col)))
+    (NOT (&mark_color (:C Col))))
+
+  (RULE &candidate
+    (&outline.box *B)
+    (input *P *Col)
+    (interior (:A P) B)
+    (&mark_color (:C Col))
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (axis_extents (:P P_rel) *A (:N1 *N) (:N2 N))
+    (NOT (&foreign_cell B)))
+
+  (RULE &nested
+    (&candidate *B)
+    (&candidate (:B *B2))
+    (!= B B2)
+    (inside (:A B) (:B B2)))
+
+  (RULE &box
+    (&candidate *B)
+    (NOT (&nested B)))
+
+  (RULE &box_cell
+    (&box *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  ;; Two boxes show the same pattern when their cells match, each read in its
+  ;; box's own frame.
+  (INIT &pattern Inclusion
+    (pattern ((:pattern B) (:m P Col))
+      (&box_cell *B (:P_rel *P) *Col))
+    (observed ((:observed B) (:m P Col))
+      (&box_cell *B (:P_rel *P) *Col)))
+
+  ;; How many boxes show each box's pattern.
+  (INIT &copies Cardinality
+    (key ((&pattern.equal (:observed ^B) (:pattern *B2)))
+      (member ((:m B2))
+        (&pattern.equal (:observed B) (:pattern *B2)))))
+
+  (INIT &extremes Order
+    (member ((:t (:V B) (:S N)))
+      (&copies.size (:key *B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&copies.size (:key *B) *N))))
+
+(ALTS $f "how a box is found" $FramedSquare
+  (ALT $MarkBbox
+    (INPUT boxes "a box is the bounding box of the marks of one 8-connected group of non-background cells, grown by one cell on each side; undefined where a grown box reaches past the grid edge"
+      (RULE &mark_group
+        (&blobs.component *P *Id)
+        (input P *Col)
+        (&mark_color (:C Col)))
+
+      ;; The bounding box of each group's marks together with the cells around them.
+      (INIT &grown BoundingBox
+        (key ((&mark_group *P ^Id)
+              (neighbor P *D *Q))
+          (cell ((:P Q))
+            (&mark_group *P Id)
+            (neighbor P *D *Q))))
+
+      (RULE &spill
+        (&grown.box *B)
+        (NOT (inside (:A B) (:B 0))))
+
+      (RULE &box
+        (&grown.box *B)
+        (NOT (&spill)))))
+  (ALT $MarkGroupBbox
+    (INPUT boxes "a box is the bounding box of one 8-connected group of marks, grown by one cell on each side; undefined where a grown box reaches past the grid edge"
+
+      ;; The bounding box of each group's marks together with the cells around them.
+      (INIT &grown BoundingBox
+        (key ((&marks.component *P ^Id)
+              (neighbor P *D *Q))
+          (cell ((:P Q))
+            (&marks.component *P Id)
+            (neighbor P *D *Q))))
+
+      (RULE &spill
+        (&grown.box *B)
+        (NOT (inside (:A B) (:B 0))))
+
+      (RULE &box
+        (&grown.box *B)
+        (NOT (&spill))))))
+
+(ALTS $s "which box is the odd one" $UniquePattern
+  (ALT $RarestPattern
+    (INPUT one-odd "the boxes show several patterns")
+    (OUTPUT odd-box "the output is the pattern the fewest boxes show; undefined where that fewest count is tied"
+      (RULE &rare_tie
+        (&extremes.minimal (:t (:V *B)))
+        (&extremes.minimal (:t (:V *B2)))
+        (NOT (&pattern.equal (:observed B) (:pattern B2)))))
+    (RULE &picked
+      (&extremes.minimal (:t (:V *B)))
+      (NOT (&rare_tie)))))
+
+(RULE &shared
+  (&pattern.equal (:observed *B) (:pattern *B2))
+  (!= B B2))
+
+(RULE &unique
+  (&box *B)
+  (NOT (&shared B)))
+
+(RULE &many_unique
+  (&unique *B)
+  (&unique (:B *B2))
+  (!= B B2))
+
+(RULE &picked
+  (&unique *B)
+  (NOT (&many_unique)))
+
+(RULE &output
+  (&picked *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

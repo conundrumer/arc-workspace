@@ -1,0 +1,142 @@
+;; inputs f8a6e03984a728b0de533f1af18d7d1c7e7f2d379779aeb9ce685341e82f3ee4 programs/solvers/38007db0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 38007db0
+
+(INIT &line_color Singleton
+  (key ((input (:P *P_grid) *Col)
+        (axis_elem ^A)
+        (split (:P P_grid) A (:Along ^L)))
+    (member ((:v Col))
+      (input (:P *P_grid) *Col)
+      (split (:P P_grid) A (:Along L)))))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The tiles the one-color lines cut out.
+(INIT &cut_rank Order
+  (key ((OR ((&line_color.value (:key *A *L))
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input (:P *P_grid))
+             (margin (:B P_grid) D K))))
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&line_color.value (:key *A *L))
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input (:P *P_grid))
+           (margin (:B P_grid) D K))))
+    (probe ((:t K))
+      (input (:P *P_grid))
+      (margin (:B P_grid) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &stack_axis AxisDomain)
+
+;; A tile with the separator cells around it — the block the output shows.
+(INIT &block BoundingBox
+  (key ((&cut_tile_of (:P *Q) (:P_tile ^T))
+        (OR ((neighbor (:P Q) *D (:Q *P_grid))
+             (input (:P P_grid)))
+            ((= P_grid Q))))
+    (cell ((:P P_grid))
+      (&cut_tile_of (:P *Q) (:P_tile T))
+      (OR ((neighbor (:P Q) *D (:Q *P_grid))
+           (input (:P P_grid)))
+          ((= P_grid Q))))))
+
+;; A tile's content, in the tile's own frame.
+(INIT &tile_view BoundingBox
+  (key ((&cut_tile_of (:P *P_grid) (:P_tile ^T)))
+    (cell ((:P P_grid))
+      (&cut_tile_of (:P *P_grid) (:P_tile T)))))
+
+(RULE &tile_content
+  (&tile_view.cell (:key *T) (:P *P_grid))
+  (input (:P P_grid) *Col)
+  (&tile_view.box (:key T) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_intile)))
+
+(INIT &same Inclusion
+  (pattern ((:pattern T) (:m P_intile Col))
+    (&tile_content *T *P_intile *Col))
+  (observed ((:observed T) (:m P_intile Col))
+    (&tile_content *T *P_intile *Col)))
+
+(RULE &band_peer
+  (&same.equal (:observed *T) (:pattern *T2))
+  (!= T T2)
+  (&stack_axis *A)
+  (perp A *A2)
+  (same_line (:A A2) (:P T) (:Q T2)))
+
+(RULE &odd
+  (&cut_tile_of (:P_tile *T))
+  (NOT (&band_peer T)))
+
+(ALTS $choice "which tile stands out" $BandUnique
+  (ALT $GridUnique
+    (RULE &grid_peer
+      (&same.equal (:observed *T) (:pattern *T2))
+      (!= T T2))
+
+    (RULE &odd
+      (&cut_tile_of (:P_tile *T))
+      (NOT (&grid_peer T))))
+  (ALT $GridDeviant
+    (INIT &norm_count Cardinality
+      (key ((&same.equal (:observed ^T) (:pattern *T2)))
+        (member ((:m T2))
+          (&same.equal (:observed T) (:pattern *T2)))))
+
+    ;; The grid's norm: the tiles in a largest class of equals.
+    (INIT &norm Order
+      (member ((:t T))
+        (&norm_count.size (:key *T)))
+      (score ((:t T) (:S N))
+        (&norm_count.size (:key *T) *N)))
+
+    (RULE &odd
+      (&cut_tile_of (:P_tile *T))
+      (NOT (&norm.maximal (:t T))))))
+
+(RULE &output
+  (&odd *T)
+  (&block.cell (:key T) (:P *P_grid))
+  (input (:P P_grid) *Col)
+  (&block.box (:key T) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+  (&stack_axis *A)
+  (split (:P P_grid) A (:Along *P_grid_along))
+  (split (:P P_inner) A (:Across *P_inner_across))
+  (compose (:A P_grid_along) (:B P_inner_across) (:C *P)))
+
+(OUT (&output ^P ^Col))

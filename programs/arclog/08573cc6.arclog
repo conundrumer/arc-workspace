@@ -1,0 +1,152 @@
+;; inputs bf3e9e5165e5efb3e6467d5b6cf69603b0136ab9548bcb5ef02b71747122e7f1 programs/solvers/08573cc6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 08573cc6
+
+(DET &bg DominantColor)
+
+(DET &dot RarestColor)
+
+(DET &legend_cell
+  (ex_input *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&dot (:C Col))))
+
+(DET &corner
+  (&legend_cell *E *P)
+  (corner_dist P (:Diag *D) (:K 0)))
+
+(DET &along
+  (&corner *E (:D *Diag))
+  (&legend_cell E *P)
+  (corner_dist P Diag (:K 0))
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&legend_cell E (:P Q)))
+
+(DET &sense SenseDomain)
+
+(DET &start_dir DirDomain)
+
+;; The legend and the walk it starts, as one assembly. The legend's cell
+;; at a grid corner and the step to its second cell fix the pose.
+(RIGID_DET &legend
+  (instance ((OR ((&corner ^E)) ((&along E))))
+    (&corner E *D)
+    (&along E *D)
+    (&start_dir *D)
+    (&sense *S)))
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&dot (:C Col))))
+
+(RULE &legend2
+  (&marker *P)
+  (&legend.corner (:Pose *D) (:D *Diag))
+  (corner_dist P Diag (:K 0))
+  (&legend.along (:Pose D) (:D *R))
+  (neighbor P (:D R) *Q)
+  (&marker (:P Q)))
+
+(DET &len0 TileCount)
+
+(RULE &seed
+  (input *P *Col)
+  (&dot (:C Col)))
+
+;; The arms the walk reaches: from an arm that ends on the grid, the next arm
+;; turns and is one cell longer.
+;; The first arm leaves the dot.
+(INIT &spiral Propagation
+  (source ((:n P_end D Delta))
+    (&seed *P)
+    (&legend2 (:D *Pose))
+    (&legend.start_dir Pose *D)
+    (&len0 *N)
+    (jump P D (:K N) (:Q *P_end))
+    (jump_offset D (:K N) (:V *Delta)))
+  (edge ((:a (:P_end P) D Delta) (:b (:P_end P_end2) (:D D2) (:Delta Delta2)))
+    (input *P)
+    (axis_of *D *A)
+    (sub_extent P A (:K *N))
+    (jump_offset D (:K N) (:V *Delta))
+    (&legend2 (:D *Pose))
+    (&legend.sense Pose *S)
+    (turn S D *D2)
+    (c4_turn S (:T *M))
+    (apply (:D M) (:P Delta) (:P_out *DeltaR))
+    (neighbor (:P DeltaR) (:D D2) (:Q *Delta2))
+    (compose (:A P) (:B Delta2) (:C *P_end2))))
+
+(RULE &arm
+  (&spiral.reached (:n *P_end *D *Delta))
+  (relative (:Base Delta) (:X P_end) (:X_rel *P_start)))
+
+(INIT &run_frame Frame
+  (key ((&arm (:P_start ^P) *P_end)
+        (frame_extent (:P P_end) *A *N))
+    (extent (A N)
+      (&arm (:P_start P) *P_end)
+      (frame_extent (:P P_end) *A *N))))
+
+;; An arm read back from its end, keyed by where it starts. An arm the grid
+;; edge cuts short ends off the grid, so a forward cast from the start has no
+;; end to stop at. A cast from off the frame still walks in, so the backward
+;; run reaches that arm's on-grid cells.
+(INIT &run Ray
+  (key ((OR ((&arm (:P_start ^P) *P_end))
+            ((&arm (:P_start P) *D)
+             (opposite D (:Opp *O)))
+            ((&run_frame.cell (:key P) (:P *P2)))))
+    (source ((:P P_end))
+      (&arm (:P_start P) *P_end))
+    (node ((:P P2))
+      (&run_frame.cell (:key P) (:P *P2)))
+    (dir ((:D O))
+      (&arm (:P_start P) *D)
+      (opposite D (:Opp *O)))))
+
+(RULE &run_cell
+  (&arm (:P_start *Key))
+  (input))
+
+(RULE &arm_cell
+  (&arm (:P_start *P2) *D *P_end)
+  (opposite D (:Opp *O))
+  (&run.ray (:key (:P P2)) *P (:D O) *K (:Origin P_end))
+  (&run_cell (:Key P2))
+  (input P)
+  (&run.ray (:key (:P P2)) (:P P2) (:D O) (:K *N) (:Origin P_end))
+  (input (:P P2))
+  (< K N))
+
+(RULE &corner_axis
+  (&legend2 (:D *Pose))
+  (&legend.start_dir Pose *D)
+  (axis_of D *A))
+
+(ALTS $choice "The cases differ on how the corner marker's axis is picked" $Start
+  (ALT $Stored
+    (DET &color_axis AxisDomain)
+
+    (RULE &corner_axis
+      (&color_axis *A))))
+
+(RULE &output
+  (OR ((&arm_cell *P *D)
+       (axis_of D *A)
+       (&legend2 (:P *Q) (:Q *Q2))
+       (OR ((&corner_axis A)
+            (input (:P Q) *Col))
+           ((&corner_axis (:A *A2))
+            (perp A A2)
+            (input (:P Q2) Col))))
+      ((input P (:Col *Col2))
+       (OR ((NOT (&arm_cell P))
+            (NOT (&seed P))
+            (&bg (:C Col)))
+           ((&seed P)
+            (= Col Col2))))))
+
+(OUT (&output ^P ^Col))

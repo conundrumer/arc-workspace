@@ -1,0 +1,323 @@
+;; inputs ef146bd97fdd2cce59adb3f32e38acee112a5d7a1dded730dc97e16bd73fa768 programs/solvers/a6f40cea.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a6f40cea
+
+(INPUT background "one color fills most of the grid")
+
+(INPUT window "one rectangle has a one-cell frame of the frame color, and its interior is one uniform fill color, which may equal the background; it is the largest frame of the frame color, and smaller ones may stand elsewhere as decoys")
+
+(INPUT outlines "each other figure is the one-cell outline of an axis-aligned rectangle; part of the outline lies under the window and does not show, and the visible part spans the rectangle's full bounding box, possibly in several pieces")
+
+(INPUT outline-colors "an outline has one color, or two colors that alternate cell by cell along it, so that a cell's color depends only on its checkerboard class")
+
+(OUTPUT crop-interior "the output is the window interior, filled with the interior's fill color"
+
+  (DET &frame_color VanishedColor)
+
+  (RULE &frame_src
+    (&frame_color (:C *Col)))
+
+  (INIT &rings Outlines
+    (key ((&frame_src ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &hole
+    (&rings.box *B)
+    (input *P)
+    (interior (:A P) B))
+
+  (INIT &interior_box BoundingBox
+    (key ((&hole ^B *P))
+      (cell (P)
+        (&hole B *P)))))
+
+(OUTPUT group-outline "a piece is a connected set of non-background cells outside the window; two pieces that share a color form one outline when the perimeter of their joint bounding box holds no background cell outside the window")
+
+(OUTPUT complete-rectangle "the rectangle of an outline is the bounding box of its visible cells, and the outline is the perimeter of that box")
+
+(OUTPUT draw-hidden "each perimeter cell inside the window interior is painted at its place in the interior")
+
+(OUTPUT parity-color "a painted cell takes the color that the outline's visible cells have in its checkerboard class; undefined where one class holds two colors"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &fill Singleton
+    (key ((&hole ^B *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&hole B *P)
+        (input P *Col))))
+
+  (RULE &candidate
+    (&frame_src *Col)
+    (&rings.box (:key Col) *B)
+    (&fill.value (:key B) (:v *F))
+    (!= F Col))
+
+  (INIT &window_count Cardinality
+    (key ((&candidate ^B)
+          (&hole B *P))
+      (member ((:m P))
+        (&candidate B)
+        (&hole B *P))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &window Order
+    (member ((:t B))
+      (&window_count.size (:key *B)))
+    (score ((:t B) (:S N))
+      (&window_count.size (:key *B) *N)))
+
+  (INIT &pieces Connectivity
+    (key ((&window.maximal (:t ^B)))
+      (node (P)
+        (input *P *Col)
+        (NOT (&commonest.maximal (:t Col)))
+        (NOT (inside (:A P) B)))))
+
+  (RULE &piece_color
+    (&pieces.component (:key *B) *P *Id)
+    (input P *Col))
+
+  ;; The bounding box of two pieces that share a color.
+  (INIT &joint_box BoundingBox
+    (key ((&piece_color ^B ^Id *Col)
+          (&piece_color B (:Id ^Id2) Col)
+          (OR ((&pieces.component (:key B) *P Id))
+              ((&pieces.component (:key B) P (:Id Id2)))))
+      (cell (P)
+        (&piece_color B Id *Col)
+        (&piece_color B (:Id Id2) Col)
+        (OR ((&pieces.component (:key B) *P Id))
+            ((&pieces.component (:key B) P (:Id Id2)))))))
+
+  (RULE &gapped
+    (&joint_box.box (:key (:B *Win) *Id *Id2) (:B *B_joint))
+    (&commonest.maximal (:t *Col))
+    (input *P Col)
+    (inside (:A P) (:B B_joint))
+    (same_dist (:P1 P) (:P2 B_joint))
+    (NOT (inside (:A P) (:B Win))))
+
+  (RULE &joined
+    (&joint_box.box (:key *B *Id *Id2))
+    (NOT (&gapped (:Win B) Id Id2)))
+
+  ;; An outline is what a chain of joins connects.
+  (INIT &outline_id Quotient
+    (edge ((:a (:Win B) Id) (:b (:Win B) (:Id Id3)))
+      (OR ((&joined *B *Id (:Id2 *Id3)))
+          ((&piece_color B Id)
+           (= Id3 Id)))))
+
+  (RULE &outline
+    (&pieces.component (:key (:B *Win)) *P (:Id *Id2))
+    (&outline_id.class (:a Win (:Id Id2)) *Id))
+
+  ;; The checkerboard classes: the cells joined by diagonal steps.
+  (INIT &checker Quotient
+    (edge ((:a P) (:b Q))
+      (input *P)
+      (OR ((diag_dir_elem *D)
+           (neighbor P D *Q)
+           (input (:P Q)))
+          ((= Q P)))))
+
+  (INIT &outline_box BoundingBox
+    (key ((&outline ^Win ^Id *P))
+      (cell (P)
+        (&outline Win Id *P))))
+
+  (RULE &perimeter
+    (&outline_box.box (:key *Win *Id) (:B *B_o))
+    (input *P)
+    (inside (:A P) (:B B_o))
+    (same_dist (:P1 P) (:P2 B_o)))
+
+  (RULE &phase
+    (&outline *Win *Id (:P *P0))
+    (input (:P P0) *Col)
+    (&checker.class (:a P0) (:Id *C)))
+
+  (INIT &perimeter_len Cardinality
+    (key ((&perimeter ^Win ^Id *P))
+      (member ((:m P))
+        (&perimeter Win Id *P))))
+
+  ;; The perimeter as a cycle: along each side, a quarter turn from the side's
+  ;; edge.
+  (INIT &loop Walk
+    (key ((OR ((&outline_box.box (:key (:Win ^O_win) (:Id ^O_id)) (:B *B_o))
+               (&perimeter (:Win O_win) (:Id O_id) *P)
+               (inside (:A P) (:B B_o))
+               (same_dist *D (:P1 P) (:P2 B_o))
+               (turn ^S D *D2)
+               (neighbor P (:D D2) *Q)
+               (&perimeter (:Win O_win) (:Id O_id) (:P Q)))
+              ((&perimeter_len.size (:key (:Win O_win) (:Id O_id)) *N)
+               (sense_elem S))))
+      (successor ((:p P) (:p_next Q))
+        (&outline_box.box (:key (:Win O_win) (:Id O_id)) (:B *B_o))
+        (&perimeter (:Win O_win) (:Id O_id) *P)
+        (inside (:A P) (:B B_o))
+        (same_dist *D (:P1 P) (:P2 B_o))
+        (turn S D *D2)
+        (neighbor P (:D D2) *Q)
+        (&perimeter (:Win O_win) (:Id O_id) (:P Q)))
+      (steps (N)
+        (&perimeter_len.size (:key (:Win O_win) (:Id O_id)) *N)
+        (sense_elem S))))
+
+  (RULE &period_cand
+    (&loop.walk (:key (:O_win *Win) (:O_id *Id)) *N)
+    (> N 0)
+    (&perimeter_len.size (:key Win Id) (:N *Len))
+    (divide (:T Len) (:Side N) (:Gap 0) (:Remainder 0)))
+
+  ;; The class of each perimeter cell under a period of n steps: the cells a
+  ;; whole number of periods on.
+  (INIT &orbit Quotient
+    (edge ((:a (:Win O_win) (:Id O_id) N P) (:b (:Win O_win) (:Id O_id) N (:P Q)))
+      (&period_cand (:Win *O_win) (:Id *O_id) *N)
+      (&loop.walk (:key O_win O_id) (:p0 *P) N (:p *Q))))
+
+  (RULE &orbit_color
+    (&outline *Win *Id *P)
+    (&orbit.class (:a Win Id *N P) (:Id *C))
+    (input P *Col))
+
+  (RULE &clash
+    (&orbit_color *Win *Id *N *C *Col)
+    (&orbit_color Win Id N C (:Col *Col2))
+    (!= Col Col2))
+
+  (INIT &period Order
+    (key ((&period_cand ^Win ^Id *N)
+          (NOT (&clash Win Id N)))
+      (member ((:t N))
+        (&period_cand Win Id *N)
+        (NOT (&clash Win Id N)))
+      (score ((:t N) (:S N))
+        (&period_cand Win Id *N)
+        (NOT (&clash Win Id N))))))
+
+(ALTS $src "where the frame color comes from" $FrameColor
+  (ALT $DeriveFrameColor
+    (INPUT window "the window is the largest one-cell ring of any non-background color whose interior is one color other than the ring's"
+      (RULE &frame_src
+        (input *Col)
+        (NOT (&commonest.maximal (:t Col)))))))
+
+(ALTS $pick "which ring of the frame color is the window" $Largest
+  (ALT $OccludedWindow
+    (INPUT window "the window is the largest ring of the frame color that some outline cell touches; undefined where no outline cell touches one"
+      (RULE &occluding
+        (&candidate *B)
+        (input *P *Col)
+        (NOT (&commonest.maximal (:t Col)))
+        (NOT (inside (:A P) B))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (inside (:A Q) B)
+        (same_dist (:P1 Q) (:P2 B)))
+
+      (INIT &window_count Cardinality
+        (key ((&candidate ^B)
+              (&occluding B)
+              (&hole B *P))
+          (member ((:m P))
+            (&candidate B)
+            (&occluding B)
+            (&hole B *P)))))))
+
+(ALTS $part "which hidden cells an outline paints" $Complete
+  (ALT $Complete
+    (ALTS $color "the color a hidden perimeter cell takes" $Parity
+      (ALT $PerimeterPeriod
+        (OUTPUT parity-color "along the perimeter of the completed rectangle, a hidden cell takes the color of its class under the smallest period that the visible cells fit; undefined where its class holds no visible cell")
+        (RULE &paint
+          (&period.minimal (:key (:Win *B) (:Id *Oid)) (:t *N))
+          (&orbit.class (:a (:Win B) (:Id Oid) N *P) (:Id *C))
+          (&orbit_color (:Win B) (:Id Oid) N C *Col)))))
+  (ALT $ContactCorner
+    (OUTPUT complete-rectangle "no rectangle is completed; an outline is read by its contacts and the window sides they lie on, where a contact is a frame cell other than a corner that an outline cell enters from outside"
+      (RULE &contact
+        (&outline *Win *Id *P)
+        (opposite *D (:Opp *D_in))
+        (neighbor P (:D D_in) *Q)
+        (inside (:A Q) (:B Win))
+        (same_dist D (:P1 Q) (:P2 Win))
+        (neighbor (:P Q) (:D D_in) (:Q *Q_in))
+        (&hole (:B Win) (:P Q_in)))
+
+      (RULE &bent
+        (&contact *Win *Id *D)
+        (perp_dir D *D2)
+        (&contact Win Id (:D D2)))
+
+      (RULE &beaten
+        (&contact *Win *Id *D *Q)
+        (perp_dir D *D2)
+        (&contact Win Id D (:Q *Q2))
+        (nearer (:D D2) (:P Q) (:Q Q2)))
+
+      (RULE &far
+        (&contact *Win *Id *D *Q)
+        (perp_dir D *D2)
+        (NOT (&beaten Win Id D D2 Q)))
+
+      (RULE &contact_cell
+        (axis_of *D *A)
+        (&hole (:B *Win) *P)
+        (OR ((&contact Win *Id D *Q)
+             (opposite D (:Opp *D2))
+             (&contact Win Id (:D D2))
+             (NOT (&bent Win Id)))
+            ((&far Win Id D D2 Q)
+             (&far Win Id (:D D2) (:D2 D) (:Q *Q2))
+             (NOT (nearer D (:P Q2) (:Q P)))))
+        (same_line A P Q)))
+    (OUTPUT draw-hidden "an outline that touches two opposite sides alone paints a full line across the interior at each contact; each pair of perpendicular sides it touches gives an L, whose arm from each side runs from that side's contact furthest from the other side to the other arm; an outline that touches one side alone paints nothing")
+    (RULE &paint
+      (&contact_cell (:Win *B) (:Id *Oid) *P)
+      (&checker.class (:a P) (:Id *C))
+      (&phase (:Win B) (:Id Oid) *Col C))))
+
+(ALTS $group "which pieces form one outline" $ByColor
+  (ALT $MonoMerge
+    (OUTPUT group-outline "only one-color pieces join by a shared color, and each piece of two or more colors stands alone"
+      (RULE &joined
+        (&piece_color *B *Id *Col)
+        (ALL ((&piece_color B Id (:Col *Colm))
+              (&piece_color B Id (:Col *Col2)))
+             ((= Colm Col2)))
+        (&piece_color B (:Id *Id2) Col)
+        (ALL ((&piece_color B (:Id Id2) (:Col *Colmm))
+              (&piece_color B (:Id Id2) (:Col *Col2m)))
+             ((= Colmm Col2m)))))))
+
+(RULE &paint
+  (&perimeter (:Win *B) (:Id *Oid) *P)
+  (&checker.class (:a P) (:Id *C))
+  (&phase (:Win B) (:Id Oid) *Col C))
+
+(RULE &output
+  (&window.maximal (:t *B))
+  (&interior_box.box (:key B) (:B *B_int))
+  (&hole B (:P *P2))
+  (inside (:A P2) (:B B_int))
+  (relative (:Base B_int) (:X P2) (:X_rel *P))
+  (OR ((&paint B (:P P2) *Col))
+      ((NOT (&paint B (:P P2)))
+       (&fill.value (:key B) (:v Col)))))
+
+(OUT (&output ^P ^Col))

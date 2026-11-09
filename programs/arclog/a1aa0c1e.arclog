@@ -1,0 +1,421 @@
+;; inputs b0b37117fa1b5b2a545fdaaf5e73d8974665bd9235a5a822bd044ddf08b5fd75 programs/solvers/a1aa0c1e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a1aa0c1e
+
+(INPUT floor "a full row of &floor_color lies at or near the &floor_side edge"
+
+  (DET_OR_RULE &background DominantColor)
+
+  ;; The edge the floor lies along.
+  (DET &floor_side DirDomain)
+
+  (INIT &out_line Singleton
+    (key ((ex_output ^E *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (ex_output E *P *Col)
+        (split P A (:Along L)))))
+
+  (DET &fills
+    (&out_line.value (:key *E) (:v *Col))
+    (NOT (&background (:C Col))))
+
+  (DET &unfilled
+    (&fills *Col)
+    (ex_output *E)
+    (NOT (&fills E Col)))
+
+  (DET &floor_color
+    (&fills (:Col *C))
+    (NOT (&unfilled (:Col C)))))
+
+(INPUT levels "between the opposite edge and the floor, several full rows each of one other color divide the grid into bands. Each such row is a level, and its band is the rows between it and the next full row toward the floor.")
+
+(INPUT ladders "a level may hang one ladder into its band, from the row just past the level. A ladder is 3 cells wide, in the level's color, with rows that alternate between `c 0 c` and `c c c`, and it starts and ends with a `c 0 c` row. A full rung is a `c c c` row.")
+
+(INPUT reach "a ladder either reaches the row just before the next full row, or stops short and leaves an empty gap row")
+
+(INPUT climber "one cell of &marker_color stands in the row just above the floor"
+
+  (DET_OR_RULE &marker_color RarestColor)
+
+  ;; The climber: the one cell of the marker color.
+  (INIT &climber Singleton
+    (member ((:v P))
+      (input *P *Col)
+      (&marker_color (:C Col)))))
+
+(OUTPUT frame "the output has one row per level, in the levels' order from the edge opposite &floor_side. Counted from &bar_edge, its bar cells number &bar_width, or the largest count of full rungs on one ladder when that is larger, and two more columns follow them."
+
+  ;; The edge the bars start from.
+  (DET &bar_edge DirDomain)
+
+  (DET &bar_width ConstOutDim)
+
+  (RULE &row_of
+    (input *P)
+    (&floor_side *D)
+    (axis_of D *A)
+    (split P A (:Along *R)))
+
+  (INIT &row_color Singleton
+    (key ((&row_of *P ^R)
+          (input P *Col))
+      (member ((:v Col))
+        (&row_of *P R)
+        (input P *Col))))
+
+  (RULE &full
+    (&row_color.value (:key (:R *L)) (:v *Col))
+    (NOT (&background (:C Col))))
+
+  (RULE &top_dist
+    (&row_color.member (:key *R))
+    (&floor_side *D)
+    (opposite D (:Opp *U))
+    (margin (:B R) (:D U) *K))
+
+  ;; The full rows in order from the edge opposite the floor.
+  (INIT &lines Order
+    (member ((:t L))
+      (&full *L))
+    (score ((:t L) (:S K))
+      (&full *L)
+      (&top_dist (:R L) *K)))
+
+  ;; The floor row each level reading gives.
+  (INIT &floor Singleton
+    (member ((:v L))
+      (&full *L *Col)
+      (&floor_color (:C Col))))
+
+  (RULE &level
+    (&floor.value (:v *F))
+    (&lines.rank (:t F) (:R *N))
+    (&lines.rank (:t *L) (:R *K))
+    (< K N))
+
+  (RULE &band_row
+    (&lines.successor (:a *L) (:b *L2))
+    (&row_color.member (:key *R))
+    (&floor_side *D)
+    (nearer D (:P R) (:Q L))
+    (nearer D (:P L2) (:Q R)))
+
+  (RULE &ladder
+    (&band_row *L *R)
+    (&full L *Col)
+    (&row_of *P R)
+    (input P Col))
+
+  (RULE &rung
+    (&ladder *L *R *P)
+    (&floor_side *D)
+    (perp_dir D (:D2 *E))
+    (opposite (:D E) (:Opp *E2))
+    (neighbor P (:D E) *Q)
+    (&ladder L R (:P Q))
+    (neighbor P (:D E2) (:Q *Q2))
+    (&ladder L R (:P Q2)))
+
+  ;; The bar length of each level's ladder.
+  (INIT &bar_len Cardinality
+    (key ((OR ((&full ^L))
+              ((&rung L *R))))
+      (member ((:m R))
+        (&rung L *R))
+      (domain ()
+        (&full L))))
+
+  (RULE &level_total
+    (&floor.value (:v *F))
+    (&lines.rank (:t F) (:R *N)))
+
+  (RULE &width
+    (&bar_width *N))
+
+  ;; The larger of the level reading's width and its longest bar.
+  (INIT &widest Order
+    (member ((:t N))
+      (OR ((&width *N))
+          ((&floor.value (:v *F))
+           (&level F *L)
+           (&bar_len.size (:key L) N))))
+    (score ((:t N) (:S N))
+      (OR ((&width *N))
+          ((&floor.value (:v *F))
+           (&level F *L)
+           (&bar_len.size (:key L) N)))))
+
+  (RULE &chart_key
+    (&floor.value (:v *F))
+    (&widest.maximal (:t *W)))
+
+  ;; The chart: one row per level, one column per bar cell.
+  (INIT &chart Frame
+    (key ((&chart_key ^F ^W)
+          (&floor_side *D)
+          (axis_of D *A)
+          (OR ((= *A2 A)
+               (&level_total F *N))
+              ((perp A A2)
+               (= N W)))
+          (&floor_side (:D *D2))
+          (axis_of (:D D2) (:A *A3))
+          (OR ((= *A22 A3)
+               (&level_total F (:N *N2)))
+              ((perp (:A A3) (:A2 A22))
+               (= N2 W)))
+          (perp (:A A2) (:A2 A22)))
+      (extent ((:A A2) N)
+        (&chart_key F W)
+        (&floor_side *D)
+        (axis_of D *A)
+        (OR ((= *A2 A)
+             (&level_total F *N))
+            ((perp A A2)
+             (= N W))))))
+
+  (RULE &chart_row
+    (&chart.cell (:key *F *W) *P)
+    (&floor_side *D)
+    (opposite D (:Opp *U))
+    (margin (:B P) (:D U) *K)
+    (&lines.rank (:t *L) (:R K))
+    (&level F L))
+
+  (RULE &tail
+    (&chart_row *F *W *P *L)
+    (&bar_edge (:D *E))
+    (opposite (:D E) (:Opp *E2))
+    (margin (:B P) (:D E2) (:K 0))
+    (neighbor P (:D E2) (:Q *Q_floor))
+    (neighbor (:P Q_floor) (:D E2) (:Q *Q_climb)))
+
+  ;; The output frame: the box of the chart and its climber column.
+  (INIT &sheet BoundingBox
+    (key ((OR ((&chart.cell (:key ^F ^W) *P))
+              ((&tail F W (:Q_climb *Q)))))
+      (cell (P)
+        (OR ((&chart.cell (:key F W) *P))
+            ((&tail F W (:Q_climb P))))))))
+
+(OUTPUT bar "in a level's row, the first N bar cells take the level's color, where N is the count of full rungs on its ladder, 0 when it has none. The rest of the bar cells take &background."
+
+  ;; The ladder rows in order from the level.
+  (INIT &ladder_order Order
+    (key ((&ladder ^L *R))
+      (member ((:t R))
+        (&ladder L *R))
+      (score ((:t R) (:S K))
+        (&ladder L *R)
+        (&top_dist R *K)))))
+
+(OUTPUT floor-column "the next column takes &floor_color in every row")
+
+(OUTPUT climb "the climber climbs from the floor. It climbs to a level when that level's ladder reaches down, and it climbs again from that level. It stops at the first level whose ladder does not reach down, or at the top level."
+
+  (INIT &fewest Order
+    (key ((&level ^F *L)
+          (&bar_len.size (:key L) *N)
+          (> N 0))
+      (member ((:t (:V L) (:S N)))
+        (&level F *L)
+        (&bar_len.size (:key L) *N)
+        (> N 0))
+      (score ((:t (:V L) (:S N)) (:S N))
+        (&level F *L)
+        (&bar_len.size (:key L) *N)
+        (> N 0)))))
+
+(OUTPUT climber-column "the last column holds the marker color in the row of the highest level the climber reaches. Every other cell in it takes &background."
+
+  (RULE &abuts_next
+    (&lines.successor (:a *L) (:b *L2))
+    (&floor_side *D)
+    (opposite D (:Opp *U))
+    (neighbor (:P L2) (:D U) (:Q *R))
+    (&ladder L R))
+
+  (RULE &reaches
+    (&abuts_next *L))
+
+  (RULE &short
+    (&level *F *L)
+    (NOT (&reaches L)))
+
+  (RULE &short_toward
+    (&short *F (:L *L2))
+    (&level F *L)
+    (dir_elem *D)
+    (nearer D (:P L2) (:Q L)))
+
+  ;; The highest level every ladder from it down to the floor reaches.
+  (RULE &gap_mark
+    (&level *F *L)
+    (NOT (&short F L))
+    (&floor_side *D)
+    (NOT (&short_toward F L D))
+    (OR ((&lines.minimal (:t L)))
+        ((&lines.successor (:a *L0) (:b L))
+         (&short F (:L L0))))))
+
+(ALTS $level "which full rows are the levels, and which is the floor" $AllAbove
+  (ALT $AllAbove
+    (ALTS $floor "how the floor row is found" $ByColor
+      (ALT $DerivedFloor
+        (INPUT floor "the floor is the full row nearest &floor_side. Undefined when no row is full."
+          ;; The floor row each level reading gives.
+          (INIT &floor Singleton
+            (member ((:v L))
+              (&lines.maximal (:t *L)))))
+        (OUTPUT floor-column "the next column takes the floor row's color")))
+    (ALTS $width "how many bar cells each output row has" $StoredWidth
+      (ALT $WidthFromLevels
+        (OUTPUT frame "the count of levels takes the place of &bar_width"
+          (RULE &width
+            (&floor.value (:v *F))
+            (&level_total F *N))))))
+  (ALT $ThreeLevels
+    (INPUT levels "the first &level_count full rows from the edge opposite &floor_side are the levels")
+    (INPUT floor "the next full row is the floor, of any color. Undefined with fewer full rows."
+      (DET &level_count ConstOutDim)
+
+      ;; The floor row each level reading gives.
+      (INIT &floor Singleton
+        (member ((:v L))
+          (&level_count *N)
+          (&lines.rank (:t *L) (:R N)))))
+    (OUTPUT floor-column "the next column takes the floor row's color")))
+
+(ALTS $overflow "what a ladder with more full rungs than &bar_width gives" $Widen
+  (ALT $ClipBar
+    (OUTPUT frame "the bar cells number &bar_width"
+      (RULE &chart_key
+        (&floor.value (:v *F))
+        (&width (:N *W))))
+    (OUTPUT bar "a ladder with more full rungs than bar cells fills every bar cell of its row")))
+
+(ALTS $rung "which count of a ladder's rows gives the bar length" $FullRungs
+  (ALT $LadderHeight
+    (OUTPUT bar "the bar length is half the ladder's row count, rounded down"
+      ;; The bar length of each level's ladder.
+      (INIT &bar_len Cardinality
+        (key ((OR ((&full ^L))
+                  ((&ladder_order.rank (:key L) (:t *R) (:R *K))
+                   (&ladder_order.dual_rank (:key L) (:t R) (:R *K2))
+                   (< K K2))))
+          (member ((:m R))
+            (&ladder_order.rank (:key L) (:t *R) (:R *K))
+            (&ladder_order.dual_rank (:key L) (:t R) (:R *K2))
+            (< K K2))
+          (domain ()
+            (&full L))))))
+  (ALT $OpenRows
+    (OUTPUT bar "the bar length is the count of the ladder's `c 0 c` rows less one, and 0 when it has none"
+      (RULE &open_row
+        (&ladder *L *R)
+        (NOT (&rung L R)))
+
+      ;; The bar length of each level's ladder.
+      (INIT &bar_len Cardinality
+        (key ((OR ((&full ^L))
+                  ((&open_row L *R)
+                   (&open_row L (:R *R2))
+                   (&floor_side *D)
+                   (nearer D (:P R) (:Q R2)))))
+          (member ((:m R))
+            (&open_row L *R)
+            (&open_row L (:R *R2))
+            (&floor_side *D)
+            (nearer D (:P R) (:Q R2)))
+          (domain ()
+            (&full L)))))))
+
+(ALTS $marker "which level the climber column marks" $GapReading
+  (ALT $GapReading
+    (ALTS $scan "how the ladders that stop short place the climber" $Climb
+      (ALT $TopGap
+        (OUTPUT climb "the climber stands at the level under the ladder nearest the top that does not reach down, and reaches no level when that level is the floor. It stands at the top level when every ladder reaches down."
+          (RULE &gap_mark
+            ;; The level under the topmost short level.
+            (OR ((&short *F (:L *L0))
+                 (&floor_side *D)
+                 (opposite D (:Opp *U))
+                 (NOT (&short_toward F (:L L0) (:D U)))
+                 (&lines.successor (:a L0) (:b *L))
+                 (&level F L))
+                ;; The top level, when no level is short.
+                ((&level F L)
+                 (&lines.minimal (:t L))
+                 (NOT (&short F))))))))
+    (ALTS $reach "when a ladder reaches down" $AbutsNext
+      (ALT $BothEnds
+        (INPUT reach "a ladder reaches down when it also starts in the row just past its level"
+          ;; The ladder also starts in the row just past its level.
+          (RULE &reaches
+            (&abuts_next *L)
+            (&floor_side *D)
+            (neighbor (:P L) D (:Q *R))
+            (&ladder L R)))))
+    (ALTS $stuck "what the climber column holds when the climber reaches no level" $BlankColumn
+      (ALT $DefaultTop
+        (OUTPUT climber-column "when the climber reaches no level, the top level's row holds the marker color")
+        (RULE &marked
+          (OR ((&level *F *L)
+               (&lines.minimal (:t L))
+               (NOT (&gap_mark F)))
+              ((&gap_mark F L))))
+        (RULE &settled
+          (&marked *F)))))
+  (ALT $FewestRungs
+    (OUTPUT climb "the climber stands at the level with the fewest bar cells among the levels with a ladder, and at the one nearest the floor on a tie. Undefined when no level has a ladder."
+      (RULE &lower_tie
+        (&fewest.minimal (:key *F) (:t (:V *L)))
+        (&fewest.minimal (:key F) (:t (:V *L2)))
+        (&floor_side *D)
+        (nearer D (:P L2) (:Q L))))
+    (RULE &marked
+      (&fewest.minimal (:key *F) (:t (:V *L)))
+      (NOT (&lower_tie F L)))
+
+    (RULE &settled
+      (&marked *F))))
+
+(RULE &bar
+  (&chart_row *F *W *P *L)
+  (&bar_edge (:D *E))
+  (margin (:B P) (:D E) *K)
+  (&bar_len.size (:key L) *N)
+  (OR ((< K N)
+       (&full L *Col))
+      ((>= K N)
+       (&background (:C Col)))))
+
+(RULE &marked
+  (&gap_mark *F *L))
+
+(RULE &settled
+  (OR ((&marked *F))
+      ((&floor.value (:v F)))))
+
+(RULE &output
+  (&chart_key *F *W)
+  (&settled F)
+  (&climber.value (:v *Q))
+  (input (:P Q) (:Col *K))
+  (&sheet.box (:key F W) *B)
+  (OR ((&bar F W (:P *P2) *Col))
+      ((&tail F W (:Q_floor P2))
+       (&full (:L F) Col))
+      ((&tail F W (:Q_climb P2) *L)
+       (&marked F L)
+       (= Col K))
+      ((&tail F W (:Q_climb P2) (:L *L3))
+       (NOT (&marked F (:L L3)))
+       (&background (:C Col))))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

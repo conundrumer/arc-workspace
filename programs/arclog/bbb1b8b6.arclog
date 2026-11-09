@@ -1,0 +1,85 @@
+;; inputs 8957e501774a6f1c296988599cdf8efd44cb2a4a167313d0b947ed0b722ba95b programs/solvers/bbb1b8b6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bbb1b8b6
+
+(DET &base_dir DirDomain)
+
+(DET &gap DivisorRatio)
+
+(DET &tile_count SepTileCount)
+
+(INIT &tile_val_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (&base_dir *D)
+    (axis_of D *A)
+    (&tile_count *N))
+  (gap (A G)
+    (&base_dir *D)
+    (axis_of D *A)
+    (&gap (:K *G))))
+
+(DET &bg DominantColor)
+
+(RULE &tile_val
+  (input (:P *P_grid) *Col)
+  (&tile_val_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(ALTS $cr "the fit criterion; data-equivalent here — every train piece is an exact complement or collides" $Exact
+  (ALT $Fit
+    (RULE &unfit
+      (&piece *P)
+      (NOT (&hole P)))))
+
+(ALTS $d "how the separator cuts the grid into the base and piece tiles" $Count
+  (ALT $Size
+    (DET &tile_size ConstOutDim)
+
+    (INIT &tile_val_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (&base_dir *D)
+        (axis_of D *A)
+        (&tile_size (:N *K)))
+      (gap (A G)
+        (&base_dir *D)
+        (axis_of D *A)
+        (&gap (:K *G))))
+
+    (RULE &tile_val
+      (input (:P *P_grid) *Col)
+      (&tile_val_division2.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+(RULE &base
+  (&tile_val (:P_tile *T) (:P_intile *P) *Col)
+  (&base_dir *D)
+  (margin (:B T) D (:K 0)))
+
+(RULE &piece
+  (&tile_val (:P_tile *T) (:P_intile *P) *Col)
+  (NOT (&bg (:C Col)))
+  (&base_dir *D)
+  (opposite D (:Opp *O))
+  (margin (:B T) (:D O) (:K 0)))
+
+(RULE &hole
+  (&base *P *Col)
+  (&bg (:C Col)))
+
+(RULE &unfit
+  (OR ((&piece *P)
+       (NOT (&hole P)))
+      ((&hole (:P *P2))
+       (NOT (&piece (:P P2))))))
+
+(RULE &output
+  (OR ((NOT (&unfit))
+       (OR ((&piece *P *Col))
+           ((&base P Col)
+            (NOT (&piece P)))))
+      ((&unfit)
+       (&base P Col))))
+
+(OUT (&output ^P ^Col))

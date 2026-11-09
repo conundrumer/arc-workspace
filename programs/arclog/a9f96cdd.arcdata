@@ -1,0 +1,12 @@
+;; inputs 23f9a9dc49b4a0f4eb436420329f07d8b909da10a03ae3bc4f656e3572fc716a programs/solvers/a9f96cdd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a9f96cdd
+
+(param &bg Color (0))
+(param &marker Color (2))
+(param &arm (Color DiagDir) (3 DIAG_TL) (6 DIAG_TR) (8 DIAG_BL) (7 DIAG_BR))
+(param &template (Color Offset)
+  (3 (-1 1 -1 1))
+  (6 (-1 1 1 -1))
+  (8 (1 -1 -1 1))
+  (7 (1 -1 1 -1)))

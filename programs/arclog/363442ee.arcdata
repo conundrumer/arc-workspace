@@ -1,0 +1,8 @@
+;; inputs fb9ff983f5f8dbdc67377173feb1517cb30803228f5b4432efa2cbef10466f8b programs/solvers/363442ee.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 363442ee
+
+(param &bg Color (0))
+(param &mark Color (1))
+(param &divider Color (5))
+(param &key_side Dir (DIR_L))

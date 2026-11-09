@@ -1,0 +1,10 @@
+;; inputs c59ae9d711b13cd202322adacbdcb8eb81f3851c1151b5316dfe2738237b9c41 programs/solvers/4c4377d9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4c4377d9
+
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_TB)
+    (D4_ID)))
+(param &arr_dim (Axis number) (AXIS_V 2) (AXIS_H 1))
+(param &anchor Dir (DIR_B))

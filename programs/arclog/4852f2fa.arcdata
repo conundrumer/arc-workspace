@@ -1,0 +1,7 @@
+;; inputs 45a05b0c0d58f33e1d99134039312bf83b675437a0881fbdc57f6f99e61b06c1 programs/solvers/4852f2fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4852f2fa
+
+(param &bg Color (0))
+(param &ink Color (8))
+(param &axis Axis (AXIS_H))

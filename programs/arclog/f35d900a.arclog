@@ -1,0 +1,242 @@
+;; inputs 29561e68632976b9b3527768e9dc1bb11efb82f09007d1e31152352f45b709f7 programs/solvers/f35d900a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f35d900a
+
+(INPUT four-corner-markers "on a field of `background`, exactly four single cells, at the corners of an axis-aligned rectangle.")
+
+(INPUT diagonal-colors "the markers have two colors, and the two markers on each diagonal share one.")
+
+(INPUT rings-in-frame "no marker lies on the frame edge, so its 3×3 box fits the grid.")
+
+(INPUT rings-apart "the two markers of each side are at least 5 apart, so their 3×3 boxes leave a gap of at least 2 cells.")
+
+(OUTPUT swap-ring "the 8 neighbors of each marker take the other marker color; the marker keeps its color."
+
+  (INIT &counts_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of every input.
+  (INIT &counts Order
+    (key ((&counts_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&counts_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&counts_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&counts.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&counts.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&counts.maximal (:t *C))
+    (NOT (&background_defect (:Col C))))
+
+  (RULE &marker
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  ;; The markers in line with each marker, toward each direction.
+  (INIT &marker_ray Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &partner
+    (&marker_ray.ray (:P *P2) *D *K (:Origin *P))
+    (&marker (:P P2))
+    (dir_elem D)
+    (!= P P2))
+
+  (INIT &nearest Order
+    (key ((&partner ^P *P2 *K))
+      (member ((:t (:V P2) (:S K)))
+        (&partner P *P2 *K))
+      (score ((:t (:V P2) (:S K)) (:S K))
+        (&partner P *P2 *K)))))
+
+(OUTPUT dotted-sides "on each side of the rectangle, a cell between the two rings takes `dot_color` where its distance to the nearer ring is odd (the cell next to a ring is at distance 1).")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color."
+
+  (RULE &gap_start
+    (&partner *P *D)
+    (neighbor P D (:Q *R))
+    (neighbor (:P R) D (:Q *S)))
+
+  (INIT &gap_ray_frame Frame
+    (extent (A N)
+      (&gap_start *S)
+      (frame_extent (:P S) *A *N)))
+
+  (DET &background_determined
+    (&counts.maximal (:t *C))
+    (NOT (&background_defect (:Col C))))
+
+  (DET &dot_color
+    (ex_output *E (:Col *C))
+    (NOT (ex_input E (:Col C))))
+
+  (DET &dot_run_blocked
+    (ex_output (:E *Key) *P *Col)
+    (NOT (&dot_color (:C Col))))
+
+  (DET &dot_run_dir
+    (ex_output (:E *Key))
+    (dir_elem *D))
+
+  ;; The runs of dot color that leave a ring cell, cast from that cell.
+  (INIT &dot_run Ray
+    (key ((OR ((ex_input ^E *P *Col)
+               (NOT (&background_determined (:C Col)))
+               (dir_elem *D)
+               (neighbor P D (:Q *R)))
+              ((&dot_run_dir (:Key E) D))
+              ((&dot_run_dir (:Key E))
+               (ex_input E P)
+               (NOT (&dot_run_blocked (:Key E) P)))))
+      (source ((:P R))
+        (ex_input E *P *Col)
+        (NOT (&background_determined (:C Col)))
+        (dir_elem *D)
+        (neighbor P D (:Q *R)))
+      (node (P)
+        (&dot_run_dir (:Key E))
+        (ex_input E *P)
+        (NOT (&dot_run_blocked (:Key E) P)))
+      (dir (D)
+        (&dot_run_dir (:Key E) *D))))
+
+  (DET &first_dot
+    (&dot_run.ray (:key *E) (:P *Q) *D (:K *W))
+    (dir_elem D)
+    (ex_output E (:P Q) *Col)
+    (&dot_color (:C Col))
+    (neighbor (:P Q) D (:Q *N))
+    (ex_output E (:P N) (:Col *Col2))
+    (&background_determined (:C Col2)))
+
+  (INIT &gap_run_frame Frame
+    (key ((&first_dot ^E *Q)
+          (frame_extent (:P Q) *A *N))
+      (extent (A N)
+        (&first_dot E *Q)
+        (frame_extent (:P Q) *A *N))))
+
+  ;; The cells of each side's gap, cast from the gap's two ends.
+  (INIT &gap_ray Ray
+    (source ((:P S))
+      (&gap_start *S))
+    (node (P)
+      (&gap_ray_frame.cell *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &gap_cell
+    (&partner *P *D *P2)
+    (opposite D (:Opp *D2))
+    (&gap_start P D (:S *S1))
+    (&gap_start (:P P2) (:D D2) (:S *S2))
+    (&gap_ray.ray (:P *Q) D (:K *T1) (:Origin S1))
+    (input (:P Q))
+    (&gap_ray.ray (:P Q) (:D D2) (:K *T2) (:Origin S2)))
+
+  (DET &gap_run_blocked
+    (ex_output (:E *Key) *P *Col)
+    (NOT (&background_determined (:C Col))))
+
+  ;; The runs of background that follow a first dot, cast from its last cell.
+  (INIT &gap_run Ray
+    (key ((OR ((&first_dot ^E *Q))
+              ((ex_output E)
+               (dir_elem *D))
+              ((&gap_run_frame.cell (:key E) *P)
+               (NOT (&gap_run_blocked (:Key E) P)))))
+      (source ((:P Q))
+        (&first_dot E *Q))
+      (node (P)
+        (&gap_run_frame.cell (:key E) *P)
+        (NOT (&gap_run_blocked (:Key E) P)))
+      (dir (D)
+        (ex_output E)
+        (dir_elem *D))))
+
+  (DET &spacing_shown
+    (&first_dot *E *D *Q *W)
+    (&gap_run.ray (:key E) *P D (:K *G) (:Origin Q))
+    (ex_output E P)
+    (neighbor P D (:Q *N))
+    (ex_output E (:P N) *Col)
+    (&dot_color (:C Col)))
+
+  (DET &dot_spacing_defect
+    (&spacing_shown *W *G)
+    (ex_output *E)
+    (NOT (&spacing_shown E W G)))
+
+  (DET &dot_spacing
+    (&spacing_shown *W *G)
+    (NOT (&dot_spacing_defect W G)))
+
+  (RULE &arm_dot
+    (&gap_cell *Q *T1 *T2)
+    (&dot_spacing *W *G)
+    (divide (:T T1) (:Side W) (:Gap G))))
+
+(ALTS $reach "how many dots each end of a side sends" $FullReach
+  (ALT $CappedReach
+    (OUTPUT dotted-sides "each end dots at most `reach_cap` cells, at distances 1, 3, …, 2·`reach_cap`−1 from its ring, still only on its own half."
+      (DET &reach_cap_stored TileDim)
+
+      (DET_OR_RULE &reach_cap SepThickness
+        (&reach_cap_stored (:D *G)))
+
+      (RULE &arm_dot
+        (&gap_cell *Q *T1 *T2)
+        (&dot_spacing *W *G)
+        (divide (:T T1) (:Side W) (:Gap G) (:Part *N))
+        (&reach_cap (:G *Cap))
+        (< N Cap)))))
+
+(ALTS $clip "whether one end's dots stop where the other end's half begins" $ClipAtMiddle
+  (ALT $UnclippedArm
+    (OUTPUT dotted-sides "each end's dots run from its ring across the whole gap, and the side takes the union of both ends' dots.")
+    (RULE &dot
+      (&arm_dot *Q))))
+
+(ALTS $ring "which color a marker's ring takes" $SwapRing
+  (ALT $NearestMarkerColor
+    (OUTPUT swap-ring "the ring takes the color of the nearest other marker; undefined on a square whose two side partners differ in color.")
+    (RULE &ring
+      (&nearest.minimal (:key *P) (:t (:V *P2)))
+      (neighbor P *Q)
+      (&marker (:P P2) *Col))))
+
+(RULE &ring_cell
+  (&marker *P)
+  (neighbor P *Q))
+
+(RULE &dot
+  (&arm_dot *Q *T1 *T2)
+  (<= T1 T2))
+
+(RULE &ring
+  (&marker *P (:Col *Col0))
+  (neighbor P *Q)
+  (&marker *Col)
+  (!= Col Col0))
+
+(RULE &output
+  (OR ((&ring (:Q *P) *Col))
+      ((&dot (:Q P))
+       (&dot_color (:C Col)))
+      ((input P Col)
+       (NOT (&ring_cell (:Q P)))
+       (NOT (&dot (:Q P))))))
+
+(OUT (&output ^P ^Col))

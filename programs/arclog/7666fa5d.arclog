@@ -1,0 +1,65 @@
+;; inputs 67b7d7fe2a1e0a1c04b9e6fd4cdfc69a1da7a82bd71c1def96b9b3c11fca41a3 programs/solvers/7666fa5d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7666fa5d
+
+(DET &bg DominantColor)
+
+;; The axis the fill runs along; the mark lines run across it.
+(DET &fill_axis DiagAxisDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &step
+  (input *P)
+  (diag_dirs (:D *G) *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (&mark (:P Q1))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&mark (:P Q2)))
+
+(RULE &wall_mark
+  (OR ((&mark *P))
+      ((&step P))))
+
+;; The lines as walls: marks and the cells they step past, over the bg cells.
+(INIT &wall Ray
+  (source (P)
+    (&wall_mark *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&fill_axis *Da)
+    (axis4_of *D (:A Da))))
+
+(RULE &wall_between
+  (input *P *Col)
+  (&bg (:C Col))
+  (&fill_axis *Da)
+  (axis4_of *D (:A Da))
+  (dir8_opposite D (:D2 *O))
+  (&wall.ray P D)
+  (&wall.ray P (:D O)))
+
+(DET &fill AnyOutNewColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &strict
+  (dir8_opposite *D (:D2 *O))
+  (&wall.ray *P D *K)
+  (&wall_cell P)
+  (!= K 0)
+  (&wall.ray P (:D O) (:K *K2))
+  (!= K2 0))
+
+(RULE &output
+  (OR ((&strict *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&strict P)))))
+
+(OUT (&output ^P ^Col))

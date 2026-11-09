@@ -1,0 +1,39 @@
+;; inputs 19ab33f531c7ebb1fbc824465816f66228ad2bc385fb83606615a2ed5ae59153 programs/solvers/05269061.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 05269061
+
+(DET &bg ChangedColor)
+
+(DET &stripe_axis DiagAxisDomain)
+
+(DET &period TileDim)
+
+(RULE &period2
+  (&period (:D *K)))
+
+(ALTS $choice "Two models of the period, tagged on out's Choice" $Fixed
+  (ALT $Palette
+    (INIT &palette Cardinality
+      (member ((:m Col))
+        (input *Col)
+        (NOT (&bg (:C Col)))))
+
+    (RULE &period2
+      (&palette.size (:N *K)))))
+
+(RULE &phase
+  (input *P)
+  (&period2 *K)
+  (&stripe_axis *Da)
+  (diag_perp Da *Da2)
+  (diag_axis_of (:D *Diag) (:Da Da2))
+  (corner_dist P Diag (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder *R)))
+
+(RULE &output
+  (&phase *Diag (:P *P2) *R)
+  (input (:P P2) *Col)
+  (NOT (&bg (:C Col)))
+  (&phase Diag *P R))
+
+(OUT (&output ^P ^Col))

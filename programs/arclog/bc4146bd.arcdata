@@ -1,0 +1,11 @@
+;; inputs 5d1f50ea0d45e31aafa2f9be989a9d0c8575d8332eec14ca531b74dc54d7934f programs/solvers/bc4146bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bc4146bd
+
+(representative 4c4377d9)
+
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_ID D4_LR D4_ID D4_LR D4_ID)))
+(param &arr_dim (Axis number) (AXIS_V 1) (AXIS_H 5))
+(param &strip_axis Axis (AXIS_H))

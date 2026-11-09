@@ -1,0 +1,55 @@
+;; inputs f2ec07cd7fb44e97d1e19b476635d81a7868ea4f63b13d130ee60a12fbdb8bc7 programs/solvers/668eec9a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 668eec9a
+
+(DET &bg DominantColor)
+
+;; The edge the lines are ordered from.
+(DET &order_dir DirDomain)
+
+;; The output edge the lines stack against.
+(DET &stack_dir DirDomain)
+
+(DET &out_extent ConstOutDimAxis)
+
+;; Each line's nearest distance to the ordering edge.
+(INIT &near Order
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (&order_dir *D)
+        (margin (:B P) D *K))
+    (member ((:t K))
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (&order_dir *D)
+      (margin (:B P) D *K))
+    (score ((:t K) (:S K))
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (&order_dir *D)
+      (margin (:B P) D *K))))
+
+;; A line's rank is the count of lines farther from the ordering edge.
+(INIT &stack Order
+  (member ((:t K))
+    (&near.minimal (:t *K)))
+  (score ((:t K) (:S K))
+    (&near.minimal (:t *K))))
+
+(RULE &line_row
+  (&near.minimal (:key *Col) (:t *K))
+  (&stack.dual_rank (:t K) *R))
+
+(INIT &frame Frame
+  (extent (A N)
+    (&out_extent *A *N)))
+
+(RULE &output
+  (&frame.cell *P)
+  (&stack_dir *D)
+  (margin (:B P) D (:K *R))
+  (OR ((&line_row R *Col))
+      ((NOT (&line_row R))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

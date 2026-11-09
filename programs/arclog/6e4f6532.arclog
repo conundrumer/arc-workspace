@@ -1,0 +1,171 @@
+;; inputs f9f2dc2bf6ccb7eac6ba3a248af9eafe5fdfa3fc08b43fb58d74ebd7f42172d9 programs/solvers/6e4f6532.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6e4f6532
+
+(INIT &fill_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(DET &core RarestColor)
+
+;; bg is the commonest color.
+(INIT &fill Order
+  (member ((:t Col))
+    (&fill_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&fill_count.size (:key *Col) *N)))
+
+(RULE &line_bg
+  (input *P *Col)
+  (&fill.maximal (:t Col))
+  (split P *A *Along))
+
+(RULE &wall
+  (input *P *Col)
+  (split P *A *Along)
+  (NOT (&line_bg A Along)))
+
+(RULE &wall_cast_dir
+  (&wall (:Col *Key))
+  (dir_elem *D))
+
+;; Each wall's cells cast across the cells off that wall, keyed by the wall's
+;; color.
+(INIT &wall_cast Ray
+  (key ((OR ((&wall *P ^Col))
+            ((&wall_cast_dir (:Key Col) *D))
+            ((&wall_cast_dir (:Key Col))
+             (input P))))
+    (source (P)
+      (&wall *P Col))
+    (node (P)
+      (&wall_cast_dir (:Key Col))
+      (input *P))
+    (dir (D)
+      (&wall_cast_dir (:Key Col) *D))))
+
+(RULE &wall_cast_cell
+  (&wall (:Col *Key))
+  (input *P)
+  (NOT (&wall P (:Col Key))))
+
+(RULE &wall_toward
+  (&wall_cast.ray (:key *Col) *P (:D *Opp))
+  (&wall_cast_cell (:Key Col) P)
+  (opposite *D Opp))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&fill.maximal (:t Col)))
+  (NOT (&wall P)))
+
+(INIT &parts Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &has_body
+  (&parts.component *P *Id)
+  (&ink P *Col)
+  (NOT (&core (:C Col))))
+
+(RULE &object_cell
+  (&parts.component *P *Id)
+  (&has_body Id)
+  (&ink P *Col))
+
+(RULE &target_cell
+  (&parts.component *P *Id)
+  (NOT (&has_body Id)))
+
+;; Seek each pose among the target cells; an occurrence lands every core cell
+;; on a target cell.
+(INIT &seat Occurrences
+  (key ((OR ((&object_cell ^Id *P *Col)
+             (&core (:C Col))
+             (d4_elem ^D)
+             (apply D P (:P_out *P_img)))
+            ((&object_cell Id)
+             (d4_elem D)
+             (&target_cell P))))
+    (cell (P)
+      (&object_cell Id)
+      (d4_elem D)
+      (&target_cell *P))
+    (shape ((:P P_img))
+      (&object_cell Id *P *Col)
+      (&core (:C Col))
+      (apply D P (:P_out *P_img)))))
+
+(RULE &seated
+  (&seat.occurrence (:key *Id *D) (:P *Sh))
+  (&object_cell Id *P *Col)
+  (apply D P (:P_out *P_img))
+  (compose (:A Sh) (:B P_img) (:C *P_out)))
+
+(RULE &partial
+  (&seated *Id *D *Sh (:P_out *P) *Col)
+  (&core (:C Col))
+  (&target_cell (:Id *T) P)
+  (&target_cell (:Id T) (:P *Q))
+  (NOT (&seated Id D Sh (:P_out Q) Col)))
+
+(RULE &faces
+  (&seated *Id *D *Sh (:P_out *P) *Col)
+  (&wall_toward P Col (:D *Dir))
+  (opposite (:D Dir) *Opp)
+  (neighbor P (:D Opp) *Q)
+  (&seated Id D Sh (:P_out Q)))
+
+(ALTS $choice "how a wall-colored cell faces its wall" $Backed
+  (ALT $Edge
+    (INIT &obj_box BoundingBox
+      (key ((&object_cell ^Id *P))
+        (cell (P)
+          (&object_cell Id *P))))
+
+    ;; A wall-colored cell of a seating faces its wall when it lies on the edge of
+    ;; the object's box that the transform turns toward the wall.
+    (RULE &faces
+      (&seated *Id *D *Sh (:P *P2) (:P_out *P) *Col)
+      (&wall_toward P Col (:D *Dir))
+      (&obj_box.box (:key Id) *B)
+      (inside (:A P2) B)
+      (same_dist (:D *Dir_in) (:P1 P2) (:P2 B))
+      (apply_dir D (:Dir Dir_in) (:Dir_out Dir)))))
+
+(RULE &misfaced
+  (&seated *Id *D *Sh (:P_out *P) *Col)
+  (&wall Col)
+  (NOT (&faces Id D Sh P)))
+
+(RULE &fit
+  (&seat.occurrence (:key *Id *D) (:P *Sh))
+  (NOT (&partial Id D Sh))
+  (NOT (&misfaced Id D Sh)))
+
+(RULE &rotation_fits
+  (&fit *Id *D)
+  (c4_elem D))
+
+(RULE &placed
+  (&fit *Id *D *Sh)
+  (OR ((c4_elem D))
+      ((NOT (&rotation_fits Id))))
+  (&seated Id D Sh (:P_out *P) *Col))
+
+(RULE &output
+  (OR ((&placed *P *Col))
+      ((input P (:Col *C_in))
+       (NOT (&placed P))
+       (OR ((&object_cell P)
+            (&fill.maximal (:t Col)))
+           ((NOT (&object_cell P))
+            (= Col C_in))))))
+
+(OUT (&output ^P ^Col))

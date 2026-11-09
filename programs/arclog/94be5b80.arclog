@@ -1,0 +1,62 @@
+;; inputs 0f72d088ee9cf291111dc80e2ab90c13c2b041c98bb50880afb7a02d0868454f programs/solvers/94be5b80.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 94be5b80
+
+(DET &bg DominantColor)
+
+;; The stack of copies runs along this axis.
+(DET &stack_axis AxisDomain)
+
+;; A quarter turn in this sense takes a stack direction to the legend direction that steps along with it.
+(DET &legend_sense SenseDomain)
+
+(RULE &carry
+  (&stack_axis *A)
+  (axis_of (:D *D_stack) A)
+  (&legend_sense *S)
+  (turn S (:D D_stack) (:D2 *D_legend)))
+
+(RULE &legend
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&carry (:D_legend *D))
+  (neighbor P D *Q)
+  (input (:P Q) (:Col *Col2))
+  (NOT (&bg (:C Col2)))
+  (!= Col2 Col))
+
+(RULE &copy
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&legend P)))
+
+(INIT &copy_box BoundingBox
+  (key ((&copy ^Col *P))
+    (cell (P)
+      (&copy Col *P))))
+
+(RULE &ink
+  (&carry *D_legend *D_stack)
+  (axis_of (:D D_stack) *A)
+  (opposite (:D D_stack) (:Opp *O))
+  (&copy (:Col *Col3) (:P *P2))
+  (&copy_box.box (:key (:Col Col3)) *B)
+  (box_extent B (:P P2) A (:N *W))
+  (relative (:Base B) (:X P2) (:X_rel *P_rel))
+  (margin (:B P_rel) (:D O) *K)
+  (input *P)
+  (same_line A (:P P2) (:Q P))
+  (relative (:Base B) (:X P) (:X_rel *Q_rel))
+  (margin (:B Q_rel) (:D O) (:K *T))
+  (divide T (:Side W) (:Gap 0) (:Part *N) (:Remainder K))
+  (&legend (:P *L) (:Col Col3))
+  (jump (:P L) (:D D_legend) (:K N) (:Q *L2))
+  (&legend (:P L2) *Col))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

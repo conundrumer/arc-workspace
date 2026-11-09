@@ -2,8 +2,8 @@
 
     uv run python -m arclog_convert.verify [--out <dir>] [--no-train-replay | --accept] [--no-row-parity] [<stem> ...]
 
-The command checks the programs under `gen/` of `arclog_convert.out`, or of
-`--out`, for the solvers given, every solver of `gen/` where none is given; it
+The command checks the converted programs (`programs/arclog/`) of `arclog_convert.out`, or the programs under `gen/` of
+`--out`, for the solvers given, every converted solver where none is given; it
 converts nothing, so run `arclog_convert.convert` first. It first requires the
 native exact determination end check, recording input-bound receipts under
 `determination_end_check/`. No skip flag or baseline acceptance waives this
@@ -35,11 +35,11 @@ from arclog_convert.phases import phase, use_out
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.verify")
-    parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
+    parser.add_argument("--out", type=Path, help="the directory the converter wrote under, in place of `arclog_convert.out`; its arclog and arcdata files stand in `gen/` of it; required in a linked worktree unless `ARCLOG_OUT` is set")
     parser.add_argument("--no-train-replay", action="store_true", help="check with no replay on the train pairs")
     parser.add_argument("--accept", action="store_true", help="rewrite the baseline lines of the solvers checked to the run's counts, and the row-parity baseline lines unless --no-row-parity")
     parser.add_argument("--no-row-parity", action="store_true", help="check with no comparison of the relations with Souffle's rows")
-    parser.add_argument("stems", nargs="*", help="the solvers to check; every solver of gen/ where none is given")
+    parser.add_argument("stems", nargs="*", help="the solvers to check; every converted solver where none is given")
     args = parser.parse_args(argv)
     if args.accept and args.no_train_replay:
         parser.error("--accept needs the train replay; drop --no-train-replay")
@@ -52,18 +52,18 @@ def main(argv: list[str]) -> int:
     from arc.task import TASKS_DIR
     try:
         with phase("determination end check"):
-            require(stems, paths.OUT_DIR, TASKS_DIR, paths.OUT_DIR.parent / "determination_end_check")
+            require(stems, paths.OUT_DIR, TASKS_DIR, paths.OUT_ROOT / "determination_end_check")
     except EndCheckFailed as exc:
         print(exc, file=sys.stderr)
         return 1
     status = 0
     if not args.no_train_replay:
         with phase("train replay"):
-            status = train_replay.replay(stems, paths.OUT_DIR.parent, args.accept)
+            status = train_replay.replay(stems, paths.OUT_ROOT, args.accept)
     if args.no_row_parity:
         return status
     with phase("row parity"):
-        return row_parity.check(stems, paths.OUT_DIR.parent, args.accept) or status
+        return row_parity.check(stems, paths.OUT_ROOT, args.accept) or status
 
 
 if __name__ == "__main__":

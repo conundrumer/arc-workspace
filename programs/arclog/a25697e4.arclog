@@ -1,0 +1,318 @@
+;; inputs 8ea0a2ed68c40c702418a42ef787cad1c44249687180881078da896834c4205e programs/solvers/a25697e4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a25697e4
+
+(INPUT background "the most common color fills the rest of the grid")
+
+(INPUT hosts "each host is a solid rectangle of one color with a notch cut into it from one side. The notch is the set of background cells inside the rectangle, and it may cut the rectangle into separate components of the host color. Two components of one color are parts of one host when a row or a column holds cells of both and the box around both holds only that color and background; the box around a host's parts holds only its color and background."
+
+  (INIT &background_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &background Order
+    (member ((:t Col))
+      (&background_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&background_count.size (:key *Col) *N)))
+
+  (INIT &objs8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background.maximal (:t Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT pieces "each piece is a 4-connected object of exactly two colors, and each color forms one part of it. Pieces do not touch hosts.")
+
+(INPUT one-plug "for each host, one piece has a part with the shape of the host's notch up to a D4 transform, and that part is the piece's plug. Hosts and pieces pair one to one.")
+
+(OUTPUT lift "each piece that plug places is erased from its place in the input")
+
+(OUTPUT plug "each piece is placed, under a D4 transform and a translation, so that its plug covers exactly the notch of its host, and its other part lies in the grid, outside the host's rectangle, on background cells. A piece whose plug fits no notch stays. Undefined when a piece's plug fits a notch only with the other part elsewhere, or when two placements of a piece meet this and draw it differently.")
+
+(OUTPUT mirror-swap "when the transform is a reflection, the piece's two colors swap; when it is a rotation, they stay")
+
+(OUTPUT keep "hosts and every other cell stay as in the input"
+
+  (INIT &objs Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background.maximal (:t Col)))))
+
+  (RULE &object
+    (&objs.component *P *Id)
+    (input P *Col))
+
+  (RULE &other_color
+    (&object *Id (:Col *K))
+    (&object Id (:Col *K2))
+    (!= K K2))
+
+  (RULE &many
+    (&other_color *Id *K *K2)
+    (&object Id (:Col *K3))
+    (!= K3 K)
+    (!= K3 K2))
+
+  (RULE &piece
+    (&other_color *Id)
+    (NOT (&many Id)))
+
+  (RULE &host_object
+    (&objs.component *P (:Id *H)))
+
+  ;; A host component is a one-color object.
+  (INIT &host_color Singleton
+    (key ((&host_object ^H *P)
+          (input P (:Col *C)))
+      (member ((:v C))
+        (&host_object H *P)
+        (input P (:Col *C)))))
+
+  (RULE &host_cell
+    (&host_color.value (:key *H) (:v *C))
+    (&host_object H *P))
+
+  (INIT &part_box BoundingBox
+    (key ((&host_cell ^H *P))
+      (cell (P)
+        (&host_cell H *P))))
+
+  (RULE &facing
+    (&host_cell *H *P *C)
+    (&host_cell (:H *H2) (:P *Q) C)
+    (!= H H2)
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (INIT &pair_box BoundingBox
+    (key ((&facing ^H ^H2))
+      (cell ((:P B))
+        (OR ((&part_box.box (:key H) *B))
+            ((&part_box.box (:key (:H H2)) B))))))
+
+  (RULE &pair_foul
+    (&pair_box.box (:key *H *H2) *B)
+    (&facing H H2 *C)
+    (input *P *Col)
+    (inside (:A P) B)
+    (!= Col C)
+    (NOT (&background.maximal (:t Col))))
+
+  ;; The parts of each host.
+  (INIT &hosts Quotient
+    (equivalent ((:a H) (:b H))
+      (&host_cell *H))
+    (edge ((:a H) (:b H2))
+      (&facing *H *H2)
+      (NOT (&pair_foul H H2))))
+
+  (RULE &host_color_of
+    (&hosts.class (:a *H) (:Id *G))
+    (&host_cell H *C))
+
+  (INIT &host_box BoundingBox
+    (key ((&hosts.class (:a *H) (:Id ^G))
+          (&part_box.box (:key H) *B))
+      (cell ((:P B))
+        (&hosts.class (:a *H) (:Id G))
+        (&part_box.box (:key H) *B))))
+
+  (RULE &host_foul
+    (&host_box.box (:key *G) *B)
+    (&host_color_of G *C)
+    (input *P *Col)
+    (inside (:A P) B)
+    (!= Col C)
+    (NOT (&background.maximal (:t Col))))
+
+  (RULE &host_rect
+    (&host_box.box (:key *G) *B)
+    (&host_color_of G *C)
+    (NOT (&host_foul G)))
+
+  (RULE &notch
+    (&host_rect *B)
+    (input *P *Col)
+    (&background.maximal (:t Col))
+    (inside (:A P) B))
+
+  (INIT &notch_box BoundingBox
+    (key ((&notch ^B *P))
+      (cell (P)
+        (&notch B *P))))
+
+  (RULE &mono
+    (&object *Id)
+    (NOT (&other_color Id)))
+
+  (RULE &pose
+    (OR ((&piece *Id)
+         (&object Id (:Col *K))
+         (d4_elem *D))
+        ((&mono Id)
+         (&object Id (:Col K))
+         (d4_elem D))))
+
+  (RULE &shape
+    (&pose *Id *K *D)
+    (&object Id (:P *P2) (:Col K))
+    (apply D (:P P2) (:P_out *P)))
+
+  (INIT &pose_box BoundingBox
+    (key ((&shape ^Id ^K ^D *P))
+      (cell (P)
+        (&shape Id K D *P))))
+
+  (RULE &seat
+    (&host_rect *C *B)
+    (&notch_box.box (:key B) (:B *B_n))
+    (&pose_box.box (:key *Id *K *D) (:B *B_s))
+    (relative (:Base B_s) (:X B_n) (:X_rel *Sh)))
+
+  (RULE &image
+    (&seat *Id *K *D *Sh *C)
+    (&shape Id K D (:P *Q))
+    (compose (:A Sh) (:B Q) (:C *P)))
+
+  ;; The laid part against the notches.
+  (INIT &cover Inclusion
+    (pattern ((:pattern B) (:m P))
+      (&notch *B *P))
+    (observed ((:observed (:Id S_id) (:K S_k) (:D S_d) (:Sh S_sh) (:C S_c)) (:m P))
+      (&image (:Id *S_id) (:K *S_k) (:D *S_d) (:Sh *S_sh) (:C *S_c) *P)))
+
+  (RULE &filled
+    (&seat *Id *K *D *Sh *C *B)
+    (&cover.equal (:observed Id K D Sh C) (:pattern B)))
+
+  (RULE &fit
+    (&filled *Id *K *D *Sh *C *B))
+
+  (RULE &piece_fit
+    (&fit *Id *K *D *Sh *C *B)
+    (&piece Id)))
+
+(ALTS $transform "which transform carries a plug onto its notch" $RestOutside
+  (ALT $PreferRotation
+    (OUTPUT plug "the transform is a rotation when a rotation carries the plug onto the notch, and a reflection only when none does. The other part is drawn where it lands, except on the host's rectangle or off the grid. Undefined when two placements of the kind taken draw the piece differently."
+      (RULE &rotation_fits
+        (&piece_fit *Id *D)
+        (c4_elem D)))
+    (RULE &take
+      (&piece_fit *Id *K *D *Sh *C *B)
+      (OR ((c4_elem D))
+          ((NOT (&rotation_fits Id)))))))
+
+(ALTS $host "what counts as a host" $NotchRect
+  (ALT $TwoPartHost
+    (INPUT hosts "a host is exactly two components of one color, whose joint bounding box holds only that color and the notch"
+      (RULE &third_part
+        (&hosts.class (:a *H) (:Id *G))
+        (&hosts.class (:a *H2) (:Id G))
+        (&hosts.class (:a *H3) (:Id G))
+        (!= H H2)
+        (!= H H3)
+        (!= H2 H3))
+
+      (RULE &fit
+        (&filled *Id *K *D *Sh *C *B)
+        (&host_rect *G C B)
+        (&hosts.class (:a *H) (:Id G))
+        (&hosts.class (:a *H2) (:Id G))
+        (!= H H2)
+        (NOT (&third_part G))))))
+
+(ALTS $host_join "how the cells of a host component join" $FourHost
+  (ALT $DiagHost
+    (INPUT hosts "a host component is an 8-connected one-color object"
+      (RULE &host_object
+        (&objs8.component *P (:Id *H))))))
+
+(ALTS $lone "what a one-color object with a notch's shape is" $TwoColor
+  (ALT $BarePlug
+    (INPUT pieces "a one-color object whose shape matches a notch under a D4 transform, in a color other than the host's, is also a piece. All of it is plug, and a reflection leaves its color as it is."
+      (RULE &piece_fit
+        (OR ((&fit *Id *K *D *Sh *C *B)
+             (&mono Id)
+             (!= C K))
+            ((&fit Id K D Sh C B)
+             (&piece Id)))))))
+
+(ALTS $connect "how the parts of a piece join" $FourConn
+  (ALT $DiagPiece
+    (INPUT pieces "a piece is an 8-connected object of exactly two colors"
+      (RULE &object
+        (&objs8.component *P *Id)
+        (input P *Col)))))
+
+(RULE &landing
+  (&filled *Id *K *D *Sh *C)
+  (&object Id (:P *Q) *Col)
+  (apply D (:P Q) (:P_out *Q_img))
+  (compose (:A Sh) (:B Q_img) (:C *P)))
+
+(RULE &piece_cell
+  (&piece *Id)
+  (&object Id *P))
+
+(RULE &misplaced
+  (&landing *Id *K *D *Sh *C *P *Col)
+  (!= Col K)
+  (&filled Id K D Sh C *B)
+  (OR ((NOT (input P)))
+      ((inside (:A P) B))
+      ((input P (:Col *C_in))
+       (NOT (&background.maximal (:t C_in)))
+       (NOT (&piece_cell P)))))
+
+(RULE &take
+  (&piece_fit *Id *K *D *Sh *C *B)
+  (NOT (&misplaced Id K D Sh C)))
+
+(RULE &recolor
+  (OR ((&object *Id (:Col *K))
+       (d4_elem *D)
+       (OR ((NOT (c4_elem D))
+            (&other_color Id K *K2))
+           ((c4_elem D)
+            (= K2 K))))
+      ((&pose Id K D)
+       (&mono Id)
+       (= K2 K))))
+
+(RULE &draw
+  (&take *Id *K *D *Sh *C *B)
+  (&landing Id K D Sh C *P (:Col *K0))
+  (OR ((= K0 K))
+      ((NOT (inside (:A P) B))))
+  (&recolor Id D (:K K0) (:K2 *Col)))
+
+(RULE &unsettled
+  (OR ((&piece_fit *Id)
+       (NOT (&take Id)))
+      ((&draw (:Id *Id2) *P *Col)
+       (&take (:Id Id2) *K *D *Sh *C)
+       (NOT (&draw (:Id Id2) K D Sh C P Col)))))
+
+(RULE &lifted
+  (&take *Id)
+  (&object Id *P))
+
+(RULE &output
+  (NOT (&unsettled))
+  (input *P (:Col *C_in))
+  (OR ((&draw P *Col))
+      ((&lifted P)
+       (NOT (&draw P))
+       (&background.maximal (:t Col)))
+      ((NOT (&draw P))
+       (NOT (&lifted P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

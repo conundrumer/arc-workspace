@@ -1,0 +1,79 @@
+;; inputs 0debe74f6b4eadfd0cd95c00dbd83fe44508300d74bb1cf360970b15b94aaf33 programs/solvers/4364c1c4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4364c1c4
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The slide distance.
+(DET &shift DivisorRatio)
+
+(DET &sense SenseDomain)
+
+;; The field is the commonest color; the parts are what it leaves.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+;; A part: one color's touching cells. A cell holds one color, so the
+;; parts' cell sets are disjoint and the label alone names the part.
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&field.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&field.maximal (:t Col))))))
+
+(RULE &side
+  (&comps.component *Id *P)
+  (opposite (:D *D2) (:Opp *D))
+  (neighbor P (:D D2) *Q)
+  (&comps.component (:Id *Id2) (:P Q))
+  (!= Id2 Id))
+
+(RULE &slide_dir
+  (&sense *S)
+  (turn S *D (:D2 *D_out)))
+
+(ALTS $choice "what fixes the slide direction" $Turn
+  (ALT $Table
+    ;; Where each part seats on its example's output: the translations that
+    ;; carry every cell of the part onto an output cell of its color.
+    (INIT &seating Occurrences
+      (key ((OR ((&comps.component ^E ^Id *P (:key *Col)))
+                ((&comps.component E Id)
+                 (ex_output E P Col))))
+        (cell (P (:v Col))
+          (&comps.component E Id)
+          (ex_output E *P *Col))
+        (shape (P (:v Col))
+          (&comps.component E Id *P (:key *Col)))))
+
+    (DET &slide_map
+      (&side *E *Id *D)
+      (&seating.occurrence (:key E Id) (:P *M))
+      (&shift *K)
+      (dir_elem (:D *D_out))
+      (jump_offset (:D D_out) K (:V M)))
+
+    (RULE &slide_dir
+      (&slide_map *D *D_out))))
+
+(RULE &moved
+  (&comps.component *Id (:P *P2) (:key *Col))
+  (&side Id (:D *D_side))
+  (&slide_dir (:D D_side) (:D_out *D))
+  (&shift *K)
+  (jump (:P P2) D K (:Q *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&field.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

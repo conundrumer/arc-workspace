@@ -1,0 +1,47 @@
+;; inputs a1c5b288a6636c3daf8ae37d4666d9a9780d64fbc47f14788a8bbe74c730ddf4 programs/solvers/5521c0d9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5521c0d9
+
+(INIT &common_count Cardinality
+  (key ((ex_input *E *P ^Col))
+    (member ((:m E P))
+      (ex_input *E *P Col))))
+
+(DET &move_dir DirDomain)
+
+;; The color that covers most of the grid.
+(INIT &common Order
+  (member ((:t Col))
+    (&common_count.size (:key *Col)))
+  (score ((:t Col) (:S Count))
+    (&common_count.size (:key *Col) (:N *Count))))
+
+(DET &bg
+  (&common.maximal (:t *C)))
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&objs.component *P ^Id))
+    (cell (P)
+      (&objs.component *P Id))))
+
+(RULE &moved
+  (input (:P *P2) *Col)
+  (&objs.component (:P P2) *Id)
+  (&move_dir *D)
+  (axis_of D *A)
+  (&bbox.box (:key Id) *B)
+  (box_extent B (:P P2) A *N)
+  (jump (:P P2) D (:K N) (:Q *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

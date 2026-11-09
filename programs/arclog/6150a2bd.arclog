@@ -1,0 +1,12 @@
+;; inputs 261472604ddc3e4c033e9de060621e771a1c9769d1e0c8057c6b556a84aded30 programs/solvers/6150a2bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6150a2bd
+
+(DET &transform D4Domain)
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&transform *D)
+  (apply D (:P P_grid_in) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

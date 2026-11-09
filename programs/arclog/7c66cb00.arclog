@@ -1,0 +1,109 @@
+;; inputs 517614d37c89e57d67632a91e804c352d397c850e4d233e24e81d94033f1a925 programs/solvers/7c66cb00.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7c66cb00
+
+;; The edge the shapes fall toward.
+(DET &gravity DirDomain)
+
+(RULE &line_end
+  (input *P)
+  (&gravity *D)
+  (perp_dir D (:D2 *E))
+  (margin (:B P) (:D E) (:K 0)))
+
+(RULE &line_of
+  (input *P)
+  (&gravity *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(INIT &core Singleton
+  (key ((input *P *Col)
+        (NOT (&line_end P))
+        (&line_of P ^L))
+    (member ((:v Col))
+      (input *P *Col)
+      (NOT (&line_end P))
+      (&line_of P L))))
+
+(INIT &ends Singleton
+  (key ((input *P *Col)
+        (&line_end P)
+        (&line_of P ^L))
+    (member ((:v Col))
+      (input *P *Col)
+      (&line_end P)
+      (&line_of P L))))
+
+(RULE &band_line
+  (&ends.value (:key *L) (:v *C_end))
+  (&core.value (:key L) (:v *C_fill))
+  (!= C_end C_fill))
+
+(RULE &band_cell
+  (&band_line *L *C_fill)
+  (&line_of *P L))
+
+(RULE &loose
+  (input *P *Col)
+  (NOT (&band_cell P)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((&loose *P ^Col))
+    (member ((:m P))
+      (&loose *P Col))))
+
+(INIT &band_box BoundingBox
+  (key ((&band_cell ^C_fill *P))
+    (cell (P)
+      (&band_cell C_fill *P))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &shapes Connectivity
+  (key ((&loose *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (node (P)
+      (&loose *P Col)
+      (NOT (&bg_mode.maximal (:t Col))))))
+
+(INIT &shape_box BoundingBox
+  (key ((&shapes.component ^Id *P))
+    (cell (P)
+      (&shapes.component Id *P))))
+
+(RULE &fall
+  (&gravity *D)
+  (&shapes.component *Id *P (:key *Col))
+  (&shape_box.box (:key Id) (:B *B_shape))
+  (inside (:A P) (:B B_shape))
+  (same_dist D (:P1 P) (:P2 B_shape))
+  (&band_cell (:C_fill Col) (:P *Q))
+  (&band_box.box (:key (:C_fill Col)) (:B *B_band))
+  (inside (:A Q) (:B B_band))
+  (same_dist D (:P1 Q) (:P2 B_band))
+  (axis_of D *A)
+  (same_line A P Q)
+  (relative (:Base P) (:X Q) (:X_rel *Delta)))
+
+(RULE &landed
+  (&shapes.component *Id (:P *P2) (:key (:Col *Col2)))
+  (&fall Id *Delta)
+  (compose (:A P2) (:B Delta) (:C *P))
+  (&band_cell (:C_fill Col2) P)
+  (&band_line (:C_end *Col) (:C_fill Col2)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&landed P *Col))
+      ((NOT (&landed P))
+       (&band_cell P)
+       (= Col C_in))
+      ((NOT (&band_cell P))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

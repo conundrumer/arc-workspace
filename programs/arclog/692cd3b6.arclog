@@ -1,0 +1,82 @@
+;; inputs f2bf9dc7b0fd3b96ac4f8abcadeb77e2d7170924b63c61861538ebbc52a23108 programs/solvers/692cd3b6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 692cd3b6
+
+(DET &bg DominantColor)
+
+(INIT &boxes Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&boxes.component *P ^Id))
+    (cell (P)
+      (&boxes.component *P Id))))
+
+(RULE &covered
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B))
+
+(INIT &wall Boundary
+  (key ((&covered ^Id *P))
+    (cell (P)
+      (&covered Id *P))))
+
+(RULE &door
+  (&wall.exposed (:key *Id) *P *D)
+  (dir_elem D)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &shadow_dir
+  (&door (:Id *Key) (:D *D2))
+  (opposite (:D D2) (:Opp *D)))
+
+;; The box's shadow: cast from its cells away from the door.
+(INIT &shadow Ray
+  (key ((OR ((&covered ^Id *P))
+            ((&shadow_dir (:Key Id) *D))
+            ((&shadow_dir (:Key Id))
+             (input P))))
+    (source (P)
+      (&covered Id *P))
+    (node (P)
+      (&shadow_dir (:Key Id))
+      (input *P))
+    (dir (D)
+      (&shadow_dir (:Key Id) *D))))
+
+(RULE &shadow_cell
+  (&boxes.component (:Id *Key))
+  (input))
+
+(RULE &shadow_ray
+  (&shadow.ray (:key (:Id *Key)) *P *D *K (:Origin *Src))
+  (&shadow_cell Key)
+  (input P))
+
+(DET &paint AnyOutNewColor)
+
+;; The rectangle the exits span.
+(INIT &span BoundingBox
+  (cell ((:P Q))
+    (&door *P *D)
+    (neighbor P D *Q)))
+
+(RULE &painted
+  (OR ((&span.box *B)
+       (input *P *Col)
+       (inside (:A P) B)
+       (&bg (:C Col))
+       (NOT (&shadow_ray P)))
+      ((&door P))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,173 @@
+;; inputs 62cf1e334c3d9b5fea3133509b8e4223b4c2ac3176bcfeabfb0c7d78066e491a programs/solvers/a78176bb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a78176bb
+
+(INPUT diagonal-line "one straight diagonal line of one color runs from grid edge to grid edge; its color is not &bg and not &wedge_color, and it changes from input to input"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &wedge_color ChangedColor))
+
+(INPUT wedges "one or two right-triangle wedges of &wedge_color touch the line, each with its hypotenuse along the line and filling a staircase that grows away from it; no two wedges are on one side of the line")
+
+(OUTPUT erase-wedges "every &wedge_color cell becomes &bg")
+
+(OUTPUT keep-line "the line stays in the output unchanged")
+
+(OUTPUT offset-line "for each wedge, a new line of the line's color is drawn parallel to the line, on the wedge's side, at diagonal offset k + 1 + &gap from it, where k is the wedge's largest diagonal offset from the line; the new line runs from grid edge to grid edge"
+
+  ;; the empty diagonals between a wedge's far corner and its new line
+  (DET &gap DivisorRatio)
+
+  (RULE &wedge
+    (input *P *Col)
+    (&wedge_color (:C Col)))
+
+  (INIT &wedges Connectivity
+    (node (P)
+      (&wedge *P)))
+
+  (INIT &wedge_box BoundingBox
+    (key ((&wedges.component *P ^Id))
+      (cell (P)
+        (&wedges.component *P Id)))))
+
+(OUTPUT rest-background "every other output cell is &bg"
+
+  (RULE &ink
+    (input *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &aligned
+    (&ink *Col)
+    (input *P Col)
+    (input (:P *Q) Col)
+    (diag_axis_elem *Da)
+    (same_line (:A Da) P Q))
+
+  (RULE &off_line
+    (&ink *Col)
+    (input *P Col)
+    (input (:P *Q) Col)
+    (diag_axis_elem *Da)
+    (NOT (&aligned Da P Q)))
+
+  (RULE &collinear
+    (&ink *Col)
+    (diag_axis_elem *Da)
+    (NOT (&off_line Col Da)))
+
+  (RULE &line_axis
+    (&collinear *Col *Da)
+    (diag_perp Da (:Da2 *DA2))
+    (NOT (&collinear Col (:Da DA2))))
+
+  (INIT &line_color Singleton
+    (member ((:v Col))
+      (&ink *Col)
+      (NOT (&wedge_color (:C Col)))))
+
+  (RULE &line
+    (&line_color.value (:v *Col))
+    (&line_axis Col *Da))
+
+  (RULE &side
+    (&wedges.component *P (:Id *Pc))
+    (&line *Col (:Da *DA))
+    (input (:P *Q) Col)
+    (diag_perp (:Da DA) (:Da2 *DA2))
+    (diag_axis_of (:D *Diag) (:Da DA2))
+    (nearer (:D Diag) P Q))
+
+  (RULE &beyond
+    (input *P)
+    (&gap *K)
+    (corner_dir (:C *Diag) *D)
+    (neighbor P D (:Q *P1))
+    (jump (:P P1) D K *Q))
+
+  (RULE &reach
+    (&side *Pc *Diag)
+    (&wedges.component (:P *P2) (:Id Pc))
+    (&beyond Diag (:P P2) (:Q *P)))
+
+  (RULE &passed
+    (&reach *Pc *Diag *P)
+    (&reach Pc Diag (:P *Q))
+    (nearer (:D Diag) (:P Q) (:Q P)))
+
+  (RULE &far
+    (&reach *Pc *Diag *P)
+    (NOT (&passed Pc P))))
+
+(ALTS $axis "where the line's axis comes from" $ReadAxis
+  (ALT $StoredAxis
+    (INPUT diagonal-line "the line runs along the diagonal axis &axis; undefined where it runs along the other diagonal"
+      (DET &axis DiagAxisDomain)
+
+      (RULE &line_axis
+        (&collinear *Col *Da)
+        (&axis Da)))))
+
+(ALTS $wedge "which cells are the wedges" $StoredWedgeColor
+  (ALT $DerivedWedgeColor
+    (INPUT diagonal-line "the line's color is the one color whose cells all lie on one diagonal; undefined where no color, or more than one, does"
+      (INIT &line_color Singleton
+        (member ((:v Col))
+          (&line_axis *Col)))
+
+      (RULE &wedge
+        (&line (:Col *Col_line))
+        (input *P *Col)
+        (&ink Col)
+        (!= Col Col_line)))
+    (INPUT wedges "the wedges are every non-&bg cell not of the line's color")))
+
+(ALTS $spacing "how far out a wedge's new line goes" $LegPlusGap
+  (ALT $NeighborLine
+    (OUTPUT offset-line "the new line passes through the wedge's farthest in-grid 8-neighbor outside the wedges, with no &gap"
+      (RULE &reach
+        (&side *Pc *Diag)
+        (&wedges.component (:P *P2) (:Id Pc))
+        (neighbor (:P P2) (:Q *P))
+        (input P)
+        (NOT (&wedge P)))))
+  (ALT $LegByExtent
+    (OUTPUT offset-line "k is the side of the wedge's bounding box"
+      (RULE &reach
+        (&side *Pc *Diag)
+        (&wedge_box.box (:key (:Id Pc)) *B)
+        (&beyond Diag (:P *P2) (:Q *P))
+        (inside (:A P2) B)
+        (same_corner (:D Diag) (:P1 P2) (:P2 B))))))
+
+(ALTS $lines "how many new lines a side of the line gets" $PerWedge
+  (ALT $PerSide
+    (OUTPUT offset-line "each side of the line with a wedge gets one new line, placed for the wedge whose line goes farthest out"
+      (RULE &outdone
+        (&far *Diag *P)
+        (&far Diag (:P *Q))
+        (nearer (:D Diag) (:P Q) (:Q P))))
+    (RULE &anchor
+      (&far *P)
+      (NOT (&outdone P)))))
+
+(RULE &anchor
+  (&far *P))
+
+(RULE &lit
+  (OR ((&line *Col)
+       (input *P Col))
+      ((&anchor (:P *Q))
+       (&line Col (:Da *DA))
+       (input P)
+       (same_line (:A DA) P Q))))
+
+(RULE &output
+  (OR ((&lit *P *Col))
+      ((&bg (:C Col))
+       (OR ((input P Col))
+           ((&wedge P)))
+       (NOT (&lit P)))))
+
+(OUT (&output ^P ^Col))

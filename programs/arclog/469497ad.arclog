@@ -1,0 +1,119 @@
+;; inputs 48baa0a10253a7b9b91fd5d31b76ade944a06d07913b14855477410f096b2db3 programs/solvers/469497ad.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 469497ad
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &palette Cardinality
+  (member ((:m Col))
+    (&ink *Col))
+  (domain ()))
+
+(INIT &intile Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&palette.size *N)))
+
+(INIT &scaled_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&intile.cell (:P *P_intile))))
+
+(RULE &scaled
+  (input (:P *P_tile) *Col)
+  (&scaled_tiling.cell (:P_outer P_tile) (:P *P_grid)))
+
+(RULE &diag_blocked
+  (diag_dir_elem (:D *Key))
+  (&scaled (:P_grid *P) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &broken
+  (input *P *Col)
+  (&bg (:C Col))
+  (split P *A *Across))
+
+(RULE &legend
+  (input *P)
+  (split P *A *Across)
+  (NOT (&broken Across)))
+
+(INIT &block BoundingBox
+  (cell ((:P P_grid))
+    (&scaled *P_grid *P_tile)
+    (&ink (:P P_tile))
+    (NOT (&legend (:P P_tile)))))
+
+(RULE &diag_mark
+  (&block.cell *P)
+  (&block.box *B)
+  (inside (:A P) B)
+  (same_corner (:D *Key) (:P1 P) (:P2 B)))
+
+(INIT &diag_frame Frame
+  (key ((&diag_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&diag_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+(INIT &diag Ray
+  (key ((OR ((&diag_mark (:Key ^Ky) *P))
+            ((diag_dir_elem (:D Ky)))
+            ((&diag_frame.cell (:key Ky) P)
+             (NOT (&diag_blocked (:Key Ky) P)))))
+    (source (P)
+      (&diag_mark (:Key Ky) *P))
+    (node (P)
+      (&diag_frame.cell (:key Ky) *P)
+      (NOT (&diag_blocked (:Key Ky) P)))
+    (dir ((:D Ky))
+      (diag_dir_elem (:D Ky)))))
+
+(RULE &diag_cell
+  (&scaled (:P_grid *P) *Col)
+  (&bg (:C Col)))
+
+(RULE &diag_clear
+  (&diag.ray (:key (:Ky *Key)) *P *D *K (:Origin *Src))
+  (&diag_cell P)
+  (diag_dir_elem (:D Key)))
+
+(DET &beam AnyOutNewColor)
+
+(RULE &beam_cell
+  (&diag_clear *P))
+
+(ALTS $choice "what a beam meets when it crosses non-bg ink" $Halt
+  (ALT $Through
+    (INIT &diag_full Ray
+      (key ((OR ((&diag_mark (:Key ^Ky) *P))
+                ((diag_dir_elem (:D Ky)))
+                ((&diag_frame.cell (:key Ky) P))))
+        (source (P)
+          (&diag_mark (:Key Ky) *P))
+        (node (P)
+          (&diag_frame.cell (:key Ky) *P))
+        (dir ((:D Ky))
+          (diag_dir_elem (:D Ky)))))
+
+    (RULE &diag_ray
+      (&diag_full.ray (:key (:Ky *Key)) *P *D *K (:Origin *Src))
+      (&diag_cell P)
+      (diag_dir_elem (:D Key)))
+
+    (RULE &beam_cell
+      (&diag_ray *P))))
+
+(RULE &output
+  (OR ((&beam_cell *P)
+       (&beam (:C *Col)))
+      ((&scaled (:P_grid P) Col)
+       (NOT (&beam_cell P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,7 @@
+;; inputs c4dce9901f870ee36c22681aa6f14a85d3e355e5cf804fd551ad789904fb581a programs/solvers/99306f82.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 99306f82
+
+(param &bg Color (0))
+(param &frame Color (1))
+(param &corner DiagDir (DIAG_TL))

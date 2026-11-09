@@ -1,0 +1,89 @@
+;; inputs 2fa1a32f4042c658edc476a9c2c89801508e66afa430002360b84bde9ddcb259 programs/solvers/1e32b0e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e32b0e9
+
+(DET &gap DivisorRatio)
+
+(DET &tile_count SepTileCount)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tile_count *N))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(DET &bg DominantColor)
+
+(RULE &tile
+  (&tile_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(ALTS $d "what the tiling is read by" $Count
+  (ALT $Size
+    (DET &tile_dim SepTileDim)
+
+    (INIT &tile_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim (:D *K)))
+      (gap (A G)
+        (axis_elem *A)
+        (&gap (:K *G))))
+
+    (RULE &tile
+      (&tile_division2.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+(ALTS $s "where the footprint comes from" $Union
+  (ALT $Largest
+    (INIT &biggest_count Cardinality
+      (key ((&shape (:P_tile ^T) *P_intile))
+        (member ((:m P_intile))
+          (&shape (:P_tile T) *P_intile))))
+
+    (INIT &biggest Order
+      (member ((:t T))
+        (&biggest_count.size (:key *T)))
+      (score ((:t T) (:S N))
+        (&biggest_count.size (:key *T) *N)))
+
+    (RULE &stamp
+      (&biggest.maximal (:t *T))
+      (&shape (:P_tile T) *P_intile)))
+  (ALT $Corner
+    (DET &corner DiagDirDomain)
+
+    (RULE &stamp
+      (&corner (:D *Dg))
+      (&shape (:P_tile *T) *P_intile)
+      (corner_dist (:P T) (:Diag Dg) (:K 0)))))
+
+(RULE &divider_color
+  (input (:P *P_grid) *Col)
+  (NOT (&tile P_grid)))
+
+(RULE &shape
+  (&tile *P_grid *P_tile *P_intile)
+  (input (:P P_grid) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &stamp
+  (&shape *P_intile))
+
+(RULE &stamped
+  (&tile *P_grid *P_intile)
+  (&stamp P_intile)
+  (input (:P P_grid) *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&stamped (:P_grid *P))
+       (&divider_color *Col))
+      ((input P Col)
+       (NOT (&stamped (:P_grid P))))))
+
+(OUT (&output ^P ^Col))

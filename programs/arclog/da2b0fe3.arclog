@@ -1,0 +1,89 @@
+;; inputs 0d2cea168142f9671180033d68e672fb916f1c0f13a37a1a6505766e4827039f programs/solvers/da2b0fe3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; da2b0fe3
+
+(INPUT one-figure "every non-background cell (background 0) has one color, and those cells form one figure on a field of background")
+
+(INPUT one-gap-line "exactly one row or column that crosses the figure's bounding box holds no figure cell, and it splits the figure into a part on each side")
+
+(OUTPUT gap-lines "the lines drawn are the rows and columns that cross the figure's bounding box and hold no figure cell"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &figure
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &fig_box BoundingBox
+    (cell (P)
+      (&figure *P)))
+
+  (RULE &crossing
+    (input *P)
+    (split P *A (:Along *L))
+    (&fig_box.box *B)
+    (split (:P B) A (:Along *B_a))
+    (inside (:A L) (:B B_a)))
+
+  (RULE &inked
+    (&figure *P)
+    (split P *A (:Along *L)))
+
+  (RULE &gap
+    (&crossing *A *L)
+    (NOT (&inked L)))
+
+  ;; The runs of adjacent gap lines.
+  (INIT &runs Connectivity
+    (node ((:P L))
+      (&gap *L)))
+
+  (INIT &run_box BoundingBox
+    (key ((&runs.component (:P *L) ^Id))
+      (cell ((:P L))
+        (&runs.component (:P *L) Id)))))
+
+(OUTPUT full-span "each drawn line runs across the whole grid, and every cell on it is set to line_color (3); every other cell keeps its input color")
+
+(ALTS $choice "which lines are drawn" $EveryGap
+  (ALT $GapCenter
+    (OUTPUT gap-lines "in each run of adjacent gap lines only the center line is drawn; undefined where a run has an even width"
+      (RULE &center
+        (&gap *A *L)
+        (&runs.component (:P L) *Id)
+        (&run_box.box (:key Id) *B)
+        (inside (:A L) B)
+        (relative (:Base B) (:X L) (:X_rel *L_rel))
+        (centered (:P L_rel)))
+
+      (RULE &undefined
+        (&runs.component *Id)
+        (NOT (&center Id))))
+    (RULE &drawn
+      (&center *A *L))
+
+    (RULE &output
+      (OR ((&painted *P)
+           (NOT (&undefined))
+           (&line_color (:C *Col)))
+          ((input P Col)
+           (NOT (&undefined))
+           (NOT (&painted P)))))))
+
+(DET &line_color AnyOutNewColor)
+
+(RULE &drawn
+  (&gap *A *L))
+
+(RULE &painted
+  (&drawn *A *L)
+  (input *P)
+  (split P A (:Along L)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&line_color (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,92 @@
+;; inputs 41a84f2341ee16c0f805d514d0a64d9c9ff70b92e2843b1a77308663aa64f7c6 programs/solvers/54dc2872.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 54dc2872
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &piece
+  (&comps.component *P *Id)
+  (input P *Col))
+
+(INIT &own_color_count Cardinality
+  (key ((&piece ^Id *P ^Col))
+    (member ((:m P))
+      (&piece Id *P Col))))
+
+(RULE &mark
+  (&piece *Id *P *Col)
+  (ALL ((&piece Id (:P *Pm))
+        (&piece Id (:P *Q)))
+       ((= Pm Q))))
+
+;; The L's own color is the commonest of its cells: its tag is one cell.
+(INIT &own_color Order
+  (key ((&own_color_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&own_color_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&own_color_count.size (:key Id *Col) *N))))
+
+(RULE &arm
+  (&piece *Id *P *Col)
+  (&own_color.maximal (:key Id) (:t Col)))
+
+(RULE &tag
+  (&piece *Id *P *Col)
+  (NOT (&arm Id P)))
+
+(RULE &bend
+  (&arm *Id *P)
+  (diag_dirs (:D *Corner) (:D1 *D) *D2)
+  (neighbor P D *Q)
+  (&arm Id (:P Q))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&arm Id (:P Q2)))
+
+(RULE &target
+  (&tag *Id *Col)
+  (&mark Col *P))
+
+(RULE &shift
+  (&bend *Id (:P *B))
+  (&target Id (:P *T))
+  (relative (:Base B) (:X T) (:X_rel *V)))
+
+(RULE &moves
+  (&shift *Id))
+
+(ALTS $choice "how far a tagged L can travel to reach its mark" $Translate
+  (ALT $Slide
+    (RULE &moves
+      (&bend *Id (:P *B) (:Corner *G))
+      (diag_opposite (:D G) (:Opp *D))
+      (diag_axis_of D (:Da *A))
+      (&target Id (:P *T))
+      (same_line A (:P B) (:Q T))
+      (nearer D (:P T) (:Q B)))))
+
+(RULE &vacated
+  (&moves *Id)
+  (OR ((&piece Id *P))
+      ((&target Id P))))
+
+(RULE &render
+  (OR ((&piece *P *Col)
+       (NOT (&vacated P)))
+      ((&piece *Id (:P *P3) Col)
+       (&moves Id)
+       (&shift Id *V)
+       (compose (:A P3) (:B V) (:C P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&render P *Col))
+      ((NOT (&render P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

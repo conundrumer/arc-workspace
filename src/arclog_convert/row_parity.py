@@ -4,7 +4,7 @@ the report of the relations that differ.
     uv run python -m arclog_convert.row_parity [--out <dir>] [<stem> ...]
 
 The command checks the task files of `arclog_convert.out`, or of `--out`,
-with no conversion: the program under `CORPUS`, which is the one under `gen/`
+with no conversion: the program under `CORPUS`, which is the one the converter wrote
 with the check relations of the relations the converter folds
 (`arclog_convert.checks`) and the clauses of the relations the projection pass
 removes (`arclog_convert.projections`), and the name map and the column map; in a linked
@@ -42,7 +42,7 @@ the text's clauses with the solver's program, which says nothing on whether the
 clauses hold what the solver means; that rests on the lines of the solver's
 relations that read them. The tables export runs none of it.
 
-A task's lines stand in `row_parity/<stem>.json` beside `gen/`, as a record
+A task's lines stand in `row_parity/<stem>.json` of the output directory, as a record
 with these fields: `files`, the sha256 of the task's files as
 `train_replay.files_digest` gives them, of its program under `CORPUS`, of its name map and column map, of the
 Souffle solver file the conversion read, of the Souffle texts beside the name map
@@ -97,7 +97,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from pathlib import Path
 
 from arc.task import TASKS_DIR
-from arclog_convert import OUT_ENV, parity_text, paths, train_replay
+from arclog_convert import OUT_ENV, corpus as converted_dir, parity_text, paths, train_replay
 from engine import checkout
 from arclog_convert.plans import bound_to_one_cpu
 from engine.pool import pool_size, share_env
@@ -108,10 +108,10 @@ VERSION = 5
 """The form of a record."""
 
 CORPUS = paths.CORPUS
-"""The directory beside `gen/` that holds, for each converted task, its
+"""The directory in `paths.OUT_ROOT` that holds, for each converted task, its
 program with the check relations of the relations it folds
 (`arclog_convert.checks`) and the clauses of the relations the projection pass
-removes from the program of `gen/` (`arclog_convert.projections`), the latter
+removes from the converted program (`arclog_convert.projections`), the latter
 compared in a case only where a form that read the relation derives its relation
 there and the `OUT` form reads it (`parity.rerun`), which
 `arclog-cli row-parity` reads as its corpus."""
@@ -142,14 +142,14 @@ def write_baseline(baseline: dict[tuple[str, str], tuple[str, str]], path: Path 
                             for (task, relation), (verdict, ticket) in sorted(baseline.items())))
 
 
-def files_digest(stem: str, gen: Path, tasks: Path, solvers: Path) -> str:
-    """The digest of everything but the engine that decides the lines of `stem`."""
+def files_digest(stem: str, out: Path, tasks: Path, solvers: Path) -> str:
+    """The digest of everything but the engine that decides the lines of `stem`, with the files under `out`."""
     from cli.common import stamp
     from parity import rerun
     from souffle.install import binary_identity
     digest = hashlib.sha256()
-    digest.update(f"{VERSION}\0{train_replay.files_digest(stem, gen, tasks)}\0".encode())
-    corpus, names, columns = gen.parent / CORPUS, gen.parent / "names", gen.parent / "columns"
+    digest.update(f"{VERSION}\0{train_replay.files_digest(stem, converted_dir(out), tasks)}\0".encode())
+    corpus, names, columns = out / CORPUS, out / "names", out / "columns"
     for path in (corpus / f"{stem}.arclog", corpus / f"{stem}.arcdata", names / f"{stem}.json", names / f"{stem}.dl",
                  names / f"{stem}.determination.dl", columns / f"{stem}.json", solvers / f"{stem}.dl",
                  parity_text.FORMS):
@@ -221,9 +221,9 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
     give the exit status."""
     from parity.snapshot import RECORDS_WORKERS
     os.environ[OUT_ENV] = str(out)
-    gen, corpus, records, tasks, solvers = out / "gen", out / CORPUS, out / "row_parity", TASKS_DIR, paths.SOLVERS
+    corpus, records, tasks, solvers = out / CORPUS, out / "row_parity", TASKS_DIR, paths.SOLVERS
     sources = train_replay.engine_digest()
-    files = {stem: files_digest(stem, gen, tasks, solvers) for stem in stems}
+    files = {stem: files_digest(stem, out, tasks, solvers) for stem in stems}
     with train_replay.private_binaries() as copy:
         stale = train_replay.stale_tasks(stems, files.__getitem__, records, sources, lambda: copy(BINARY)[1])
         previous = {stem: train_replay.read_record(records, stem) for stem in stale}
@@ -281,12 +281,12 @@ def check(stems: list[str], out: Path, accept: bool = False) -> int:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.row_parity")
-    parser.add_argument("--out", type=Path, help="the directory that holds gen/, in place of `arclog_convert.out`; required in a linked worktree unless `ARCLOG_OUT` is set")
-    parser.add_argument("stems", nargs="*", help="the solvers to check; every solver of gen/ where none is given")
+    parser.add_argument("--out", type=Path, help="the directory the converter wrote under, in place of `arclog_convert.out`; its arclog and arcdata files stand in `gen/` of it; required in a linked worktree unless `ARCLOG_OUT` is set")
+    parser.add_argument("stems", nargs="*", help="the solvers to check; every converted solver where none is given")
     args = parser.parse_args(argv)
     from arclog_convert import writable_out
     root = args.out.resolve() if args.out else writable_out()
-    stems = args.stems or sorted(p.stem for p in (root / "gen").glob("*.arclog"))
+    stems = args.stems or sorted(p.stem for p in converted_dir(root).glob("*.arclog"))
     return check(stems, root)
 
 

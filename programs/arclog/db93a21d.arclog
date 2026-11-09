@@ -1,0 +1,254 @@
+;; inputs fa88cc29264834f4b8561565bb6a355ad0ac4e7aca4c120357b42604c805accf programs/solvers/db93a21d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db93a21d
+
+(INPUT squares "solid squares of &square_color (9), each of even side, apart from each other; a square can be cut off by the grid edge, and its side is then its longer extent"
+
+  (DET_OR_RULE &square_color RarestColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col C))
+    (neighbor P *Q)
+    (ex_input E (:P Q) (:Col *C_in))
+    (!= C_in C)
+    (ex_output E (:P Q) (:Col *C_out))
+    (!= C_out C_in)))
+
+(INPUT own-columns "no two squares share a column")
+
+(INPUT clear-halo "no square has a cell in the ring of another square's halo")
+
+(OUTPUT keep-squares "each square stays as it is")
+
+(OUTPUT halo "around each square, the ring of cells out to a distance of half its side takes &frame_color (3): its outer box is the square's box grown on each side by one of &frame_scale (2) equal parts of its side, cut at the grid edge"
+
+  (DET &square_color_determined
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col C))
+    (neighbor P *Q)
+    (ex_input E (:P Q) (:Col *C_in))
+    (!= C_in C)
+    (ex_output E (:P Q) (:Col *C_out))
+    (!= C_out C_in))
+
+  (DET &square_cell
+    (ex_input *E *P (:Col *C))
+    (&square_color_determined C))
+
+  (DET &frame_color
+    (&square_cell *E *P)
+    (neighbor P *Q)
+    (NOT (&square_cell E (:P Q)))
+    (ex_output E (:P Q) (:Col *C)))
+
+  (DET &observed
+    (&square_cell *E *P)
+    (neighbor P *D (:Q *P1))
+    (NOT (&square_cell E (:P P1)))
+    (&frame_color (:C *F))
+    (opposite D (:Opp *D2))
+    (ex_output E (:P *Q) (:Col F))
+    (same_line *A P Q)
+    (axis_of D A)
+    (nearer D (:P Q) (:Q P))
+    (neighbor (:P Q) D (:Q *R))
+    (ex_output E (:P R) (:Col *C))
+    (!= C F)
+    (relative (:Base P) (:X Q) (:X_rel *V))
+    (margin (:B V) (:D D2) *K)
+    (ex_input E (:P *Q2))
+    (NOT (&square_cell E (:P Q2)))
+    (neighbor (:P Q2) D (:Q *Q3))
+    (&square_cell E (:P Q3))
+    (same_line A P (:Q Q2))
+    (nearer (:D D2) (:P Q2) (:Q P))
+    (relative (:Base P) (:X Q2) (:X_rel *V2))
+    (margin (:B V2) D (:K *S)))
+
+  (DET &part_count
+    (&observed *S *K)
+    (ex_input *P)
+    (sub_extent P *A (:K *N))
+    (divide (:T S) (:Side K) (:Gap 0) (:Part N) (:Remainder 0))
+    (> N 0))
+
+  (DET &short_run
+    (&part_count *N)
+    (&observed *S *K)
+    (tile_size (:Ext S) N (:G 0) (:K *K2))
+    (< K K2))
+
+  (DET_OR_RULE &frame_scale "The count of equal parts a square's measure is cut into; the halo is one part wide." TileCount
+    (&part_count *N)
+    (NOT (&short_run N))))
+
+(OUTPUT trail "the cells in each square's columns, from the square toward &trail_dir (bottom) to the grid edge, take &trail_color (1)"
+
+  (DET &trail_color
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C))
+    (!= C C_in)
+    (NOT (&frame_color C)))
+
+  (DET &trail_dir
+    (&square_cell *E *P)
+    (margin (:B P) *D *K)
+    (jump P D K *Q)
+    (ex_output E (:P Q) (:Col *C))
+    (&trail_color C)))
+
+(OUTPUT layers "a square cell is drawn over a halo cell, and a halo cell over a trail cell; every other cell keeps its input color"
+
+  (RULE &square_cell2
+    (input *P (:Col *C))
+    (&square_color C))
+
+  (INIT &squares Connectivity
+    (node (P)
+      (&square_cell2 *P)))
+
+  (INIT &box BoundingBox
+    (key ((&squares.component *P ^Id))
+      (cell (P)
+        (&squares.component *P Id))))
+
+  (RULE &extent
+    (&box.box (:key *Id) *B)
+    (&squares.component *P Id)
+    (box_extent B P *A *N))
+
+  ;; The longer visible extent: a square's side, also where the grid edge cuts it.
+  (INIT &side Order
+    (key ((&extent ^Id *A *N))
+      (member ((:t (:V A) (:S N)))
+        (&extent Id *A *N))
+      (score ((:t (:V A) (:S N)) (:S N))
+        (&extent Id *A *N))))
+
+  (RULE &measure
+    (&side.maximal (:key *Id) (:t (:V *A) (:S *N))))
+
+  (RULE &halo_width
+    (&measure *Id *N)
+    (&frame_scale (:N *Parts))
+    (tile_size (:Ext N) (:N Parts) (:G 0) *K))
+
+  (RULE &unmeasured
+    (&box.box (:key *Id))
+    (NOT (&halo_width Id)))
+
+  (RULE &halo
+    (&halo_width *Id *K)
+    (&box.box (:key Id) *B)
+    (uniform_outset K (:B *Grow))
+    (compose (:A B) (:B Grow) (:C *Outer))
+    (input *P)
+    (inside (:A P) (:B Outer))
+    (NOT (inside (:A P) B)))
+
+  ;; The cells from each square toward &trail_dir to the grid edge.
+  (INIT &cast Ray
+    (source (P)
+      (&square_cell2 *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&trail_dir *D)))
+
+  (RULE &trail
+    (&cast.ray *P (:Origin *Src))
+    (&squares.component (:P Src) *Id)
+    (&box.box (:key Id) *B)
+    (NOT (inside (:A P) B)))
+
+  (RULE &middle_line
+    (&measure *Id *A)
+    (&box.box (:key Id) *B)
+    (&squares.component *P Id)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (split (:P P_rel) A (:Along *L))
+    (centered (:P L))
+    (axis_of *D A)))
+
+(ALTS $o "the halo width of a square whose measure is odd" $OddUndefined
+  (ALT $HaloFloor
+    (OUTPUT halo "a square of odd measure gets a halo of half its measure, rounded down"
+      (RULE &halo_width
+        ;; The lines strictly between the middle line and the edge.
+        (OR ((&middle_line *Id *D *L)
+             (margin (:B L) D *K))
+            ((&measure Id *N)
+             (&frame_scale (:N *Parts))
+             (tile_size (:Ext N) (:N Parts) (:G 0) K))))))
+  (ALT $HaloCeil
+    (OUTPUT halo "a square of odd measure gets a halo of half its measure, rounded up"
+      (RULE &halo_width
+        ;; The lines from the middle line to the edge.
+        (OR ((&middle_line *Id *D *L)
+             (opposite D (:Opp *D2))
+             (neighbor (:P L) (:D D2) (:Q *L2))
+             (margin (:B L2) D *K))
+            ((&measure Id *N)
+             (&frame_scale (:N *Parts))
+             (tile_size (:Ext N) (:N Parts) (:G 0) K)))))))
+
+(ALTS $m "which extent of a square the halo width halves" $Longer
+  (ALT $HaloByWidth
+    (OUTPUT halo "the halo width is half the square's extent across &trail_dir, its visible width; undefined where that extent is odd"
+      (RULE &measure
+        (&trail_dir *D)
+        (axis_of D (:A *A_trail))
+        (perp (:A A_trail) (:A2 *A))
+        (&extent *Id A *N)))))
+
+(ALTS $l "which of a square cell, a halo cell and a trail cell shows where they meet" $SquareOverHalo
+  (ALT $HaloOverSquares
+    (OUTPUT layers "a halo cell is drawn over a square cell, and a square cell over a trail cell")
+    (RULE &output
+      (NOT (&unmeasured))
+      (input *P (:Col *C_in))
+      (OR ((&halo P)
+           (&frame_color (:C *Col)))
+          ((NOT (&halo P))
+           (&square_cell2 P)
+           (= Col C_in))
+          ((NOT (&halo P))
+           (NOT (&square_cell2 P))
+           (&trail P)
+           (&trail_color (:C Col)))
+          ((NOT (&halo P))
+           (NOT (&square_cell2 P))
+           (NOT (&trail P))
+           (= Col C_in)))))
+  (ALT $SquaresUnderAll
+    (OUTPUT layers "a halo cell is drawn over a trail cell, and a trail cell over a square cell")
+    (RULE &output
+      (NOT (&unmeasured))
+      (input *P (:Col *C_in))
+      (OR ((&halo P)
+           (&frame_color (:C *Col)))
+          ((NOT (&halo P))
+           (&trail P)
+           (&trail_color (:C Col)))
+          ((NOT (&halo P))
+           (NOT (&trail P))
+           (= Col C_in))))))
+
+(RULE &output
+  (NOT (&unmeasured))
+  (input *P (:Col *C_in))
+  (OR ((NOT (&square_cell2 P))
+       (&halo P)
+       (&frame_color (:C *Col)))
+      ((&square_cell2 P)
+       (= Col C_in))
+      ((NOT (&square_cell2 P))
+       (NOT (&halo P))
+       (&trail P)
+       (&trail_color (:C Col)))
+      ((NOT (&square_cell2 P))
+       (NOT (&halo P))
+       (NOT (&trail P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

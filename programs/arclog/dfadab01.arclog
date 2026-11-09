@@ -1,0 +1,203 @@
+;; inputs ddaa5b7b9221ef232386fb64536c0ecd96a5987afb456ca412104d8ea7e182dd programs/solvers/dfadab01.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dfadab01
+
+(INPUT markers "single cells on the background field, each of a color that is a key of `stamp`.")
+
+(INPUT legend "at most one sample: the `stamp` of some key drawn in a 4×4 box, with a marker of that key at the cell one step past the box's `key_corner` corner on both axes. A marker can sit in the box of the sample, at a cell where the sample has background.")
+
+(INPUT stamps-apart "with the sample's key marker left out, the boxes of two markers' stamps do not overlap, and the box of a marker's stamp does not overlap the box of the sample unless the two boxes coincide.")
+
+(OUTPUT stamp-at-marker "each marker that is not the sample's key marker draws its key's `stamp`, with the stamp's anchor corner at the marker; a stamp cell that falls past the grid edge is dropped."
+
+  (INIT &field_count Cardinality
+    (key ((ex_input *E *P ^Col))
+      (member ((:m E P))
+        (ex_input *E *P Col))))
+
+  ;; The field: the commonest color of the inputs.
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S Count))
+      (&field_count.size (:key *Col) (:N *Count))))
+
+  (DET_OR_RULE &background DominantColor
+    (&field.maximal (:t *C)))
+
+  ;; The corner of the sample's box that sits on a marker.
+  (DET &anchor DiagDirDomain)
+
+  (DET &key_corner DiagDirDomain)
+
+  (DET &touches_own
+    (ex_input *E *P *Col)
+    (neighbor P *Q)
+    (ex_input E (:P Q) Col))
+
+  (DET &marker
+    (ex_input *E *P (:Col *K))
+    (NOT (&field.maximal (:t K)))
+    (NOT (&touches_own E P)))
+
+  (DET &sample_cell
+    (ex_input *E *P *Col)
+    (NOT (&field.maximal (:t Col)))
+    (&touches_own E P))
+
+  (INIT &sample BoundingBox
+    (key ((&sample_cell ^E *P))
+      (cell (P)
+        (&sample_cell E *P))))
+
+  (DET &key_marker
+    (&sample.box (:key *E) *B)
+    (&marker E *P *K)
+    (NOT (inside (:A P) B))
+    (neighbor P *Q)
+    (inside (:A Q) B))
+
+  (DET &stamp
+    (&key_marker *E *K)
+    (&sample.box (:key E) *B)
+    (&anchor (:D *A))
+    (ex_input E (:P *C))
+    (inside (:A C) B)
+    (same_corner (:D A) (:P1 C) (:P2 B))
+    (&sample_cell E (:P *S) *Col)
+    (relative (:Base C) (:X S) (:X_rel *V)))
+
+  ;; The pictures with the sample's key corner.
+  (RIGID_DET &legend
+    (&stamp *K *V *Col)
+    (&key_corner *D))
+
+  (RULE &placed
+    (&anchor (:D *A))
+    (diag_opposite (:D A) (:Opp *Key))
+    (&legend.key_corner (:Pose *D) (:D Key)))
+
+  (RULE &stamp2
+    (&placed *D)
+    (&legend.stamp (:Pose D) *K *V *Col))
+
+  (RULE &marker2
+    (input *P (:Col *K))
+    (&stamp2 K))
+
+  (RULE &sample_cell2
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&marker2 P)))
+
+  (INIT &sample2 BoundingBox
+    (cell (P)
+      (&sample_cell2 *P)))
+
+  (RULE &key_marker2
+    (&sample2.box *B)
+    (&placed (:Key *D))
+    (input (:P *Q))
+    (inside (:A Q) B)
+    (same_corner D (:P1 Q) (:P2 B))
+    (neighbor (:P Q) D (:Q *P))
+    (&marker2 P *K)))
+
+(OUTPUT wipe-rest "every other cell of the output is background, so the sample and its key marker are wiped."
+
+  (RULE &picture
+    (&stamp2 *K *V *Col)))
+
+(ALTS $s "what gives the picture that the sample's key draws" $Table
+  (ALT $SampleStamp
+    (OUTPUT stamp-at-marker "the sample's key draws the sample's picture, read relative to the `anchor` corner of the sample's box, and every other key draws its `stamp`. Undefined where the key markers differ in color."
+      ;; The sample's key: the color its key markers share.
+      (INIT &sample_key Singleton
+        (member ((:v K))
+          (&key_marker2 *K)))
+
+      (RULE &picture
+        (OR ((&sample_key.value (:v *K))
+             (&sample2.box *B)
+             (&anchor *D)
+             (input (:P *C))
+             (inside (:A C) B)
+             (same_corner D (:P1 C) (:P2 B))
+             (&sample_cell2 (:P *S) *Col)
+             (relative (:Base C) (:X S) (:X_rel *V)))
+            ((&stamp2 K V Col)
+             (NOT (&sample_key.value (:v K))))))
+
+      (RULE &undefined
+        (&sample_key.plural)))
+    (RULE &output
+      (OR ((&drawn *P *Col)
+           (NOT (&undefined)))
+          ((NOT (&undefined))
+           (input P)
+           (NOT (&drawn P))
+           (&background (:C Col)))))
+    (ALT $MarkerBySingleton
+      (INPUT markers "a marker is a non-background cell that touches no cell of its own color at a side or a corner, whatever its color. Undefined on an input with such a cell of a color that has no picture."
+        (RULE &undefined
+          (OR ((&marker2 *K)
+               (NOT (&picture K)))
+              ((&sample_key.plural))))))))
+
+(ALTS $k "which markers are the sample's key markers" $PastKeyCorner
+  (ALT $KeyByContact
+    (INPUT legend "every marker outside the sample's box that touches the box at a side or a corner is a key marker."
+      (RULE &key_marker2
+        (&sample2.box *B)
+        (&marker2 *P *K)
+        (NOT (inside (:A P) B))
+        (neighbor P *Q)
+        (inside (:A Q) B))))
+  (ALT $KeyAnyCorner
+    (INPUT legend "every marker one step past any corner of the sample's box on both axes is a key marker."
+      (RULE &key_marker2
+        (&sample2.box *B)
+        (input (:P *Q))
+        (inside (:A Q) B)
+        (same_corner *D (:P1 Q) (:P2 B))
+        (neighbor (:P Q) D (:Q *P))
+        (&marker2 P *K)))))
+
+(ALTS $m "what makes a cell a marker" $KeyColor
+  (ALT $MarkerBySingleton
+    (INPUT markers "a marker is a non-background cell that touches no cell of its own color at a side or a corner, whatever its color. Undefined on an input with such a cell of a color that has no picture."
+      (RULE &touches_own2
+        (input *P *Col)
+        (neighbor P *Q)
+        (input (:P Q) Col))
+
+      (RULE &marker2
+        (input *P (:Col *K))
+        (NOT (&background (:C K)))
+        (NOT (&touches_own2 P)))
+
+      (RULE &undefined
+        (&marker2 *K)
+        (NOT (&picture K))))
+    (RULE &output
+      (OR ((&drawn *P *Col)
+           (NOT (&undefined)))
+          ((NOT (&undefined))
+           (input P)
+           (NOT (&drawn P))
+           (&background (:C Col)))))))
+
+(RULE &drawn
+  (&marker2 (:P *P0) *K)
+  (&picture K *V *Col)
+  (NOT (&key_marker2 (:P P0)))
+  (compose (:A P0) (:B V) (:C *P))
+  (input P))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((input P)
+       (NOT (&drawn P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

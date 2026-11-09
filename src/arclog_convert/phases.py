@@ -18,7 +18,8 @@ def use_out(out: Path | None) -> None:
         return
     # set before the pools start, so that their workers read it
     os.environ[OUT_ENV] = str(out.resolve())
-    paths.OUT_DIR, paths.PLANS, paths.NAMES_DIR, paths.COLUMNS_DIR, paths.CASE_RECORDS = paths.out_dirs()
+    (paths.OUT_ROOT, paths.OUT_DIR, paths.PLANS, paths.NAMES_DIR, paths.COLUMNS_DIR,
+     paths.CASE_RECORDS) = paths.out_dirs()
 
 
 @contextmanager

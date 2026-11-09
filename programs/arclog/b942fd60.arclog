@@ -1,0 +1,162 @@
+;; inputs d9f16e8c77ce978778a555461c698574ed7113d8496a5a15c3db15a937dee79a programs/solvers/b942fd60.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b942fd60
+
+(INPUT background "every cell that is not a mark has the color `background`")
+
+(INPUT one-seed "exactly one cell has the color `line-color`, the seed, and it lies on the grid edge opposite `start-dir`")
+
+(INPUT scattered-marks "single cells of other colors, the obstacles, lie scattered over the grid; none has the color `line-color`")
+
+(OUTPUT first-ray "a ray leaves the seed toward `start-dir`")
+
+(OUTPUT ray-stops "a ray runs over the cells in its direction, and stops at the last cell before an obstacle or before the grid edge"
+
+  (DET &line RarestColor)
+
+  (RULE &seed
+    (input *P *Col)
+    (&line (:C Col))))
+
+(OUTPUT branch "where a ray stops before an obstacle, two new rays leave the stop cell, one in each direction perpendicular to that ray")
+
+(OUTPUT edge-ends "a ray that stops at the grid edge has no branches")
+
+(OUTPUT paint "every cell a ray runs over takes the color `line-color`; every other cell keeps its input color"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &obstacle2
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&line (:C Col))))
+
+  (RULE &cast_blocked
+    (&obstacle2 *P))
+
+  (INIT &cast_frame Frame
+    (extent (A N)
+      (input *P)
+      (frame_extent P *A *N)))
+
+  ;; Rays cross the grid from every cell, and stop before a blocked cell.
+  (INIT &cast Ray
+    (source (P)
+      (input *P))
+    (node (P)
+      (&cast_frame.cell *P)
+      (NOT (&cast_blocked P)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &cast_full Ray
+    (source (P)
+      (input *P))
+    (node (P)
+      (&cast_frame.cell *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &cast_stop_full
+    (&cast.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &branch_leg
+    (&cast_stop_full (:V1 *Q) (:V2 *D) (:V4 *A))
+    (opposite D (:Opp *D_back))
+    (neighbor (:P Q) (:D D_back) (:Q *E1))
+    (perp_dir D *D2))
+
+  (DET &painted_next
+    (&line (:C *Col))
+    (ex_input *E *P Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_output E (:P Q) Col))
+
+  (DET &unpainted
+    (ex_output *E)
+    (dir_elem *D)
+    (NOT (&painted_next E D)))
+
+  (DET &start
+    (dir_elem *D)
+    (NOT (&unpainted D)))
+
+  (RULE &start2
+    (&start *D)))
+
+(ALTS $s "whether the seed blocks a ray" $SeedPasses
+  (ALT $SeedBlocks
+    (OUTPUT ray-stops "a ray stops at the last cell before an obstacle, before the seed, or before the grid edge"
+      (RULE &cast_blocked
+        (OR ((&seed *P))
+            ((&obstacle2 P)))))))
+
+(ALTS $b "whether a ray whose first cell is an obstacle branches" $BlockedRayBranches
+  (ALT $BlockedRayEnds
+    (OUTPUT branch "where a ray runs over at least one cell and stops before an obstacle, two new rays leave the stop cell, one in each direction perpendicular to that ray")
+    ;; The rays the seed sets off.
+    (INIT &reach Propagation
+      (source ((:n P D))
+        (&seed *P)
+        (&start2 *D))
+      (edge ((:a (:P A) D) (:b (:P E) (:D D2)))
+        (&branch_leg *A *D (:E1 *E) *D2)
+        (!= E A)))))
+
+(ALTS $st "where the first ray's direction comes from" $StoredStart
+  (ALT $StartFromSeedEdge
+    (OUTPUT first-ray "a ray leaves the seed away from the grid edge it lies on; undefined where the seed lies on no edge or on two edges"
+      (RULE &seed_edge
+        (&seed *P)
+        (margin (:B P) *D (:K 0)))
+
+      (RULE &start2
+        (&seed_edge (:D *D_edge))
+        (ALL ((&seed_edge (:D *D1))
+              (&seed_edge (:D *D2)))
+             ((= D1 D2)))
+        (opposite (:D D_edge) (:Opp *D))))))
+
+(ALTS $o "which cells block a ray" $NonBackground
+  (ALT $StoredObstacleColors
+    (INPUT scattered-marks "single cells of the colors in `obstacle-colors`, the obstacles, lie scattered over the grid; a ray paints over a cell of any other color"
+      (DET &repainted
+        (ex_input *E *P *Col)
+        (ex_output E P (:Col *Col2))
+        (!= Col Col2))
+
+      (DET &obstacle
+        (ex_input *E *Col)
+        (ex_output E)
+        (NOT (&repainted Col))
+        (NOT (&line (:C Col))))
+
+      (RULE &obstacle2
+        (input *P *Col)
+        (&obstacle Col)))))
+
+;; The rays the seed sets off.
+(INIT &reach Propagation
+  (source ((:n P D))
+    (&seed *P)
+    (&start2 *D))
+  (edge ((:a (:P A) D) (:b (:P E) (:D D2)))
+    (&branch_leg *A *D (:E1 *E) *D2)))
+
+(RULE &painted
+  (&reach.reached (:n (:P *A) *D))
+  (&cast.ray *P D (:Origin A))
+  (input P))
+
+(RULE &output
+  ;; A case draws where the seed sets off a first ray.
+  (OR ((&painted *P)
+       (&line (:C *Col)))
+      ((input P Col)
+       (&reach.source)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

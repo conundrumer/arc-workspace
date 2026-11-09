@@ -1,0 +1,241 @@
+;; inputs 8a78238bef8a42f7a7521f678299d9d9f24fd243b858a3b187b7e7f13f7c8646 programs/solvers/ad38a9d0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ad38a9d0
+
+(INPUT field "a field of 7 holds separate pieces of fg, each a 4-connected component of fg")
+
+(INPUT known-shapes "each piece's shape, read up to translation and an element of each value of shape_sym, is a key of shape_color"
+
+  (DET_OR_RULE &fg RarestColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= C Col2))
+
+  (DET &fg_determined
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= C Col2))
+
+  (DET &cell2
+    (ex_input *E *P *Col)
+    (&fg_determined (:C Col))
+    (ex_output E))
+
+  (INIT &part2 Connectivity
+    (key ((&cell2 (:E ^K) *P ^Col))
+      (node (P)
+        (&cell2 (:E K) *P Col))))
+
+  (RULE &cell
+    (input *P *Col)
+    (&fg (:C Col)))
+
+  (INIT &part Connectivity
+    (key ((&cell *P ^Col))
+      (node (P)
+        (&cell *P Col))))
+
+  (INIT &cell_count Cardinality
+    (key ((&part.component ^Id *P))
+      (member ((:m P))
+        (&part.component Id *P))))
+
+  (INIT &cell_count2 Cardinality
+    (key ((&part2.component (:key ^K) ^Id *P))
+      (member ((:m P))
+        (&part2.component (:key K) Id *P)))))
+
+(OUTPUT recolor-by-shape "each fg cell takes the color shape_color gives the key its piece's shape matches under each value of shape_sym; every other cell keeps its color; undefined where the values of shape_sym disagree"
+
+  (INIT &box2 BoundingBox
+    (key ((&part2.component (:key ^K) ^Id *P))
+      (cell (P)
+        (&part2.component (:key K) Id *P))))
+
+  (DET &shape_cell2
+    (&part2.component (:key (:K *E)) *Id *P)
+    (&box2.box (:key (:K E) Id) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &same Inclusion
+    (pattern ((:pattern E Id) (:m P))
+      (&shape_cell2 *E *Id (:P_inner *P)))
+    (observed ((:observed E Id) (:m P))
+      (&shape_cell2 *E *Id (:P_inner *P))))
+
+  (INIT &shape_class Quotient
+    (equivalent ((:a (:E A_e) (:Id A_id)) (:b (:E B_e) (:Id B_id)))
+      (&same.equal (:observed (:E *A_e) (:Id *A_id)) (:pattern (:E *B_e) (:Id *B_id)))))
+
+  (DET &member
+    (&shape_class.class (:a *E (:Id *Id2)) *Id)
+    (&shape_cell2 E (:Id Id2) (:P_inner *P)))
+
+  (DET &pose2
+    (&shape_class.class *Id)
+    (d4_compose (:A *D) (:B D) (:C D)))
+
+  ;; The keyed shapes, each in its own box, with the pose of the training
+  ;; pieces it is drawn from.
+  (RIGID_DET &shape
+    (key ((OR ((&member ^Id)) ((&pose2 Id))))
+      (&member Id *P)
+      (&pose2 Id *D)))
+
+  (INIT &box BoundingBox
+    (key ((&part.component ^Id *P))
+      (cell (P)
+        (&part.component Id *P))))
+
+  (RULE &shape_cell
+    (&part.component *Id *P)
+    (&box.box (:key Id) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (DET &shape_color
+    (&shape_class.class (:a *E (:Id *Id2)) *Id)
+    (&part2.component (:key (:K E)) (:Id Id2) *P)
+    (ex_output E P *Col))
+
+  (INIT &shape_match Inclusion
+    (pattern ((:pattern Id D) (:m Q))
+      (&shape.member (:key *Id) (:Pose *D) (:P *Q)))
+    (observed ((:observed Id) (:m P))
+      (&shape_cell *Id (:P_inner *P))))
+
+  (RULE &quarter_turn
+    (sym_member *S *D)
+    (c4_turn (:T D)))
+
+  (RULE &partial
+    (sym_member *S *D)
+    (apply_dir D *Dir (:Dir_out *Dir2))
+    (!= Dir Dir2)
+    (NOT (&quarter_turn S)))
+
+  (DET &shape_sym
+    (sym_elem *S)
+    (NOT (&partial S)))
+
+  (RULE &keyed
+    (&shape_match.equal (:observed *Id) (:pattern (:Id *Key) *D))
+    (&shape.pose (:key (:Id Key)) (:Pose *D0))
+    (pose_difference (:A D0) (:B D) (:D *R))
+    (&shape_sym (:S *Sym))
+    (sym_member (:S Sym) (:D R))
+    (&shape_color (:Id Key) *Col)))
+
+(ALTS $cells "which cells make up a piece" $FgPieces
+  (ALT $NonBgCells
+    (INPUT field "a field of bg holds separate pieces, each a 4-connected component of the cells other than bg, whatever their color")
+    (OUTPUT recolor-by-shape "each cell other than bg takes the color shape_color gives the key its piece's shape matches under each value of shape_sym; every bg cell keeps its color; undefined where the values of shape_sym disagree"
+      (DET_OR_RULE &bg DominantColor)
+
+      ;; The background color groups the cells of every color.
+      (RULE &cell
+        (input *P (:Col *Col2))
+        (NOT (&bg (:C Col2)))
+        (&bg (:C *Col))))
+    (ALTS $split "whether a piece may hold cells of several colors" $MixedPieces
+      (ALT $PerColorPieces
+        (INPUT field "a field of bg holds separate pieces, each a 4-connected component of one color other than bg"
+          (RULE &cell
+            (input *P *Col)
+            (NOT (&bg (:C Col)))))))))
+
+(ALTS $key "what a piece's key is" $ShapeKey
+  (ALT $SizeBoxKey
+    (INPUT known-shapes "each piece's cell count and bounding-box extents, read up to an element of each value of shape_sym, are a key of box_key")
+    (OUTPUT recolor-by-shape "each piece's cells take the color box_key_color gives the key its count and extents match under each value of shape_sym; undefined where the values of shape_sym disagree"
+      (DET &extent2
+        (&shape_cell2 *E *Id (:P_inner *P))
+        (frame_extent P *A (:N *K)))
+
+      (DET &box_differs
+        (OR ((&extent2 (:E *Pc_e) (:Id *Pc_id) (:A *X) (:K *K1))
+             (&extent2 (:E *Pc2_e) (:Id *Pc2_id) (:A X) (:K *K2))
+             (!= K1 K2))
+            ((&cell_count2.size (:key (:K Pc_e) (:Id Pc_id)) (:N *N1))
+             (&cell_count2.size (:key (:K Pc2_e) (:Id Pc2_id)) (:N *N2))
+             (!= N1 N2))))
+
+      (INIT &box_class Quotient
+        (equivalent ((:a (:E A_e) (:Id A_id)) (:b (:E B_e) (:Id B_id)))
+          (&extent2 (:E *A_e) (:Id *A_id))
+          (&extent2 (:E *B_e) (:Id *B_id))
+          (NOT (&box_differs (:Pc_e A_e) (:Pc_id A_id) (:Pc2_e B_e) (:Pc2_id B_id)))))
+
+      (DET &extent
+        (&box_class.class (:a (:E *Pc_e) (:Id *Pc_id)) *Id)
+        (&extent2 (:E Pc_e) (:Id Pc_id) *A *K))
+
+      (DET &pose3
+        (&box_class.class *Id)
+        (d4_compose (:A *D) (:B D) (:C D)))
+
+      ;; The keys' bounding-box extent on each axis, with the pose of the
+      ;; training pieces each is read from.
+      (RIGID_DET &box_key
+        (key ((OR ((&extent ^Id)) ((&pose3 Id))))
+          (&extent Id *A *K)
+          (&pose3 Id *D)))
+
+      (RULE &box_mismatch
+        (&shape_cell *Id (:P_inner *P))
+        (&box_key.extent (:key (:Id *Key)) (:Pose *D) *A *K)
+        (frame_extent P A (:N *K2))
+        (!= K K2))
+
+      (DET &box_key_color
+        (&box_class.class (:a *E (:Id *Id2)) *Id)
+        (&part2.component (:key (:K E)) (:Id Id2) *P)
+        (ex_output E P *Col))
+
+      (DET &box_key_size
+        (&box_class.class (:a *E (:Id *Id2)) *Id)
+        (&cell_count2.size (:key (:K E) (:Id Id2)) *N))
+
+      (RULE &keyed
+        (&cell_count.size (:key *Id) *N)
+        (&box_key_size (:Id *Key) N)
+        (&box_key.pose (:key (:Id Key)) (:Pose *D0))
+        (pose_difference (:A D0) (:B *D) (:D *R))
+        (&shape_sym (:S *Sym))
+        (sym_member (:S Sym) (:D R))
+        (NOT (&box_mismatch Id Key D))
+        (&box_key_color (:Id Key) *Col)))))
+
+(ALTS $unknown "what a piece that matches no key does" $KeyedOnly
+  (ALT $KeepUnknown
+    (INPUT known-shapes "dropped; a piece may match no key")
+    (OUTPUT recolor-by-shape "a piece that matches no key keeps its color; undefined where keys of two colors match one piece, or where the values of shape_sym disagree")
+    (RULE &paint
+      ;; A piece with no key keeps its color.
+      (OR ((&part.component *Id *P)
+           (&shape_sym (:S *Sym))
+           (NOT (&keyed Sym Id))
+           (input P *Col))
+          ((&part.component (:Id *Id2) P)
+           (&keyed Sym (:Id Id2) Col))))))
+
+(RULE &paint
+  (&part.component *Id *P)
+  (&keyed *Sym Id *Col))
+
+(RULE &disagree
+  (&paint *Sym *P *Col)
+  (&shape_sym (:S *Sym2))
+  (NOT (&paint (:Sym Sym2) P Col)))
+
+(RULE &output
+  ;; A piece cell takes the color every value of shape_sym paints it.
+  (OR ((&paint *P *Col)
+       (NOT (&disagree)))
+      ;; Every other cell keeps its color.
+      ((input P Col)
+       (NOT (&part.component P))
+       (NOT (&disagree)))))
+
+(OUT (&output ^P ^Col))

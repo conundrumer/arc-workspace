@@ -1,0 +1,9 @@
+;; inputs 99c6d05d06ce9266b31769b50dd2390c763f4061288ce93f4c752ebc19a17b4b programs/solvers/8b28cd80.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8b28cd80
+
+(param &bg Color (0))
+(param &gap number (3))
+(param &arm Dir (DIR_T))
+(param &wind Sense (SENSE_CW))
+(param &ring_gap number (1))

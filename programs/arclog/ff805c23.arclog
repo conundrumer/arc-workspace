@@ -1,0 +1,266 @@
+;; inputs 289e4ad5a84f710e62a70e66c65084024078833b773575c6fbfcd082da69a893 programs/solvers/ff805c23.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ff805c23
+
+(INPUT square-grid "the input is a square grid of size 24×24.")
+
+(INPUT symmetric-pattern "the input, apart from the masked cells, is a pattern unchanged under each element of the group `symmetry` about the grid's center."
+
+  (DET &in_color
+    (ex_input *E *Col))
+
+  (DET &missing_color
+    (&in_color *Col)
+    (&in_color *E)
+    (NOT (&in_color E Col)))
+
+  (DET_OR_RULE &mask_color RarestColor
+    (&in_color (:Col *C))
+    (NOT (&missing_color (:Col C)))
+    (NOT (ex_output (:Col C))))
+
+  (RULE &masked
+    (input *P *Col)
+    (&mask_color (:C Col)))
+
+  (RULE &visible
+    (input *P *Col)
+    (NOT (&masked P)))
+
+  ;; The output frame: the mask's bounding box.
+  (INIT &hole BoundingBox
+    (cell (P)
+      (&masked *P)))
+
+  (RULE &margin
+    (input *P)
+    (margin (:B P) *D *K))
+
+  (RULE &corner_cell
+    (input *P)
+    (corner_dist P (:Diag *Dg) (:K 0)))
+
+  (RULE &cand_frame
+    (&hole.box (:B *HB))
+    (opposite *D (:Opp *D_o))
+    (perp_dir D *D2)
+    (opposite (:D D2) (:Opp *D2_o))
+    (margin (:B HB) D (:K *H1))
+    (margin (:B HB) (:D D_o) (:K *H2))
+    (margin (:B HB) (:D D2) (:K *H3))
+    (margin (:B HB) (:D D2_o) (:K *H4))
+    (&margin (:K *K1))
+    (<= K1 H1)
+    (&margin (:K *K2))
+    (<= K2 H2)
+    (&margin (:K *K3))
+    (<= K3 H3)
+    (&margin (:K *K4))
+    (<= K4 H4)
+    (axis_inset D K1 K2 (:B *B1))
+    (axis_inset (:D D2) (:K1 K3) (:K2 K4) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B))
+    (&corner_cell *P)
+    (perp *A *A2)
+    (box_extent B P A *N)
+    (box_extent B P (:A A2) N))
+
+  (RULE &frame_cell
+    (&cand_frame *B)
+    (&visible *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  ;; The symmetries of each candidate frame's visible cells.
+  (INIT &frame_sym Agreement
+    (key ((&frame_cell ^B *P_rel *Col))
+      (source ((:P P_rel) (:v Col))
+        (&frame_cell B *P_rel *Col))
+      (target ((:P P_rel) (:v Col))
+        (&frame_cell B *P_rel *Col)))))
+
+(INPUT solid-mask "one solid rectangle of color `mask_color` (1), of size 5×5, covers part of the pattern; `mask_color` occurs nowhere else."
+
+  ;; Each color's cells, and their bounding box.
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col)))))
+
+(INPUT mask-recoverable "each masked cell has an image under `symmetry` that the mask does not cover.")
+
+(OUTPUT crop-mask "the output is the mask's bounding box.")
+
+(OUTPUT restore-by-symmetry "each output cell takes the color of the images of its cell under `symmetry` that the mask does not cover."
+
+  (DET &mask_color_determined
+    (&in_color (:Col *C))
+    (NOT (&missing_color (:Col C)))
+    (NOT (ex_output (:Col C))))
+
+  (DET &recovered
+    (ex_input *E *P *Col)
+    (&mask_color_determined (:C Col))
+    (sym_member *S *D)
+    (apply D P (:P_out *P2))
+    (ex_input E (:P P2) (:Col *Col2))
+    (NOT (&mask_color_determined (:C Col2))))
+
+  (DET &sym_blind
+    (ex_input *E *P *Col)
+    (&mask_color_determined (:C Col))
+    (sym_elem *S)
+    (NOT (&recovered E S P)))
+
+  (DET &inv_src
+    (ex_input (:E *Key) *P (:Col *V))
+    (NOT (&mask_color_determined (:C V))))
+
+  ;; The visible cells of each input, under each D4 element.
+  (INIT &inv Agreement
+    (key ((OR ((ex_input ^E *P *Col)
+               (NOT (&mask_color_determined (:C Col))))
+              ((&inv_src (:Key E) P (:V Col)))))
+      (source (P (:v Col))
+        (ex_input E *P *Col)
+        (NOT (&mask_color_determined (:C Col))))
+      (target (P (:v Col))
+        (&inv_src (:Key E) *P (:V *Col)))))
+
+  (DET &sym_clash
+    (sym_member *S *D)
+    (&inv.conflict D))
+
+  (DET &symmetry
+    (sym_elem *S)
+    (NOT (&sym_clash S))
+    (NOT (&sym_blind S))
+    (ONE))
+
+  (RULE &center
+    (&symmetry *S)
+    (= *B 0))
+
+  (RULE &image
+    (&center *S *B)
+    (&masked *P)
+    (sym_member S *D)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (apply D (:P P_rel) (:P_out *P2_rel))
+    (compose (:A B) (:B P2_rel) (:C *P2)))
+
+  (RULE &visible_image
+    (&image *S *B *P *D *P2)
+    (&visible (:P P2) *Col))
+
+  (INIT &commonest_count Cardinality
+    (key ((&visible_image ^S ^B ^P *P2 ^Col))
+      (member ((:m P2))
+        (&visible_image S B P *P2 Col))
+      (domain ()
+        (&visible_image S B P *P2 Col))))
+
+  (RULE &hole_cell
+    (&masked *P)
+    (&hole.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &about_item
+    (&visible_image *S *B *P *Col)
+    (&hole_cell P *P_inner))
+
+  (RULE &about
+    (&about_item *B)
+    (ONE))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^S ^B ^P *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key S B P *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key S B P *Col) *N)))))
+
+(ALTS $m "how the mask color is determined" $StoredColor
+  (ALT $MaskBySolidBlock
+    (INPUT solid-mask "the mask color is each color whose cells form one solid rectangle; undefined where no color's cells form one."
+      (RULE &color_gap
+        (&color_box.box (:key *Col) *B)
+        (input *P (:Col *Col2))
+        (!= Col2 Col)
+        (inside (:A P) B))
+
+      (RULE &masked
+        (input *P *Col)
+        (NOT (&color_gap Col))))))
+
+(ALTS $r "how a masked cell's content follows from its images" $CellImages
+  (ALT $BlockImage
+    (OUTPUT restore-by-symmetry "the output is each image of the mask's box, under an element of `symmetry`, that holds no mask cell, read back through that element; undefined where every image box holds one."
+      (RULE &block_hidden
+        (&center *S *B)
+        (&masked *P)
+        (sym_member S *D)
+        (NOT (&visible_image S B P D)))
+
+      (RULE &through_item
+        (&visible_image *S *B *P *D *Col)
+        (&hole_cell P *P_inner)
+        (NOT (&block_hidden S B D)))
+
+      (RULE &through
+        (&through_item *B *D)
+        (ONE)))
+    (RULE &output
+      (&through *B *D)
+      (&visible_image *S B (:P *P2) D *Col)
+      (&hole_cell (:P P2) (:P_inner *P))))
+  (ALT $ModeImage
+    (OUTPUT restore-by-symmetry "each masked cell takes the commonest color among its visible images; undefined where a masked cell has no visible image, or where two colors tie as commonest."
+      (RULE &about_item
+        (&commonest.maximal (:key *S *B *P) (:t *Col))
+        (&hole_cell P *P_inner)))
+    (RULE &output
+      (&about *B)
+      (&commonest.maximal (:key *S B (:P *P2)) (:t *Col))
+      (&hole_cell (:P P2) (:P_inner *P)))))
+
+(ALTS $c "the center the group acts about" $GridCenter
+  (ALT $FoundCenter
+    (INPUT symmetric-pattern "the center is each center of a square frame in the grid that holds the mask, at which the visible cells of that frame agree with their visible images and every masked cell has one, and the output holds each center's restoration; undefined where no center qualifies."
+      (RULE &frame_break
+        (&cand_frame *B)
+        (&symmetry *S)
+        (sym_member S *D)
+        (&frame_sym.conflict (:key B) D))
+
+      (RULE &cand_image
+        (&cand_frame *B)
+        (&symmetry *S)
+        (&masked *P)
+        (sym_member S *D)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (apply D (:P P_rel) (:P_out *P2_rel))
+        (compose (:A B) (:B P2_rel) (:C *P2))
+        (&visible (:P P2)))
+
+      (RULE &frame_blind
+        (&cand_frame *B)
+        (&symmetry *S)
+        (&masked *P)
+        (NOT (&cand_image S B P)))
+
+      (RULE &center
+        (&cand_frame *B)
+        (&symmetry *S)
+        (NOT (&frame_break S B))
+        (NOT (&frame_blind S B))))))
+
+(RULE &output
+  (&about *B)
+  (&visible_image *S B (:P *P2) *Col)
+  (&hole_cell (:P P2) (:P_inner *P)))
+
+(OUT (&output ^P ^Col))

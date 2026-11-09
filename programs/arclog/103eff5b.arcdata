@@ -1,0 +1,7 @@
+;; inputs c775a5550ed60bd476ce25b90db198f0f13b4211fad5dd31696a251ff422abfd programs/solvers/103eff5b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 103eff5b
+
+(param &bg Color (0))
+(param &shape_col Color (8))
+(param &turn_to_shape D4 (D4_CW))

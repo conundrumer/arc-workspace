@@ -1,0 +1,52 @@
+;; inputs 908005b680071d4e8888bffdec4f2ad4b2f0bee25cb9a0020e4ef03aa9625d64 programs/solvers/7039b2d7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7039b2d7
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^P_line)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along P_line)))))
+
+;; A band is a run of adjacent non-divider lines — one row or column of
+;; regions. A divider color is one that fills a whole line.
+(INIT &bands Connectivity
+  (key ((&line_color.member (:key ^A *P_line) (:v *Col))
+        (NOT (&line_color.value (:v Col))))
+    (node ((:P P_line))
+      (&line_color.member (:key A *P_line) (:v *Col))
+      (NOT (&line_color.value (:v Col))))))
+
+;; One output line per band. Band line sets are disjoint runs, as OrderFrame
+;; assumes.
+(INIT &layout Order
+  (key ((axis_elem ^A)
+        (axis_of ^D A))
+    (member ((:t B))
+      (&bands.component (:key A) (:P *P_line) (:Id *B)))
+    (before ((:a B) (:b B2))
+      (&bands.component (:key A) (:P *P_line) (:Id *B))
+      (&bands.component (:key A) (:P *P_line2) (:Id *B2))
+      (!= B B2)
+      (margin (:B P_line) D (:K *K1))
+      (margin (:B P_line2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (perp *A *A2)
+  (split (:P P_in) A (:Along *P_line) (:Across *P_line2))
+  (&bands.component (:key A) (:P P_line) (:Id *B))
+  (&bands.component (:key (:A A2)) (:P P_line2) (:Id *B2))
+  (&layout_pos (:Key A) (:M B) *P_pos)
+  (&layout_pos (:Key A2) (:M B2) (:P_pos *P_pos2))
+  (compose (:A P_pos) (:B P_pos2) (:C *P)))
+
+(OUT (&output ^P ^Col))

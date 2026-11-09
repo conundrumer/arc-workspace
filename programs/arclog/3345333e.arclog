@@ -1,0 +1,111 @@
+;; inputs d5aa717105fe93894a7cf92d381f026ed9028f71614c72c35814eab6a529ee80 programs/solvers/3345333e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3345333e
+
+(DET &bg DominantColor)
+
+;; The axis the mirror inverts.
+(DET &axis AxisDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The occluder is the color whose cells fill their bounding box; the figure
+;; is the other one.
+(INIT &color_box BoundingBox
+  (key ((&ink *P ^Col))
+    (cell (P)
+      (&ink *P Col))))
+
+(RULE &gap
+  (&color_box.box (:key *Col) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (input P Col)))
+
+(RULE &occluder
+  (&ink *P *Col)
+  (NOT (&gap Col)))
+
+(RULE &figure
+  (&ink *P *Col)
+  (&gap Col))
+
+(RULE &damaged
+  (&figure *P)
+  (&occluder (:P *Q))
+  (&axis *A)
+  (same_line A P Q))
+
+;; The figure where it is whole.
+(INIT &whole BoundingBox
+  (cell (P)
+    (&figure *P)
+    (NOT (&damaged P))))
+
+(RULE &frame
+  (&whole.box *B))
+
+(RULE &target
+  (input *P))
+
+(ALTS $choice "which frame the mirror repair acts in" $Complete
+  (ALT $Patch
+    (RULE &target
+      (&occluder *P)))
+  (ALT $Fitted
+    (RULE &pair
+      (&figure *P)
+      (&figure (:P *Q))
+      (&axis *A)
+      (same_line A P Q))
+
+    (INIT &pair_box BoundingBox
+      (key ((&pair ^P ^Q))
+        (cell ((:P P2))
+          (OR ((= *P2 P))
+              ((= P2 Q))))))
+
+    (RULE &upheld
+      (&pair_box.box *B)
+      (&figure *P)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&axis *A)
+      (axis_inversion A (:T *D))
+      (apply D (:P P_inner) (:P_out *Q_inner))
+      (compose (:A B) (:B Q_inner) (:C *Q))
+      (input (:P Q))
+      (OR ((&figure (:P Q)))
+          ((&occluder (:P Q)))))
+
+    (RULE &contradicted
+      (&pair_box.box *B)
+      (&figure *P)
+      (NOT (&upheld B P)))
+
+    (RULE &frame
+      (&pair_box.box *B)
+      (NOT (&contradicted B)))))
+
+(RULE &paint
+  (&figure (:P *P2) *Col)
+  (&frame *B)
+  (relative (:Base B) (:X P2) (:X_rel *P_inner))
+  (&axis *A)
+  (axis_inversion A (:T *D))
+  (apply D (:P P_inner) (:P_out *Q_inner))
+  (compose (:A B) (:B Q_inner) (:C *P))
+  (input P)
+  (&target P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&paint P))
+       (OR ((&occluder P)
+            (&bg (:C Col)))
+           ((NOT (&occluder P))
+            (= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

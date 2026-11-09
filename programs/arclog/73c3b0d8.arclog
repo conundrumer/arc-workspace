@@ -1,0 +1,54 @@
+;; inputs afc60aa7d0c320199c86810eec30fbfc1343ca5ab63e3d8778d0c25594be8553 programs/solvers/73c3b0d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 73c3b0d8
+
+(DET &bg DominantColor)
+
+(DET &mark ChangedColor)
+
+(DET &wall UnchangedColor)
+
+(DET &move_dir DirDomain)
+
+(RULE &splash_dir
+  (&move_dir (:D *D2))
+  (opposite (:D D2) (:Opp *Back))
+  (diag_dirs *D (:D1 Back)))
+
+(RULE &landed
+  (input (:P *P2) *Col)
+  (&mark (:C Col))
+  (&move_dir *D)
+  (neighbor (:P P2) D (:Q *P)))
+
+(RULE &hit
+  (&landed *P)
+  (&move_dir *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&wall (:C Col)))
+
+(INIT &splash Ray
+  (source (P)
+    (&hit *P))
+  (node (P)
+    (input *P))
+  (dir ((:D Dg))
+    (&splash_dir (:D *Dg))))
+
+(RULE &painted
+  (OR ((&landed *P))
+      ((&splash.ray P))))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&painted P)
+       (&mark (:C *Col)))
+      ((NOT (&painted P))
+       (&mark (:C C_in))
+       (&bg (:C Col)))
+      ((NOT (&painted P))
+       (NOT (&mark (:C C_in)))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,7 @@
+;; inputs 38318ce7064dde5d501a114262ddefde768b7c99ef0a3b5be06d90de888652f3 programs/solvers/941d9a10.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 941d9a10
+
+(param &sep Color (5))
+(param &corner_color (DiagDir Color) (DIAG_TL 1) (DIAG_BR 3))
+(param &center_color Color (2))

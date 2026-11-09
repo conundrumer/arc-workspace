@@ -1,0 +1,180 @@
+;; inputs ea626ce638e78972750178a90eda47a7f32f7f157f6f715dabd0d79e0530b27e programs/solvers/b71a7747.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b71a7747
+
+(INPUT tiling "a background crossed by evenly spaced full rows and full columns of a line color")
+
+(INPUT tiles "equal solid squares of a tile color, one centered on each line crossing where the whole square fits in the frame, so they form a full rectangular array with a gap of at least one cell between neighbors on each axis")
+
+(INPUT path "a path of a path color is drawn inside the tiles, and only there; it runs across tile edges, so it is one 4-connected line once the gaps are closed")
+
+(INPUT noise "some inputs also hold scattered cells of a noise color, only outside the tiles")
+
+(OUTPUT pack-tiles "the output is the tiles laid edge to edge, in their row and column order, with everything outside the tiles dropped: the input with each row and each column that holds no tile cell removed"
+
+  ;; The parts of each pair of colors: the components of the cells of either.
+  (INIT &pair_parts Connectivity
+    (key ((input (:Col ^C1))
+          (input (:Col ^C2)))
+      (node (P)
+        (!= C1 C2)
+        (OR ((input *P (:Col C1)))
+            ((input P (:Col C2)))))))
+
+  (INIT &part_box BoundingBox
+    (key ((&pair_parts.component (:key (:C1 ^K_c1) (:C2 ^K_c2)) *P ^Id))
+      (cell (P)
+        (&pair_parts.component (:key (:C1 K_c1) (:C2 K_c2)) *P Id))))
+
+  (RULE &part_extent
+    (&part_box.box (:key (:K_c1 *C1) (:K_c2 *C2) *Id) *B)
+    (&pair_parts.component (:key C1 C2) *P Id)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B))
+    (box_extent B P *A *N))
+
+  (RULE &unsquare
+    (OR ((&part_box.box (:key (:K_c1 *C1) (:K_c2 *C2) *Id) *B)
+         (input *P)
+         (inside (:A P) B)
+         (NOT (&pair_parts.component (:key C1 C2) P Id)))
+        ((&part_extent C1 C2 (:N *N1))
+         (&part_extent C1 C2 (:N *N2))
+         (!= N1 N2))))
+
+  (RULE &tile_pair
+    (&pair_parts.component (:key *C1 *C2))
+    (NOT (&unsquare C1 C2)))
+
+  (RULE &tile_cell
+    (input *P *Col)
+    (&tile_pair (:C1 Col)))
+
+  (RULE &kept
+    (&tile_cell *P)
+    (split P *A (:Along *L)))
+
+  ;; The kept lines of each axis, closed up in order.
+  (INIT &layout Order
+    (key ((&kept ^A)
+          (axis_of ^D A))
+      (member ((:t L))
+        (&kept A *L))
+      (before ((:a L) (:b L2))
+        (&kept A *L)
+        (&kept A (:L *L2))
+        (!= L L2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2))))
+
+  (INIT &tile_fill_count Cardinality
+    (key ((input *P ^Col)
+          (&tile_pair (:C1 Col)))
+      (member ((:m P))
+        (input *P Col)
+        (&tile_pair (:C1 Col)))))
+
+  (RULE &tile_box
+    (&tile_pair (:C1 *K_c1) (:C2 *K_c2))
+    (&part_box.box (:key K_c1 K_c2) *B))
+
+  ;; The tile color is the commoner of the pair.
+  (INIT &tile_fill Order
+    (member ((:t Col))
+      (&tile_fill_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&tile_fill_count.size (:key *Col) *N)))
+
+  (RULE &holds
+    (input *P *Col)
+    (split P *A (:Along *L)))
+
+  (RULE &tile_center
+    (&tile_box *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (centered (:P P_rel)))
+
+  (RULE &crossed
+    (&tile_center *P)
+    (split P *A (:Along *L))
+    (&holds A L *Col))
+
+  (RULE &field
+    (input *Col)
+    (NOT (&tile_pair (:C1 Col)))
+    (NOT (&crossed Col)))
+
+  (RULE &fielded
+    (&holds *A *L *Col)
+    (&field Col))
+
+  (RULE &line
+    (&holds *A *L)
+    (NOT (&fielded A L))))
+
+(ALTS $choice "where the kept rows and columns are read from" $FromTiles
+  (ALT $FromTiles
+    (ALTS $k "how the tiles give the output" $TileRows
+      (ALT $TileRows
+        (ALTS $c "which colors make tile cells" $BothColors
+          (ALT $TileColorOnly
+            (OUTPUT pack-tiles "only the tile color makes tile cells, and path cells do not"
+              (RULE &tile_cell
+                (input *P *Col)
+                (&tile_fill.maximal (:t Col)))))))
+      (ALT $TilingBands
+        (OUTPUT pack-tiles "keep each row and column within the tiles' half-side of a line crossing where the whole square fits in the frame, whatever those cells hold; undefined where the tiles are not equal squares"
+          (RULE &band_square
+            (&line *A *L)
+            (perp A *A2)
+            (&line (:A A2) (:L *L2))
+            (input *P)
+            (split P A (:Along L) (:Across L2))
+            (&tile_box (:B *B3))
+            (&tile_center (:P *C))
+            (inside (:A C) (:B B3))
+            (relative (:Base C) (:X P) (:X_rel *V))
+            (compose (:A B3) (:B V) (:C *B))
+            (inside (:A B) (:B 0)))
+          (RULE &kept
+            (&band_square *B)
+            (input *P)
+            (inside (:A P) B)
+            (split P *A (:Along *L)))))))
+  (ALT $LineBreaks
+    (OUTPUT pack-tiles "a kept column is a column where a line row holds a cell that is not the line color, and a kept row is the same on the line columns; undefined where no line is interrupted"
+      (RULE &gapped
+        (input *Col)
+        (&line *A *L)
+        (NOT (&holds A L Col)))
+
+      (RULE &line_color
+        (input *Col)
+        (NOT (&tile_pair (:C1 Col)))
+        (NOT (&gapped Col)))
+
+      ;; A line's cell of another color keeps its place across the line.
+      (RULE &kept
+        (&line (:A *A3) (:L *L3))
+        (input *P *Col)
+        (split P (:A A3) (:Along L3) (:Across *L))
+        (NOT (&line_color Col))
+        (perp (:A A3) (:A2 *A))))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (perp *A *A2)
+  (split (:P P_in) A (:Along *L) (:Across *L2))
+  (&layout_pos (:Key A) (:M L) *P_pos)
+  (&layout_pos (:Key A2) (:M L2) (:P_pos *P_pos2))
+  (compose (:A P_pos) (:B P_pos2) (:C *P)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,8 @@
+;; inputs ebaddc921aedfabffbef516b6d8507610f1955fb43a21fa94970adf94609fa49 programs/solvers/695367ec.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 695367ec
+
+(param &frame_dim number (15))
+(param &anchor DiagDir (DIAG_TL))
+(param &gap number (1))
+(param &bg Color (0))

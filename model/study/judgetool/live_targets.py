@@ -67,7 +67,7 @@ def acquire(ev,record,adapter,ntrain,ntest,*,only_case=None):
         # column Layout; decode_source would replace it with positional names.
         program=ev.arclog.StudyProgram.from_sexp(text,ev.settings)
         source_names=(json.dumps(record['relation_source_names']) if same and record.get('relation_source_names') else
-            program.relation_source_names_json(str(MAIN_ROOT / 'work/arclog/gen'),record['task'],case))
+            program.relation_source_names_json(str(MAIN_ROOT / 'programs/arclog'),record['task'],case))
         export=export_named_program(ev,program,source_names)
         definitions=export['definitions']['native_relations']
         for table in range(len(ts['form'])):

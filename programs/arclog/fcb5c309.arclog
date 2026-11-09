@@ -1,0 +1,173 @@
+;; inputs b066ae227314f9415f1efb673d9cf70af22cc6ab985e95377601e3b6b054e9c8 programs/solvers/fcb5c309.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fcb5c309
+
+(INPUT background "every cell that is neither frame nor dot is background, color 0.")
+
+(INPUT frames "two or more hollow rectangle outlines, one cell thick, all in one frame color, none touching another.")
+
+(INPUT dots "cells of one dot color, other than the frame color, scattered inside and outside the frames, some touching one another or a frame; no dot sits on a frame's border.")
+
+(INPUT unique-most "exactly one frame holds more dots inside it than every other frame.")
+
+(OUTPUT select-most-dots "the selected frame is the one with the most dots strictly inside its border."
+
+  (DET &fill
+    (ex_output *E *P *Col)
+    (interior (:A P) (:B 0))
+    (ex_output E (:P *Q) (:Col *C_border))
+    (NOT (interior (:A Q) (:B 0)))
+    (!= Col C_border))
+
+  (DET &missing
+    (&fill *Col)
+    (ex_output *E)
+    (NOT (&fill E Col)))
+
+  (DET_OR_RULE &background DominantColor
+    (&fill (:Col *C))
+    (NOT (&missing (:Col C))))
+
+  (RULE &ink
+    (input *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &outline Outlines
+    (key ((&ink ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &on_outline
+    (&outline.box (:key *Col) *B)
+    (input *P Col)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (RULE &dot_color
+    (&ink *Col)
+    (input *P Col)
+    (NOT (&on_outline P)))
+
+  (RULE &dot
+    (&dot_color *Col)
+    (input *P Col))
+
+  (RULE &frame
+    (&outline.box (:key *Col) *B)
+    (NOT (&dot_color Col)))
+
+  (INIT &score_count Cardinality
+    (key ((&frame ^B)
+          (&dot *P)
+          (interior (:A P) B))
+      (member ((:m P))
+        (&frame B)
+        (&dot *P)
+        (interior (:A P) B))))
+
+  (INIT &clusters4 Connectivity
+    (node (P)
+      (&dot *P)))
+
+  (INIT &cluster_score_count Cardinality
+    (key ((&frame ^B)
+          (&clusters4.component *P *Id)
+          (interior (:A P) B))
+      (member ((:m Id))
+        (&frame B)
+        (&clusters4.component *P *Id)
+        (interior (:A P) B))))
+
+  ;; The cells each case counts toward a frame's score.
+  (INIT &score Order
+    (member ((:t B))
+      (&score_count.size (:key *B)))
+    (score ((:t B) (:S N))
+      (&score_count.size (:key *B) *N)))
+
+  (INIT &cluster_score Order
+    (member ((:t B))
+      (&cluster_score_count.size (:key *B)))
+    (score ((:t B) (:S N))
+      (&cluster_score_count.size (:key *B) *N)))
+
+  (INIT &clusters8 Connectivity
+    (node (P)
+      (&dot *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT crop-frame "the output is the selected frame's bounding box, border included.")
+
+(OUTPUT recolor-border "each border cell of the output takes the dot color; each interior cell keeps its input color.")
+
+(ALTS $s "what picks the frame that is cropped" $MostDots
+  (ALT $SelectLargest
+    (OUTPUT select-most-dots "the selected frame is the largest, by bounding-box area; undefined where two frames tie for the largest."
+      (INIT &score_count Cardinality
+        (key ((&frame ^B)
+              (input *P)
+              (inside (:A P) B))
+          (member ((:m P))
+            (&frame B)
+            (input *P)
+            (inside (:A P) B)))))
+    (ALTS $m "how a frame's size is measured" $Area
+      (ALT $SizeByBorderCells
+        (OUTPUT select-most-dots "size is the frame's count of border cells; undefined where two frames tie."
+          (INIT &score_count Cardinality
+            (key ((&frame ^B)
+                  (input *P)
+                  (inside (:A P) B)
+                  (same_dist (:P1 P) (:P2 B)))
+              (member ((:m P))
+                (&frame B)
+                (input *P)
+                (inside (:A P) B)
+                (same_dist (:P1 P) (:P2 B)))))))
+      (ALT $SizeByInterior
+        (OUTPUT select-most-dots "size is the frame's interior area; undefined where two frames tie."
+          (INIT &score_count Cardinality
+            (key ((&frame ^B)
+                  (input *P)
+                  (interior (:A P) B))
+              (member ((:m P))
+                (&frame B)
+                (input *P)
+                (interior (:A P) B)))))))))
+
+(ALTS $u "what is counted inside a frame" $DotCells
+  (ALT $CountDotClusters
+    (OUTPUT select-most-dots "the count is of 4-connected groups of dot cells inside the frame; undefined where two frames tie.")
+    (RULE &selected
+      (&cluster_score.maximal (:t *B)))
+    (ALTS $a "which dot cells join a cluster" $Adj4
+      (ALT $Adjacency8
+        (OUTPUT select-most-dots "diagonal neighbors join a cluster too."
+          (INIT &cluster_score_count Cardinality
+            (key ((&frame ^B)
+                  (&clusters8.component *P *Id)
+                  (interior (:A P) B))
+              (member ((:m Id))
+                (&frame B)
+                (&clusters8.component *P *Id)
+                (interior (:A P) B)))))))))
+
+(RULE &selected
+  (&score.maximal (:t *B)))
+
+(RULE &output
+  (&selected *B)
+  (input (:P *P2) (:Col *C))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((inside (:A P2) B)
+       (same_dist (:P1 P2) (:P2 B))
+       (&dot_color *Col))
+      ((interior (:A P2) B)
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

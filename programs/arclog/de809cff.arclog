@@ -1,0 +1,267 @@
+;; inputs c98c01d6921c28e0f5490c1dba7d841ddb40dad845bc9f78f67884c0df5b602d programs/solvers/de809cff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; de809cff
+
+(INPUT background "the field is `background` (0).")
+
+(INPUT two-colors "two colors other than `background` and `mark_color` (8) each paint one or more filled axis-aligned rectangles, and rectangles of one color do not touch.")
+
+(INPUT overlap "each rectangle overlaps a rectangle of the other color, and in each overlap one of the two is drawn over the other.")
+
+(INPUT pinholes "some cells of each rectangle's visible part are `background`: lone cells or two adjacent cells, some on the rectangle's edge.")
+
+(INPUT rings-apart "no cell lies within `ring_reach` (1) of pinholes of both colors.")
+
+(INPUT strays "stray cells of the two colors may lie outside the rectangles, some touching a rectangle's edge, and a stray of the other color may lie inside a rectangle's visible part.")
+
+(INPUT solid-rectangles "a solid cell lies in a 2×2 block of cells that have its color or have it on all four sides, and the solid cells of each rectangle's visible part form one 4-connected set whose box is the rectangle.")
+
+(OUTPUT clean "a rectangle is the box that bounds a 4-connected set of solid cells of one color, and it covers another where its solid cells lie in the other's box. Each rectangle's visible part fills with its color, and each cell outside every rectangle becomes `background`.")
+
+(OUTPUT ring "the box of reach `ring_reach` around each pinhole takes the other color of the two, clipped at the frame, over the rectangles and the field alike.")
+
+(OUTPUT mark "each pinhole becomes `mark_color`, over any ring."
+
+  ;; The runs of one color in each output.
+  (INIT &runs Ray
+    (key ((OR ((ex_output ^E *P ^Col))
+              ((ex_output E Col)
+               (dir_elem *D))))
+      (source (P)
+        (ex_output E *P Col))
+      (node (P)
+        (ex_output E *P Col))
+      (dir (D)
+        (ex_output E Col)
+        (dir_elem *D))))
+
+  (DET &runs_run_full
+    (&runs.ray (:key *E *Col) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (DET &background SharedColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &neighbor_in
+    (input *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) *Col))
+
+  (RULE &body
+    (OR ((&ink *P *Col))
+        ((&neighbor_in P Col)
+         (&ink Col)
+         (ALL ((dir_elem *D))
+              ((&neighbor_in P D Col))))))
+
+  (RULE &solid
+    (&body *P *Col)
+    (diag_dirs (:D *Dg) *D1 *D2)
+    (neighbor P (:D D1) (:Q *Q1))
+    (&body (:P Q1) Col)
+    (neighbor P (:D D2) (:Q *Q2))
+    (&body (:P Q2) Col)
+    (neighbor P (:D Dg) (:Q *Q3))
+    (&body (:P Q3) Col))
+
+  ;; A rectangle's solid cells, each rectangle under its own id.
+  (INIT &core Connectivity
+    (key ((&solid *P ^Col))
+      (node (P)
+        (&solid *P Col))))
+
+  ;; The rectangle: the box its solid cells bound.
+  (INIT &rect BoundingBox
+    (key ((&core.component *P (:Id ^R)))
+      (cell (P)
+        (&core.component *P (:Id R)))))
+
+  (RULE &over
+    (&core.component *P (:Id *R))
+    (&rect.box (:key (:R *R2)) (:B *B2))
+    (inside (:A P) (:B B2))
+    (!= R R2))
+
+  (RULE &covered
+    (&over (:R *R2) (:R2 *R))
+    (&rect.box (:key (:R R2)) (:B *B2))
+    (input *P)
+    (inside (:A P) (:B B2)))
+
+  (RULE &visible
+    (&rect.box (:key *R) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&covered P R)))
+
+  (RULE &pinhole
+    (&visible *P *R)
+    (input P *Col)
+    (&background (:C Col)))
+
+  (RULE &ring_color
+    (&core.component (:Id *R) (:key (:Col *Col3)))
+    (&ink *Col)
+    (!= Col Col3))
+
+  (DET &mark_run
+    (ex_output *E *P (:Col *M))
+    (NOT (ex_input E (:Col M)))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_output E (:P Q) *Col)
+    (!= Col M)
+    (&runs.end (:key E Col) (:P *Q3) D (:Origin Q))
+    (neighbor (:P Q3) D (:Q *Q2))
+    (ex_output E (:P Q2) (:Col *Col2))
+    (!= Col2 M))
+
+  ;; The cells of each such run: the ring reaches at most that many cells.
+  (INIT &run_size Cardinality
+    (key ((&mark_run ^E ^P ^D (:Q *Q1)))
+      (member ((:m Q1))
+        (OR ((&mark_run E P D (:Q *Q1)))
+            ((&mark_run E P D *Col (:Q *Q12))
+             (&runs_run_full E Col (:V1 Q12) (:V2 D) (:V3 Q1)))))))
+
+  (INIT &reach Order
+    (member ((:t K))
+      (&run_size.size (:N *K)))
+    (score ((:t K) (:S K))
+      (&run_size.size (:N *K))))
+
+  (DET &ring_reach
+    (&reach.minimal (:t *K)))
+
+  (RULE &ring
+    (&pinhole *P *R)
+    (&ring_color R *Col)
+    (&ring_reach *K)
+    (uniform_outset K (:B *O))
+    (compose (:A P) (:B O) (:C *B))
+    (input (:P *Q))
+    (inside (:A Q) B))
+
+  (RULE &clash
+    (&ring *Q *Col)
+    (&ring Q (:Col *Col2))
+    (!= Col Col2)))
+
+(ALTS $f "what a cell of another color in a rectangle's visible part becomes" $FillForeign
+  (ALT $UnderColorHoles
+    (OUTPUT clean "a cell of the color of a rectangle drawn beneath at that cell is not filled; undefined where the concept is."
+      (RULE &pinhole
+        (OR ((&visible *P *R)
+             (&over R *R2)
+             (&core.component (:Id R2) (:key *Col))
+             (input P Col)
+             (&rect.box (:key (:R R2)) (:B *B2))
+             (inside (:A P) (:B B2)))
+            ((&visible P R)
+             (input P (:Col *Col2))
+             (&background (:C Col2))))))
+    (INPUT pinholes "such a cell is a pinhole as well.")
+    (ALT $NeighborHoles
+      (INPUT pinholes "a `background` cell of a visible part is a pinhole when at least three of its 4-neighbors have the rectangle's color; undefined where the concept is."
+        (RULE &pinhole
+          (OR ((&visible *P *R)
+               (input P *Col)
+               (&background (:C Col))
+               (NOT (&open_sides P R)))
+              ((&visible P R)
+               (&over R *R2)
+               (&core.component (:Id R2) (:key (:Col *Col2)))
+               (input P (:Col Col2))
+               (&rect.box (:key (:R R2)) (:B *B2))
+               (inside (:A P) (:B B2)))))))))
+
+(ALTS $h "which `background` cells of a visible part are pinholes" $AllHoles
+  (ALT $NeighborHoles
+    (INPUT pinholes "a `background` cell of a visible part is a pinhole when at least three of its 4-neighbors have the rectangle's color; undefined where the concept is."
+      (RULE &open_sides
+        (&visible *P *R)
+        (&core.component (:Id R) (:key *Col))
+        (dir_elem (:D *D1))
+        (dir_elem (:D *D2))
+        (!= D1 D2)
+        (NOT (&neighbor_in P (:D D1) Col))
+        (NOT (&neighbor_in P (:D D2) Col)))
+
+      (RULE &pinhole
+        (&visible *P *R)
+        (input P *Col)
+        (&background (:C Col))
+        (NOT (&open_sides P R))))))
+
+(ALTS $rc "the color of a pinhole's ring" $OtherColor
+  (ALT $OverlapRingColor
+    (OUTPUT ring "the ring takes the color of the rectangles of another color that the pinhole's rectangle overlaps; undefined where that rectangle overlaps none, or overlaps rectangles of two other colors, and where rings of two colors share a cell."
+      (RULE &ring_color
+        (&core.component (:Id *R) (:key (:Col *Col3)))
+        (&core.component (:Id *R2) (:key *Col))
+        (!= Col Col3)
+        (OR ((&over R R2))
+            ((&over (:R R2) (:R2 R))))))))
+
+(ALTS $cl "what a cell that rings of two colors share becomes" $ClashUndefined
+  (ALT $OwnRingWins
+    (OUTPUT own-ring "a cell that rings of two colors share takes the ring of the pinhole in the rectangle whose visible part holds the cell; undefined where such a cell lies outside every rectangle.")
+    (RULE &output
+      (OR ((&ring (:Q *P) *Col)
+           (NOT (&clash (:Q P)))
+           (NOT (&pinhole P)))
+          ((&clash (:Q P))
+           (NOT (&pinhole P))
+           (&ring (:Q P) Col *R)
+           (&visible P R))
+          ;; A pinhole whose rectangle has a ring color takes `mark_color`.
+          ((&pinhole P (:R *R2))
+           (&ring_color (:R R2))
+           (&mark_color (:C Col)))
+          ((&base P Col)
+           (NOT (&ring (:Q P)))
+           (NOT (&pinhole P))))))
+  (ALT $ForeignRingWins
+    (OUTPUT foreign-ring "a cell that rings of two colors share takes the ring of the pinhole in the other rectangle; undefined where such a cell lies outside every rectangle.")
+    (RULE &output
+      (OR ((&ring (:Q *P) *Col)
+           (NOT (&clash (:Q P)))
+           (NOT (&pinhole P)))
+          ((&clash (:Q P))
+           (NOT (&pinhole P))
+           (&ring (:Q P) Col *R)
+           (&visible P (:R *R2))
+           (!= R R2))
+          ;; A pinhole whose rectangle has a ring color takes `mark_color`.
+          ((&pinhole P (:R *R3))
+           (&ring_color (:R R3))
+           (&mark_color (:C Col)))
+          ((&base P Col)
+           (NOT (&ring (:Q P)))
+           (NOT (&pinhole P)))))))
+
+(DET &mark_color AnyOutNewColor)
+
+(RULE &base
+  (OR ((&visible *P *R)
+       (&core.component (:Id R) (:key *Col)))
+      ((input P)
+       (NOT (&visible P))
+       (&background (:C Col)))))
+
+(RULE &output
+  ;; A pinhole whose rectangle has a ring color takes `mark_color`.
+  (OR ((&pinhole *P *R)
+       (&ring_color R)
+       (&mark_color (:C *Col)))
+      ((&base P Col)
+       (NOT (&ring (:Q P)))
+       (NOT (&pinhole P)))
+      ((&ring (:Q P) Col)
+       (NOT (&pinhole P)))))
+
+(OUT (&output ^P ^Col))

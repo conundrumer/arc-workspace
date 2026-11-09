@@ -1,0 +1,143 @@
+;; inputs 94c8264aca5160fc4b14d7bd20808b5cd6c4dcb2413d966831bf965e7d3c982a programs/solvers/e619ca6e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e619ca6e
+
+(INPUT solid-blocks "the input holds one or more solid rectangles of color 3 on a field of &background, each its own component, apart from one another."
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= C Col2))
+
+  (RULE &part_cell
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (&background (:C *Pt)))
+
+  (INIT &objs8 Connectivity
+    (key ((&part_cell (:Pt ^Col) *P))
+      (node (P)
+        (&part_cell (:Pt Col) *P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT diagonal-copies "from each block, for each direction in &cast_dir, the output adds copies of that block, the k-th copy moved k times the block's height along the vertical part of the direction and k times its width along the horizontal part, for k = 1, 2, … while any of the copy is in the grid."
+
+  (DET &background_determined
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= C Col2))
+
+  (DET &ink
+    (ex_input *E *P *Col)
+    (NOT (&background_determined (:C Col))))
+
+  (DET &cast_dir
+    (&ink *E *P)
+    (diag_dirs *D *D1 *D2)
+    (neighbor P (:D D1) (:Q *P1))
+    (NOT (&ink E (:P P1)))
+    (neighbor P (:D D2) (:Q *P2))
+    (NOT (&ink E (:P P2)))
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *Bg))
+    (&background_determined (:C Bg))
+    (ex_output E (:P Q) *Col)
+    (NOT (&background_determined (:C Col)))
+    (ex_output E (:P P1) (:Col *Col1))
+    (&background_determined (:C Col1))
+    (ex_output E (:P P2) (:Col *Col2))
+    (&background_determined (:C Col2))))
+
+(OUTPUT copy-keeps-block "each copy has the shape and the color of its block, and the part of a copy that falls past the frame edge is dropped.")
+
+(OUTPUT union "the output is the input with every copy painted over it, and copies that overlap one another or a block leave the cell in the block color."
+
+  (INIT &objs4 Connectivity
+    (key ((&part_cell (:Pt ^Col) *P))
+      (node (P)
+        (&part_cell (:Pt Col) *P))))
+
+  (RULE &member
+    (&objs4.component (:key (:Col *O_col)) *P *Id)
+    (input P *Col))
+
+  (INIT &box BoundingBox
+    (key ((&member (:O_col ^Col) ^Id *P))
+      (cell (P)
+        (&member (:O_col Col) Id *P))))
+
+  (RULE &reach
+    (&box.box (:key *Col *Id) *B)
+    (input (:P *Q))
+    (&cast_dir *D)
+    (diag_opposite D (:Opp *D_back))
+    (relative (:Base B) (:X Q) (:X_rel *Q_rel))
+    (diag_dist (:P Q_rel) (:Diag D_back) *A (:K1 *T1) (:K2 *T2))
+    (box_extent B (:P Q) A (:N *K1))
+    (perp A *A2)
+    (box_extent B (:P Q) (:A A2) (:N *K2))
+    (divide (:T T1) (:Side K1) (:Gap 0) (:Part *N) (:Remainder *I))
+    (divide (:T T2) (:Side K2) (:Gap 0) (:Part N) (:Remainder *J))
+    (> N 0))
+
+  (RULE &own_copy
+    (&reach (:Col *O_col) *Id *D_back *Q *A *I *J)
+    (&box.box (:key (:Col O_col) Id) *B)
+    (&member O_col Id *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (diag_dist (:P P_rel) (:Diag D_back) A (:K1 I) (:K2 J))))
+
+(ALTS $shape "what shape an object may have" $Rect
+  (ALT $AnyShape
+    (INPUT solid-blocks "an object may have any shape, and its copies are stepped by the height and width of its bounding box")
+    (OUTPUT copy-keeps-block "a copy holds the object's own cells")
+    (RULE &live)
+
+    (RULE &paint
+      (&own_copy (:Q *P) *Col))
+    (ALTS $c "what a copy of an object holds" $OwnCells
+      (ALT $BboxFill
+        (OUTPUT copy-keeps-block "a copy is the object's bounding box filled in its color; undefined on an object of more than one color")
+        (RULE &paint
+          (&reach (:Col *K) *Id (:Q *P))
+          (&member (:O_col K) Id *Col))))))
+
+(ALTS $adj "which neighbors join the cells of an object" $Adj4
+  (ALT $Adj8
+    (INPUT solid-blocks "8-adjacency joins the cells of an object, so blocks that meet at a corner form one object"
+      (RULE &member
+        (&objs8.component (:key (:Col *O_col)) *P *Id)
+        (input P *Col)))))
+
+(ALTS $oc "which cells one object may hold" $AnyInk
+  (ALT $PerColor
+    (INPUT solid-blocks "an object is a component of the cells of one color"
+      (RULE &part_cell
+        (input *P (:Col *Pt))
+        (NOT (&background (:C Pt)))))))
+
+(RULE &hollow
+  (&box.box (:key (:Col *K) *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&member (:O_col K) Id P)))
+
+(RULE &live
+  (NOT (&hollow)))
+
+(RULE &paint
+  (&live)
+  (&own_copy (:Q *P) *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&live)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,476 @@
+;; inputs 5311e33b0a18736921277520612759f0de7e1aaf9a8917b1c4719f22ee33b049 programs/solvers/cc9053aa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cc9053aa
+
+(INPUT wall-network "the cells of &wall_color form one 4-connected structure of 1-wide straight wall lines"
+
+  (INIT &commonest_count2 Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count2.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count2.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count2.size (:key E *Col) *N))))
+
+  (DET &bg_missing
+    (&commonest.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET &bg
+    (&commonest.maximal (:t *Col))
+    (NOT (&bg_missing Col)))
+
+  (DET &repaint
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (DET &wall_color
+    (&repaint *Col))
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&bg Col)))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&bg Col)))))
+
+  (INIT &commonest2 Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &wall_pick Singleton
+    (member ((:v Col))
+      (&commonest2.maximal (:t *Col)))))
+
+(INPUT two-markers "exactly two cells are &marker_color, each on the grid edge outside the walls and 4-adjacent to exactly one wall cell, its contact cell"
+
+  (DET &marker_color
+    (&repaint (:Col2 *Col)))
+
+  (INIT &edge_ink Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (NOT (&bg Col))
+      (margin (:B P) *D (:K 0)))))
+
+(INPUT hazards "one or more cells are &hazard_color, each inside the structure's bounding box, in a wall line or in a room between walls"
+
+  (DET &hazard_color
+    (ex_input *Col)
+    (NOT (&bg Col))
+    (NOT (&wall_color Col))
+    (NOT (&marker_color Col))))
+
+(INPUT one-clear-route "of the clear wall cells, the 4-connected walks from one contact cell to the other all visit the same cells, so one simple route joins them")
+
+(OUTPUT clear-walls "a wall cell is clear when no cell of its 8-neighborhood is &hazard_color")
+
+(OUTPUT route "the route is a fewest-hop 4-connected walk of clear wall cells from one marker's contact cell to the other's; tied walks each give their own output"
+
+  (RULE &net)
+
+  (RULE &hazard
+    (&net)
+    (&hazard_color *Col)
+    (input *P Col))
+
+  (RULE &wall_col
+    (&wall_color *Col))
+
+  (RULE &wall
+    (&wall_col *Col)
+    (input *P Col))
+
+  (RULE &closed
+    (&wall *P)
+    (neighbor P *D *Q)
+    (&hazard (:P Q)))
+
+  (RULE &marker_col
+    (&marker_color *Col))
+
+  (RULE &marker
+    (&marker_col *Col)
+    (input *P Col))
+
+  (RULE &node
+    (OR ((&net)
+         (&wall *P)
+         (NOT (&closed P)))
+        ((&net)
+         (&marker P))))
+
+  (INIT &line Ray
+    (source (P)
+      (&node *P))
+    (node (P)
+      (&node *P))
+    (dir (D)
+      (&net)
+      (dir_elem *D)))
+
+  (RULE &line_run_full
+    (&line.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &trip
+    (&node (:P *T))
+    (&marker (:P T)))
+
+  (RULE &goal
+    (&trip *T)
+    (&marker (:P *E1))
+    (!= E1 T))
+
+  (INIT &hops Distance
+    (key ((&trip (:T ^E)))
+      (source ((:n E))))
+    (edge ((:a P) (:b Q))
+      (&node *P)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&node (:P Q))))
+
+  ;; The cells of the fewest-hop walks to the goal.
+  (INIT &fewest Propagation
+    (key ((OR ((&goal (:T ^E) (:E1 *E2))
+               (&hops.distance (:key E) (:n E2)))
+              ((&hops.predecessor (:key E) (:b *B) (:a *A)))))
+      (source ((:n E2))
+        (&goal (:T E) (:E1 *E2))
+        (&hops.distance (:key E) (:n E2)))
+      (edge ((:a B) (:b A))
+        (&hops.predecessor (:key E) (:b *B) (:a *A)))))
+
+  (RULE &ahead
+    (&fewest.reached (:key (:E *T)) (:n *X))
+    (dir_elem *D)
+    (neighbor (:P X) D (:Q *Y))
+    (&fewest.reached (:key (:E T)) (:n Y))
+    (&hops.predecessor (:key (:E T)) (:b Y) (:a X)))
+
+  (INIT &ahead_line Ray
+    (key ((&ahead ^T ^D))
+      (source ((:P X))
+        (&ahead T *X D))
+      (node ((:P X))
+        (&ahead T *X D))
+      (dir (D)
+        (&ahead T D))))
+
+  (RULE &ahead_line_run_full
+    (&ahead_line.ray (:key (:T *E1) *D) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (INIT &joined Connectivity
+    (node (P)
+      (&node *P)))
+
+  ;; What the markers still reach with one cell cut out.
+  (INIT &uncut Flood
+    (key ((&node (:P ^C)))
+      (node (P)
+        (&node *P)
+        (!= P C))
+      (source ((:P E))
+        (&marker (:P *E))
+        (!= E C))))
+
+  (RULE &leg_run
+    (&trip *T)
+    (&line_run_full (:V1 *P) (:V2 *D) (:V3 *Q))
+    (dir_elem D))
+
+  ;; Legs: each leg turns onto the other axis and runs straight. At a marker no
+  ;; leg has run yet, so either axis may come next.
+  (INIT &turns Distance
+    (key ((OR ((&trip (:T ^E))
+               (axis_elem *A))
+              ((&leg_run (:T E) *P *D *Q)
+               (axis_of D (:A *A2))
+               (perp (:A A2) (:A2 A)))))
+      (edge ((:a P A) (:b (:P Q) (:A A2)))
+        (&leg_run (:T E) *P *D *Q)
+        (axis_of D (:A *A2))
+        (perp (:A A2) (:A2 *A)))
+      (source ((:n (:P E) A))
+        (&trip (:T E))
+        (axis_elem *A))))
+
+  (INIT &least_turns Order
+    (key ((&goal (:T ^E) (:E1 *E2))
+          (&turns.distance (:key E) (:n (:P E2)) *K))
+      (member ((:t K))
+        (&goal (:T E) (:E1 *E2))
+        (&turns.distance (:key E) (:n (:P E2)) *K))
+      (score ((:t K) (:S K))
+        (&goal (:T E) (:E1 *E2))
+        (&turns.distance (:key E) (:n (:P E2)) *K))))
+
+  (RULE &tie_leg_run
+    (&ahead *T (:X *P) *D)
+    (OR ((&ahead_line_run_full (:E1 T) D (:V1 P) (:V2 D) (:V3 *X)))
+        ((= X P)))
+    (neighbor (:P X) D *Q))
+
+  ;; Legs: each leg turns onto the other axis and runs straight. At a marker no
+  ;; leg has run yet, so either axis may come next.
+  (INIT &tie_turns Distance
+    (key ((OR ((&trip (:T ^E))
+               (axis_elem *A))
+              ((&tie_leg_run (:T E) *P *D *Q)
+               (axis_of D (:A *A2))
+               (perp (:A A2) (:A2 A)))))
+      (edge ((:a P A) (:b (:P Q) (:A A2)))
+        (&tie_leg_run (:T E) *P *D *Q)
+        (axis_of D (:A *A2))
+        (perp (:A A2) (:A2 *A)))
+      (source ((:n (:P E) A))
+        (&trip (:T E))
+        (axis_elem *A))))
+
+  (INIT &tie_least_turns Order
+    (key ((&goal (:T ^E) (:E1 *E2))
+          (&tie_turns.distance (:key E) (:n (:P E2)) *K))
+      (member ((:t K))
+        (&goal (:T E) (:E1 *E2))
+        (&tie_turns.distance (:key E) (:n (:P E2)) *K))
+      (score ((:t K) (:S K))
+        (&goal (:T E) (:E1 *E2))
+        (&tie_turns.distance (:key E) (:n (:P E2)) *K)))))
+
+(OUTPUT paint-route "each cell of the route becomes &marker_color; every other cell keeps its input color")
+
+(ALTS $reach "which wall cells a hazard closes to the route" $HazardTouch
+  (ALT $HazardSide
+    (OUTPUT clear-walls "a wall cell is clear when no cell 4-adjacent to it is &hazard_color"
+      (RULE &closed
+        (&wall *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&hazard (:P Q))))))
+
+(ALTS $route "which walks between the contacts the output paints" $RouteFewest
+  (ALT $RouteTieUnion
+    (OUTPUT route "one output paints every cell of every fewest-hop walk")
+    (RULE &route_cell
+      (&fewest.reached (:n *P))))
+  (ALT $RouteAnyWalk
+    (OUTPUT route "one output paints every clear wall cell on some simple walk between the contacts, of any length"
+      (RULE &linked
+        (&marker (:P *E))
+        (&joined.component (:P E) *Id)
+        (&marker (:P *E2))
+        (!= E2 E)
+        (&joined.component (:P E2) Id))
+
+      (RULE &cut_off
+        (&uncut.node (:key *C) *P)
+        (NOT (&uncut.reached (:key C) P))))
+    (RULE &route_cell
+      (&linked)
+      (&node *P)
+      (NOT (&cut_off P))))
+  (ALT $RouteFewestTurns
+    (OUTPUT route "the simple walks with the fewest turns, of any length, each give their own output; a turn count includes the step from each marker into its contact cell"
+      ;; The legs of the walks with the fewest turns.
+      (INIT &turn_back Propagation
+        (key ((OR ((&goal (:T ^E) (:E1 *E2))
+                   (&turns.distance (:key E) (:n (:P E2) *A) *K)
+                   (&least_turns.minimal (:key E) (:t K)))
+                  ((&turns.predecessor (:key E) (:b (:P *B_p) (:A *B_a)) (:a (:P *A_p) (:A *A_a))))))
+          (source ((:n (:P E2) A))
+            (&goal (:T E) (:E1 *E2))
+            (&turns.distance (:key E) (:n (:P E2) *A) *K)
+            (&least_turns.minimal (:key E) (:t K)))
+          (edge ((:a (:P B_p) (:A B_a)) (:b (:P A_p) (:A A_a)))
+            (&turns.predecessor (:key E) (:b (:P *B_p) (:A *B_a)) (:a (:P *A_p) (:A *A_a))))))
+
+      (RULE &leg_link
+        (&turns.distance (:key (:E *T)) (:n (:P *Q) (:A *A2)) (:K *K2))
+        (&turns.predecessor (:key (:E T)) (:b (:P Q) (:A A2)) (:a *P *A))
+        (&turns.distance (:key (:E T)) (:n P A) *K))
+
+      (RULE &legs_pool
+        (&turn_back.reached (:key (:E *T)) (:n *P *A))
+        (&turns.distance (:key (:E T)) (:n P A) *K))
+
+      ;; Each walk with the fewest turns, as its cell at each leg count.
+      (RULE &legs_key
+        (&legs_pool *T)
+        (ONE))
+
+      (RULE &legs_item
+        (&legs_pool *T *K *P)
+        (&legs_key T))
+
+      ;; Each walk with the fewest turns, as its cell at each leg count.
+      (CHOOSE &legs
+        (for ((&legs_item ^T ^K))
+          (from (&legs_item T K *P)))
+        (never
+          (&legs_item *T *K *P)
+          (&legs_item T (:K *K2) P)
+          (!= K K2))
+        (never
+          (&legs_item *T *K *P)
+          (&legs_item T (:K *K2) (:P *Q))
+          (&leg_link T K Q K2)
+          (NOT (&leg_link T P K Q K2))))
+
+      (RULE &leg_step
+        (&legs *T (:K *K2) (:P *Q))
+        (&leg_link T *P *K Q K2)
+        (&legs T K P)))
+    (RULE &route_cell
+      (&legs (:T *E))
+      (&leg_step (:T E) (:P *P2) *Q)
+      (&leg_run (:T E) (:P P2) *D Q)
+      (OR ((&leg_run (:T E) (:P P2) D (:Q *P))
+           (&leg_run (:T E) P D Q))
+          ((= P P2))
+          ((= P Q)))))
+  (ALT $RouteTieFewestTurns
+    (OUTPUT route "of the fewest-hop walks, those with the fewest turns each give their own output"
+      ;; The legs of the walks with the fewest turns.
+      (INIT &tie_turn_back Propagation
+        (key ((OR ((&goal (:T ^E) (:E1 *E2))
+                   (&tie_turns.distance (:key E) (:n (:P E2) *A) *K)
+                   (&tie_least_turns.minimal (:key E) (:t K)))
+                  ((&tie_turns.predecessor (:key E) (:b (:P *B_p) (:A *B_a)) (:a (:P *A_p) (:A *A_a))))))
+          (source ((:n (:P E2) A))
+            (&goal (:T E) (:E1 *E2))
+            (&tie_turns.distance (:key E) (:n (:P E2) *A) *K)
+            (&tie_least_turns.minimal (:key E) (:t K)))
+          (edge ((:a (:P B_p) (:A B_a)) (:b (:P A_p) (:A A_a)))
+            (&tie_turns.predecessor (:key E) (:b (:P *B_p) (:A *B_a)) (:a (:P *A_p) (:A *A_a))))))
+
+      (RULE &tie_leg_link
+        (&tie_turns.distance (:key (:E *T)) (:n (:P *Q) (:A *A2)) (:K *K2))
+        (&tie_turns.predecessor (:key (:E T)) (:b (:P Q) (:A A2)) (:a *P *A))
+        (&tie_turns.distance (:key (:E T)) (:n P A) *K))
+
+      (RULE &tie_legs_pool
+        (&tie_turn_back.reached (:key (:E *T)) (:n *P *A))
+        (&tie_turns.distance (:key (:E T)) (:n P A) *K))
+
+      ;; Each walk with the fewest turns, as its cell at each leg count.
+      (RULE &tie_legs_key
+        (&tie_legs_pool *T)
+        (ONE))
+
+      (RULE &tie_legs_item
+        (&tie_legs_pool *T *K *P)
+        (&tie_legs_key T))
+
+      ;; Each walk with the fewest turns, as its cell at each leg count.
+      (CHOOSE &tie_legs
+        (for ((&tie_legs_item ^T ^K))
+          (from (&tie_legs_item T K *P)))
+        (never
+          (&tie_legs_item *T *K *P)
+          (&tie_legs_item T (:K *K2) P)
+          (!= K K2))
+        (never
+          (&tie_legs_item *T *K *P)
+          (&tie_legs_item T (:K *K2) (:P *Q))
+          (&tie_leg_link T K Q K2)
+          (NOT (&tie_leg_link T P K Q K2))))
+
+      (RULE &tie_leg_step
+        (&tie_legs *T (:K *K2) (:P *Q))
+        (&tie_leg_link T *P *K Q K2)
+        (&tie_legs T K P)))
+    (RULE &route_cell
+      (&tie_legs (:T *E))
+      (&tie_leg_step (:T E) (:P *P2) *Q)
+      (&tie_leg_run (:T E) (:P P2) *D Q)
+      (OR ((&tie_leg_run (:T E) (:P P2) D (:Q *P))
+           (&tie_leg_run (:T E) P D Q))
+          ((= P P2))
+          ((= P Q))))))
+
+(ALTS $wall "where the wall color comes from" $WallGiven
+  (ALT $WallColorCommonest
+    (INPUT wall-network "the walls are the commonest color other than &bg; undefined on a tie"
+      (RULE &wall_col
+        (&wall_pick.value (:v *Col))))))
+
+(ALTS $marker "where the marker color comes from" $MarkerGiven
+  (ALT $MarkerColorEdge
+    (INPUT two-markers "the markers are the one color other than &bg on the grid edge; undefined where the edge holds no such color, or more than one"
+      (RULE &marker_col
+        (&edge_ink.value (:v *Col))))))
+
+(ALTS $hazard "where the hazard color comes from" $HazardGiven
+  (ALT $HazardColorRest
+    (INPUT hazards "the hazards are the one input color other than &bg, the wall color and the marker color; undefined where there is no such color, or more than one"
+      (INIT &rest Singleton
+        (member ((:v Col))
+          (&net)
+          (input *Col)
+          (NOT (&bg Col))
+          (NOT (&wall_col Col))
+          (NOT (&marker_col Col))))
+
+      (RULE &hazard
+        (&net)
+        (&rest.value (:v *Col))
+        (input *P Col)))))
+
+(RULE &walks_pool
+  (&fewest.reached (:key (:E *T)) (:n *P))
+  (&hops.distance (:key (:E T)) (:n P) *K))
+
+;; Each fewest-hop walk, as its cell at each hop count.
+(RULE &walks_key
+  (&walks_pool *T)
+  (ONE))
+
+(RULE &walks_item
+  (&walks_pool *T *K *P)
+  (&walks_key T))
+
+;; Each fewest-hop walk, as its cell at each hop count.
+(CHOOSE &walks
+  (for ((&walks_item ^T ^K))
+    (from (&walks_item T K *P)))
+  (never
+    (&walks_item *T *K *P)
+    (&walks_item T (:K *K2) P)
+    (!= K K2))
+  (never
+    (&walks_item *T *K (:P *A))
+    (&walks_item T (:P *B))
+    (&hops.predecessor (:key (:E T)) (:b B) (:a *A2))
+    (&hops.distance (:key (:E T)) (:n A2) K)
+    (NOT (&hops.predecessor (:key (:E T)) (:b B) (:a A)))))
+
+(RULE &route_cell
+  (&walks (:T *E) *P))
+
+(RULE &paint
+  (&route_cell *P)
+  (&wall P))
+
+(RULE_OR_DET &route_color "The route takes the color of the markers it joins."
+  (&marker *P)
+  (input P *Col))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&route_color *Col))
+      ((&route_cell)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

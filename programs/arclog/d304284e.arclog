@@ -1,0 +1,456 @@
+;; inputs 9fc06f367cdcfce174f74304545d87b4f1e9520cbeb48c60133f96f76b4b581a programs/solvers/d304284e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d304284e
+
+(INPUT one-shape "every input holds one 8-connected shape of color 7 on a field of &background, and nothing else"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT room-ahead "the shape lies clear of the edges toward &march_dir and &branch_dir, with room for more than one copy toward &march_dir"
+
+  (DET &clear_dir
+    (ex_output (:E *Key))
+    (dir_elem *D))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  ;; The ink's bounding box.
+  (INIT &box BoundingBox
+    (key ((&ink ^E *P))
+      (cell (P)
+        (&ink E *P))))
+
+  ;; The whole copies of the input ink in each output, as offsets from it:
+  ;; in the ink's own colors, and with every cell in the mark color.
+  (INIT &plain Occurrences
+    (key ((OR ((ex_output ^E *P *Col))
+              ((&ink E P)
+               (ex_input E P Col))))
+      (cell (P (:v Col))
+        (ex_output E *P *Col))
+      (shape (P (:v Col))
+        (&ink E *P)
+        (ex_input E P *Col))))
+
+  (DET &mark_color AnyOutNewColor)
+
+  (INIT &marked Occurrences
+    (key ((OR ((ex_output ^E *P *Col))
+              ((&ink E P)
+               (&mark_color (:C Col)))))
+      (cell (P (:v Col))
+        (ex_output E *P *Col))
+      (shape (P (:v Col))
+        (&ink E *P)
+        (&mark_color (:C *Col)))))
+
+  (DET &copy
+    (OR ((&plain.occurrence (:key *E) (:P *V)))
+        ((&marked.occurrence (:key E) (:P V)))))
+
+  (DET &ink_out
+    (ex_output *E *P *Col)
+    (NOT (&background (:C Col))))
+
+  (DET &past
+    (&copy *E *V)
+    (&box.box (:key E) *B)
+    (compose (:A V) B (:C *B_copy))
+    (&ink_out E *P)
+    (inside (:A P) (:B B_copy))
+    (same_dist *D (:P1 P) (:P2 B_copy))
+    (neighbor P D *Q))
+
+  (INIT &clear_frame Frame
+    (key ((&past ^E *Q)
+          (frame_extent (:P Q) *A *N))
+      (extent (A N)
+        (&past E *Q)
+        (frame_extent (:P Q) *A *N))))
+
+  ;; The background run from each such cell up to the next ink.
+  (INIT &clear Ray
+    (key ((OR ((&past ^E *Q))
+              ((&clear_dir (:Key E) *D))
+              ((&clear_frame.cell (:key E) *P)
+               (NOT (&ink_out E P)))))
+      (source ((:P Q))
+        (&past E *Q))
+      (node (P)
+        (&clear_frame.cell (:key E) *P)
+        (NOT (&ink_out E P)))
+      (dir (D)
+        (&clear_dir (:Key E) *D))))
+
+  (INIT &clear_full Ray
+    (key ((OR ((&past ^E *Q))
+              ((&clear_dir (:Key E) *D))
+              ((&clear_frame.cell (:key E) *P))))
+      (source ((:P Q))
+        (&past E *Q))
+      (node (P)
+        (&clear_frame.cell (:key E) *P))
+      (dir (D)
+        (&clear_dir (:Key E) *D))))
+
+  (DET &clear_stop_full
+    (&clear.end (:key (:E *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&clear_full.ray (:key (:E V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (DET &in_line
+    (&copy *E *V)
+    (opposite *D (:Opp *D_back))
+    (margin (:B V) (:D D_back) *K)
+    (>= K 0)
+    (perp_dir D (:D2 *D_across))
+    (margin (:B V) (:D D_across) (:K 0)))
+
+  (DET &run_way
+    (&in_line *E *D *K)
+    (> K 0))
+
+  (DET &drop_gap
+    (&run_way *E (:D *D_run))
+    (&in_line E (:D D_run) *V)
+    (&marked.occurrence (:key E) (:P V))
+    (perp_dir (:D D_run) (:D2 *D))
+    (&past E V D *Q)
+    (&clear_stop_full (:V0 E) (:V2 D) (:V3 *G) (:V4 Q)))
+
+  (DET &march_dir
+    (&run_way *D))
+
+  (DET &branch_dir
+    (&drop_gap *D)))
+
+(OUTPUT march "copies of the shape repeat from it toward &march_dir, each one &gap cells past the one before, up to the grid edge; a copy the edge cuts is drawn in part"
+
+  (INIT &whole Quotient
+    (equivalent ((:a P) (:b Q))
+      (&ink *P)
+      (&ink (:P *Q))))
+
+  (RULE &member
+    (&whole.class (:a *P) (:Id *K)))
+
+  (INIT &bbox BoundingBox
+    (key ((&member (:K ^Id) *P))
+      (cell (P)
+        (&member (:K Id) *P))))
+
+  (DET &gap
+    (&drop_gap (:G *K)))
+
+  (INIT &room Order
+    (key ((&bbox.box (:key ^Id) *B)
+          (margin B *D (:K *N)))
+      (member ((:t (:V D) (:S N)))
+        (&bbox.box (:key Id) *B)
+        (margin B *D (:K *N)))
+      (score ((:t (:V D) (:S N)) (:S N))
+        (&bbox.box (:key Id) *B)
+        (margin B *D (:K *N)))))
+
+  (INIT &objects Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT mark-every-period "numbering the run from the shape as copy 1, each copy whose number is a multiple of &period is drawn in &mark_color, and every other copy keeps the shape's colors"
+
+  ;; A copy's number, the ink itself being copy 1: the run's copies up to it.
+  (INIT &number Cardinality
+    (key ((&in_line ^E *D ^V *K)
+          (&in_line E D (:V *V2) (:K *K2))
+          (<= K2 K))
+      (member ((:m V2))
+        (&in_line E *D V *K)
+        (&in_line E D (:V *V2) (:K *K2))
+        (<= K2 K))))
+
+  (DET &marks
+    (&marked.occurrence (:key *E) (:P *V))
+    (&number.size (:key E V) *N))
+
+  ;; The first marked copy.
+  (INIT &first_mark Order
+    (key ((&marks ^E *N))
+      (member ((:t N))
+        (&marks E *N))
+      (score ((:t N) (:S N))
+        (&marks E *N))))
+
+  (DET &period
+    (&first_mark.minimal (:t *K))))
+
+(OUTPUT branch "from each marked copy, copies in &mark_color repeat toward &branch_dir, each one &gap cells past the one before, up to the grid edge, drawn in part where the edge cuts them"
+
+  (INIT &ray_frame Frame
+    (key ((&member (:K ^Id) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&member (:K Id) *P)
+        (frame_extent P *A *N))))
+
+  (RULE &extent
+    (&bbox.box (:key (:Id *K)) *B)
+    (&member K *P)
+    (box_extent B P *A *N))
+
+  (RULE &march
+    (&bbox.box (:key (:Id *K)))
+    (&march_dir *D))
+
+  (RULE &pitch
+    (&march (:K *Id) *D)
+    (axis_of D *A)
+    (&extent (:K Id) A (:N *W))
+    (&gap (:K *G)))
+
+  ;; The cells in line with each unit's cells, toward every way.
+  (INIT &ray Ray
+    (key ((OR ((&member (:K ^Id) *P))
+              ((&bbox.box (:key Id))
+               (dir_elem *D))
+              ((&ray_frame.cell (:key Id) P))))
+      (source (P)
+        (&member (:K Id) *P))
+      (node (P)
+        (&ray_frame.cell (:key Id) *P))
+      (dir (D)
+        (&bbox.box (:key Id))
+        (dir_elem *D))))
+
+  (RULE &ray_cell
+    (&bbox.box (:key (:Id *Key)))
+    (input))
+
+  (RULE &copy2
+    (&pitch *Id *D *W *G)
+    (&ray.ray (:key Id) *P D (:K *J) (:Origin *Src))
+    (&ray_cell (:Key Id))
+    (input P)
+    (divide (:T J) (:Side W) (:Gap G) (:Part *N) (:Remainder 0)))
+
+  ;; The copy's number, the unit itself being copy 1: the copies up to it.
+  (INIT &number2 Cardinality
+    (key ((&copy2 (:Id ^R_id) (:D ^R_d) ^N)
+          (&copy2 (:Id R_id) (:D R_d) (:N *N2))
+          (<= N2 N))
+      (member ((:m N2))
+        (&copy2 (:Id R_id) (:D R_d) N)
+        (&copy2 (:Id R_id) (:D R_d) (:N *N2))
+        (<= N2 N))
+      (domain ()
+        (&copy2 (:Id R_id) (:D R_d) N)
+        (&copy2 (:Id R_id) (:D R_d) (:N *N2))
+        (<= N2 N))))
+
+  (RULE &marked2
+    (&number2.size (:key (:R_id *Id) (:R_d *D) *N) (:N *C))
+    (&period (:K *Period))
+    (divide (:T C) (:Side Period) (:Gap 0) (:Remainder 0)))
+
+  (RULE &marked_cell
+    (&copy2 *Id *D *N *P *Src)
+    (&marked2 Id D N))
+
+  (INIT &drop_frame Frame
+    (key ((&marked_cell ^Id ^D *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&marked_cell Id D *P)
+        (frame_extent P *A *N))))
+
+  (RULE &branch
+    (&march *K (:D *D_march))
+    (&branch_dir *D)
+    (perp_dir (:D D_march) (:D2 D)))
+
+  ;; The cells in line with each marked copy, toward the way it drops.
+  (INIT &drop Ray
+    (key ((OR ((&marked_cell ^Id ^D *P))
+              ((&marked_cell Id D)
+               (&branch (:K Id) (:D_march D) (:D *D2)))
+              ((&drop_frame.cell (:key Id D) P))))
+      (source (P)
+        (&marked_cell Id D *P))
+      (node (P)
+        (&drop_frame.cell (:key Id D) *P))
+      (dir ((:D D2))
+        (&marked_cell Id D)
+        (&branch (:K Id) (:D_march D) (:D *D2)))))
+
+  (INIT &across Order
+    (key ((&bbox.box (:key (:Id ^K)) *B)
+          (dir_elem (:D ^D_march))
+          (perp_dir (:D D_march) (:D2 *D))
+          (margin B D (:K *N)))
+      (member ((:t (:V D) (:S N)))
+        (&bbox.box (:key (:Id K)) *B)
+        (perp_dir (:D D_march) (:D2 *D))
+        (margin B D (:K *N)))
+      (score ((:t (:V D) (:S N)) (:S N))
+        (&bbox.box (:key (:Id K)) *B)
+        (perp_dir (:D D_march) (:D2 *D))
+        (margin B D (:K *N)))))
+
+  (DET &marked_numbers
+    (&marks *N)))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $m "which way the run goes" $StoredMarch
+  (ALT $MarchToRoom
+    (OUTPUT march "copies of the shape repeat from it toward each way in which the shape's bounding box has the most cells to the grid edge, each one &gap cells past the one before, up to the grid edge; undefined where such a way lies on the axis of &branch_dir"
+      (RULE &march
+        (&room.maximal (:key (:Id *K)) (:t (:V *D)))))))
+
+(ALTS $b "which way the marked copies repeat" $StoredBranch
+  (ALT $BranchToRoom
+    (OUTPUT branch "from each marked copy, copies in &mark_color repeat across the run toward the way with more cells between the shape's bounding box and the grid edge, both ways on a tie"
+      (RULE &branch
+        (&march *K (:D *D_march))
+        (&across.maximal (:key K D_march) (:t (:V *D))))))
+  (ALT $TurnSense
+    (OUTPUT branch "from each marked copy, copies in &mark_color repeat toward the way a quarter turn in &branch_sense takes the run's way to"
+      (DET &branch_sense
+        (&march_dir (:D *D_march))
+        (&branch_dir *D)
+        (turn *S (:D D_march) (:D2 D)))
+
+      (RULE &branch
+        (&march *K (:D *D_march))
+        (&branch_sense *S)
+        (turn S (:D D_march) (:D2 *D))))))
+
+(ALTS $s "what sets the step along the run" $SharedGap
+  (ALT $MarchGap
+    (OUTPUT march "each copy is &march_gap cells past the one before, and &gap is read on the drop axis alone"
+      (DET &march_gap
+        (&run_way *E *D)
+        (&past E (:V 0) D *Q)
+        (&clear_stop_full (:V0 E) (:V2 D) (:V3 *K) (:V4 Q)))
+
+      (RULE &pitch
+        (&march (:K *Id) *D)
+        (axis_of D *A)
+        (&extent (:K Id) A (:N *W))
+        (&march_gap (:K *G)))))
+  (ALT $StoredStride
+    (OUTPUT march "each copy is &march_stride cells on from the one before, and &gap is read on the drop axis alone"
+      ;; The run's nearest copy.
+      (INIT &nearest Order
+        (key ((&in_line ^E *K)
+              (> K 0))
+          (member ((:t K))
+            (&in_line E *K)
+            (> K 0))
+          (score ((:t K) (:S K))
+            (&in_line E *K)
+            (> K 0))))
+
+      (DET &march_stride
+        (&nearest.minimal (:t *K)))
+
+      (RULE &pitch
+        (&march (:K *Id) *D)
+        (&march_stride (:K *W))
+        (= *G 0)))))
+
+(ALTS $k "which copies are marked" $EveryPeriod
+  (ALT $MarkPhase
+    (OUTPUT mark-every-period "a copy is marked when its number is congruent to &mark_phase modulo &period"
+      (DET &mark_phase
+        (&marked_numbers *N)
+        (&period (:K *Period))
+        (divide (:T N) (:Side Period) (:Gap 0) (:Remainder *K)))
+
+      (RULE &marked2
+        (&number2.size (:key (:R_id *Id) (:R_d *D) *N) (:N *C))
+        (&period (:K *Period))
+        (&mark_phase (:K *Phase))
+        (divide (:T C) (:Side Period) (:Gap 0) (:Remainder Phase)))))
+  (ALT $MarkSet
+    (OUTPUT mark-every-period "a copy is marked when its number is in &marked_numbers"
+      (RULE &marked2
+        (&number2.size (:key (:R_id *Id) (:R_d *D) *N) (:N *C))
+        (&marked_numbers (:N C))))))
+
+(ALTS $u "what is copied as one unit" $WholeInk
+  (ALT $PerObject
+    (OUTPUT march "each 8-connected object runs, is numbered, is marked and drops on its own, with its own extents; undefined where two objects' copies put different colors on one cell"
+      (RULE &member
+        (&objects.component *P (:Id *K))))))
+
+(ALTS $c "which cells of a marked copy and its drops take the mark color" $PaintAll
+  (ALT $RecolorShapeColor
+    (OUTPUT mark-every-period "only the cells of color &shape_color take &mark_color, and every other cell keeps its color"
+      (DET &ink_color
+        (&ink *E *P)
+        (ex_input E P *Col))
+
+      (DET &color_defect
+        (&ink_color *Col)
+        (ex_output *E)
+        (NOT (&ink_color E Col)))
+
+      (DET_OR_RULE &shape_color RarestColor
+        (&ink_color (:Col *C))
+        (NOT (&color_defect (:Col C)))))
+    (RULE &paint
+      (&ink *P)
+      (input P (:Col *Col_in))
+      (IF ((&shape_color (:C Col_in)))
+          ((&mark_color (:C *Col)))
+          ((= Col Col_in))))))
+
+(RULE &stalled
+  (&march (:K *Id) *D)
+  (NOT (&branch (:K Id) (:D_march D))))
+
+(RULE &drop_cell
+  (&marked_cell *Id *D)
+  (input))
+
+(RULE &dropped
+  (&drop.ray (:key *Id *D) *P (:D *D2) (:K *J) (:Origin *Q))
+  (&drop_cell Id D)
+  (input P)
+  (> J 0)
+  (axis_of (:D D2) *A)
+  (&extent (:K Id) A (:N *W))
+  (&gap (:K *G))
+  (divide (:T J) (:Side W) (:Gap G) (:Remainder 0))
+  (&marked_cell Id D (:P Q) *Src))
+
+(RULE_OR_DET &paint "The color a marked cell of color col_in takes."
+  (&ink *P)
+  (input P (:Col *Col_in))
+  (&mark_color (:C *Col)))
+
+(RULE &painted
+  (OR ((&copy2 *Id *D *N *P *Src)
+       (input (:P Src) (:Col *Col_in))
+       (OR ((&marked2 Id D N)
+            (&paint Col_in *Col))
+           ((NOT (&marked2 Id D N))
+            (= Col Col_in))))
+      ((&dropped P Src)
+       (input (:P Src) (:Col Col_in))
+       (&paint Col_in Col))))
+
+(RULE &output
+  (NOT (&stalled))
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

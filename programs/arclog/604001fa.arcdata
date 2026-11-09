@@ -1,0 +1,11 @@
+;; inputs 9236faacad06e5d478566562a8b52479d0af13eadb16fabba8d30b05a7622a04 programs/solvers/604001fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 604001fa
+
+(param &bg Color (0))
+(param &mark Color (7))
+(param &corner_color (DiagDir Color)
+  (DIAG_TL 3)
+  (DIAG_TR 8)
+  (DIAG_BL 4)
+  (DIAG_BR 6))

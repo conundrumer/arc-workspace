@@ -1,0 +1,266 @@
+;; inputs 876795b4a308142960d8d9e0ecafccdbbf6c28aa082f69671cc2b77d1f6dad2e programs/solvers/af726779.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; af726779
+
+(INPUT background "every cell off the base line is &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT base-line "one full line across &growth_dir holds marks of 7 and cells of &background, and no other color"
+
+  ;; The side of the base line that the levels grow toward.
+  (DET &growth_dir DirDomain))
+
+(OUTPUT keep-input "every input cell keeps its color")
+
+(OUTPUT gap-mark "where a level has a mark on each of the two cells beside a cell along the level, and no mark on that cell, the cell &level_step lines from it toward &growth_dir becomes a mark of the next level"
+
+  ;; The number of lines from one level to the next.
+  (DET &level_step TileCount))
+
+(OUTPUT levels "the base line's marks are level 0, and the marks that gap-mark makes from level k are level k+1")
+
+(OUTPUT level-color "a level's marks take the color &level_colors gives for the parity of its index"
+
+  ;; Each line across the growth direction.
+  (DET &stack2
+    (ex_input *E *P)
+    (&growth_dir *D)
+    (axis_of D *A)
+    (split P A (:Along *St)))
+
+  ;; Each line across the growth direction.
+  (RULE &stack
+    (input *P)
+    (&growth_dir *D)
+    (axis_of D *A)
+    (split P A (:Along *St)))
+
+  (DET &base_mark2
+    (&stack2 *E *St)
+    (ex_input E *P *Col)
+    (NOT (&background (:C Col)))
+    (inside (:A P) (:B St)))
+
+  (RULE &base_mark
+    (&stack *St)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (inside (:A P) (:B St)))
+
+  ;; The marks of each stack: a mark on each cell beside G along its line
+  ;; makes a mark level_step lines past G. A level that gap-mark makes has
+  ;; no two adjacent marks, so only an input mark can stand on G.
+  (INIT &marks Propagation
+    (key ((OR ((&base_mark ^St *P))
+              ((&base_mark St)
+               (input (:P *G))
+               (NOT (&base_mark St (:P G)))
+               (&growth_dir *D)
+               (perp_dir D (:D2 *D1))
+               (opposite (:D D1) (:Opp *D2))
+               (neighbor (:P G) (:D D1) (:Q *A))
+               (neighbor (:P G) (:D D2) (:Q *B))
+               (&level_step (:N *K))
+               (jump (:P G) D K *Q)
+               (input (:P Q)))))
+      (source ((:n P))
+        (&base_mark St *P))
+      (join ((:a A) (:b B) (:c Q))
+        (&base_mark St)
+        (input (:P *G))
+        (NOT (&base_mark St (:P G)))
+        (&growth_dir *D)
+        (perp_dir D (:D2 *D1))
+        (opposite (:D D1) (:Opp *D2))
+        (neighbor (:P G) (:D D1) (:Q *A))
+        (neighbor (:P G) (:D D2) (:Q *B))
+        (&level_step (:N *K))
+        (jump (:P G) D K *Q)
+        (input (:P Q)))))
+
+  ;; The marks of each stack: a mark on each cell beside G along its line
+  ;; makes a mark level_step lines past G. A level that gap-mark makes has
+  ;; no two adjacent marks, so only an input mark can stand on G.
+  (INIT &marks2 Propagation
+    (key ((OR ((&base_mark2 (:E ^Ky) ^St *P))
+              ((&base_mark2 (:E Ky) St)
+               (ex_input (:E Ky) (:P *G))
+               (NOT (&base_mark2 (:E Ky) St (:P G)))
+               (&growth_dir *D)
+               (perp_dir D (:D2 *D1))
+               (opposite (:D D1) (:Opp *D2))
+               (neighbor (:P G) (:D D1) (:Q *A))
+               (neighbor (:P G) (:D D2) (:Q *B))
+               (&level_step (:N *K))
+               (jump (:P G) D K *Q)
+               (ex_input (:E Ky) (:P Q)))))
+      (source ((:n P))
+        (&base_mark2 (:E Ky) St *P))
+      (join ((:a A) (:b B) (:c Q))
+        (&base_mark2 (:E Ky) St)
+        (ex_input (:E Ky) (:P *G))
+        (NOT (&base_mark2 (:E Ky) St (:P G)))
+        (&growth_dir *D)
+        (perp_dir D (:D2 *D1))
+        (opposite (:D D1) (:Opp *D2))
+        (neighbor (:P G) (:D D1) (:Q *A))
+        (neighbor (:P G) (:D D2) (:Q *B))
+        (&level_step (:N *K))
+        (jump (:P G) D K *Q)
+        (ex_input (:E Ky) (:P Q)))))
+
+  ;; The level of each mark: its fewest gap-mark steps from an input mark.
+  (INIT &levels Distance
+    (key ((OR ((&marks.source (:key (:St ^S)) (:n *P)))
+              ((&marks.join (:key (:St S)) (:a *A) (:b *B) (:c *Q))
+               (&marks.reached (:key (:St S)) (:n A))
+               (&marks.reached (:key (:St S)) (:n B)))))
+      (edge ((:a A) (:b Q))
+        (&marks.join (:key (:St S)) (:a *A) (:b *B) (:c *Q))
+        (&marks.reached (:key (:St S)) (:n A))
+        (&marks.reached (:key (:St S)) (:n B)))
+      (source ((:n P))
+        (&marks.source (:key (:St S)) (:n *P)))))
+
+  ;; The level of each mark: its fewest gap-mark steps from an input mark.
+  (INIT &levels2 Distance
+    (key ((OR ((&marks2.source (:key (:Ky ^Key) (:St ^S)) (:n *P)))
+              ((&marks2.join (:key (:Ky Key) (:St S)) (:a *A) (:b *B) (:c *Q))
+               (&marks2.reached (:key (:Ky Key) (:St S)) (:n A))
+               (&marks2.reached (:key (:Ky Key) (:St S)) (:n B)))))
+      (edge ((:a A) (:b Q))
+        (&marks2.join (:key (:Ky Key) (:St S)) (:a *A) (:b *B) (:c *Q))
+        (&marks2.reached (:key (:Ky Key) (:St S)) (:n A))
+        (&marks2.reached (:key (:Ky Key) (:St S)) (:n B)))
+      (source ((:n P))
+        (&marks2.source (:key (:Ky Key) (:St S)) (:n *P)))))
+
+  (DET &new_mark2
+    (&levels2.distance (:key (:Key *E) (:S *St)) (:n *P) *K)
+    (NOT (&marks2.source (:key (:Ky E) St) (:n P))))
+
+  (RULE &new_mark
+    (&levels.distance (:key (:S *St)) (:n *P) *K)
+    (NOT (&marks.source (:key St) (:n P))))
+
+  (DET &level_col
+    (&new_mark2 *E *P *K)
+    (ex_output E P *Col))
+
+  ;; The colors the levels carry at each phase of a candidate period.
+  (INIT &phase_color Singleton
+    (key ((&level_col (:K ^W))
+          (&level_col *K *Col)
+          (divide (:T K) (:Side W) (:Gap 0) (:Remainder ^R)))
+      (member ((:v Col))
+        (&level_col (:K W))
+        (&level_col *K *Col)
+        (divide (:T K) (:Side W) (:Gap 0) (:Remainder R)))))
+
+  ;; The shortest period no level breaks.
+  (INIT &unbroken Order
+    (member ((:t W))
+      (&level_col (:K *W))
+      (NOT (&phase_color.plural (:key W))))
+    (score ((:t W) (:S W))
+      (&level_col (:K *W))
+      (NOT (&phase_color.plural (:key W)))))
+
+  (DET &level_colors
+    (&unbroken.minimal (:t *W))
+    (&phase_color.value (:key W (:R *Parity)) (:v *Col)))
+
+  ;; The one color of each stack's input marks.
+  (INIT &base_color Singleton
+    (key ((&base_mark (:St ^S) *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&base_mark (:St S) *P)
+        (input P *Col))))
+
+  ;; The input's rarest color.
+  (INIT &color_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &rarest Order
+    (member ((:t (:V Col) (:S N)))
+      (&color_count.size (:key *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&color_count.size (:key *Col) *N)))
+
+  (DET &level_succ
+    (&levels2.edge (:key (:Key *E)) (:a *A) (:b *Q))
+    (ex_output E (:P A) (:Col *C))
+    (ex_output E (:P Q) (:Col *C_next)))
+
+  (INIT &succession Walk
+    (successor ((:p C) (:p_next C2))
+      (&level_succ *C (:C_next *C2)))
+    (steps ((:N K))
+      (&new_mark *K))))
+
+(OUTPUT stop "a level whose line is off the grid, or that has no mark, makes no further level"
+
+  ;; The parity of each level: its index walked around the cycle of parities.
+  (INIT &parities Order
+    (member ((:t R))
+      (&level_colors (:Parity *R)))
+    (score ((:t R) (:S R))
+      (&level_colors (:Parity *R))))
+
+  (INIT &parity Walk
+    (successor ((:p R) (:p_next R2))
+      (&parities.cyclic_successor (:a *R) (:b *R2)))
+    (steps ((:N K))
+      (&new_mark *K)))
+
+  (RULE &mark_parity
+    (&new_mark *St *P *K)
+    (&parity.walk (:p0 0) (:N K) (:p *R))))
+
+(ALTS $color "how a level's color is chosen" $Parity
+  (ALT $EvenColorOfBase
+    (OUTPUT level-color "the even levels take the color of the base line's marks, and the odd levels the color &level_colors gives for parity 1")
+    (RULE &drawn
+      (&mark_parity (:St *S) *P *R)
+      (OR ((= R 0)
+           (&base_color.value (:key S) (:v *Col)))
+          ((!= R 0)
+           (&level_colors (:Parity R) Col)))))
+  (ALT $EvenColorRarest
+    (OUTPUT level-color "the even levels take the input's rarest color, and the odd levels the color &level_colors gives for parity 1")
+    (RULE &drawn
+      (&mark_parity *P *R)
+      (OR ((= R 0)
+           (&rarest.minimal (:t (:V *Col))))
+          ((!= R 0)
+           (&level_colors (:Parity R) Col)))))
+  (ALT $ColorBySuccession
+    (OUTPUT level-color "each level takes the color &level_succ gives after the color of the level before it, the base line's level having the color of its marks; a level with no such color is not drawn, and no level past it either")
+    (RULE &drawn
+      (&new_mark (:St *S) *P *K)
+      (&base_color.value (:key S) (:v *C0))
+      (&succession.walk (:p0 C0) (:N K) (:p *Col)))))
+
+(ALTS $scope "which marks grow one stack" $PerLine
+  (ALT $Pooled
+    (OUTPUT gap-mark "the marks of every marked line and every mark that gap-mark makes form one stack: where a cell has a mark of the stack on each of the two cells beside it along its line, and no input mark on it, the cell &level_step lines from it toward &growth_dir becomes a mark"
+      ;; The whole frame.
+      (RULE &stack
+        (input)
+        (= *St 0)))
+    (OUTPUT levels "a mark's level is its fewest gap-mark steps from an input mark")))
+
+(RULE &drawn
+  (&mark_parity *P *R)
+  (&level_colors (:Parity R) *Col))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((input P Col)
+       (NOT (&drawn P)))))
+
+(OUT (&output ^P ^Col))

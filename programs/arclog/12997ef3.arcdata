@@ -1,0 +1,6 @@
+;; inputs d1dd993f5a04692f42a78ce79f6998b53d79638a8e33f1f3c4e171822d1eabee programs/solvers/12997ef3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 12997ef3
+
+(param &bg Color (0))
+(param &stencil Color (1))

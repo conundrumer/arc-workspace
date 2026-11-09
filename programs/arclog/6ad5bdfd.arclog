@@ -1,0 +1,68 @@
+;; inputs c99a1d0ffac9ac787bf12104726060534d58bb88dcb8ef64f454506dc8d2be82 programs/solvers/6ad5bdfd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ad5bdfd
+
+(DET &bg DominantColor)
+
+(DET &wall UnchangedColor)
+
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&wall (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&wall (:C Col))))))
+
+(RULE &wall2
+  (input *P (:Col *W))
+  (&wall (:C W)))
+
+(RULE &off_wall_edge
+  (dir_elem *D)
+  (&wall2 *P)
+  (NOT (margin (:B P) D (:K 0))))
+
+(INIT &settle Distance
+  (weight ((:a Id2) (:b Id) (:W K))
+    (&obj.component *P *Id)
+    (dir_elem *D)
+    (NOT (&off_wall_edge D))
+    (&obj.component (:P *P2) (:Id *Id2))
+    (!= Id Id2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n Id) K)
+    (OR ((&obj.component *P *Id)
+         (margin (:B P) *D *K)
+         (NOT (&off_wall_edge D)))
+        ((&obj.component (:P *P3) Id)
+         (dir_elem (:D *D2))
+         (NOT (&off_wall_edge (:D D2)))
+         (&wall2 (:P *P2))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &settle_dir
+  (dir_elem *D)
+  (NOT (&off_wall_edge D)))
+
+(RULE &settle_travel_full
+  (&settle.distance (:n *V1) *K)
+  (&settle_dir *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &fallen
+  (&obj.component (:key *Col) (:P *P2) *Id)
+  (&settle_travel_full (:V1 Id) (:V2 *Delta))
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &output
+  (OR ((&fallen *P *Col))
+      ((&wall2 P)
+       (input P Col))
+      ((input P)
+       (NOT (&fallen P))
+       (NOT (&wall2 P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

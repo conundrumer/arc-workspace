@@ -1,0 +1,109 @@
+;; inputs 690af41bf11229357c048c344f13b9611e39edaddca0190a2919c7b891148c9f programs/solvers/9f236235.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9f236235
+
+(INPUT cut "lines that run the whole way across, each in one color, cut the grid into panels"
+
+  ;; The one color a line holds.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (INIT &panels_rank Order
+    (key ((OR ((&line_color.value (:key *A *L))
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&line_color.value (:key *A *L))
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&line_color.value (:key *A *L))
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K)))))
+
+(INPUT even "the panels are equal in size"
+
+  ;; The panel size: the shortest run from a grid edge to a cutting line.
+  (INIT &panel_size Order
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of *D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (&line_color.value (:key *A *L))
+      (axis_of *D A)
+      (margin (:B L) D *K))))
+
+(INPUT solid "every panel holds one color")
+
+(OUTPUT mini "the output has one cell per panel, holding that panel's color, and &pose places the panel arrangement in the output frame"
+
+  ;; how the panel arrangement lands in the output
+  (DET &pose D4Domain))
+
+(ALTS $choice "how the panels are found" $Cut
+  (ALT $EvenTiling
+    (INPUT cut "the cutting lines are evenly spaced, so the panels are the tiles of an even tiling"
+      ;; width of a cutting line separates the derived width from the stored one
+      (DET &gap SepThickness)
+
+      (INIT &panel_division Division
+        (key ((&panel_size.minimal (:t ^K)))
+          (side (A K)
+            (axis_elem *A)))
+        (cell (P)
+          (input *P))
+        (gap (A G)
+          (axis_elem *A)
+          (&gap *G))))
+    (RULE &panel
+      (&panel_division.tile *P (:P_outer *P_tile)))))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &panel
+  (&panels_tile_of *P *P_tile))
+
+(RULE &output
+  (&panel (:P *P2) *P_tile)
+  (input (:P P2) *Col)
+  (&pose *D)
+  (apply D (:P P_tile) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

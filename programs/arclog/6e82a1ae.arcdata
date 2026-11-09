@@ -1,0 +1,8 @@
+;; inputs 17cbb8ec01f86940618aa8b1eac5dd94a7ecdf611607539ef0df7d9d391d3918 programs/solvers/6e82a1ae.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6e82a1ae
+
+(param &bg Color (0))
+(param &count_color (number Color) (2 3) (3 2) (4 1))
+(param &big_color (number Color) (0 1) (1 2) (2 3))
+(param &small_color (number Color) (0 3) (1 2) (2 1))

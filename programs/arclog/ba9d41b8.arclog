@@ -1,0 +1,339 @@
+;; inputs 4d599fde1ee80c1991471e6d1c6b70e12c1e37b7c75e570079320833ad7c2a89 programs/solvers/ba9d41b8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ba9d41b8
+
+(INPUT solid-rectangles "the input holds one or more filled rectangles, each of one color other than `background`, each at least 3 by 3, and no two of them touch"
+
+  (DET &hole
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P *Col)
+    (!= Col C_in))
+
+  (DET_OR_RULE &background DominantColor
+    (&hole (:Col *C)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &same8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &any4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &any8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT outline-kept "each cell on a rectangle's outline keeps its color")
+
+(OUTPUT checker-holes "an inside cell of a rectangle becomes `background` when the sum of its row and column distances from the rectangle's `anchor` corner has the parity `hole_parity`, and keeps its color otherwise"
+
+  (INIT &comps Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &object2
+    (&comps.component (:Id *Ob) *P))
+
+  (INIT &rim Boundary
+    (key ((&object2 (:Ob ^Id) *P))
+      (cell (P)
+        (&object2 (:Ob Id) *P)))))
+
+(OUTPUT rest-kept "every cell outside the rectangles keeps its color"
+
+  (DET &casts_dir
+    (&hole (:E *Key))
+    (dir_elem *D))
+
+  (INIT &casts_frame Frame
+    (key ((&hole ^E *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&hole E *P)
+        (frame_extent P *A *N))))
+
+  ;; Casts from each hole along the rows and columns, stopped at the next hole.
+  (INIT &casts Ray
+    (key ((OR ((&hole ^E *P))
+              ((&casts_dir (:Key E) *D))
+              ((&casts_frame.cell (:key E) P)
+               (NOT (&hole E P)))))
+      (source (P)
+        (&hole E *P))
+      (node (P)
+        (&casts_frame.cell (:key E) *P)
+        (NOT (&hole E P)))
+      (dir (D)
+        (&casts_dir (:Key E) *D))))
+
+  (INIT &casts_full Ray
+    (key ((OR ((&hole ^E *P))
+              ((&casts_dir (:Key E) *D))
+              ((&casts_frame.cell (:key E) P))))
+      (source (P)
+        (&hole E *P))
+      (node (P)
+        (&casts_frame.cell (:key E) *P))
+      (dir (D)
+        (&casts_dir (:Key E) *D))))
+
+  (DET &casts_stop_full
+    (&casts.end (:key (:E *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&casts_full.ray (:key (:E V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  ;; The corner of each object's box the distance sum is counted from.
+  (DET &anchor DiagDirDomain)
+
+  (INIT &box BoundingBox
+    (key ((&comps.component ^Id *P))
+      (cell (P)
+        (&comps.component Id *P))))
+
+  (RULE &object_box
+    (&box.box (:key (:Id *Ob)) *B))
+
+  (RULE &punched
+    (&object2 *Ob))
+
+  (RULE &covered
+    (&punched *Ob)
+    (&object2 Ob *P)
+    (&object_box Ob *B)
+    (interior (:A P) B))
+
+  (DET &hole_cell
+    (&hole *E (:P *P2))
+    (&comps.component E *Id (:P P2))
+    (&box.box E (:key Id) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P))
+    (&anchor *D))
+
+  ;; The steps from a hole to the next hole on its line.
+  (INIT &gaps Order
+    (member ((:t K))
+      (&casts_stop_full (:V3 *K)))
+    (score ((:t K) (:S K))
+      (&casts_stop_full (:V3 *K))))
+
+  (DET &period
+    (&gaps.minimal (:t *N)))
+
+  (DET &parity
+    (&hole_cell *D *P)
+    (corner_dist P (:Diag D) (:K *T))
+    (&period *N)
+    (divide T (:Side N) (:Gap 0) (:Remainder *K)))
+
+  ;; The motif's frame: one period on each axis.
+  (INIT &motif Frame
+    (extent (A N)
+      (&period *N)
+      (axis_elem *A)))
+
+  (DET &motif_place
+    (&hole_cell *D *P)
+    (diag_dist P (:Diag D) (:A *Ax) (:K1 *T1) (:K2 *T2))
+    (&period *N)
+    (divide (:T T1) (:Side N) (:Gap 0) (:Remainder *K1))
+    (divide (:T T2) (:Side N) (:Gap 0) (:Remainder *K2))
+    (&motif.cell (:P *P_t))
+    (diag_dist (:P P_t) (:Diag D) (:A Ax) K1 K2)))
+
+(ALTS $objects "which cells form one object" $OneColor
+  (ALT $AnyColorObjects
+    (INPUT solid-rectangles "a rectangle is a 4-connected set of cells of any colors other than `background`"
+      (INIT &obox BoundingBox
+        (key ((&any4.component *P ^Id))
+          (cell (P)
+            (&any4.component *P Id))))
+
+      (RULE &object_box
+        (&obox.box (:key (:Id *Ob)) *B))
+
+      (RULE &object2
+        (&any4.component *P (:Id *Ob))))
+    (ALT $Diagonal8Objects
+      (INPUT solid-rectangles "a rectangle's cells join by 8-adjacency, so two rectangles that meet at a corner are one"
+        (INIT &obox BoundingBox
+          (key ((&any8.component *P ^Id))
+            (cell (P)
+              (&any8.component *P Id))))
+
+        (RULE &object2
+          (&any8.component *P (:Id *Ob)))))))
+
+(ALTS $adjacency "which neighbors join an object" $FourAdjacent
+  (ALT $Diagonal8Objects
+    (INPUT solid-rectangles "a rectangle's cells join by 8-adjacency, so two rectangles that meet at a corner are one"
+      (INIT &obox BoundingBox
+        (key ((&same8.component *P ^Id))
+          (cell (P)
+            (&same8.component *P Id))))
+
+      (RULE &object_box
+        (&obox.box (:key (:Id *Ob)) *B))
+
+      (RULE &object2
+        (&same8.component *P (:Id *Ob))))))
+
+(ALTS $inside "which cells of an object are its outline and which its inside" $BoxInterior
+  (ALT $RimInside
+    (OUTPUT outline-kept "each cell of an object with a 4-neighbor outside the object, or off the grid, keeps its color"
+      (RULE &covered
+        (&punched *Ob)
+        (&object2 Ob *P)
+        (NOT (&rim.boundary (:key (:Id Ob)) P))))
+    (OUTPUT checker-holes "the inside is the object's other cells")))
+
+(ALTS $origin "the frame the distance sum is counted in" $ObjectCorner
+  (ALT $GridFrame
+    (OUTPUT checker-holes "the distance sum is counted from the grid's `grid_anchor` corner, and its parity is `grid_hole_parity`"
+      ;; The corner of the grid the distance sum is counted from.
+      (DET &grid_anchor DiagDirDomain)
+
+      (DET &hole_cell
+        (&hole *P)
+        (&grid_anchor *D))
+
+      (DET &parity
+        (&hole_cell *D *P)
+        (corner_dist P (:Diag D) (:K *T))
+        (&period *N)
+        (divide T (:Side N) (:Gap 0) (:Remainder *K)))
+
+      (DET &grid_hole_parity
+        (&parity *K))
+
+      (DET &motif_place
+        (&hole_cell *D *P)
+        (diag_dist P (:Diag D) (:A *Ax) (:K1 *T1) (:K2 *T2))
+        (&period *N)
+        (divide (:T T1) (:Side N) (:Gap 0) (:Remainder *K1))
+        (divide (:T T2) (:Side N) (:Gap 0) (:Remainder *K2))
+        (&motif.cell (:P *P_t))
+        (diag_dist (:P P_t) (:Diag D) (:A Ax) K1 K2))
+
+      (DET &grid_tile
+        (&motif_place (:P_t *P))))
+    (RULE &hole2
+      (&covered *P)
+      (&grid_anchor *D)
+      (corner_dist P (:Diag D) (:K *T))
+      (&period *N)
+      (divide T (:Side N) (:Gap 0) (:Remainder *K))
+      (&grid_hole_parity K))
+
+    (DET &hole_parity
+      (&parity *K))
+    (ALT $StoredTile
+      (RULE &hole2
+        (&covered *P)
+        (&grid_anchor *D)
+        (diag_dist P (:Diag D) (:A *Ax) (:K1 *T1) (:K2 *T2))
+        (&grid_tile (:P *P_t))
+        (axis_extents (:P P_t) (:A Ax) *N1 *N2)
+        (divide (:T T1) (:Side N1) (:Gap 0) (:Remainder *K1))
+        (divide (:T T2) (:Side N2) (:Gap 0) (:Remainder *K2))
+        (diag_dist (:P P_t) (:Diag D) (:A Ax) K1 K2)))))
+
+(ALTS $pattern "which cells of that frame are holes" $Checker
+  (ALT $StoredTile
+    (OUTPUT checker-holes "a 2x2 motif of holes, `tile`, repeats from the corner the distance sum is counted from, and an inside cell is a hole when its cell of the motif is one"
+      (DET &tile
+        (&motif_place (:P_t *P))))
+    (RULE &hole2
+      (&covered (:Ob *Id) *P)
+      (&object_box (:Ob Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_rel))
+      (&anchor *D)
+      (diag_dist (:P P_rel) (:Diag D) (:A *Ax) (:K1 *T1) (:K2 *T2))
+      (&tile (:P *P_t))
+      (axis_extents (:P P_t) (:A Ax) *N1 *N2)
+      (divide (:T T1) (:Side N1) (:Gap 0) (:Remainder *K1))
+      (divide (:T T2) (:Side N2) (:Gap 0) (:Remainder *K2))
+      (diag_dist (:P P_t) (:Diag D) (:A Ax) K1 K2))))
+
+(ALTS $punched "which objects are punched" $EveryObject
+  (ALT $SizeThreshold
+    (OUTPUT checker-holes "only a rectangle at least `min_extent` cells long on each axis is punched"
+      ;; The extents of the boxes of the train inputs' objects.
+      (INIT &extents Order
+        (member ((:t N))
+          (&comps.component *E *Id *P)
+          (ex_output E)
+          (&box.box E (:key Id) *B)
+          (box_extent B P *A *N))
+        (score ((:t N) (:S N))
+          (&comps.component *E *Id *P)
+          (ex_output E)
+          (&box.box E (:key Id) *B)
+          (box_extent B P *A *N)))
+
+      (DET &min_extent
+        (&extents.minimal (:t *N)))
+
+      (RULE &small
+        (&object2 *Ob *P)
+        (&object_box Ob *B)
+        (box_extent B P (:A *Ax) *N)
+        (&min_extent (:N *M))
+        (< N M))
+
+      (RULE &punched
+        (&object2 *Ob)
+        (NOT (&small Ob))))))
+
+(ALTS $fill "the color a hole takes" $FieldHoles
+  (ALT $HoleColor
+    (OUTPUT checker-holes "a hole becomes `hole_color`, stored apart from `background`"
+      (DET_OR_RULE &hole_color DominantColor
+        (&hole (:Col *C))))
+    (RULE &hole_paint
+      (&hole_color (:C *Col)))))
+
+(DET &hole_parity
+  (&parity *K))
+
+(RULE &hole2
+  (&covered (:Ob *Id) *P)
+  (&object_box (:Ob Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_rel))
+  (&anchor *D)
+  (corner_dist (:P P_rel) (:Diag D) (:K *T))
+  (&period *N)
+  (divide T (:Side N) (:Gap 0) (:Remainder *K))
+  (&hole_parity K))
+
+(RULE &hole_paint
+  (&background (:C *Col)))
+
+(RULE &output
+  (OR ((&hole2 *P)
+       (&hole_paint *Col))
+      ((input P Col)
+       (NOT (&hole2 P)))))
+
+(OUT (&output ^P ^Col))

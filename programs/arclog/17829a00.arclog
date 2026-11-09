@@ -1,0 +1,77 @@
+;; inputs 9adfb93b2ac0523dac841c165ce0400c100d86b9e7e8264a20aa1e1eddaebdc5 programs/solvers/17829a00.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 17829a00
+
+;; The axis the borders cap at both ends.
+(DET &axis AxisDomain)
+
+(RULE &border_cell
+  (&axis *A)
+  (axis_of *D A)
+  (input *P)
+  (margin (:B P) D (:K 0)))
+
+(DET &bg DominantColor)
+
+(RULE &inner_cell
+  (input *P)
+  (NOT (&border_cell P)))
+
+(INIT &obj Connectivity
+  (key ((&inner_cell *P)
+        (input P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (&inner_cell *P)
+      (input P Col)
+      (NOT (&bg (:C Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &move_dir
+  (&obj.component (:key *Col) *Id)
+  (&border_cell *D *P)
+  (input P Col))
+
+;; Each object travels until it meets its border.
+(INIT &gravity Distance
+  (key ((OR ((&obj.component *P ^Id)
+             (&move_dir Id *D)
+             (margin (:B P) D *K))
+            ((&obj.component P Id)
+             (&move_dir Id D)
+             (&move_dir Id (:D *D2))
+             (&border_cell (:D D2) (:P *P2))
+             (gap D P (:Q P2) K))))
+    (source_distance (K)
+      (OR ((&obj.component *P Id)
+           (&move_dir Id *D)
+           (margin (:B P) D *K))
+          ((&obj.component (:P *P3) Id)
+           (&move_dir Id (:D *D3))
+           (&move_dir Id (:D *D2))
+           (&border_cell (:D D2) (:P *P2))
+           (gap (:D D3) (:P P3) (:Q P2) K))))))
+
+(RULE &gravity_travel_full
+  (&gravity.distance (:key (:Id *V0)) *K)
+  (&move_dir (:Id V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &landed
+  (&gravity_travel_full (:V0 *Id) (:V2 *V))
+  (&obj.component (:key *Col) (:P *P3) Id)
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&border_cell *P)
+       (input P *Col))
+      ((&landed P Col))
+      ((&inner_cell P)
+       (NOT (&landed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

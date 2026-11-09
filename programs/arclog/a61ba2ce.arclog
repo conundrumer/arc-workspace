@@ -1,0 +1,134 @@
+;; inputs 6ba18ba405046edaf263298375b7865367ec75ea7c671e1c7f7487a2de94f7aa programs/solvers/a61ba2ce.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a61ba2ce
+
+(INPUT four-corners "on a field of &bg, four one-color 4-connected objects of distinct colors, each a &side×&side box with one corner cell missing"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &side TileCount)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &comp4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &piece
+    (&comp4.component *P (:Id *Pc)))
+
+  (INIT &blob Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece (:Pc ^Id) *P))
+      (cell (P)
+        (&piece (:Pc Id) *P))))
+
+  (INIT &box_side Singleton
+    (member ((:v K))
+      (&piece_box.box (:key *Id) *B)
+      (&piece (:Pc Id) *P)
+      (box_extent B P (:N *K)))))
+
+(OUTPUT frame "the output is a 2×2 arrangement of the objects' boxes")
+
+(OUTPUT place-by-gap "each object's box goes, unchanged in orientation and color, to the output quadrant diagonally opposite its missing corner")
+
+(OUTPUT background "the missing cells are &bg"
+
+  (RULE &side2
+    (&piece)
+    (&side (:N *K)))
+
+  (RULE &other_hole
+    (&piece_box.box (:key (:Id *Pc)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&piece Pc P))
+    (diag_dir_elem *D)
+    (NOT (same_corner D (:P1 P) (:P2 B))))
+
+  (RULE &gap
+    (&side2 *K)
+    (&piece_box.box (:key (:Id *Pc)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B))
+    (NOT (&piece Pc P))
+    (NOT (&other_hole Pc D))
+    (perp *A *A2)
+    (box_extent B P A (:N K))
+    (box_extent B P (:A A2) (:N K))))
+
+(ALTS $unit "what one piece is" $ColorComponent
+  (ALT $MulticolorObjects
+    (INPUT four-corners "the objects are 4-connected components of non-&bg cells of any colors, and each cell keeps its color; undefined where two objects touch along an edge"
+      (RULE &piece
+        (&blob.component *P (:Id *Pc))))))
+
+(ALTS $place "which quadrant a missing corner sends its box to" $OppositeCorner
+  (ALT $StoredCornerMap
+    (OUTPUT place-by-gap "each object's box goes, unchanged, to the output quadrant that &corner_quadrant gives for its missing corner"
+      (INIT &in_box BoundingBox
+        (key ((ex_input ^E *P ^Col)
+              (NOT (&bg (:C Col))))
+          (cell (P)
+            (ex_input E *P Col)
+            (NOT (&bg (:C Col))))))
+
+      (INIT &out_box BoundingBox
+        (key ((ex_output ^E *P ^Col)
+              (NOT (&bg (:C Col))))
+          (cell (P)
+            (ex_output E *P Col)
+            (NOT (&bg (:C Col))))))
+
+      (DET &corner_quadrant
+        (&in_box.box (:key *E *Col) *B)
+        (ex_input E *P)
+        (inside (:A P) B)
+        (same_corner *D (:P1 P) (:P2 B))
+        (NOT (ex_input E P Col))
+        (&out_box.box (:key E Col) (:B *B_out))
+        (corner_dist (:P B_out) (:Diag *Q) (:K 0))))
+    (RULE &quadrant
+      (&gap (:Pc *Id) *D)
+      (&corner_quadrant D *Q))))
+
+(ALTS $size "where the side of the boxes comes from" $StoredSide
+  (ALT $SizeFromBox
+    (INPUT four-corners "each object is an s×s box with one corner cell missing, where s is the one side of every object's box; undefined where the sides differ"
+      (RULE &side2
+        (&box_side.value (:v *K))))))
+
+(RULE &misfit
+  (&side2)
+  (&piece (:Pc *Id))
+  (NOT (&gap (:Pc Id))))
+
+(RULE &quadrant
+  (&gap (:Pc *Id) *D)
+  (diag_opposite D (:Opp *Q)))
+
+(RULE &output
+  (&quadrant *Id *Q)
+  (NOT (&misfit))
+  (&side2 *K)
+  (diag_opposite (:D Q) (:Opp *Q2))
+  (corner_inset (:Diag Q2) K (:B *B_out))
+  (&piece_box.box (:key Id) *B)
+  (input (:P *P_grid_in) (:Col *Col_in))
+  (inside (:A P_grid_in) B)
+  (relative (:Base B) (:X P_grid_in) (:X_rel *P_inner))
+  (compose (:A B_out) (:B P_inner) (:C *P))
+  (OR ((NOT (&piece (:Pc Id) (:P P_grid_in)))
+       (&bg (:C *Col)))
+      ((&piece (:Pc Id) (:P P_grid_in))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,7 @@
+;; inputs 854176ff6ed748088bde0f759945d326e99339cf2a63d937d7eae8cb94455212 programs/solvers/68b16354.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 68b16354
+
+(representative 67a3c6ac)
+
+(param &transform D4 (D4_TB))

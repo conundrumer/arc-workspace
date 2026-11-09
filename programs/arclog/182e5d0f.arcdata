@@ -1,0 +1,8 @@
+;; inputs faad409f5f2fb6265a85c67ac51d2a6aee3be8768b5ef4f9079aca1b09714c06 programs/solvers/182e5d0f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 182e5d0f
+
+(param &bg Color (7))
+(param &wire Color (3))
+(param &cap Color (0))
+(param &bead Color (5))

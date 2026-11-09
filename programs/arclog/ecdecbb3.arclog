@@ -1,0 +1,279 @@
+;; inputs 0050b0bf46358b7aeec36138a89608f8b5dab84058578394860a6369636baa0c programs/solvers/ecdecbb3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ecdecbb3
+
+(INPUT walls "one or more full-length straight lines of &line_color, all on one axis, which differs between pairs, crossing a field of background 0"
+
+  (RULE &line_defect
+    (input *P *Col)
+    (axis_elem *A)
+    (input (:P *Q) (:Col *Col2))
+    (same_line A P Q)
+    (!= Col Col2))
+
+  (RULE &full_line
+    (input *P *Col)
+    (axis_elem *A)
+    (NOT (&line_defect A P)))
+
+  (INIT &in_mode_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &in_mode Order
+    (key ((&in_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&in_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&in_mode_count.size (:key E *Col) *N))))
+
+  (DET &background_gap
+    (&in_mode.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&in_mode.maximal (:key E) (:t C))))
+
+  (DET &background_determined
+    (&in_mode.maximal (:t *C))
+    (NOT (&background_gap C)))
+
+  (DET &line
+    (&full_line *E (:Col *C))
+    (NOT (&background_determined C)))
+
+  (DET &line_gap
+    (&line *C)
+    (ex_output *E)
+    (NOT (&line E C)))
+
+  (DET &line_color
+    (&line *C)
+    (NOT (&line_gap C))))
+
+(INPUT dots "single cells of &mark_color, each off every wall and at least 3 cells from it, with a wall on at least one side of it across the wall axis"
+
+  (DET &mark
+    (ex_input *E (:Col *C))
+    (NOT (&background_determined C))
+    (NOT (&line_color C)))
+
+  (DET &mark_gap
+    (&mark *C)
+    (ex_output *E)
+    (NOT (&mark E C)))
+
+  (DET_OR_RULE &mark_color RarestColor
+    (&mark *C)
+    (NOT (&mark_gap C))))
+
+(OUTPUT keep-input "every cell the rules below do not paint keeps its input color")
+
+(OUTPUT beam "from each dot, toward each of the two directions across the wall axis that has a wall, the cells from the dot up to the nearest wall in that direction take &mark_color; a beam does not pass that wall"
+
+  (DET_OR_RULE &background DominantColor
+    (&in_mode.maximal (:t *C))
+    (NOT (&background_gap C))))
+
+(OUTPUT hit-cell "the wall cell a beam hits takes &mark_color")
+
+(OUTPUT bracket "the cells within &ring_radius (Chebyshev) of the hit cell, other than the hit cell itself, take &line_color, over the beam"
+
+  (RULE &line_col
+    (&line_color (:C *Col)))
+
+  (RULE &across
+    (&full_line *A *Col)
+    (&line_col Col)
+    (perp A *A2)
+    (axis_of *D (:A A2)))
+
+  (RULE &blocker
+    (&full_line *P *Col)
+    (&line_col Col))
+
+  (RULE &dot
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &reading)
+
+  (INIT &beam Ray
+    (source (P)
+      (&dot *P))
+    (node (P)
+      (input *P)
+      (NOT (&blocker P)))
+    (dir (D)
+      (&reading)
+      (&across *D)))
+
+  (INIT &beam_full Ray
+    (source (P)
+      (&dot *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&reading)
+      (&across *D)))
+
+  (RULE &beam_stop_full
+    (&beam.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&beam_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &hit2
+    (&beam_stop_full (:V1 *P) (:V4 *Src))
+    (&dot (:P Src) *Col))
+
+  (DET &mark_color_determined
+    (&mark *C)
+    (NOT (&mark_gap C)))
+
+  (DET &hit
+    (ex_input *E *P (:Col *C_line))
+    (&line_color (:C C_line))
+    (ex_output E P (:Col *C_mark))
+    (&mark_color_determined (:C C_mark)))
+
+  ;; A hit cell together with the cells that turn to the wall color.
+  (INIT &ring Connectivity
+    (key ((OR ((&hit ^E *P))
+              ((ex_output E P *Col)
+               (&line_color (:C Col))
+               (NOT (ex_input E P Col)))))
+      (node (P)
+        (OR ((&hit E *P))
+            ((ex_output E P *Col)
+             (&line_color (:C Col))
+             (NOT (ex_input E P Col)))))))
+
+  (INIT &ring_box BoundingBox
+    (key ((&ring.component *P ^Id))
+      (cell (P)
+        (&ring.component *P Id))))
+
+  (DET &hit_in_box
+    (&hit *E *P)
+    (&ring.component (:key E) P *Id)
+    (&ring_box.box (:key Id) *B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (DET &reach
+    (&hit_in_box *P_rel)
+    (margin (:B P_rel) *D *K))
+
+  (DET &ring_gap
+    (&reach *K)
+    (&hit_in_box *E *B *P_rel)
+    (ex_output E)
+    (dir_elem *D)
+    (NOT (margin B D (:K 0)))
+    (NOT (margin (:B P_rel) D K)))
+
+  (DET &ring_radius
+    (&reach *K)
+    (NOT (&ring_gap K)))
+
+  (RULE &square
+    (&hit2 (:P *P_hit))
+    (&ring_radius *K)
+    (uniform_outset K (:B *B_out))
+    (compose (:A P_hit) (:B B_out) (:C *B))))
+
+(ALTS $wall "what stops a beam" $FullLine
+  (ALT $StopAtLineCell
+    (OUTPUT beam "a beam stops at the first &line_color cell on its path, full line or not"
+      (RULE &blocker
+        (input *P *Col)
+        (&line_col Col)))
+    (OUTPUT hit-cell "that first &line_color cell is the hit cell and takes &mark_color")))
+
+(ALTS $hit "the layer of a hit cell against another hit's bracket" $BracketOverHits
+  (ALT $CenterOnTop
+    (OUTPUT bracket "as the concept's, and every hit cell keeps &mark_color over every bracket")
+    (RULE &bracket
+      (&drawn_square *P_hit *B)
+      (input (:P P_hit) *Col)
+      (input *P)
+      (inside (:A P) B)
+      (!= P P_hit)
+      (NOT (&hit2 P)))
+    (ALT $DotOnTop
+      (RULE &bracket
+        (&drawn_square *P_hit *B)
+        (input (:P P_hit) *Col)
+        (input *P)
+        (inside (:A P) B)
+        (!= P P_hit)
+        (NOT (&hit2 P))
+        (NOT (&dot P))))))
+
+(ALTS $dot "the layer of a dot against a bracket" $BracketOverDot
+  (ALT $DotOnTop
+    (OUTPUT bracket "as the concept's, and every dot keeps its color over every bracket")
+    (RULE &bracket
+      (&drawn_square *P_hit *B)
+      (input (:P P_hit) *Col)
+      (input *P)
+      (inside (:A P) B)
+      (!= P P_hit)
+      (NOT (&dot P)))))
+
+(ALTS $edge "a bracket that reaches past the grid" $ClippedBracket
+  (ALT $WholeBracketOnly
+    (OUTPUT bracket "as the concept's, drawn only where every cell of the square lies in the grid")
+    (RULE &drawn_square
+      (&square *P_hit *B)
+      (inside (:A B) (:B 0)))))
+
+(ALTS $mark "where a dot's color comes from" $StoredMark
+  (ALT $BeamInDotColor
+    (INPUT dots "single cells of any color other than &background and the wall color")
+    (OUTPUT beam "as the concept's, in the dot's own color"
+      (RULE &dot
+        (input *P *Col)
+        (NOT (&background (:C Col)))
+        (NOT (&line_col Col))))
+    (OUTPUT hit-cell "the wall cell a beam hits takes the dot's color")))
+
+(ALTS $line "where the wall color comes from" $StoredLine
+  (ALT $LineColorFromLines
+    (INPUT walls "one or more full-length straight lines, each of one color other than &background, all on one axis")
+    (OUTPUT beam "as the concept's, with every such line a wall")
+    (OUTPUT bracket "as the concept's, in the color of the hit wall"
+      (RULE &line_col
+        (&full_line *Col)
+        (NOT (&background (:C Col)))))))
+
+(RULE &beam_cell
+  (&reading)
+  (input))
+
+(RULE &marked
+  (OR ((&beam.ray *P *D (:Origin *Src))
+       (&beam_cell)
+       (input P)
+       (&beam_stop_full (:V2 D) (:V4 Src))
+       (&dot (:P Src) *Col))
+      ((&hit2 P Col))))
+
+(RULE &drawn_square
+  (&square *P_hit *B))
+
+(RULE &bracket
+  (&drawn_square *P_hit *B)
+  (input (:P P_hit) *Col)
+  (input *P)
+  (inside (:A P) B)
+  (!= P P_hit))
+
+(RULE &output
+  (OR ((&bracket *P *Col))
+      ((&marked P Col)
+       (NOT (&bracket P)))
+      ((input P Col)
+       (NOT (&marked P))
+       (NOT (&bracket P)))))
+
+(OUT (&output ^P ^Col))

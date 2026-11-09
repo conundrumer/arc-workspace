@@ -1,0 +1,171 @@
+;; inputs fb74c9282e8ab593ab847d4748fc8f2c02948bf0ea2f8ae105154edd54a4b115 programs/solvers/e21a174a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e21a174a
+
+(INPUT color-layers "the cells of each non-background color form one layer, and that layer may be disconnected."
+
+  (INIT &counts_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  (INIT &counts Order
+    (key ((&counts_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&counts_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&counts_count.size (:key E *Col) *N))))
+
+  (DET &not_mode
+    (&counts.maximal (:t *Col))
+    (&counts_count.size (:key *E))
+    (NOT (&counts.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&counts.maximal (:t *C))
+    (NOT (&not_mode (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &pieces Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &line_color
+    (&ink *P *Col)
+    (split P *A (:Along *L)))
+
+  (INIT &runs Connectivity
+    (key ((&line_color ^A *L ^Col))
+      (node ((:P L))
+        (&line_color A *L Col))))
+
+  (INIT &run_ids Quotient
+    (equivalent ((:a A (:C Col) Id) (:b A (:C Col) Id))
+      (&runs.component (:key *A *Col) *Id))))
+
+(INPUT disjoint-bands "along `stack_axis`, each layer spans a band of lines, and no line holds cells of two layers.")
+
+(OUTPUT reverse-order "each layer's band moves to its mirror image within the span the stack holds along `stack_axis`, so the layers come in reverse order and the stack keeps its place."
+
+  (INIT &stack_box BoundingBox
+    (cell (P)
+      (&ink *P))))
+
+(OUTPUT layer-kept "each layer keeps its own picture unchanged, with no flip, and keeps its place on the other axis.")
+
+(OUTPUT rest-background "every other cell of the output is `background`."
+
+  (INIT &colors Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col)))
+
+  (RULE &layer
+    (&ink *P *Col)
+    (&colors.class (:a Col) *Id)
+    (axis_elem *A))
+
+  (INIT &bands BoundingBox
+    (key ((&layer ^A ^Id *P))
+      (cell (P)
+        (&layer A Id *P))))
+
+  (RULE &off_band
+    (&bands.box (:key *A *Id) *B)
+    (&ink *P)
+    (axis_of *D A)
+    (margin (:B P) D (:K *N))
+    (margin B D (:K *M))
+    (< N M))
+
+  (RULE_OR_DET &unstacked "The layers of reading U at axis A are not stacked along A."
+    (&layer *A *Id *P)
+    (&bands.box (:key A (:Id *Id2)))
+    (!= Id Id2)
+    (NOT (&off_band A (:Id Id2) P))))
+
+(ALTS $unit "what a layer is" $ColorClass
+  (ALT $ColorComponent8
+    (INPUT color-layers "each 8-connected piece of one color is a layer; undefined where the bands of two pieces overlap along `stack_axis`."
+      (RULE &layer
+        (&pieces.component *P *Id)
+        (axis_elem *A))))
+  (ALT $RowRuns
+    (INPUT color-layers "a layer is a maximal run of consecutive lines whose non-background cells all have one color; undefined where a line holds two non-background colors."
+      (RULE &layer
+        (&ink *P *Col)
+        (split P *A (:Along *L))
+        (&runs.component (:key A Col) (:P L) (:Id *Id3))
+        (&run_ids.class (:a A (:C Col) (:Id Id3)) *Id))
+
+      (RULE &unstacked
+        (OR ((&line_color *A *L (:Col *Col1))
+             (&line_color A L (:Col *Col2))
+             (!= Col1 Col2))
+            ((&layer A *Id *P)
+             (&bands.box (:key A (:Id *Id2)))
+             (!= Id Id2)
+             (NOT (&off_band A (:Id Id2) P))))))))
+
+(ALTS $arrangement "what the bands mirror across" $SpanMirror
+  (ALT $FrameMirror
+    (OUTPUT reverse-order "each band moves to its mirror image across the frame's middle line along `stack_axis`.")
+    ;; The band mirrored within the frame.
+    (RULE &mirrored
+      (&bands.box (:key *A) *B)
+      (axis_inversion A (:T *D))
+      (apply D (:P B) (:P_out *B_new)))))
+
+(ALTS $axis "where the stack axis comes from" $StoredAxis
+  (ALT $AxisFromInput
+    (INPUT disjoint-bands "the stack axis is each axis along which the layers' bands are disjoint; undefined where no axis has disjoint bands.")
+    (RULE &stack
+      (axis_elem *A)
+      (NOT (&unstacked A)))))
+
+(DET &stack_axis AxisDomain)
+
+;; The band mirrored within the box the stack holds.
+(RULE &mirrored
+  (&bands.box (:key *A) *B)
+  (&stack_box.box (:B *S))
+  (relative (:Base S) (:X B) (:X_rel *B_rel))
+  (axis_inversion A (:T *D))
+  (apply D (:P B_rel) (:P_out *B_flip))
+  (compose (:A S) (:B B_flip) (:C *B_new)))
+
+(RULE &moved
+  (&layer *A *Id *P)
+  (input P *Col)
+  (&bands.box (:key A Id) *B)
+  (&mirrored A B *B_new)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_rel))
+  (compose (:A B_new) (:B P_rel) (:C *Q)))
+
+(RULE &stack
+  (&stack_axis *A)
+  (NOT (&unstacked A)))
+
+(RULE &resolution
+  (&stack *A)
+  (ONE))
+
+(RULE &output
+  (&resolution *A)
+  (OR ((&moved A (:Q *P) *Col))
+      ((input P)
+       (NOT (&moved A (:Q P)))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

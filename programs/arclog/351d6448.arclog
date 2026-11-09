@@ -1,0 +1,666 @@
+;; inputs 88c84d757d012e8f90627384d9f0912d646c010cee1f37664fa7c8641de557b4 programs/solvers/351d6448.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 351d6448
+
+(INPUT panels "full lines of &divider_color, &divider_width wide, cut the grid along the axis of &time_dir into &panel_count panels of one size, and no line inside a panel is full of that color; the panels are the frames of an animation, in time order toward &time_dir"
+
+  (DET &panel_count SepTileCount)
+
+  ;; The color of an input line all of one color.
+  (INIT &line_color Singleton
+    (key ((ex_input ^E *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (ex_input E *P *Col)
+        (split P A (:Along L)))))
+
+  (DET &admitted
+    (ex_input *E *P)
+    (margin (:B P) *D (:K *N))
+    (> N 0))
+
+  ;; Time runs toward this edge, so the last frame sits on it.
+  (DET &time_dir DirDomain)
+
+  (INIT &panel_line_division2 Division
+    (key ((&time_dir (:D *T))
+          (axis_of (:D T) ^A)
+          (&admitted ^E (:N ^G))
+          (&admitted E ^N))
+      (cell ((:P L))
+        (&time_dir (:D *T))
+        (axis_of (:D T) A)
+        (&line_color.member (:key E A *L))
+        (&admitted E (:N G))
+        (&admitted E N))
+      (parts (A N)
+        (&time_dir (:D *T))
+        (axis_of (:D T) A)
+        (&admitted E (:N G))
+        (&admitted E N))
+      (gap (A G)
+        (&time_dir (:D *T))
+        (axis_of (:D T) A)
+        (&admitted E (:N G))
+        (&admitted E N))))
+
+  (DET &cut_defect
+    (&panel_line_division2.tile (:key *E *A *G *N))
+    (ex_input E (:Col *C))
+    (&line_color.member (:key E A *L))
+    (OR ((NOT (&panel_line_division2.tile (:key E A G N) (:P L)))
+         (NOT (&line_color.value (:key E A L) (:v C))))
+        ((&panel_line_division2.tile (:key E A G N) (:P L))
+         (&line_color.value (:key E A L) (:v C)))))
+
+  (DET &cut
+    (&panel_line_division2.tile (:key *E *A *G *N))
+    (&line_color.member (:key E A *L))
+    (NOT (&panel_line_division2.tile (:key E A G N) (:P L)))
+    (ex_input E (:Col *C))
+    (NOT (&cut_defect E C G N)))
+
+  (DET &uncut
+    (&cut *C)
+    (ex_output *E)
+    (NOT (&cut E C)))
+
+  (DET_OR_RULE &divider_color SharedColor
+    (&cut *E *C)
+    (ex_output E)
+    (NOT (&uncut C)))
+
+  (DET &divider_width ScaleRatio))
+
+(INPUT steady-step "the frames show one motion of a kind the steps between them demonstrate, toward the side and by the count of cells that every step advances the front of its recolorings: the frame's content translating, with the one color of the frame's back edge entering behind it; each run of a recoloring's new color growing from its end over the color the recoloring replaces; or the front of each recoloring's new color advancing over the color it replaces; the frames show at least two steps"
+
+  (RULE &count_read
+    (&panel_count *N))
+
+  ;; The color of a line all of one color.
+  (INIT &line_color2 Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &admitted2
+    (input *P)
+    (margin (:B P) *D (:K *N))
+    (> N 0))
+
+  (INIT &panel_line_division Division
+    (key ((OR ((&line_color2.member (:key ^A *L))
+               (&admitted2 (:N ^G))
+               (&admitted2 ^N))
+              ((&line_color2.member (:key A))
+               (&admitted2 (:N G))
+               (&admitted2 N))))
+      (cell ((:P L))
+        (&line_color2.member (:key A *L))
+        (&admitted2 (:N G))
+        (&admitted2 N))
+      (parts (A N)
+        (&line_color2.member (:key A))
+        (&admitted2 (:N G))
+        (&admitted2 N))
+      (gap (A G)
+        (&line_color2.member (:key A))
+        (&admitted2 (:N G))
+        (&admitted2 N))))
+
+  (RULE &cut_defect2
+    (&panel_line_division.tile (:key *A *G *N))
+    (input (:Col *C))
+    (&line_color2.member (:key A *L))
+    (OR ((NOT (&panel_line_division.tile (:key A G N) (:P L)))
+         (NOT (&line_color2.value (:key A L) (:v C))))
+        ((&panel_line_division.tile (:key A G N) (:P L))
+         (&line_color2.value (:key A L) (:v C)))))
+
+  (RULE_OR_DET &valid_cut
+    (&panel_line_division.tile (:key *A *G *N))
+    (&line_color2.member (:key A *L))
+    (NOT (&panel_line_division.tile (:key A G N) (:P L)))
+    (input (:Col *C))
+    (NOT (&cut_defect2 A C G N)))
+
+  (RULE &width_read
+    (&divider_width (:K *G)))
+
+  (RULE &frames_of
+    (&time_dir (:D *T))
+    (axis_of (:D T) *A)
+    (&divider_color *C)
+    (&width_read *G)
+    (&count_read *N)
+    (&valid_cut A C G N))
+
+  (INIT &panel_division Division
+    (key ((&frames_of ^T ^C ^G ^N))
+      (parts (A N)
+        (axis_of (:D T) *A))
+      (gap (A G)
+        (axis_of (:D T) *A)))
+    (cell ((:P P_grid))
+      (input (:P *P_grid))))
+
+  (RULE &panel
+    (&panel_division.tile (:key *T *C *G *N) (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+    (input (:P P_grid) *Col))
+
+  (RULE &succ_panel
+    (&panel *T *C *G *N *P_tile)
+    (neighbor (:P P_tile) (:D T) (:Q *P_tile2))
+    (&panel T C G N (:P_tile P_tile2)))
+
+  (RULE &first_step
+    (&succ_panel *T *C *G *N *P_tile)
+    (NOT (&succ_panel T C G N (:P_tile2 P_tile))))
+
+  (RULE &scope
+    (&panel *T *C *G *N *P_intile)
+    (&first_step T C G N (:P_tile *S)))
+
+  (RULE &checked
+    (&succ_panel *T *C *G *N *P_tile))
+
+  (RULE &change
+    (&succ_panel *T *C *G *N *P_tile *P_tile2)
+    (&panel T C G N P_tile *P_intile (:Col *From))
+    (&panel T C G N (:P_tile P_tile2) P_intile (:Col *To))
+    (!= From To))
+
+  (RULE &change_behind
+    (&change *T *C *G *N *P_tile *P_intile)
+    (&scope T C G N P_intile *S)
+    (&change T C G N P_tile (:P_intile *Q))
+    (&scope T C G N (:P_intile Q) S)
+    (dir_elem *D)
+    (nearer D (:P Q) (:Q P_intile)))
+
+  (RULE &change_front
+    (&change *T *C *G *N *P_tile *P_intile)
+    (&scope T C G N P_intile)
+    (dir_elem *D)
+    (NOT (&change_behind T C G N P_tile D P_intile)))
+
+  (RULE &front_shift
+    (&succ_panel *T *C *G *N *P_tile *P_tile2)
+    (&change_front T C G N P_tile *D (:P_intile *P))
+    (&scope T C G N (:P_intile P) *S)
+    (&change_front T C G N (:P_tile P_tile2) D (:P_intile *P2))
+    (&scope T C G N (:P_intile P2) S)
+    (&panel T C G N (:P_intile *Q))
+    (margin (:B Q) D (:K *J))
+    (> J 0)
+    (jump P D (:K J) (:Q *P_far))
+    (same_dist D (:P1 P_far) P2))
+
+  (RULE &shift_defect
+    (&front_shift *T *C *G *N *S *D *J)
+    (&checked T C G N *P_tile)
+    (&succ_panel T C G N P_tile *P_tile2)
+    (&checked T C G N (:P_tile P_tile2))
+    (NOT (&front_shift T C G N S P_tile D J)))
+
+  (RULE &front_step
+    (&front_shift *T *C *G *N *S *D *J)
+    (&checked T C G N)
+    (NOT (&shift_defect T C G N S D J)))
+
+  (RULE_OR_DET &step_dir "The side each step moves toward."
+    (&front_step *D))
+
+  (RULE &shift
+    (&front_step *T *C *G *N *S *D *J)
+    (&step_dir D))
+
+  (RULE &motion_cell
+    (&shift *T *C *G *N *S)
+    (&panel T C G N *P_tile *P_intile *Col)
+    (&scope T C G N P_intile S))
+
+  (RULE &recoloring
+    (&shift *T *C *G *N *S)
+    (&change T C G N *P_intile *From *To)
+    (&scope T C G N P_intile S))
+
+  (INIT &run_frame Frame
+    (key ((&recoloring (:T ^M_t) (:C ^M_c) (:G ^M_g) (:N ^M_n) (:S ^M_s) (:From ^Col) (:To ^Col2))
+          (&motion_cell (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) ^P_tile (:P_intile *P) (:Col Col2))
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&recoloring (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) (:From Col) (:To Col2))
+        (&motion_cell (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) P_tile (:P_intile *P) (:Col Col2))
+        (frame_extent P *A *N))))
+
+  (RULE &run_blocked
+    (&recoloring *T *C *G *N *S *From *To)
+    (&motion_cell T C G N S *P_tile (:P_intile *P) (:Col *Col3))
+    (!= Col3 From))
+
+  ;; The cells of a recoloring's new color cast toward d over the color it
+  ;; replaces.
+  (INIT &run Ray
+    (key ((OR ((&recoloring (:T ^M_t) (:C ^M_c) (:G ^M_g) (:N ^M_n) (:S ^M_s) (:From ^Col) (:To ^Col2))
+               (&motion_cell (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) ^P_tile (:P_intile *P) (:Col Col2)))
+              ((&shift (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) *D)
+               (&recoloring (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) (:From Col) (:To Col2))
+               (&motion_cell (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) P_tile))
+              ((&run_frame.cell (:key M_t M_c M_g M_n M_s P_tile Col Col2) P)
+               (NOT (&run_blocked (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) P_tile (:From Col) (:To Col2) P)))))
+      (source (P)
+        (&recoloring (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) (:From Col) (:To Col2))
+        (&motion_cell (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) P_tile (:P_intile *P) (:Col Col2)))
+      (node (P)
+        (&run_frame.cell (:key M_t M_c M_g M_n M_s P_tile Col Col2) *P)
+        (NOT (&run_blocked (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) P_tile (:From Col) (:To Col2) P)))
+      (dir (D)
+        (&shift (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) *D)
+        (&recoloring (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) (:From Col) (:To Col2))
+        (&motion_cell (:T M_t) (:C M_c) (:G M_g) (:N M_n) (:S M_s) P_tile))))
+
+  (DEMONSTRATED &catalog
+    (key ((OR ((&motion_cell ^T ^C ^G ^N ^S *P_tile *P_intile *Col))
+              ((&shift T C G N S)
+               (&checked T C G N P_tile)
+               (&succ_panel T C G N P_tile *P_tile2))))
+      (value ((:o P_tile) (:i P_intile) (:v Col))
+        (&motion_cell T C G N S *P_tile *P_intile *Col))
+      (demonstration ((:o P_tile) (:o2 P_tile2))
+        (&shift T C G N S)
+        (&checked T C G N *P_tile)
+        (&succ_panel T C G N P_tile *P_tile2)))
+    (DEMO_RULE $Translate "The frame's content moves j cells toward d, and the ground enters behind it."
+      (RULE &back_ground
+        (&shift *T *C *G *N *S *D)
+        (opposite D (:Opp *D_back))
+        (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+        (margin (:B P) (:D D_back) (:K 0))
+        (ALL ((&shift T C G N S (:D *Dm))
+              (opposite (:D Dm) (:Opp *D_backm))
+              (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+              (margin (:B Pm) (:D D_backm) (:K 0))
+              (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+              (margin (:B Q) (:D D_backm) (:K 0)))
+             ((= Colm Col2))))
+
+      (RULE &prediction
+        (&shift *T *C *G *N *S *D *J)
+        (&motion_cell T C G N S *P_tile *P_intile)
+        (opposite D (:Opp *D_back))
+        (jump (:P P_intile) (:D D_back) (:K J) (:Q *P))
+        (OR ((&motion_cell T C G N S P_tile (:P_intile P) *Col))
+            ((&back_ground T C G N S P_tile Col)
+             (NOT (&motion_cell T C G N S P_tile (:P_intile P)))))))
+    (DEMO_RULE $Extend "Each run of a recoloring's new color grows j cells from its end toward d, over the color the recoloring replaces."
+      (RULE &run_cell
+        (&recoloring *T *C *G *N *S *From *To)
+        (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+      (RULE &run_reach
+        (&shift *T *C *G *N *S *D *J)
+        (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+        (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+        (> J2 0)
+        (<= J2 J))
+
+      (RULE &prediction
+        (&motion_cell *T *C *G *N *S *P_tile *P_intile (:Col *Col0))
+        (OR ((&run_reach T C G N S P_tile P_intile *Col))
+            ((= Col Col0)
+             (NOT (&run_reach T C G N S P_tile P_intile))))))
+    (DEMO_RULE $Advance "The front of each recoloring's new color advances j lines toward d over the color the recoloring replaces."
+      (RULE &advance
+        (&shift *T *C *G *N *S *D *J)
+        (&recoloring T C G N S (:From *Col3) (:To *Col))
+        (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+        (jump P D (:K J) (:Q *P_far))
+        (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+        (NOT (nearer D (:P P_intile) (:Q P_far)))
+        (ALL ((&shift T C G N S (:D *Dm))
+              (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+             ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))
+
+      (RULE &prediction
+        (&motion_cell *T *C *G *N *S *P_tile *P_intile (:Col *Col0))
+        (OR ((&advance T C G N S P_tile P_intile *Col))
+            ((= Col Col0)
+             (NOT (&advance T C G N S P_tile P_intile))))))))
+
+(OUTPUT next-frame "the output is the last frame with the motion made once more; undefined where the steps advance no front by one count, or where no motion matches every step"
+
+  (RULE &last_frame
+    (&succ_panel *T *C *G *N (:P_tile2 *P_tile))
+    (NOT (&succ_panel T C G N P_tile))))
+
+(ALTS $reading "what the frames show" $ObjectMotion
+  (ALT $FirstChange
+    (INPUT steady-step "each frame is the one before it with one change applied: the change from the first frame to the second, moved a fixed count of cells across the time axis, toward one end, once per frame; moved, the change recolors a cell only where the cell holds the color it recolors from"
+      (RULE &motion
+        (&first_step *T *C *G *N *P_tile)
+        (&change T C G N P_tile)
+        (&succ_panel T C G N P_tile *P_tile2)
+        (&succ_panel T C G N (:P_tile P_tile2))
+        (perp_dir (:D T) (:D2 *D))
+        (&panel T C G N (:P_intile *Q))
+        (margin (:B Q) D (:K *J))
+        (> J 0))
+
+      (RULE &frame_index
+        (&first_step *T *C *G *N (:P_tile *P_tile0))
+        (&panel T C G N *P_tile)
+        (relative (:Base P_tile0) (:X P_tile) (:X_rel *R))
+        (opposite (:D T) (:Opp *O))
+        (margin (:B R) (:D O) (:K *I))
+        (>= I 0))
+
+      (RULE &placed
+        (&motion *T *C *G *N *D *J)
+        (&first_step T C G N (:P_tile *P_tile0))
+        (&change T C G N (:P_tile P_tile0) (:P_intile *P) *From *To)
+        (&frame_index T C G N *P_tile *I)
+        (&panel T C G N P_tile *P_intile)
+        (relative (:Base P) (:X P_intile) (:X_rel *R))
+        (perp_dir D (:D2 *D_across))
+        (margin (:B R) (:D D_across) (:K 0))
+        (opposite D (:Opp *O))
+        (margin (:B R) (:D O) (:K *Tq))
+        (divide (:T Tq) (:Side J) (:Gap 0) (:Part I) (:Remainder 0)))
+
+      (RULE &paint
+        (&placed *T *C *G *N *D *J *P_tile *P_intile (:From *Col3) (:To *Col))
+        (&panel T C G N P_tile P_intile (:Col Col3)))
+
+      (RULE &defect
+        (OR ((&paint *T *C *G *N *D *J *P_tile *P_intile *Col)
+             (NOT (&change T C G N P_tile P_intile (:To Col))))
+            ((&change T C G N P_tile P_intile (:To *Col2))
+             (&motion T C G N D J)
+             (&frame_index T C G N P_tile)
+             (NOT (&paint T C G N D J P_tile P_intile (:Col Col2))))))
+
+      (RULE &refuted
+        (&defect *T *C *G *N *D *J *P_tile *P_intile)
+        (&checked T C G N P_tile)
+        (&scope T C G N P_intile *S))
+
+      (RULE &next_frame
+        (&last_frame *T *C *G *N *P_tile)
+        (&panel T C G N P_tile *P_intile (:Col *Col0))
+        (&scope T C G N P_intile *S)
+        (&checked T C G N)
+        (&motion T C G N *D *J)
+        (NOT (&refuted T C G N S D J))
+        (OR ((&paint T C G N D J P_tile P_intile *Col))
+            ((= Col Col0)
+             (NOT (&paint T C G N D J P_tile P_intile)))))
+
+      (RULE &step_dir
+        (&next_frame *D)))
+    (OUTPUT next-frame "the output is the last frame with the change moved one step further and applied once more; undefined where no frame changes, or where two steps that every frame follows disagree on it")
+    (RULE &result
+      (&next_frame *T *C *G *N *D *P_intile *Col)
+      (&step_dir D))))
+
+(ALTS $check "which steps the step is checked against" $EveryStep
+  (ALT $StepFromFirstTwo
+    (INPUT steady-step "the motion and its count are the ones the first two steps demonstrate, and the later frames are not checked"
+      (RULE &checked
+        (OR ((&first_step *T *C *G *N *P_tile))
+            ((&first_step T C G N (:P_tile *P_tile3))
+             (&succ_panel T C G N (:P_tile P_tile3) (:P_tile2 P_tile))
+             (&succ_panel T C G N P_tile)))))
+    (ALT $StepPerLine
+      (INPUT steady-step "each line across the time axis has its own motion and its own count; a line that no step recolors stays as it is"
+        (RULE &back_ground
+          (&shift *T *C *G *N *S *D)
+          (opposite D (:Opp *D_back))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+          (margin (:B P) (:D D_back) (:K 0))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (opposite (:D Dm) (:Opp *D_backm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+                (margin (:B Pm) (:D D_backm) (:K 0))
+                (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+                (margin (:B Q) (:D D_backm) (:K 0)))
+               ((= Colm Col2))))
+
+        (RULE &run_cell
+          (&recoloring *T *C *G *N *S *From *To)
+          (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+        (RULE &run_reach
+          (&shift *T *C *G *N *S *D *J)
+          (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+          (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+          (> J2 0)
+          (<= J2 J))
+
+        (RULE &advance
+          (&shift *T *C *G *N *S *D *J)
+          (&recoloring T C G N S (:From *Col3) (:To *Col))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+          (jump P D (:K J) (:Q *P_far))
+          (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+          (NOT (nearer D (:P P_intile) (:Q P_far)))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+               ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))))
+    (ALT $DividerWidthFromLines
+      (INPUT panels "the dividers are as wide as the runs of full lines of the divider color; undefined where the runs differ in width"
+        (RULE &back_ground
+          (&shift *T *C *G *N *S *D)
+          (opposite D (:Opp *D_back))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+          (margin (:B P) (:D D_back) (:K 0))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (opposite (:D Dm) (:Opp *D_backm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+                (margin (:B Pm) (:D D_backm) (:K 0))
+                (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+                (margin (:B Q) (:D D_backm) (:K 0)))
+               ((= Colm Col2))))
+
+        (RULE &run_cell
+          (&recoloring *T *C *G *N *S *From *To)
+          (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+        (RULE &run_reach
+          (&shift *T *C *G *N *S *D *J)
+          (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+          (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+          (> J2 0)
+          (<= J2 J))
+
+        (RULE &advance
+          (&shift *T *C *G *N *S *D *J)
+          (&recoloring T C G N S (:From *Col3) (:To *Col))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+          (jump P D (:K J) (:Q *P_far))
+          (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+          (NOT (nearer D (:P P_intile) (:Q P_far)))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+               ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))))
+    (ALT $AnyPanelCount
+      (INPUT panels "the full lines of the divider color cut the grid into any count of panels of one size"
+        (RULE &back_ground
+          (&shift *T *C *G *N *S *D)
+          (opposite D (:Opp *D_back))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+          (margin (:B P) (:D D_back) (:K 0))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (opposite (:D Dm) (:Opp *D_backm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+                (margin (:B Pm) (:D D_backm) (:K 0))
+                (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+                (margin (:B Q) (:D D_backm) (:K 0)))
+               ((= Colm Col2))))
+
+        (RULE &run_cell
+          (&recoloring *T *C *G *N *S *From *To)
+          (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+        (RULE &run_reach
+          (&shift *T *C *G *N *S *D *J)
+          (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+          (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+          (> J2 0)
+          (<= J2 J))
+
+        (RULE &advance
+          (&shift *T *C *G *N *S *D *J)
+          (&recoloring T C G N S (:From *Col3) (:To *Col))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+          (jump P D (:K J) (:Q *P_far))
+          (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+          (NOT (nearer D (:P P_intile) (:Q P_far)))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+               ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))))))
+
+(ALTS $scope "what the step is read over" $WholePanel
+  (ALT $StepPerLine
+    (INPUT steady-step "each line across the time axis has its own motion and its own count; a line that no step recolors stays as it is"
+      (RULE &scope
+        (&panel *T *C *G *N *P_intile)
+        (axis_of (:D T) *A)
+        (split (:P P_intile) A (:Along *S))))
+    (ALT $DividerWidthFromLines
+      (INPUT panels "the dividers are as wide as the runs of full lines of the divider color; undefined where the runs differ in width"
+        (RULE &back_ground
+          (&shift *T *C *G *N *S *D)
+          (opposite D (:Opp *D_back))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+          (margin (:B P) (:D D_back) (:K 0))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (opposite (:D Dm) (:Opp *D_backm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+                (margin (:B Pm) (:D D_backm) (:K 0))
+                (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+                (margin (:B Q) (:D D_backm) (:K 0)))
+               ((= Colm Col2))))
+
+        (RULE &run_cell
+          (&recoloring *T *C *G *N *S *From *To)
+          (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+        (RULE &run_reach
+          (&shift *T *C *G *N *S *D *J)
+          (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+          (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+          (> J2 0)
+          (<= J2 J))
+
+        (RULE &advance
+          (&shift *T *C *G *N *S *D *J)
+          (&recoloring T C G N S (:From *Col3) (:To *Col))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+          (jump P D (:K J) (:Q *P_far))
+          (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+          (NOT (nearer D (:P P_intile) (:Q P_far)))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+               ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))))
+    (ALT $AnyPanelCount
+      (INPUT panels "the full lines of the divider color cut the grid into any count of panels of one size"
+        (RULE &back_ground
+          (&shift *T *C *G *N *S *D)
+          (opposite D (:Opp *D_back))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+          (margin (:B P) (:D D_back) (:K 0))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (opposite (:D Dm) (:Opp *D_backm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+                (margin (:B Pm) (:D D_backm) (:K 0))
+                (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+                (margin (:B Q) (:D D_backm) (:K 0)))
+               ((= Colm Col2))))
+
+        (RULE &run_cell
+          (&recoloring *T *C *G *N *S *From *To)
+          (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+        (RULE &run_reach
+          (&shift *T *C *G *N *S *D *J)
+          (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+          (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+          (> J2 0)
+          (<= J2 J))
+
+        (RULE &advance
+          (&shift *T *C *G *N *S *D *J)
+          (&recoloring T C G N S (:From *Col3) (:To *Col))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+          (jump P D (:K J) (:Q *P_far))
+          (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+          (NOT (nearer D (:P P_intile) (:Q P_far)))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+               ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))))))
+
+(ALTS $width "where the divider width comes from" $StoredWidth
+  (ALT $DividerWidthFromLines
+    (INPUT panels "the dividers are as wide as the runs of full lines of the divider color; undefined where the runs differ in width"
+      (RULE &width_read
+        (&admitted2 (:N *G))))
+    (ALT $AnyPanelCount
+      (INPUT panels "the full lines of the divider color cut the grid into any count of panels of one size"
+        (RULE &back_ground
+          (&shift *T *C *G *N *S *D)
+          (opposite D (:Opp *D_back))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) *Col)
+          (margin (:B P) (:D D_back) (:K 0))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (opposite (:D Dm) (:Opp *D_backm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) (:Col *Colm))
+                (margin (:B Pm) (:D D_backm) (:K 0))
+                (&motion_cell T C G N S P_tile (:P_intile *Q) (:Col *Col2))
+                (margin (:B Q) (:D D_backm) (:K 0)))
+               ((= Colm Col2))))
+
+        (RULE &run_cell
+          (&recoloring *T *C *G *N *S *From *To)
+          (&motion_cell T C G N S *P_tile (:P_intile *P)))
+
+        (RULE &run_reach
+          (&shift *T *C *G *N *S *D *J)
+          (&run.ray (:key (:M_t T) (:M_c C) (:M_g G) (:M_n N) (:M_s S) *P_tile (:Col2 *Col)) (:P *P_intile) D (:K *J2))
+          (&run_cell T C G N S P_tile (:To Col) (:P P_intile))
+          (> J2 0)
+          (<= J2 J))
+
+        (RULE &advance
+          (&shift *T *C *G *N *S *D *J)
+          (&recoloring T C G N S (:From *Col3) (:To *Col))
+          (&motion_cell T C G N S *P_tile (:P_intile *P) Col)
+          (jump P D (:K J) (:Q *P_far))
+          (&motion_cell T C G N S P_tile *P_intile (:Col Col3))
+          (NOT (nearer D (:P P_intile) (:Q P_far)))
+          (ALL ((&shift T C G N S (:D *Dm))
+                (&motion_cell T C G N S P_tile (:P_intile *Pm) Col))
+               ((nearer (:D Dm) (:P P_intile) (:Q Pm)))))))))
+
+(ALTS $panels "where the panel count comes from" $StoredCount
+  (ALT $AnyPanelCount
+    (INPUT panels "the full lines of the divider color cut the grid into any count of panels of one size"
+      (RULE &count_read
+        (&admitted2 *N)))))
+
+(RULE &motion_next
+  (&catalog (:key *T *C *G *N *S) (:o *P_tile) (:i *P_intile) (:v *Col))
+  (&last_frame T C G N P_tile))
+
+(RULE &result
+  (&motion_next *T *C *G *N *S *P_intile *Col))
+
+(RULE &output
+  (&frames_of (:T *K_t) (:C *K_c) (:G *K_g) (:N *K_n))
+  (&result (:T K_t) (:C K_c) (:G K_g) (:N K_n) (:P_intile *P) *Col))
+
+(OUT (&output ^P ^Col))

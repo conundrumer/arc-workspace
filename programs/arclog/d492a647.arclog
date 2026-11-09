@@ -1,0 +1,78 @@
+;; inputs f15dedda99b5329b3b40f6b5b7e450bb6047712c7b06f2000b867ec737301d7c programs/solvers/d492a647.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d492a647
+
+(DET &bg DominantColor)
+
+(DET &noise SharedColor)
+
+(RULE &seed
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&noise (:C Col))))
+
+(RULE &lines_mark
+  (&seed (:P *P2))
+  (split (:P P2) (:A *Key) (:Along *P)))
+
+(INIT &lines_frame Frame
+  (key ((&lines_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&lines_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+(DET &period TileCount)
+
+;; Each axis's lines, walked outward from the seed's.
+(INIT &lines Ray
+  (key ((OR ((&lines_mark (:Key ^Ky) *P))
+            ((axis_of *D (:A Ky)))
+            ((&lines_frame.cell (:key Ky) P))))
+    (source (P)
+      (&lines_mark (:Key Ky) *P))
+    (node (P)
+      (&lines_frame.cell (:key Ky) *P))
+    (dir (D)
+      (axis_of *D (:A Ky)))))
+
+(RULE &lines_cell
+  (input (:P *P2))
+  (split (:P P2) (:A *Key) (:Along *P)))
+
+;; A whole number of periods from the seed's line.
+(RULE &period_line
+  (&lines.ray (:key (:Ky *A)) (:P *L) *K)
+  (&lines_cell (:Key A) (:P L))
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))
+
+(ALTS $choice "two models of the seed's period class, tagged on out's Choice; coincide at period 2" $Period
+  (ALT $Parity
+    ;; An even count of lines from the seed's: a line lies midway.
+    (RULE &period_line
+      (&lines.ray (:key (:Ky *A)) (:P *M) *D *K)
+      (&lines_cell (:Key A) (:P M))
+      (jump (:P M) D K (:Q *L))
+      (&lines_cell (:Key A) (:P L)))))
+
+(RULE &seed_class
+  (input *P)
+  (perp (:A *A1) *A2)
+  (split P (:A A1) (:Along *L1))
+  (&period_line (:A A1) (:L L1))
+  (split P (:A A2) (:Along *L2))
+  (&period_line (:A A2) (:L L2)))
+
+(RULE &painted
+  (&seed_class *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&seed *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,340 @@
+;; inputs 1a9c22d757c75c490dd5a9e759a977411d153d0f39b0ca0b0f913d4dc3417cfc programs/solvers/bd14c3bf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bd14c3bf
+
+(INPUT reference-shape "one 4-connected shape of &ref_color touches the top-left corner of the grid, and no other cell has that color"
+
+  (DET &recolored
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET_OR_RULE &ref_color RarestColor
+    (&recolored (:C_out *C))))
+
+(INPUT mark-shapes "the other non-background (0) cells are &mark_color, in 4-connected shapes that do not touch one another, even at a corner"
+
+  (DET_OR_RULE &mark_color SharedColor
+    (&recolored (:C_in *C)))
+
+  ;; The 8-connected shapes of each color.
+  (INIT &shape8 Connectivity
+    (key ((input *P (:Col ^C)))
+      (node (P)
+        (input *P (:Col C))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT stretch-match "a mark shape matches the reference shape when each shape, cut down to its bounding box and with each run of identical adjacent rows and each run of identical adjacent columns cut to one line, gives the same grid up to a transform of &match_group"
+
+  ;; The 4-connected shapes of each color.
+  (INIT &shape4 Connectivity
+    (key ((input *P (:Col ^C)))
+      (node (P)
+        (input *P (:Col C)))))
+
+  (RULE &figure
+    (&shape4.component (:key *C) *P (:Id *F)))
+
+  (INIT &bbox BoundingBox
+    (key ((&figure (:F ^Id) *P))
+      (cell (P)
+        (&figure (:F Id) *P))))
+
+  (RULE &box_cell
+    (&bbox.box (:key (:Id *F)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (RULE &line_of
+    (&box_cell *F *P_rel)
+    (split (:P P_rel) *A (:Along *L)))
+
+  (RULE &held
+    (&figure *F *P)
+    (&box_cell F P *P_rel))
+
+  (RULE &differ
+    (&held *F (:P_rel *P))
+    (neighbor P *D *Q)
+    (axis_of D *A)
+    (NOT (&held F (:P_rel Q)))
+    (&line_of F A (:P_rel P) *L)
+    (&line_of F A (:P_rel Q) (:L *L2)))
+
+  ;; The runs of identical adjacent lines.
+  (INIT &run Quotient
+    (edge ((:a (:Id F) A L) (:b (:Id F) A (:L L3)))
+      (OR ((&line_of *F *A (:P_rel *P) *L)
+           (neighbor P *Q)
+           (&line_of F A (:P_rel Q) (:L *L3))
+           (NOT (&differ F A L (:L2 L3)))
+           (NOT (&differ F A (:L L3) (:L2 L))))
+          ((&line_of F A L)
+           (= L3 L)))))
+
+  ;; Each run's line in the reduced shape.
+  (INIT &runs Order
+    (key ((&line_of ^F ^A)
+          (axis_of ^D A))
+      (member ((:t R))
+        (&run.class (:a (:Id F) A *L) (:Id *R)))
+      (before ((:a R) (:b R2))
+        (&run.class (:a (:Id F) A *L) (:Id *R))
+        (&run.class (:a (:Id F) A (:L *L2)) (:Id *R2))
+        (!= R R2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2))))
+
+  (RULE &runs_pos
+    (&runs.rank (:key (:F *Id) *A *D) (:t *M) (:R *R1))
+    (&runs.dual_rank (:key (:F Id) A D) (:t M) (:R *R2))
+    (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+  (INIT &bbox4 BoundingBox
+    (key ((&shape4.component *P ^Id))
+      (cell (P)
+        (&shape4.component *P Id))))
+
+  (RULE &box_cell4
+    (&bbox4.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (RULE &line_of4
+    (&box_cell4 *Id *P_rel)
+    (split (:P P_rel) *A (:Along *L)))
+
+  (RULE &held4
+    (&shape4.component *P *Id)
+    (&box_cell4 Id P *P_rel))
+
+  (RULE &differ4
+    (&held4 *Id (:P_rel *P))
+    (neighbor P *D *Q)
+    (axis_of D *A)
+    (NOT (&held4 Id (:P_rel Q)))
+    (&line_of4 Id A (:P_rel P) *L)
+    (&line_of4 Id A (:P_rel Q) (:L *L2)))
+
+  ;; The runs of identical adjacent lines of a 4-connected shape's box.
+  (INIT &run4 Quotient
+    (edge ((:a Id A L) (:b Id A (:L L3)))
+      (OR ((&line_of4 *Id *A (:P_rel *P) *L)
+           (neighbor P *Q)
+           (&line_of4 Id A (:P_rel Q) (:L *L3))
+           (NOT (&differ4 Id A L (:L2 L3)))
+           (NOT (&differ4 Id A (:L L3) (:L2 L))))
+          ((&line_of4 Id A L)
+           (= L3 L)))))
+
+  ;; Each run's line in the reduced 4-connected shape.
+  (INIT &runs4 Order
+    (key ((&line_of4 ^Id ^A)
+          (axis_of ^D A))
+      (member ((:t R))
+        (&run4.class (:a Id A *L) (:Id *R)))
+      (before ((:a R) (:b R2))
+        (&run4.class (:a Id A *L) (:Id *R))
+        (&run4.class (:a Id A (:L *L2)) (:Id *R2))
+        (!= R R2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2))))
+
+  (RULE &runs4_pos
+    (&runs4.rank (:key *Id *A *D) (:t *M) (:R *R1))
+    (&runs4.dual_rank (:key Id A D) (:t M) (:R *R2))
+    (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+  ;; The group of transforms under which two reduced shapes count as the same: the rotations, or the rotations and reflections.
+  (DET &match_group SymDomain (ONE))
+
+  (RULE &reduced
+    (&line_of *F *A *P_rel *L)
+    (&run.class (:a (:Id F) A L) (:Id *R))
+    (&runs_pos (:Id F) A (:M R) (:P_pos *Q))
+    (perp A *A2)
+    (&line_of F (:A A2) P_rel (:L *L2))
+    (&run.class (:a (:Id F) (:A A2) (:L L2)) (:Id *R2))
+    (&runs_pos (:Id F) (:A A2) (:M R2) (:P_pos *Q2))
+    (compose (:A Q) (:B Q2) (:C *P_red)))
+
+  (RULE &reduced4
+    (&line_of4 *Id *A *P_rel *L)
+    (&run4.class (:a Id A L) (:Id *R))
+    (&runs4_pos Id A (:M R) (:P_pos *Q))
+    (perp A *A2)
+    (&line_of4 Id (:A A2) P_rel (:L *L2))
+    (&run4.class (:a Id (:A A2) (:L L2)) (:Id *R2))
+    (&runs4_pos Id (:A A2) (:M R2) (:P_pos *Q2))
+    (compose (:A Q) (:B Q2) (:C *P_red)))
+
+  ;; The shapes equal to a transform of a 4-connected shape, after reduction.
+  (INIT &same Inclusion
+    (pattern ((:pattern Id D) (:m P_img))
+      (&held4 *Id (:P_rel *P))
+      (&reduced4 Id (:P_rel P) *P_red)
+      (apply *D (:P P_red) (:P_out *P_img)))
+    (observed ((:observed F) (:m P_red))
+      (&held *F (:P_rel *P))
+      (&reduced F (:P_rel P) *P_red)))
+
+  ;; The background parts of each shape's box.
+  (INIT &parts Connectivity
+    (key ((&box_cell (:F ^Id) *P *P_rel)
+          (NOT (&held (:F Id) P_rel)))
+      (node (P)
+        (&box_cell (:F Id) *P *P_rel)
+        (NOT (&held (:F Id) P_rel)))))
+
+  (RULE &open_part
+    (&parts.component (:key (:Id *F)) *P *Id)
+    (&box_cell F P *P_rel)
+    (NOT (interior (:A P_rel) (:B 0))))
+
+  (INIT &open_parts Cardinality
+    (key ((OR ((&open_part (:F ^Id) (:Id *Id2)))
+              ((&bbox.box (:key Id)))))
+      (member ((:m Id2))
+        (&open_part (:F Id) (:Id *Id2)))
+      (domain ()
+        (&bbox.box (:key Id)))))
+
+  (INIT &closed_parts Cardinality
+    (key ((OR ((&parts.component (:key ^Id) (:Id *Id2))
+               (NOT (&open_part (:F Id) (:Id Id2))))
+              ((&bbox.box (:key Id)))))
+      (member ((:m Id2))
+        (&parts.component (:key Id) (:Id *Id2))
+        (NOT (&open_part (:F Id) (:Id Id2))))
+      (domain ()
+        (&bbox.box (:key Id)))))
+
+  ;; The background parts of each 4-connected shape's box.
+  (INIT &parts4 Connectivity
+    (key ((&box_cell4 ^Id *P *P_rel)
+          (NOT (&held4 Id P_rel)))
+      (node (P)
+        (&box_cell4 Id *P *P_rel)
+        (NOT (&held4 Id P_rel)))))
+
+  (RULE &open_part4
+    (&parts4.component (:key *Id) *P (:Id *Part))
+    (&box_cell4 Id P *P_rel)
+    (NOT (interior (:A P_rel) (:B 0))))
+
+  (INIT &open_parts4 Cardinality
+    (key ((OR ((&open_part4 ^Id *Part))
+              ((&bbox4.box (:key Id)))))
+      (member ((:m Part))
+        (&open_part4 Id *Part))
+      (domain ()
+        (&bbox4.box (:key Id)))))
+
+  (INIT &closed_parts4 Cardinality
+    (key ((OR ((&parts4.component (:key ^Id) (:Id *Part))
+               (NOT (&open_part4 Id Part)))
+              ((&bbox4.box (:key Id)))))
+      (member ((:m Part))
+        (&parts4.component (:key Id) (:Id *Part))
+        (NOT (&open_part4 Id Part)))
+      (domain ()
+        (&bbox4.box (:key Id))))))
+
+(OUTPUT recolor-match "each mark shape that matches turns &ref_color")
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (DET_OR_RULE &background DominantColor RarestColor
+    (&recolored *E *P)
+    (neighbor P *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (ex_output E (:P Q) (:Col C)))
+
+  (RULE &ref_color2
+    (&ref_color *C))
+
+  (RULE &ref_fig
+    (&ref_color2 *C)
+    (&shape4.component (:key C) *Id))
+
+  (RULE &cand_color
+    (&ref_color2)
+    (&mark_color *C))
+
+  (RULE &cand_fig
+    (&cand_color *C)
+    (&figure *F C)))
+
+(ALTS $shape "when a mark shape counts as the reference shape" $Stretch
+  (ALT $Topology
+    (OUTPUT stretch-match "a mark shape matches the reference shape when its bounding box holds as many enclosed background parts, and as many background parts that reach the box edge, as the reference's box")
+    (RULE &matched
+      (&cand_fig (:F *Id))
+      (&ref_fig (:Id *Id_ref))
+      (&open_parts.size (:key Id) (:N *N1))
+      (&open_parts4.size (:key (:Id Id_ref)) (:N N1))
+      (&closed_parts.size (:key Id) (:N *N2))
+      (&closed_parts4.size (:key (:Id Id_ref)) (:N N2)))))
+
+(ALTS $adj "which cells join into one shape" $Adjacency4
+  (ALT $Adjacency8
+    (INPUT mark-shapes "the other non-background (0) cells are &mark_color, in 8-connected shapes"
+      (RULE &figure
+        (&shape8.component (:key *C) *P (:Id *F))))))
+
+(ALTS $cand "which shapes are tested against the reference" $MarkColor
+  (ALT $AnyColor
+    (INPUT mark-shapes "the other cells of a color other than &background are in 4-connected shapes that do not touch one another, even at a corner")
+    (OUTPUT recolor-match "each shape of a color other than &background and &ref_color that matches turns &ref_color"
+      (RULE &cand_color
+        (&ref_color2)
+        (input (:Col *C))
+        (NOT (&background C))
+        (NOT (&ref_color2 C))))))
+
+(ALTS $ref "how the reference color is found" $StoredRef
+  (ALT $CornerReference
+    (INPUT reference-shape "one 4-connected shape touches the &ref_corner corner of the grid, and its color, the color of the corner cell, is the reference color, which no other cell has; undefined where the corner cell is &background"
+      (DET &ref_corner
+        (&recolored *E (:C_out *C))
+        (ex_input E *P (:Col C))
+        (inside (:A P) (:B 0))
+        (same_corner *D (:P1 P) (:P2 0)))
+
+      (RULE &ref_color2
+        (input *P (:Col *C))
+        (&ref_corner *D)
+        (inside (:A P) (:B 0))
+        (same_corner D (:P1 P) (:P2 0))
+        (NOT (&background C))))))
+
+(RULE_OR_DET &paint_color "The color a matching shape takes: the reference shape's color."
+  (&ref_color2 *C))
+
+(RULE &matched
+  (&cand_fig (:F *Id))
+  (&ref_fig (:Id *Id_ref))
+  (&same.equal (:observed Id) (:pattern (:Id Id_ref) *D))
+  (&match_group (:S *G))
+  (sym_member (:S G) D))
+
+(RULE &painted
+  (&matched *Id)
+  (&figure (:F Id) *P))
+
+(RULE &output
+  (&ref_fig)
+  (input *P (:Col *Col_in))
+  (IF ((&painted P))
+      ((&paint_color (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

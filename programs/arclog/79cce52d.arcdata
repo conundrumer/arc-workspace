@@ -1,0 +1,7 @@
+;; inputs 1a922dc77f9abadcdf041ee177259e7dd37e83d962476f1e698f69151d6f717b programs/solvers/79cce52d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 79cce52d
+
+(param &corner DiagDir (DIAG_TL))
+(param &marker_col Color (2))
+(param &marker_count number (1))

@@ -1,0 +1,232 @@
+;; inputs 6447af080a69e0eecbb68bb6dff25cf2cd80dc99964859f1281e5c63e2bf0e3a programs/solvers/f3e14006.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f3e14006
+
+(INPUT two-crossing-lines "on a field of &background, one straight line runs along the bar axis (the bar line) and one runs across it (the cross line), and the two meet at one cell."
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; The commonest color of each train input.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&common.maximal (:t *C))
+    (&common_count.member (:key *E))
+    (NOT (&common.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&background_defect C))))
+
+(INPUT line-colors "each line has a base color and exactly two cells of a mark color of its own; the four colors are distinct, and the crossing cell holds one line's base color.")
+
+(INPUT cross-marks-one-side "both marks of the cross line lie on one side of the bar line.")
+
+(OUTPUT rectangle "the output keeps only a rectangle on a field of &background; its extent along the bar axis is the span between the bar line's two marks, and its extent across is the span from the bar line to the farther mark of the cross line.")
+
+(OUTPUT lattice "the bar axis is the axis of &along_start; the hole lines along the bar axis are those a whole number of &period lines from the bar line, and the hole lines across it are those a whole number of &period lines from the rectangle's &along_start edge; a cell on hole lines of both axes is a hole, a line along the bar axis that is no hole line is a bar thread, and a line across it that is no hole line is a cross thread."
+
+  ;; the lattice repeats every period lines on each axis
+  (DET &period TileCount)
+
+  ;; the rectangle's edge, along the bar axis, that hole lines start from
+  (DET &along_start DirDomain))
+
+(OUTPUT thread-colors "a bar thread takes the bar line's base color and a cross thread the cross line's base color; where two threads cross, the cell takes the base color the input's crossing cell shows.")
+
+(OUTPUT hole-colors "a hole on a line along the bar axis that meets the cross line within the span of the cross line's two marks takes the cross line's mark color, and every other hole takes the bar line's mark color."
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &line_cell
+    (&ink *P)
+    (&ink (:P *Q))
+    (!= P Q)
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (RULE &crossing
+    (&line_cell *A *P)
+    (perp A *A2)
+    (&line_cell (:A A2) P)
+    (input P *Col))
+
+  (INIT &line_color_count Cardinality
+    (key ((&line_cell ^A *P)
+          (NOT (&crossing P))
+          (input P ^Col))
+      (member ((:m P))
+        (&line_cell A *P)
+        (NOT (&crossing P))
+        (input P Col))))
+
+  ;; A line's base color is the commonest color of its cells off the crossing.
+  (INIT &line_color Order
+    (key ((&line_color_count.size (:key ^A *Col)))
+      (member ((:t Col))
+        (&line_color_count.size (:key A *Col)))
+      (score ((:t Col) (:S N))
+        (&line_color_count.size (:key A *Col) *N))))
+
+  (RULE &mark
+    (&line_color_count.member (:key *A *Col) (:m *P))
+    (NOT (&line_color.maximal (:key A) (:t Col))))
+
+  ;; With the bar line along axis a, the rectangle bounds the bar marks and the
+  ;; cells where a bar mark's line across a meets a cross mark's line along it.
+  (INIT &rect BoundingBox
+    (key ((&mark ^A (:P *M)))
+      (cell ((:P M))
+        (OR ((&mark A (:P *M)))
+            ((perp A *A2)
+             (&mark A (:P *M2))
+             (&mark (:A A2) (:P *N))
+             (input (:P M))
+             (same_line A (:P M) (:Q N))
+             (same_line (:A A2) (:P M) (:Q M2)))))))
+
+  (RULE &bar_line_edge
+    (perp *A *A2)
+    (axis_of *D (:A A2))
+    (&mark A (:P *M))
+    (&rect.box (:key A) *B)
+    (inside (:A M) B)
+    (same_dist D (:P1 M) (:P2 B)))
+
+  ;; With the bar line along axis a, the span of the cross line's marks.
+  (INIT &cross_span BoundingBox
+    (key ((perp ^A *A2)
+          (&mark (:A A2) (:P *N)))
+      (cell ((:P N))
+        (perp A *A2)
+        (&mark (:A A2) (:P *N))))))
+
+(ALTS $across "which end of the rectangle, across the bar axis, starts with a hole line" $AnchorAcrossBarLine
+  (ALT $AnchorAcrossSide
+    (OUTPUT lattice "the hole lines along the bar axis start at the rectangle's edge a quarter turn &across_sense from the &along_start edge in place of the bar line."
+      ;; the quarter turn from the along_start edge to the rectangle's edge, across the bar axis, that hole lines start from
+      (DET &across_sense SenseDomain))
+    (RULE &lattice
+      (&along_start (:D *D_along))
+      (axis_of (:D D_along) *A)
+      (&across_sense *S)
+      (turn S (:D D_along) (:D2 *D_across)))
+    (ALT $AnchorAlongNearCross
+      (OUTPUT lattice "the hole lines across the bar axis start at the bar mark nearer the cross line in place of the &along_start edge, and at both bar marks where the two are equally near; the bar axis is &bar_axis, and where the hole lines along it start at a stored edge, it is the axis across the &across_start edge."
+        ;; the rectangle's edge, across the bar axis, that hole lines start from
+        (DET &across_start DirDomain))
+      (RULE &lattice
+        (&across_start (:D *D_across))
+        (axis_of (:D D_across) (:A *A_across))
+        (perp (:A A_across) (:A2 *A))
+        (&near_cross_edge A (:D *D_along))))))
+
+(ALTS $along "which end of the rectangle, along the bar axis, starts with a hole line" $AnchorAlongSide
+  (ALT $AnchorAlongNearCross
+    (OUTPUT lattice "the hole lines across the bar axis start at the bar mark nearer the cross line in place of the &along_start edge, and at both bar marks where the two are equally near; the bar axis is &bar_axis, and where the hole lines along it start at a stored edge, it is the axis across the &across_start edge."
+      (RULE &near_cross_edge
+        (axis_of *D *A)
+        (&crossing (:P *X))
+        (&rect.box (:key A) *B)
+        (relative (:Base B) X *X_rel)
+        (dist_pair (:P X_rel) D *K *K2)
+        (<= K K2))
+
+      (DET &background_determined
+        (&common.maximal (:t *C))
+        (NOT (&background_defect C)))
+
+      ;; The rectangle of each train output.
+      (INIT &out_ink BoundingBox
+        (key ((ex_output ^E *P *Col)
+              (NOT (&background_determined (:C Col))))
+          (cell (P)
+            (ex_output E *P *Col)
+            (NOT (&background_determined (:C Col))))))
+
+      (DET &corner_ink
+        (ex_input *E *P *Col)
+        (NOT (&background_determined (:C Col)))
+        (&out_ink.box (:key E) *B)
+        (inside (:A P) B)
+        (same_corner (:P1 P) (:P2 B)))
+
+      (DET &bar_axis
+        (&corner_ink *E *P)
+        (&corner_ink E (:P *Q))
+        (!= P Q)
+        (axis_elem *A)
+        (same_line A P Q)))
+    (RULE &lattice
+      (&bar_axis *A)
+      (&bar_line_edge A (:D *D_across))
+      (&near_cross_edge A (:D *D_along)))))
+
+(RULE &rect_cell
+  (input *P)
+  (&rect.box (:key *A) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &lattice
+  (&along_start (:D *D_along))
+  (axis_of (:D D_along) *A)
+  (&bar_line_edge A (:D *D_across)))
+
+(RULE &even
+  (&rect_cell *A *P *P_inner)
+  (margin (:B P_inner) *D *K)
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder 0)))
+
+(RULE &in_cross_span
+  (&rect_cell *A *P)
+  (perp A *A2)
+  (&line_cell (:A A2) (:P *Q))
+  (same_line A P Q)
+  (&cross_span.box (:key A) *B)
+  (inside (:A Q) B))
+
+(RULE &woven
+  (&lattice *A (:D_across *Da) (:D_along *Dl))
+  (&rect_cell A *P)
+  (perp A *A2)
+  (OR ((&even A P (:D Da))
+       (&even A P (:D Dl))
+       (&in_cross_span A P)
+       (&mark (:A A2) *Col))
+      ((&even A P (:D Da))
+       (&even A P (:D Dl))
+       (NOT (&in_cross_span A P))
+       (&mark A Col))
+      ((NOT (&even A P (:D Da)))
+       (&even A P (:D Dl))
+       (&line_color.maximal (:key A) (:t Col)))
+      ((&even A P (:D Da))
+       (NOT (&even A P (:D Dl)))
+       (&line_color.maximal (:key (:A A2)) (:t Col)))
+      ((NOT (&even A P (:D Da)))
+       (NOT (&even A P (:D Dl)))
+       (&crossing Col))))
+
+(RULE &output
+  (OR ((&woven *P *Col))
+      ((&lattice *A)
+       (&rect.box (:key A))
+       (input P)
+       (NOT (&rect_cell A P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

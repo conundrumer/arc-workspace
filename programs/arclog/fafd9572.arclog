@@ -1,0 +1,346 @@
+;; inputs 80702d6ebe4a5720fbf2423e5327fd891c77f873101af13a5dc50eeb577ba7b1 programs/solvers/fafd9572.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fafd9572
+
+(INPUT key "the cells of colors other than `background` (0) and `shape_color` (1) form one small 8-connected key, and every row and every column of its bounding box holds a key cell")
+
+(INPUT copies "the cells of `shape_color` (1) form identical copies of one 8-connected shape, laid on a lattice whose period on each axis is the shape's extent plus `copy_gap` (1)"
+
+  ;; The input color of a cell that changes in a train output.
+  (DET &shape_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P)
+    (NOT (ex_output E P (:Col C))))
+
+  (RULE &shape_color2
+    (&shape_color (:C *Col)))
+
+  (INIT &copies Connectivity
+    (node (P)
+      (&shape_color2 *Col)
+      (input *P Col))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &copy_box BoundingBox
+    (key ((&copies.component *P ^Id))
+      (cell (P)
+        (&copies.component *P Id))))
+
+  (INIT &commonest_count2 Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of every input.
+  (INIT &commonest Order
+    (key ((&commonest_count2.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count2.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count2.size (:key E *Col) *N))))
+
+  (DET &not_commonest
+    (&commonest.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&not_commonest C)))
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (INIT &commonest2 Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &commonest_one Singleton
+    (member ((:v Col))
+      (&commonest2.maximal (:t *Col))))
+
+  (INIT &shape_extent Singleton
+    (key ((axis_elem ^A))
+      (member ((:v N))
+        (&copies.component *Id)
+        (&copy_box.box (:key Id) *B)
+        (input *P)
+        (box_extent B P A *N))))
+
+  ;; The lines between copy a and copy b, which lies past it toward d.
+  (INIT &spacing Cardinality
+    (key ((&copies.component (:Id ^Id1))
+          (&copies.component (:Id ^Id2))
+          (&copy_box.box (:key (:Id Id1)) (:B *B1))
+          (&copy_box.box (:key (:Id Id2)) (:B *B2))
+          (input *P)
+          (axis_of ^D *A)
+          (split P A (:Along *L))
+          (opposite D (:Opp *O))
+          (margin (:B B1) D (:K *K1))
+          (margin (:B L) D (:K *K_l))
+          (< K_l K1)
+          (margin (:B B2) (:D O) (:K *K2))
+          (margin (:B L) (:D O) (:K *K_lo))
+          (< K_lo K2))
+      (member ((:m L))
+        (&copies.component (:Id Id1))
+        (&copies.component (:Id Id2))
+        (&copy_box.box (:key (:Id Id1)) (:B *B1))
+        (&copy_box.box (:key (:Id Id2)) (:B *B2))
+        (input *P)
+        (axis_of D *A)
+        (split P A (:Along *L))
+        (opposite D (:Opp *O))
+        (margin (:B B1) D (:K *K1))
+        (margin (:B L) D (:K *K_l))
+        (< K_l K1)
+        (margin (:B B2) (:D O) (:K *K2))
+        (margin (:B L) (:D O) (:K *K_lo))
+        (< K_lo K2))))
+
+  (INIT &least_gap Order
+    (key ((&spacing.size (:key *D (:Id1 *Id)) *N)
+          (&copies.component Id)
+          (axis_of D ^A))
+      (member ((:t N))
+        (&spacing.size (:key *D (:Id1 *Id)) *N)
+        (&copies.component Id)
+        (axis_of D A))
+      (score ((:t N) (:S N))
+        (&spacing.size (:key *D (:Id1 *Id)) *N)
+        (&copies.component Id)
+        (axis_of D A)))))
+
+(INPUT layout-matches-key "the copies' ranks from the four edges are exactly the key cells' places in the key's box")
+
+(OUTPUT recolor-copy "each copy takes the color of the key cell whose place in the key's box, counted from each edge, is the copy's rank among the copies from that edge"
+
+  (RULE &copy_dist
+    (&copies.component *Id)
+    (&copy_box.box (:key Id) *B)
+    (margin B *D *K))
+
+  ;; The copies' distances to each edge, ranked densely.
+  (INIT &rank Order
+    (key ((&copy_dist ^D *K))
+      (member ((:t K))
+        (&copy_dist D *K))
+      (score ((:t K) (:S K))
+        (&copy_dist D *K))))
+
+  ;; The reading order: the corner it starts from and the axis it runs along.
+  (DET &corner DiagDirDomain)
+
+  (DET &axis AxisDomain)
+
+  (RULE &key_cell
+    (&shape_color2)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&shape_color2 Col)))
+
+  ;; The box of all copies.
+  (INIT &copies_box BoundingBox
+    (cell (P)
+      (&copies.component *P)))
+
+  (RULE &copy_read_axis
+    (&shape_color2)
+    (&axis *A))
+
+  (RULE &copy_read_cell
+    (&copies.component *Id)
+    (&copy_box.box (:key Id) (:B *P)))
+
+  (RULE &copy_read_corner
+    (&shape_color2)
+    (&corner *D))
+
+  (INIT &copy_read Order
+    (member ((:t P))
+      (&copy_read_cell *P))
+    (score ((:t P) (:S K1))
+      (&copy_read_cell *P)
+      (&copy_read_corner (:D *Diag))
+      (&copy_read_axis *A)
+      (diag_dist P Diag A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&copy_read_cell *P)
+      (&copy_read_corner (:D *Diag))
+      (&copy_read_axis *A)
+      (diag_dist P Diag A *K1 *K2)))
+
+  (RULE &key_read_axis
+    (&shape_color2)
+    (&axis *A))
+
+  (RULE &key_read_corner
+    (&shape_color2)
+    (&corner *D))
+
+  (INIT &key_read Order
+    (member ((:t P))
+      (&key_cell *P))
+    (score ((:t P) (:S K1))
+      (&key_cell *P)
+      (&key_read_corner (:D *Diag))
+      (&key_read_axis *A)
+      (diag_dist P Diag A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&key_cell *P)
+      (&key_read_corner (:D *Diag))
+      (&key_read_axis *A)
+      (diag_dist P Diag A *K1 *K2))))
+
+(OUTPUT keep-rest "the key and the background are unchanged"
+
+  (INIT &key_box BoundingBox
+    (cell (P)
+      (&key_cell *P)))
+
+  (RULE &key_place
+    (&key_cell *P *Col)
+    (&key_box.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (DET &copy_line
+    (ex_input *E *P *Col)
+    (&shape_color (:C Col))
+    (split P *A (:Along *L)))
+
+  (DET &line
+    (ex_input *E *P)
+    (split P *A (:Along *L)))
+
+  ;; The lines free of copy cells between two copy lines.
+  (INIT &free_run Cardinality
+    (key ((&copy_line ^E *A (:L ^L1))
+          (&copy_line E A (:L ^L2))
+          (axis_of ^D A)
+          (&line E A *L)
+          (NOT (&copy_line E A L))
+          (nearer D (:P L) (:Q L1))
+          (nearer D (:P L2) (:Q L)))
+      (member ((:m L))
+        (&copy_line E *A (:L L1))
+        (&copy_line E A (:L L2))
+        (axis_of D A)
+        (&line E A *L)
+        (NOT (&copy_line E A L))
+        (nearer D (:P L) (:Q L1))
+        (nearer D (:P L2) (:Q L)))))
+
+  (INIT &least_run Order
+    (member ((:t N))
+      (&free_run.size *N))
+    (score ((:t N) (:S N))
+      (&free_run.size *N)))
+
+  (DET &copy_gap
+    (&least_run.minimal (:t *G)))
+
+  (RULE &lattice_gap
+    (&shape_color2)
+    (axis_elem *A)
+    (&copy_gap (:G *K))))
+
+(ALTS $s "How a copy finds its key cell." $Rank
+  (ALT $LatticeSlot
+    (OUTPUT recolor-copy "a copy's slot is its tile in the copies' box cut on each axis into tiles of the shape's extent, `copy_gap` apart, and the copy takes the key cell at that slot of the key's box; undefined where the copies differ in extent, the cut does not fit the box, or the slot holds no key cell"
+      (INIT &axis_slot_division Division
+        (key ((&lattice_gap ^A (:K ^Gap)))
+          (cell ((:P P_inner))
+            (&copies.component *P)
+            (&copies_box.box *B)
+            (inside (:A P) B)
+            (relative (:Base B) (:X P) (:X_rel *P_inner))
+            (&lattice_gap A (:K Gap))
+            (&shape_extent.value (:key A)))
+          (side (A K)
+            (&lattice_gap A (:K Gap))
+            (&shape_extent.value (:key A) (:v *K)))
+          (gap (A (:G Gap))
+            (&lattice_gap A (:K Gap)))))
+
+      (RULE &axis_slot
+        (&copies.component *P)
+        (&copies_box.box *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (&axis_slot_division.tile (:key *A) (:P P_inner) *P_outer)))
+    (RULE &output
+      (OR ((&axis_slot *P *A (:P_outer *P_a))
+           (perp A *A2)
+           (&axis_slot P (:A A2) (:P_outer *P_a2))
+           (compose (:A P_a) (:B P_a2) (:C *P_slot))
+           (&key_place (:P_inner P_slot) *Col))
+          ((input P Col)
+           (NOT (&copies.component P)))))
+    (ALTS $gap "Where the lattice's gap comes from." $GapStored
+      (ALT $GapFromSpacing
+        (INPUT copies "on each axis, the gap is the fewest lines between two copies that lie apart along that axis, and none where no two do"
+          (RULE &lattice_gap
+            (&shape_color2)
+            (axis_elem *A)
+            (OR ((&least_gap.minimal (:key A) (:t *K)))
+                ((NOT (&least_gap.minimal (:key A)))
+                 (= K 0))))))))
+  (ALT $OrderMatch
+    (OUTPUT recolor-copy "the n-th copy in reading order of its box's corner takes the n-th key cell in reading order; undefined where the copy count differs from the key cell count"
+      ;; A key cell has no copy at its rank.
+      (RULE &unpaired
+        (&key_read.rank *R)
+        (NOT (&copy_read.rank R))))
+    (RULE &output
+      (OR ((&copies.component *P *Id)
+           (&copy_box.box (:key Id) *B)
+           (&copy_read.rank (:t B) *R)
+           (&key_read.rank (:t *Q) R)
+           (&key_cell (:P Q) *Col))
+          ((input P Col)
+           (NOT (&copies.component P))
+           (NOT (&unpaired)))))))
+
+(ALTS $c "Where the copies' color comes from." $ShapeStored
+  (ALT $ShapeColorByCount
+    (INPUT copies "`shape_color` is the input's commonest color other than `background`; undefined where that color ties"
+      (RULE &shape_color2
+        (&commonest_one.value (:v *Col))))))
+
+(RULE &place_edge
+  (&copy_dist (:Id *Key) *D (:K *K2))
+  (&rank.rank (:key D) (:t K2) (:R *K)))
+
+(RULE &place_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&place_edge *Key D (:K *K1))
+  (&place_edge Key (:D D2) (:K *K2))
+  (axis_inset D K1 K2 *B))
+
+(RULE &place
+  (&place_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&place_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&copies.component P)))
+      ((&copies.component P *Id)
+       (&place (:Key Id) (:B *P_key))
+       (&key_place (:P_inner P_key) Col))))
+
+(OUT (&output ^P ^Col))

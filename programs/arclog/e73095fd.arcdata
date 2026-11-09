@@ -1,0 +1,221 @@
+;; inputs e459e2372b31c4d38b9caa39875acb7c2ca3a55330e2fb0c750e4b1c1b9ee13b programs/solvers/e73095fd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e73095fd
+
+(param &background Color (0))
+(param &wire Color (5))
+(param &fill Color (4))
+
+(alts $clip
+  (alt $CornerShown
+    (witness band-between-lines borderline $CornerShown
+      (separates "two wire lines run edge to edge with only background between them, and no corner of that band shows: the concept and every branch but $CornerShown and $SideShown fill the band as a box the grid edge cuts on two sides, and $CornerShown and $SideShown leave it; $OutlineBox also fills the regions a line splits under the lower line")
+      (input (grid
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 5 0 0 5 0 0 0 0 0 0)
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 5 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 0)))
+      (output ($AnyPart $BackgroundOnly) (grid
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 5 4 4 5 0 0 0 0 0 0)
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 5 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 0)))
+      (output $OutlineBox (grid
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 5 4 4 5 0 0 0 0 0 0)
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (4 4 4 4 5 4 4 4 4 4 4 4)
+        (4 4 4 4 5 4 4 4 4 4 4 4)))
+      (output $CornerShown $SideShown (grid
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 5 4 4 5 0 0 0 0 0 0)
+        (0 0 5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 5 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 0)))))
+  (alt $SideShown
+    (witness grid-corner-box borderline concept
+      (separates "an L of wire cuts off the grid's top-left corner, a box that two grid edges cut, with one corner on the grid: the concept fills it, $SideShown leaves it as it shows no whole side, and $LinkedBox leaves it as no line meets it")
+      (input (grid
+        (0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 5 0 0 5 5)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($AnyPart $EveryBox) $CornerShown (grid
+        (4 4 4 5 0 0 0 0 0 0)
+        (4 4 4 5 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 5 4 4 5 5)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $LinkedBox $SideShown (grid
+        (0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 5 4 4 5 5)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $corner
+  (alt $SomeTrueCorner
+    (witness side-continues-past-corner borderline $SomeTrueCorner
+      (relaxed box-outline)
+      (separates "a box's top side continues as a line past its top-right corner: the concept leaves the box, since that corner is a junction, and $SomeTrueCorner fills it, since its other corners are true corners")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 5 5 5)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EveryTrueCorner (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 5 5 5)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $SomeTrueCorner (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 5 5 5)
+        (0 5 4 4 5 0 0 0 0 0)
+        (0 5 4 4 5 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $inside
+  (alt $OutlineBox
+    (witness line-through-box borderline $OutlineBox
+      (relaxed box-outline)
+      (separates "a line crosses a box from its top side to its bottom side and splits its inside in two: the concept leaves both halves, whose corners at the line are junctions, and $OutlineBox and $SomeTrueCorner fill both")
+      (input (grid
+        (0 0 0 5 0 0 0)
+        (0 5 5 5 5 5 0)
+        (0 5 0 5 0 5 0)
+        (0 5 0 5 0 5 0)
+        (0 5 5 5 5 5 0)
+        (0 0 0 5 0 0 0)))
+      (output ($EveryTrueCorner $BackgroundOnly) (grid
+        (0 0 0 5 0 0 0)
+        (0 5 5 5 5 5 0)
+        (0 5 0 5 0 5 0)
+        (0 5 0 5 0 5 0)
+        (0 5 5 5 5 5 0)
+        (0 0 0 5 0 0 0)))
+      (output $OutlineBox $SomeTrueCorner (grid
+        (0 0 0 5 0 0 0)
+        (0 5 5 5 5 5 0)
+        (0 5 4 5 4 5 0)
+        (0 5 4 5 4 5 0)
+        (0 5 5 5 5 5 0)
+        (0 0 0 5 0 0 0))))))
+
+(alts $linked
+  (alt $LinkedBox
+    (witness box-with-no-line variant concept
+      (separates "one box has no line that meets it: the concept fills it and $LinkedBox leaves it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 5 0)
+        (0 5 0 0 5 0 0 0 5 0)
+        (0 5 5 5 5 0 5 5 5 5)
+        (0 0 0 0 0 0 5 0 0 5)
+        (0 0 0 0 0 0 5 5 5 5)))
+      (output $EveryBox (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 5 0)
+        (0 5 4 4 5 0 0 0 5 0)
+        (0 5 5 5 5 0 5 5 5 5)
+        (0 0 0 0 0 0 5 4 4 5)
+        (0 0 0 0 0 0 5 5 5 5)))
+      (output $LinkedBox (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 5 0)
+        (0 5 0 0 5 0 0 0 5 0)
+        (0 5 5 5 5 0 5 5 5 5)
+        (0 0 0 0 0 0 5 4 4 5)
+        (0 0 0 0 0 0 5 5 5 5))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "wire outnumbers background: the derivation gives 5 as the background, so no box is found and the input stays; the concept fills the box")
+      (input (grid
+        (5 5 5 5 5 0)
+        (5 0 0 0 5 0)
+        (5 0 0 0 5 5)
+        (5 0 0 0 5 0)
+        (5 5 5 5 5 0)))
+      (output ($BackgroundOnly &background=$Stored &wire=$Stored) (grid
+        (5 5 5 5 5 0)
+        (5 4 4 4 5 0)
+        (5 4 4 4 5 5)
+        (5 4 4 4 5 0)
+        (5 5 5 5 5 0)))
+      (output &wire=$Derived &background=$Derived (grid
+        (5 5 5 5 5 0)
+        (5 0 0 0 5 0)
+        (5 0 0 0 5 5)
+        (5 0 0 0 5 0)
+        (5 5 5 5 5 0)))
+      (output $OutlineBox (grid
+        (5 5 5 5 5 4)
+        (5 4 4 4 5 4)
+        (5 4 4 4 5 5)
+        (5 4 4 4 5 4)
+        (5 5 5 5 5 4))))))
+
+(alts &wire
+  (alt &wire=$Derived
+    (witness wire=RarestColor borderline concept
+      (separates "wire outnumbers background: the derivation gives 0 as the wire, so no box is found and the input stays; the concept fills the box")
+      (input (grid
+        (5 5 5 5 5 0)
+        (5 0 0 0 5 0)
+        (5 0 0 0 5 5)
+        (5 0 0 0 5 0)
+        (5 5 5 5 5 0)))
+      (output ($BackgroundOnly &background=$Stored &wire=$Stored) (grid
+        (5 5 5 5 5 0)
+        (5 4 4 4 5 0)
+        (5 4 4 4 5 5)
+        (5 4 4 4 5 0)
+        (5 5 5 5 5 0)))
+      (output &wire=$Derived &background=$Derived (grid
+        (5 5 5 5 5 0)
+        (5 0 0 0 5 0)
+        (5 0 0 0 5 5)
+        (5 0 0 0 5 0)
+        (5 5 5 5 5 0)))
+      (output $OutlineBox (grid
+        (5 5 5 5 5 4)
+        (5 4 4 4 5 4)
+        (5 4 4 4 5 5)
+        (5 4 4 4 5 4)
+        (5 5 5 5 5 4))))))

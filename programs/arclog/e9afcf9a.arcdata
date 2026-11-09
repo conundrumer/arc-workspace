@@ -1,0 +1,16 @@
+;; inputs dfb0f32dd8efad74ba39303d248bec0964201c9f4787c194a4f628761c26bca5 programs/solvers/e9afcf9a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9afcf9a
+
+(param &in_label (Position Ident)
+  (grid
+    (1 2 3 4 5 6)
+    (7 8 9 10 11 12)))
+(param &out_label (Position Ident)
+  (grid
+    (1 8 3 10 5 12)
+    (7 2 9 4 11 6)))
+(param &divide_axis Axis (AXIS_H))
+(param &col_transform (Position D4)
+  (grid
+    (D4_ID D4_TB)))

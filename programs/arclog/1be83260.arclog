@@ -1,0 +1,182 @@
+;; inputs 350668a8cfd7d8bba7d124ac83efd750ce5c6af779ce2c26951b8d31be9d87ac programs/solvers/1be83260.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1be83260
+
+(DET &bg VanishedColor)
+
+(INIT &region BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &cell
+  (input (:P *P_grid) *Col)
+  (&region.box *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P)))
+
+(RULE &inked_line
+  (&cell *P *Col)
+  (NOT (&bg (:C Col)))
+  (split P *A (:Along *L)))
+
+(RULE &df_divider
+  (&cell *P)
+  (split P *A (:Along *L))
+  (NOT (&inked_line L)))
+
+(RULE &df_on_divider
+  (&cell *P)
+  (&df_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &df_rank Order
+  (key ((OR ((&df_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((&cell *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&df_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&df_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((&cell *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (&cell *P)
+      (margin (:B P) D *K))))
+
+(RULE &df_part_idx
+  (&cell *P)
+  (axis_of *D *A)
+  (NOT (&df_on_divider P A))
+  (margin (:B P) D *K)
+  (&df_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &df_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&df_part_idx *P D (:N *N1))
+  (&df_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &df_tile_of
+  (&df_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&df_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &block BoundingBox
+  (key ((&df_tile_of *P ^P_tile))
+    (cell (P)
+      (&df_tile_of *P P_tile))))
+
+(RULE &block_cell
+  (&block.cell (:key *P_tile) (:P *P_region))
+  (&block.box (:key P_tile) *B)
+  (inside (:A P_region) B)
+  (relative (:Base B) (:X P_region) (:X_rel *P_intile)))
+
+(RULE &hole
+  (&block_cell *P_region *P_intile)
+  (&cell (:P P_region) *Col)
+  (&bg (:C Col)))
+
+(INIT &hole_frame Order
+  (key ((axis_elem ^A)
+        (axis_of ^D A))
+    (member ((:t L))
+      (&hole *P_intile)
+      (split (:P P_intile) A (:Along *L)))
+    (before ((:a L) (:b L2))
+      (&hole *P_intile)
+      (split (:P P_intile) A (:Along *L))
+      (&hole (:P_intile *P_intile2))
+      (split (:P P_intile2) A (:Along *L2))
+      (!= L L2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &hole_frame_pos
+  (&hole_frame.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&hole_frame.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &body
+  (&block_cell *P_intile)
+  (NOT (&hole P_intile)))
+
+(RULE &block_color
+  (&df_tile_of *P *P_tile)
+  (&cell P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &absent
+  (&block_color *Col)
+  (&block_color *P_tile)
+  (NOT (&block_color P_tile Col)))
+
+(RULE &border
+  (&block_color *Col)
+  (NOT (&absent Col)))
+
+(RULE &key_cell
+  (&block_color *P_tile (:Col *K))
+  (NOT (&border (:Col K)))
+  (&block_cell P_tile *P_region *P_intile)
+  (&cell (:P P_region) *Col))
+
+(RULE &palette
+  (perp *A *A2)
+  (&hole_frame_pos (:Key A) (:M *L1) (:P_pos *P1))
+  (&hole_frame_pos (:Key A2) (:M *L2) (:P_pos *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile))
+  (compose (:A L1) (:B L2) (:C *P_intile))
+  (&key_cell P_intile *Col))
+
+(RULE &painted
+  (&block_cell *P_tile (:P_region *P) *P_intile)
+  (&body P_intile)
+  (&palette P_tile *Col))
+
+(ALTS $choice "how the output frame is built" $Repaint
+  (ALT $Assemble
+    (DET &gap NumberDomain)
+
+    (INIT &assembled_tiling Tiling
+      (outer ((:P P_tile))
+        (&palette *P_tile))
+      (inner ((:P P_intile))
+        (&body *P_intile))
+      (gap (A G)
+        (axis_elem *A)
+        (&gap (:N *G))))
+
+    (RULE &assembled
+      (&palette *P_tile *Col)
+      (&assembled_tiling.cell (:P_outer P_tile) *P))
+
+    (INIT &sheet Frame
+      (extent (A N)
+        (&assembled *P)
+        (frame_extent P *A *N)))
+
+    (RULE &output
+      (&sheet.cell *P)
+      (OR ((&assembled P *Col))
+          ((NOT (&assembled P))
+           (&border Col))))))
+
+(RULE &output
+  (&cell *P)
+  (OR ((&painted P *Col))
+      ((NOT (&painted P))
+       (&border Col))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,152 @@
+;; inputs eb4a694ac2e0501ea10d3903ac68036139d51e2f256c5dc7ade563d8c973d38e programs/solvers/fe45cba4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fe45cba4
+
+(param &background Color (7))
+(param &mover_side Dir (DIR_L))
+
+(alts $m
+  (alt $NotchedStays
+    (witness lock-on-key-side variant $NotchedStays
+      (separates "the notched 2 piece lies on the left and the plug on the right: moving the left piece plugs the notched piece onto the plug, the rectangle standing at cols 4-7; moving the plug, the piece without an enclosed notch, puts the rectangle at cols 0-3")
+      (input (grid
+        (9 9 9 7 7 7 7 7)
+        (9 9 7 7 7 7 7 7)
+        (9 9 9 7 7 7 7 2)
+        (7 7 7 7 7 2 2 2)
+        (2 2 2 7 7 2 2 2)
+        (2 7 7 7 7 7 7 2)
+        (2 7 7 7 7 7 7 7)
+        (2 2 2 7 7 7 7 7)))
+      (output $SideMoves (grid
+        (9 9 9 7 7 7 7 7)
+        (9 9 7 7 7 7 7 7)
+        (9 9 9 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7)))
+      (output $NotchedStays (grid
+        (9 9 9 7 7 7 7 7)
+        (9 9 7 7 7 7 7 7)
+        (9 9 9 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7)
+        (2 2 2 2 7 7 7 7)
+        (2 2 2 2 7 7 7 7)
+        (2 2 2 2 7 7 7 7)
+        (2 2 2 2 7 7 7 7))))))
+
+(alts $pc
+  (alt $EveryPairColor
+    (witness two-pair-colors variant $EveryPairColor
+      (relaxed one-pair-color)
+      (separates "both 9 and 2 come as a plug and a notched piece: one-pair-color models are undefined; plugging every such color gives two rectangles")
+      (input (grid
+        (7 9 7 7 7 9 9 9)
+        (7 9 9 7 7 7 9 9)
+        (2 9 7 7 7 9 9 9)
+        (2 2 2 7 7 7 7 7)
+        (2 2 2 7 7 2 2 2)
+        (2 7 7 7 7 7 7 2)
+        (7 7 7 7 7 7 7 2)
+        (7 7 7 7 7 2 2 2)))
+      (output $OnePairColor undefined)
+      (output $EveryPairColor (grid
+        (7 7 7 7 9 9 9 9)
+        (7 7 7 7 9 9 9 9)
+        (7 7 7 7 9 9 9 9)
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2))))))
+
+(alts $f
+  (alt $FillsNotch
+    (witness key-with-spur borderline $FillsNotch
+      (relaxed pieces-interlock)
+      (separates "the 2 plug carries a spur at (1,0), so no translation makes the pair a solid rectangle: the rectangle models are undefined; filling the lock's notch places the plug with the spur sticking out at (3,4)")
+      (input (grid
+        (7 7 7 7 7 9 9 9)
+        (2 7 7 7 7 7 9 9)
+        (2 7 7 7 7 9 9 9)
+        (2 2 2 7 7 7 7 7)
+        (2 2 2 7 7 2 2 2)
+        (2 7 7 7 7 7 7 2)
+        (7 7 7 7 7 7 7 2)
+        (7 7 7 7 7 2 2 2)))
+      (output $Interlock $AreaRectangle undefined)
+      (output $FillsNotch (grid
+        (7 7 7 7 7 9 9 9)
+        (7 7 7 7 7 7 9 9)
+        (7 7 7 7 7 9 9 9)
+        (7 7 7 7 2 7 7 7)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2))))))
+
+(alts $pl
+  (alt $AreaRectangle
+    (witness key-caps-lock borderline concept
+      (separates "the 2 plug caps the top of the lock as well as filling its notch: translating it gives the 5x4 rectangle rows 3-7, cols 4-7; drawing a rectangle on the lock's rows, flush right, of the pair's cell count gives rows 4-7, cols 3-7")
+      (input (grid
+        (7 7 7 7 7 9 9 9)
+        (2 2 2 2 7 7 9 9)
+        (2 7 7 7 7 9 9 9)
+        (2 2 2 7 7 7 7 7)
+        (2 2 2 7 7 2 2 2)
+        (2 7 7 7 7 7 7 2)
+        (7 7 7 7 7 7 7 2)
+        (7 7 7 7 7 2 2 2)))
+      (output $Plug (grid
+        (7 7 7 7 7 9 9 9)
+        (7 7 7 7 7 7 9 9)
+        (7 7 7 7 7 9 9 9)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)))
+      (output $AreaRectangle (grid
+        (7 7 7 7 7 9 9 9)
+        (7 7 7 7 7 7 9 9)
+        (7 7 7 7 7 9 9 9)
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 2 2 2 2 2)
+        (7 7 7 2 2 2 2 2)
+        (7 7 7 2 2 2 2 2)
+        (7 7 7 2 2 2 2 2))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "9, a block across the top, is the commonest color: with background stored as 7 the plug's old cells become 7; with the background derived as the commonest color (9) they become 9")
+      (input (grid
+        (9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9)
+        (2 9 9 9 9 9 9 9)
+        (2 2 2 7 7 7 9 9)
+        (2 2 2 7 7 2 2 2)
+        (2 7 7 7 7 7 7 2)
+        (7 7 7 7 7 7 7 2)
+        (7 7 7 7 7 2 2 2)))
+      (output &background=$Stored (grid
+        (9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9)
+        (7 9 9 9 9 9 9 9)
+        (7 7 7 7 7 7 9 9)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)))
+      (output &background=$Derived (grid
+        (9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9)
+        (9 9 9 7 7 7 9 9)
+        (9 9 9 7 2 2 2 2)
+        (9 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2)
+        (7 7 7 7 2 2 2 2))))))

@@ -1,0 +1,36 @@
+;; inputs d3f61a5e2cb5b26e0c1b2fab210e9dbecfbe7c4e5d5e01c49da0f4f7578ac74c programs/solvers/6cf79266.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6cf79266
+
+(DET &bg RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+;; Window: side-&dim square.
+(DET &dim TileCount)
+
+(INIT &shape_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&dim *N)))
+
+;; Windows: placements where the shape lands all-bg.
+(INIT &occ Occurrences
+  (cell (P)
+    (input *P *Col)
+    (&bg (:C Col)))
+  (shape (P)
+    (&shape_frame.cell *P)))
+
+(RULE &painted
+  (&occ.occurrence (:P *M))
+  (&shape_frame.cell (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

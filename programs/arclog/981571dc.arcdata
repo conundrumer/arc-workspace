@@ -1,0 +1,5 @@
+;; 981571dc
+
+(param &noise Color (0))
+(param &center Offset ((1 -1 1 -1)))
+(param &sym Sym (SYM_D4))

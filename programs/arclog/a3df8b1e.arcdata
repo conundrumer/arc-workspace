@@ -1,0 +1,8 @@
+;; inputs 356d2cff37cfcd08b729a4a0f4f1db76e9482b8e9774347e507f98c7cad755ea programs/solvers/a3df8b1e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a3df8b1e
+
+(param &bg Color (0))
+(param &dir Dir (DIR_T))
+(param &axis Axis (AXIS_V))
+(param &ink Color (1))

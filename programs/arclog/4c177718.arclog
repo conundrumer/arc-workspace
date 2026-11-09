@@ -1,0 +1,231 @@
+;; inputs 7e3fce629499aafeda7bfa7108603282a03b60de3c13bb1681487a28e4f14d90 programs/solvers/4c177718.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4c177718
+
+(DET &divider VanishedColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &panels_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (&divider (:C Col)))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&panels_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The divider is a line its color runs all the way across.
+(INIT &panels_rank Order
+  (key ((OR ((&panels_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panels_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panels_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &arrow VanishedColor)
+
+(INIT &arrow_box BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&arrow (:C Col))))
+
+(INIT &bar_count Cardinality
+  (key ((&arrow_box.cell *P)
+        (&arrow_box.box *B)
+        (inside (:A P) B)
+        (same_dist ^D (:P1 P) (:P2 B)))
+    (member ((:m P))
+      (&arrow_box.cell *P)
+      (&arrow_box.box *B)
+      (inside (:A P) B)
+      (same_dist D (:P1 P) (:P2 B)))))
+
+(DET &bg DominantColor)
+
+(DET &anchor SharedColor)
+
+(RULE &legend_panel
+  (input *P *Col)
+  (&arrow (:C Col))
+  (&panels_tile_of P *P_tile))
+
+(RULE &legend
+  (&panels_tile_of *P *P_tile)
+  (&legend_panel P_tile))
+
+(RULE &scene
+  (&panels_tile_of *P *P_tile)
+  (NOT (&legend_panel P_tile)))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&scene *P)))
+
+(RULE &cell
+  (&scene *P)
+  (input P *Col)
+  (&view.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(INIT &bar Order
+  (member ((:t D))
+    (&bar_count.size (:key *D)))
+  (score ((:t D) (:S N))
+    (&bar_count.size (:key *D) *N)))
+
+(RULE &heading
+  (&bar.maximal (:t *D_bar))
+  (opposite (:D D_bar) (:Opp *D)))
+
+(RULE &payload
+  (&legend *P)
+  (input P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&anchor (:C Col)))
+  (NOT (&arrow (:C Col))))
+
+(INIT &pay_box BoundingBox
+  (cell (P)
+    (&payload *P)))
+
+(RULE &target
+  (&cell *P_intile *Col)
+  (&anchor (:C Col)))
+
+(ALTS $target "what the payload attaches to" $Colored
+  (ALT $Template
+    (RULE &template
+      (&legend *P)
+      (input P *Col)
+      (&anchor (:C Col)))
+
+    (INIT &occ Occurrences
+      (cell (P (:v Col))
+        (&scene *P)
+        (input P *Col))
+      (shape (P (:v Col))
+        (&template *P *Col)))
+
+    (RULE &target
+      (&occ.occurrence (:P *B_occ))
+      (&template (:P *S))
+      (compose (:A B_occ) (:B S) (:C *P))
+      (&scene P)
+      (&view.box *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+(ALTS $aim "how the arrow names a direction" $Widest
+  (ALT $Glyph
+    ;; Each example's arrow is one copy of the chart, in its own pose.
+    (INIT &bbox BoundingBox
+      (key ((ex_input ^E *P *Col)
+            (&arrow (:C Col)))
+        (cell (P)
+          (ex_input E *P *Col)
+          (&arrow (:C Col)))))
+
+    (DET &glyph
+      (&bbox.cell (:key *E) (:P *P2))
+      (&bbox.box (:key E) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (DET &tip DirDomain)
+
+    (RIGID_DET &chart
+      (instance ((&glyph ^E))
+        (&glyph E *P)
+        (&tip *D)))
+
+    ;; The arrow's picture, read in its own box, against the chart in every pose.
+    (INIT &pose2 Inclusion
+      (pattern ((:pattern D) (:m P))
+        (&chart.glyph (:Pose *D) *P))
+      (observed ((:m P_inner))
+        (&arrow_box.cell *P)
+        (&arrow_box.box *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+    (RULE &heading
+      (&pose2.equal (:pattern *D2))
+      (&chart.tip (:Pose D2) *D))))
+
+(INIT &target_box BoundingBox
+  (cell ((:P P_intile))
+    (&target *P_intile)))
+
+(RULE &placement
+  (&heading *D)
+  (diag_dirs (:D *Diag) (:D1 D) (:D2 *D_x))
+  (opposite D (:Opp *D_back))
+  (diag_dirs (:D *Diag_pay) (:D1 D_back) (:D2 D_x))
+  (&target_box.box (:B *B_tgt))
+  (&cell (:P_intile *C))
+  (same_corner (:D Diag) (:P1 C) (:P2 B_tgt))
+  (neighbor (:P C) D (:Q *S))
+  (&legend *P)
+  (&pay_box.box (:B *B_pay))
+  (inside (:A P) (:B B_pay))
+  (same_corner (:D Diag_pay) (:P1 P) (:P2 B_pay))
+  (relative (:Base B_pay) (:X P) (:X_rel *P_inner))
+  (relative (:Base P_inner) (:X S) (:X_rel *V)))
+
+(RULE &stamp
+  (&placement *V)
+  (&payload *P *Col)
+  (&pay_box.box (:B *B_pay))
+  (inside (:A P) (:B B_pay))
+  (relative (:Base B_pay) (:X P) (:X_rel *P_inner))
+  (compose (:A P_inner) (:B V) (:C *P_intile))
+  (&cell P_intile))
+
+(RULE &output
+  (OR ((&stamp (:P_intile *P) *Col))
+      ((&cell (:P_intile P) Col)
+       (NOT (&stamp (:P_intile P))))))
+
+(OUT (&output ^P ^Col))

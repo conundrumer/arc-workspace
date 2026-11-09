@@ -1,0 +1,7 @@
+;; inputs 75a3897b5fcfdfc2d7ab7f7796196fd6ccd4395ecd5a10d2b24e32058233abb6 programs/solvers/aedd82e4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aedd82e4
+
+(param &bg Color (0))
+(param &mark Color (1))
+(param &ink Color (2))

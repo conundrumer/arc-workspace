@@ -1,0 +1,163 @@
+;; inputs 9a043fb7ad21dd3d245f463a9a07f537babd7ebe62fcdbcf8268d4afe64ddbae programs/solvers/ef135b50.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ef135b50
+
+(INPUT solid-rectangles "the cells of &object_color form solid axis-aligned rectangles on a field of one other color, and no two rectangles touch, by side or by corner"
+
+  (DET &object_color UnchangedColor)
+
+  (INIT &pieces8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (&object_color (:C Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT bridge-facing-pairs "two rectangles face each other when they share a line along &bridge_axis; their strip is the cells strictly between them on the lines they share. A pair whose strip holds no cell of &object_color is bridged, and every cell of its strip takes &bridge_color; a pair whose strip holds a rectangle cell is not bridged on any of its lines"
+
+  (DET &bridge_axis AxisDomain)
+
+  (DET &bridge_color
+    (ex_output *E (:Col *C))
+    (NOT (ex_input E (:Col C))))
+
+  (INIT &runs Ray
+    (source (P)
+      (input *P *Col)
+      (&object_color (:C Col)))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&bridge_axis *A)
+      (axis4_of *D A))))
+
+(OUTPUT keep-rest "every other cell keeps its input color; no bridge is painted across &bridge_axis"
+
+  (INIT &pieces Connectivity
+    (node (P)
+      (input *P *Col)
+      (&object_color (:C Col))))
+
+  (RULE &piece
+    (&pieces.component *P *Id))
+
+  (INIT &extent BoundingBox
+    (key ((&piece ^Id *P))
+      (cell (P)
+        (&piece Id *P))))
+
+  (RULE &region
+    (&extent.box (:key (:Id *R)) *B)
+    (input *P)
+    (inside (:A P) B))
+
+  (INIT &cast_frame Frame
+    (key ((&region (:R ^Id) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&region (:R Id) *P)
+        (frame_extent P *A *N))))
+
+  (INIT &cast Ray
+    (key ((OR ((&region (:R ^Id) *P))
+              ((&region (:R Id))
+               (&bridge_axis *A)
+               (axis_of *D A))
+              ((&cast_frame.cell (:key Id) P))))
+      (source (P)
+        (&region (:R Id) *P))
+      (node (P)
+        (&cast_frame.cell (:key Id) *P))
+      (dir (D)
+        (&region (:R Id))
+        (&bridge_axis *A)
+        (axis_of *D A))))
+
+  (RULE &cast_cell
+    (&region (:R *Key))
+    (input))
+
+  (RULE &cast_ray
+    (&cast.ray (:key (:Id *Key)) *P *D *K (:Origin *Src))
+    (&cast_cell Key)
+    (input P))
+
+  (RULE &front
+    (&cast.ray (:key (:Id *R)) *P *D)
+    (&cast_cell (:Key R))
+    (input P)
+    (opposite D (:Opp *O))
+    (NOT (&cast_ray (:Key R) P (:D O))))
+
+  (RULE &strip
+    (&front (:R *X) *D *P)
+    (opposite D (:Opp *O))
+    (&front (:R *Y) (:D O) P))
+
+  (RULE &blocked
+    (&strip *X *Y *D *P)
+    (input P *Col)
+    (&object_color (:C Col)))
+
+  (RULE &bridge
+    (&strip *X *Y *D *P)
+    (NOT (&blocked X Y D))))
+
+(ALTS $unit "what a bridge spans" $PiecePair
+  (ALT $PiecePair
+    (ALTS $adj "which cells join into one piece" $SideJoin
+      (ALT $DiagonalJoin
+        (INPUT solid-rectangles "pieces are the 8-connected components of &object_color, and a piece's extent is its bounding box")
+        (OUTPUT bridge-facing-pairs "pieces join at corners as well as sides"
+          (RULE &piece
+            (&pieces8.component *P *Id)))))
+    (ALTS $strip "where the strip on a shared line ends" $BoxStrip
+      (ALT $CellwiseStrip
+        (OUTPUT bridge-facing-pairs "on each shared line the strip runs from the near piece's last cell on that line to the far piece's first cell on it"
+          (RULE &region
+            (&piece (:Id *R) *P))))))
+  (ALT $PerLineRun
+    (OUTPUT bridge-facing-pairs "on each line along &bridge_axis, each run of &background between two cells of &object_color takes &bridge_color; no pieces are read"
+      (DET &background
+        (ex_input *E *P (:Col *C))
+        (ex_output E P)
+        (NOT (ex_output E P (:Col C))))
+
+      (RULE &runs_between
+        (input *P *Col)
+        (&background (:C Col))
+        (&bridge_axis *A)
+        (axis4_of *D A)
+        (dir8_opposite D (:D2 *O))
+        (&runs.ray P D)
+        (&runs.ray P (:D O)))
+
+      (RULE &bridge
+        (&runs_between *P)))))
+
+(ALTS $border "whether the lines at the grid border take bridges" $AllLines
+  (ALT $BorderLinesUnbridged
+    (OUTPUT keep-rest "a line along &bridge_axis at the grid border also takes no bridge cell"
+      (RULE &border_line
+        (input *P)
+        (&bridge_axis *A)
+        (perp A *A2)
+        (axis_of *D (:A A2))
+        (margin (:B P) D (:K 0))))
+    (RULE &paint
+      (&bridge *P)
+      (NOT (&border_line P)))))
+
+(RULE &paint
+  (&bridge *P))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&bridge_color (:C *Col)))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

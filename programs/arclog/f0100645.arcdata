@@ -1,0 +1,108 @@
+;; inputs ecb5e20e37d74607ed31e2fc3cbf481990137e553048355b99317616f5a3c750 programs/solvers/f0100645.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0100645
+
+(param &background Color (7))
+
+(alts $choice
+  (alt $StrayStays
+    (witness stray-color-cell borderline $StrayBlocks
+      (relaxed shapes)
+      (separates "a 5 cell, a color neither wall has, sits in the path of a 4 cell in row 3: the concept erases it, $StrayStays keeps it in place and slides the 4 past it, $StrayBlocks keeps it and stops the 4 against it")
+      (input (grid
+        (4 7 7 7 7 7 7 7 6)
+        (4 7 7 4 4 7 7 7 6)
+        (4 7 7 7 4 7 7 7 6)
+        (4 7 7 5 7 7 4 7 6)
+        (4 7 7 7 7 7 7 7 6)
+        (4 7 7 7 7 6 7 7 6)
+        (4 7 7 7 6 6 6 7 6)))
+      (output concept (grid
+        (4 7 7 7 7 7 7 7 6)
+        (4 4 4 7 7 7 7 7 6)
+        (4 7 4 7 7 7 7 7 6)
+        (4 4 7 7 7 7 7 7 6)
+        (4 7 7 7 7 7 7 7 6)
+        (4 7 7 7 7 7 6 7 6)
+        (4 7 7 7 7 6 6 6 6)))
+      (output $PassOver (grid
+        (4 7 7 7 7 7 7 7 6)
+        (4 4 4 7 7 7 7 7 6)
+        (4 7 4 7 7 7 7 7 6)
+        (4 4 7 5 7 7 7 7 6)
+        (4 7 7 7 7 7 7 7 6)
+        (4 7 7 7 7 7 6 7 6)
+        (4 7 7 7 7 6 6 6 6)))
+      (output $StrayBlocks (grid
+        (4 7 7 7 7 7 7 7 6)
+        (4 4 4 7 7 7 7 7 6)
+        (4 7 4 7 7 7 7 7 6)
+        (4 7 7 5 4 7 7 7 6)
+        (4 7 7 7 7 7 7 7 6)
+        (4 7 7 7 7 7 6 7 6)
+        (4 7 7 7 7 6 6 6 6))))))
+
+(alts $blocking
+  (alt $StrayBlocks
+    (witness stray-color-cell borderline $StrayBlocks)))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "train0 input with background 0 in place of 7: the concept at background 7 paints the field 7, background=DominantColor keeps 0, and the stray branches keep the 0 cells as strays")
+      (input (grid
+        (4 0 0 0 4 0 0 0 0 6)
+        (4 0 0 4 4 4 0 0 0 6)
+        (4 0 0 0 0 0 0 0 0 6)
+        (4 0 0 0 0 6 0 0 0 6)
+        (4 0 0 0 4 6 6 6 0 6)
+        (4 0 0 0 4 0 0 0 0 6)
+        (4 0 0 6 6 0 0 0 0 6)
+        (4 0 4 6 0 0 0 6 0 6)
+        (4 0 4 4 0 0 6 6 0 6)
+        (4 0 4 4 4 0 0 0 0 6)))
+      (output ($Erase &background=$Stored) (grid
+        (4 7 4 7 7 7 7 7 7 6)
+        (4 4 4 4 7 7 7 7 7 6)
+        (4 7 7 7 7 7 7 7 7 6)
+        (4 7 7 7 7 7 6 7 7 6)
+        (4 4 7 7 7 7 6 6 6 6)
+        (4 4 7 7 7 7 7 7 7 6)
+        (4 7 7 7 7 7 7 6 6 6)
+        (4 4 7 7 7 7 7 6 6 6)
+        (4 4 4 7 7 7 7 6 6 6)
+        (4 4 4 4 7 7 7 7 7 6)))
+      (output &background=$Derived (grid
+        (4 0 4 0 0 0 0 0 0 6)
+        (4 4 4 4 0 0 0 0 0 6)
+        (4 0 0 0 0 0 0 0 0 6)
+        (4 0 0 0 0 0 6 0 0 6)
+        (4 4 0 0 0 0 6 6 6 6)
+        (4 4 0 0 0 0 0 0 0 6)
+        (4 0 0 0 0 0 0 6 6 6)
+        (4 4 0 0 0 0 0 6 6 6)
+        (4 4 4 0 0 0 0 6 6 6)
+        (4 4 4 4 0 0 0 0 0 6)))
+      (output $PassOver (grid
+        (4 0 4 0 7 0 0 0 0 6)
+        (4 4 4 4 7 7 0 0 0 6)
+        (4 0 0 0 0 0 0 0 0 6)
+        (4 0 0 0 0 7 6 0 0 6)
+        (4 4 0 0 7 7 6 6 6 6)
+        (4 4 0 0 7 0 0 0 0 6)
+        (4 0 0 7 7 0 0 6 6 6)
+        (4 4 7 7 0 0 0 6 6 6)
+        (4 4 4 7 0 0 7 6 6 6)
+        (4 4 4 4 7 0 0 0 0 6)))
+      (output $StrayBlocks (grid
+        (4 0 0 0 4 0 0 0 0 6)
+        (4 0 0 4 4 4 0 0 0 6)
+        (4 0 0 0 0 0 0 0 0 6)
+        (4 0 0 0 0 6 0 0 0 6)
+        (4 0 0 0 4 6 6 6 0 6)
+        (4 0 0 0 4 0 0 0 0 6)
+        (4 0 0 6 6 0 0 0 0 6)
+        (4 0 4 6 0 0 0 6 0 6)
+        (4 0 4 4 0 0 6 6 0 6)
+        (4 0 4 4 4 0 0 0 0 6))))))

@@ -1,0 +1,189 @@
+;; inputs 069b26949e41364169c2d3fa10badc04a1b0877833fa05d81ed362c2f863610b programs/solvers/3a25b0d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3a25b0d8
+
+(INPUT ink "the background is the color that covers the grid, and the rest of the grid is ink")
+
+(INPUT figures "the ink forms two figures, each one body of ink; the plain figure is the one drawn in a single color, and the other is the painted figure")
+
+(INPUT holes "a figure's walls are its cells in the plain figure's color, and its holes are what those walls close off from the grid edge")
+
+(INPUT mirrored "each figure folds onto itself across one axis of its box, and across no other axis")
+
+(INPUT upright "that axis is the same in every input, and the figures fold left to right")
+
+(INPUT midline "the midline's axis is the one the parameters name"
+
+  (INIT &ground_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &ground Order
+    (member ((:t Col))
+      (&ground_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ground_count.size (:key *Col) *N)))
+
+  ;; A figure's walls meet at the corners.
+  (INIT &figures Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&ground.maximal (:t Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &bbox BoundingBox
+    (key ((&figures.component (:Id ^F) *P))
+      (cell (P)
+        (&figures.component (:Id F) *P))))
+
+  (RULE &fig_inner
+    (input *P)
+    (&bbox.box (:key *F) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &fig_sym_src
+    (&figures.component (:Id *Key) (:P *P2))
+    (&fig_inner (:F Key) (:P P2) (:P_inner *P)))
+
+  ;; Nothing privileges either figure, so either one gives the axis, and a
+  ;; disagreement leaves it multivalued.
+  (INIT &fig_sym Agreement
+    (key ((OR ((&figures.component (:Id ^F) *P)
+               (&fig_inner F P *P_inner))
+              ((&fig_sym_src (:Key F) (:P P_inner)))))
+      (source ((:P P_inner))
+        (&figures.component (:Id F) *P)
+        (&fig_inner F P *P_inner))
+      (target ((:P P_inner))
+        (&fig_sym_src (:Key F) (:P *P_inner))))))
+
+(OUTPUT answer "each hole of the plain figure takes the color of the hole at the same place in the painted figure"
+  (APPROXIMATED "a hole's class is the side of the midline it lies on, and a hole that crosses the midline is a class of its own; its rank is its place along the midline among the holes of its class. Two holes are at the same place when their class and their rank agree.")
+
+  ;; The midline's axis.
+  (DET &class_axis AxisDomain)
+
+  (INIT &fig_col Singleton
+    (key ((&figures.component (:Id ^F) *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&figures.component (:Id F) *P)
+        (input P *Col))))
+
+  (RULE &wall_cell
+    (&figures.component (:Id *F) *P)
+    (input P *Col)
+    (&fig_col.value (:v Col)))
+
+  (INIT &closed Enclosure
+    (key ((&figures.component (:Id ^F)))
+      (cell (P)
+        (input *P)
+        (NOT (&wall_cell F P)))))
+
+  (RULE &hole_inner
+    (&closed.enclosed (:key *F) *P (:Id *R))
+    (&fig_inner F P *P_inner))
+
+  (RULE &class_axis2
+    (&class_axis *A))
+
+  (RULE &class_dir
+    (&class_axis2 *A)
+    (axis_of *D A))
+
+  (RULE &rank_dir
+    (&class_axis2 *A)
+    (perp A *A2)
+    (axis_of *D (:A A2)))
+
+  (RULE &off_side
+    (&hole_inner *R *P_inner)
+    (&class_dir *A *D)
+    (dist_pair (:P P_inner) D *K *K2)
+    (>= K K2))
+
+  (RULE &side
+    (&closed.enclosed (:Id *R))
+    (&class_dir *A *D)
+    (NOT (&off_side A R D)))
+
+  ;; The holes of one class share an id.
+  (INIT &hole_class Quotient
+    (equivalent ((:a A R) (:b A (:R R2)))
+      (&class_axis2 *A)
+      (&closed.enclosed (:Id *R))
+      (&closed.enclosed (:Id *R2))
+      (OR ((&side A R *D)
+           (&side A (:R R2) D))
+          ((NOT (&side A R))
+           (NOT (&side A (:R R2)))))))
+
+  ;; How far toward an edge of the box a hole reaches.
+  (INIT &hole_box BoundingBox
+    (key ((&hole_inner ^R *P_inner))
+      (cell ((:P P_inner))
+        (&hole_inner R *P_inner))))
+
+  (RULE &hole_rank_elem
+    (&closed.enclosed (:key *F) (:Id *R))
+    (&rank_dir *A *D)
+    (&hole_class.class (:a A R) (:Id *C)))
+
+  (INIT &hole_rank Order
+    (key ((&hole_rank_elem ^A ^F ^D ^C *R))
+      (member ((:t R))
+        (&hole_rank_elem A F D C *R))
+      (score ((:t R) (:S K))
+        (&hole_rank_elem A F D C *R)
+        (&hole_box.box (:key R) *B)
+        (margin B D *K))))
+
+  ;; A painted hole holds one color.
+  (INIT &hole_col Singleton
+    (key ((&closed.enclosed *P (:Id ^R))
+          (input P *Col))
+      (member ((:v Col))
+        (&closed.enclosed *P (:Id R))
+        (input P *Col)))))
+
+(OUTPUT crop "the output is the grid inside the plain figure's box, with that figure's holes painted")
+
+(ALTS $choice "where the midline's axis comes from" $Stored
+  (ALT $Mirror
+    (INPUT midline "the midline's axis is the one a figure folds onto itself across"
+      (RULE &fig_sym_map
+        (&fig_sym_src *Key)
+        (d4_elem *D)
+        (NOT (&fig_sym.mismatch (:key (:F Key)) D)))
+
+      (RULE &class_axis2
+        (axis_inversion *A (:T *D)) (axis_elem A)
+        (&fig_sym_map D)))))
+
+(RULE &partner
+  (&fig_col.value (:key *F))
+  (&hole_rank.rank (:key *A F *D *C) (:t *R) (:R *N))
+  (&hole_rank.rank (:key A (:F *F2) D C) (:t *R_src) (:R N))
+  (NOT (&fig_col.value (:key (:F F2)))))
+
+(RULE &output
+  (&class_axis2 *A)
+  (&fig_col.value (:key *F) (:v *C_wall))
+  (&fig_inner F (:P *P2) (:P_inner *P))
+  (OR ((&closed.enclosed (:key F) (:P P2) (:Id *R))
+       (&partner A R *R_src)
+       (&hole_col.value (:key (:R R_src)) (:v *Col)))
+      ((&figures.component (:Id F) (:P P2))
+       (= Col C_wall))
+      ((NOT (&figures.component (:Id F) (:P P2)))
+       (NOT (&closed.enclosed (:key F) (:P P2)))
+       (&ground.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

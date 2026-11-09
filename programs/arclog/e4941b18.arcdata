@@ -1,0 +1,143 @@
+;; inputs df2aab782855c1c52dbd3f7764d318505918903df8da759d380c1661277c5592 programs/solvers/e4941b18.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e4941b18
+
+(param &background Color (7))
+(param &pusher_color Color (2))
+(param &pushed_color Color (8))
+(param &block_color Color (5))
+(param &gravity Dir (DIR_B))
+
+(alts $f
+  (alt $BlockAsNonBackground
+    (witness stray-cell-beyond-block borderline concept
+      (relaxed background)
+      (separates "A cell of another color stands on the floor two columns past the block. Finding the block by its color leaves the pushed mark beside the block; taking every non-background cell other than the marks as the block moves the landing past that stray cell.")
+      (input (grid
+        (7 7 7 7 7 7 7 7)
+        (7 2 7 8 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 3 7)))
+      (output $BlockByColor (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 8 7 3 7)))
+      (output $BlockAsNonBackground (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 3 8))))))
+
+(alts $s
+  (alt $LandOnBlockBase
+    (witness block-above-floor variant concept
+      (relaxed block)
+      (separates "Background rows lie under the block. Falling to the grid edge lands the pushed mark on the bottom row; landing in the line of the block's base stops it beside the block's bottom row.")
+      (input (grid
+        (7 7 7 7 7 7 7)
+        (7 2 7 8 7 7 7)
+        (7 5 5 5 5 7 7)
+        (7 5 5 5 5 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)))
+      (output $FallToEdge $FallUntilBlocked (grid
+        (7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7)
+        (7 5 5 5 5 7 7)
+        (7 5 5 5 5 7 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 8 7)))
+      (output $LandOnBlockBase (grid
+        (7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7)
+        (7 5 5 5 5 7 7)
+        (7 5 5 5 5 8 7)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)))))
+  (alt $FallUntilBlocked
+    (witness cell-in-fall-column borderline $FallUntilBlocked
+      (relaxed background)
+      (separates "A cell of another color stands on the floor in the column the pushed mark falls down. Falling to the grid edge paints over that cell; falling until blocked stops on top of it.")
+      (input (grid
+        (7 7 7 7 7 7 7 7)
+        (7 2 7 8 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 3 7 7 7)))
+      (output ($BlockByColor $FallToEdge) $LandOnBlockBase (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 8 7 7 7)))
+      (output $BlockAsNonBackground (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 3 8 7 7)))
+      (output $FallUntilBlocked (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 2 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 7 7 7 7)
+        (5 5 5 5 8 7 7 7)
+        (5 5 5 5 3 7 7 7))))))
+
+(alts $g
+  (alt $GravityFromMarks
+    (witness marks-beside-block variant $GravityFromMarks
+      (relaxed block)
+      (relaxed marks-on-top)
+      (separates "The marks stand beside the block's left side and the block touches the right edge. A stored gravity of bottom finds no marks on top of the block and is undefined; gravity taken from the marks' side drops the pushed mark toward the right edge.")
+      (input (grid
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)
+        (7 8 5 5 5 5 5)
+        (7 7 5 5 5 5 5)
+        (7 2 5 5 5 5 5)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7)))
+      (output $StoredGravity undefined)
+      (output $GravityFromMarks (grid
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 8)
+        (7 2 5 5 5 5 5)
+        (7 7 5 5 5 5 5)
+        (7 7 5 5 5 5 5)
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor ordinary concept
+      (separates "The block holds more cells than the background. A stored background blanks the pusher's cell to 7; a background derived as the commonest color is 5 and blanks it to 5.")
+      (input (grid
+        (7 2 7 8 7 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)))
+      (output &background=$Stored (grid
+        (7 7 7 2 7 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 8)))
+      (output ($FallToEdge &background=$Derived) (grid
+        (7 5 7 2 7 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 7)
+        (5 5 5 5 5 8)))
+      (output ($FallUntilBlocked &background=$Derived) undefined))))

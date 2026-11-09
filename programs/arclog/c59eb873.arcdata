@@ -1,0 +1,7 @@
+;; inputs 0b1d52e51f4e3bc6e4e4b807abe064a295aec6415d23606ee3d3a74648630de5 programs/solvers/c59eb873.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c59eb873
+
+(representative 60c09cac)
+
+(param &scale number (2))

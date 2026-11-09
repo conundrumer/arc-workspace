@@ -1,0 +1,191 @@
+;; inputs 2631acaef130b1b70e70d849feec8108ac5c838464759a43946ed584099190e4 programs/solvers/e21d9049.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e21d9049
+
+(INPUT crossing-strips "on a field of bg 0, the non-bg cells form one horizontal strip and one vertical strip, each one cell wide, that share exactly one cell, where they cross.")
+
+(INPUT distinct-colors-per-strip "no color occurs twice in one strip.")
+
+(INPUT equal-length "the two strips have the same length.")
+
+(OUTPUT repeat-along-line "each cell of a strip's line, its row for the horizontal strip and its column for the vertical strip, takes the color of the strip cell whose distance from it along the line is a multiple of the strip's length, so the strip's color sequence repeats with a period of its length out to both grid edges, and the strip's own cells keep their colors."
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &uncommon
+    (&common_count.size (:key *Col))
+    (ex_input *E)
+    (NOT (&common.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&uncommon (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &run Ray
+    (source (P)
+      (&ink *P))
+    (node (P)
+      (&ink *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &run_run_full
+    (&run.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &crossing
+    (&ink *P)
+    (neighbor P (:D *D1) (:Q *Y1))
+    (&ink (:P Y1))
+    (neighbor P (:D *D2) (:Q *Y2))
+    (&ink (:P Y2))
+    (axis_of (:D D1) (:A *A1))
+    (axis_of (:D D2) (:A *A2))
+    (perp (:A A1) A2))
+
+  (RULE &strip_end
+    (&crossing (:P *X))
+    (dir_elem *D)
+    (&run.end *P D (:Origin X)))
+
+  (INIT &cast_frame Frame
+    (key ((&strip_end ^D (:P *E))
+          (frame_extent (:P E) *A *N))
+      (extent (A N)
+        (&strip_end D (:P *E))
+        (frame_extent (:P E) *A *N))))
+
+  (RULE &strip
+    (OR ((&crossing *P)
+         (&ink P *Col)
+         (axis_elem *A))
+        ((&crossing (:P *X))
+         (axis_of *D A)
+         (&run_run_full (:V1 X) (:V2 D) (:V3 P))
+         (&ink P Col))))
+
+  (INIT &strip_size Cardinality
+    (key ((&strip ^A (:P *Q)))
+      (member ((:m Q))
+        (&strip A (:P *Q)))))
+
+  (RULE &line
+    (&crossing (:P *X))
+    (axis_elem *A)
+    (input *P)
+    (same_line A (:P X) (:Q P)))
+
+  (RULE &along
+    (&strip *A (:P *Q))
+    (&line A *P)
+    (axis_of *D A)
+    (relative (:Base Q) (:X P) (:X_rel *V))
+    (opposite D (:Opp *O))
+    (margin (:B V) (:D O) *K)
+    (>= K 0))
+
+  (RULE &broken
+    (&strip *A (:P *Q) (:Col *C1))
+    (&strip A (:P *Q2) (:Col *C2))
+    (!= C1 C2)
+    (&along A Q (:P Q2) *K)
+    (> K 0))
+
+  (INIT &shortest Order
+    (key ((OR ((&strip ^A (:P *Q2))
+               (&along A *Q (:P Q2) *K)
+               (> K 0)
+               (NOT (&broken A K)))
+              ((&strip_size.size (:key A) (:N K)))))
+      (member ((:t K))
+        (OR ((&strip A (:P *Q2))
+             (&along A *Q (:P Q2) *K)
+             (> K 0)
+             (NOT (&broken A K)))
+            ((&strip_size.size (:key A) (:N K)))))
+      (score ((:t K) (:S K))
+        (OR ((&strip A (:P *Q2))
+             (&along A *Q (:P Q2) *K)
+             (> K 0)
+             (NOT (&broken A K)))
+            ((&strip_size.size (:key A) (:N K)))))))
+
+  (INIT &palette Cardinality
+    (member ((:m Col))
+      (&ink *Col))
+    (domain ()))
+
+  (RULE &cast_blocked
+    (&strip_end (:D *Key))
+    (&ink *P))
+
+  (INIT &cast Ray
+    (key ((OR ((&strip_end ^D))
+              ((&cast_frame.cell (:key D) *P)
+               (NOT (&cast_blocked (:Key D) P)))))
+      (source ((:P E))
+        (&strip_end D (:P *E)))
+      (node (P)
+        (&cast_frame.cell (:key D) *P)
+        (NOT (&cast_blocked (:Key D) P)))
+      (dir (D)
+        (&strip_end D)))))
+
+(OUTPUT rest-unchanged "every cell on neither line keeps its input color.")
+
+(ALTS $u "what repeats along each strip's line" $StripLength
+  (ALT $ShortestPeriod
+    (OUTPUT repeat-along-line "the period is the strip's shortest period, the least p at which the strip's colors repeat.")
+    (RULE &period
+      (&shortest.minimal (:key *A) (:t *K))))
+  (ALT $ColorCount
+    (OUTPUT repeat-along-line "the period is the number of non-bg colors in the input; undefined where that period exceeds a strip's length or conflicts with the strip's own colors.")
+    (RULE &period
+      (&strip *A)
+      (&palette.size (:N *K)))))
+
+(ALTS $x "how far each line extends" $ToEdge
+  (ALT $StopAtObstacle
+    (OUTPUT repeat-along-line "from each end of the strip, the repetition extends outward until the first non-bg cell, and that cell and every cell past it keep their input colors."
+      (RULE &cast_cell
+        (&strip_end (:D *Key))
+        (input)))
+    (RULE &painted
+      (OR ((&strip *P))
+          ((&cast.ray (:key *D) P D)
+           (&cast_cell (:Key D))
+           (input P))))))
+
+(RULE &period
+  (&strip_size.size (:key *A) (:N *K)))
+
+(RULE &line_color
+  (&period *A *K)
+  (&strip A (:P *Q) *Col)
+  (&along A Q *P (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder 0)))
+
+(RULE &painted
+  (&line *P))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&line_color P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

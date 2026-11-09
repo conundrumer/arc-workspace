@@ -1,0 +1,154 @@
+;; inputs 8cef58da48a53cda3ccebbb836421de58a4705e6e11a1e9c09e660ddca932fc4 programs/solvers/5289ad53.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5289ad53
+
+(DET &dim ConstOutDimAxis)
+
+;; The reading order the marks render in: a corner and the primary axis.
+(DET &corner DiagDirDomain)
+
+(DET &order_axis AxisDomain)
+
+(DET &reading_axis
+  (ex_output)
+  (&order_axis *A))
+
+(DET &reading_corner
+  (ex_output)
+  (&corner *D))
+
+(INIT &reading2 Order
+  (key ((ex_output ^E *P))
+    (member ((:t P))
+      (ex_output E *P))
+    (score ((:t P) (:S K1))
+      (ex_output E *P)
+      (&reading_corner (:D *Diag))
+      (&reading_axis *A)
+      (diag_dist P Diag A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (ex_output E *P)
+      (&reading_corner (:D *Diag))
+      (&reading_axis *A)
+      (diag_dist P Diag A *K1 *K2))))
+
+;; Where each color's block starts: the output renders marks in colors
+;; the input holds.
+(INIT &first Order
+  (key ((ex_input ^E ^Col))
+    (member ((:t R))
+      (ex_output E *P Col)
+      (&reading2.rank (:key E) (:t P) *R))
+    (score ((:t R) (:S R))
+      (ex_output E *P Col)
+      (&reading2.rank (:key E) (:t P) *R))))
+
+;; The blocks follow one another, so a color ranks by its start.
+(INIT &place Order
+  (key ((&first.minimal (:key ^E) (:t *K)))
+    (member ((:t K))
+      (&first.minimal (:key E) (:t *K)))
+    (score ((:t K) (:S K))
+      (&first.minimal (:key E) (:t *K)))))
+
+(DET &color_rank
+  (&first.minimal (:key *E *Col) (:t *K))
+  (&place.rank (:key E) (:t K) *R))
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&color_rank Col))
+
+(INIT &blocks Connectivity
+  (key ((&mark_cell ^Col *P))
+    (node (P)
+      (&mark_cell Col *P))))
+
+(RULE &mark
+  (&blocks.component (:key *Col) *Id))
+
+(INIT &frame Frame
+  (extent (A N)
+    (&dim *A *N)))
+
+(INIT &reading Order
+  (member ((:t P))
+    (&frame.cell *P))
+  (score ((:t P) (:S K1))
+    (&frame.cell *P)
+    (&corner *D)
+    (&order_axis *A)
+    (diag_dist P (:Diag D) A *K1 *K2))
+  (secondary_score ((:t P) (:S K2))
+    (&frame.cell *P)
+    (&corner *D)
+    (&order_axis *A)
+    (diag_dist P (:Diag D) A *K1 *K2)))
+
+(DET &fill
+  (ex_output *Col)
+  (NOT (&color_rank Col)))
+
+(ALTS $choice "The cases claim what one mark is" $Blocks
+  (ALT $Runs
+    (DET &run_axis AxisDomain)
+
+    ;; Within one line, a component is a run: a perpendicular step leaves the key.
+    (INIT &runs Connectivity
+      (key ((&mark_cell ^Col *P)
+            (&run_axis *A)
+            (split P A (:Across ^L)))
+        (node (P)
+          (&mark_cell Col *P)
+          (&run_axis *A)
+          (split P A (:Across L)))))
+
+    (RULE &mark
+      (&runs.component (:key *Col) *Id)))
+  (ALT $Lines
+    (DET &line_axis AxisDomain)
+
+    (INIT &lines Quotient
+      (equivalent ((:a P) (:b Q))
+        (&mark_cell *Col *P)
+        (&mark_cell Col (:P *Q))
+        (&line_axis *A)
+        (same_line A P Q)))
+
+    (RULE &mark
+      (&mark_cell *Col *P)
+      (&lines.class (:a P) *Id))))
+
+;; The marks the color's block starts after.
+(INIT &preceding Cardinality
+  (key ((&color_rank ^Col))
+    (member ((:m Id))
+      (&color_rank Col *R)
+      (&color_rank (:Col *Col2) (:R *R2))
+      (< R2 R)
+      (&mark (:Col Col2) *Id))
+    (domain ()
+      (&color_rank Col))))
+
+;; Those marks and the color's own — where its block ends.
+(INIT &through Cardinality
+  (key ((OR ((&preceding.member (:key ^Col) (:m *Id)))
+            ((&mark Col Id))))
+    (member ((:m Id))
+      (OR ((&preceding.member (:key Col) (:m *Id)))
+          ((&mark Col Id))))))
+
+(RULE &slot
+  (&reading.rank (:t *P) *R)
+  (&preceding.size (:key *Col) (:N *S))
+  (<= S R)
+  (&through.size (:key Col) (:N *E))
+  (< R E))
+
+(RULE &output
+  (&frame.cell *P)
+  (OR ((&slot P *Col))
+      ((NOT (&slot P))
+       (&fill Col))))
+
+(OUT (&output ^P ^Col))

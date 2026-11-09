@@ -1,0 +1,103 @@
+;; inputs a0797ae8f0b62fbc0fefa4e5174f0a1f33ade5dcb75edb4e184747ebf369c5d5 programs/solvers/18419cfa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 18419cfa
+
+(DET &frame UnchangedColor)
+
+(DET &ink RarestColor)
+
+(INIT &closed Enclosure
+  (cell (P)
+    (input *P *Col)
+    (NOT (&frame (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&closed.enclosed *P ^Id))
+    (cell (P)
+      (&closed.enclosed *P Id))))
+
+(RULE &inner
+  (&closed.enclosed *P *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col))
+  (&inner *Id P *P_inner))
+
+(DET &ink_out
+  (ex_output *E *P *Col)
+  (&ink (:C Col))
+  (&inner E *Id P *P_inner))
+
+(INIT &inv Agreement
+  (key ((&ink_out ^E ^Id *P_inner))
+    (source ((:P P_inner))
+      (&ink_out E Id *P_inner))
+    (target ((:P P_inner))
+      (&ink_out E Id *P_inner))))
+
+;; The group whose members are exactly the transforms every finished
+;; pattern is invariant under.
+(INIT &grp Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&inv.mismatch D))))
+
+(DET &sym
+  (&grp.equal (:pattern *S)))
+
+(RULE &flip
+  (&ink_cell *Id)
+  (&sym *S)
+  (sym_member S *D))
+
+(ALTS $choice "which mirrors apply" $Group
+  (ALT $OneSided
+    (RULE &far_cell
+      (&ink_cell *Id *P_inner)
+      (dist_pair (:P P_inner) *D *K *K2)
+      (>= K K2))
+
+    (RULE &one_sided
+      (&ink_cell *Id)
+      (dir_elem *D)
+      (NOT (&far_cell Id D)))
+
+    (RULE &flip
+      (&one_sided *Id (:D *D2))
+      (axis_of (:D D2) *A)
+      (axis_inversion A (:T *D))))
+  (ALT $Doorway
+    (RULE &doorway
+      (&closed.enclosed *P *Id)
+      (&frame (:C *Wall))
+      (opposite *D (:Opp *D2))
+      (axis_of D (:A *A2))
+      (perp (:A A2) (:A2 *A))
+      (neighbor P D (:Q *Q1))
+      (input (:P Q1) (:Col Wall))
+      (neighbor P (:D D2) (:Q *Q2))
+      (input (:P Q2) (:Col Wall)))
+
+    (RULE &flip
+      (&doorway *Id *A)
+      (axis_inversion A (:T *D)))))
+
+(RULE &paint
+  (&ink_cell *Id *P_inner)
+  (&flip Id *D)
+  (apply D (:P P_inner) (:P_out *P_inner2))
+  (&inner Id *P (:P_inner P_inner2)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&paint P)))
+      ((&paint P)
+       (&ink (:C Col)))))
+
+(OUT (&output ^P ^Col))

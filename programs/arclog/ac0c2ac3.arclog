@@ -1,0 +1,128 @@
+;; inputs c4b3f45c5910b10ac92572d175c056b0e38553da5759ff357aa42453ae528888 programs/solvers/ac0c2ac3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac0c2ac3
+
+(INPUT square-odd "the input is a square grid with an odd side, so it has one center cell, and its rings are the cells at each Chebyshev distance from that center")
+
+(INPUT one-mark-per-ring "on a field of &bg, each ring holds exactly one mark, a cell of another color, and no two marks share a color"
+
+  (DET &lacking
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output (:Col C)))
+    (NOT (&lacking C))))
+
+(OUTPUT fill-ring "the output has the input's frame, and every cell of a ring takes the color of the mark that lies on that ring"
+
+  ;; P lies on ring K about center O: on the outline of the square that reaches
+  ;; K cells past O on every side.
+  (RULE &ring
+    (input (:P *O))
+    (centered (:P O))
+    (input *P)
+    (relative (:Base O) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K)
+    (uniform_outset K (:B *B_out))
+    (compose (:A O) (:B B_out) (:C *B))
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (RULE &mark_ring
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (&ring P *K))
+
+  (RULE &crowded
+    (&mark_ring *K *P)
+    (&mark_ring K (:P *Q))
+    (!= P Q))
+
+  (RULE &ring_color
+    (&mark_ring *K *Col)
+    (NOT (&crowded K)))
+
+  ;; The marked rings, outermost first.
+  (INIT &nest Order
+    (member ((:t K))
+      (&mark_ring *K))
+    (score ((:t K) (:S K))
+      (&mark_ring *K)))
+
+  ;; farther from the center lies outside
+  (RULE &outer_rank
+    (&nest.dual_rank (:t *K) *R))
+
+  (RULE &innermost
+    (&nest.minimal (:t *K))))
+
+(ALTS $rings "what a ring is" $CenterRings
+  (ALT $DepthRings
+    (INPUT square-odd "the grid may have any shape, and its rings are the cells at each distance from the nearest grid edge"
+      ;; P lies on ring K: on the outline of the frame inset by K on every side.
+      (RULE &ring
+        (input *P)
+        (margin (:B P) *D *K)
+        (uniform_inset K *B)
+        (inside (:A P) B)
+        (same_dist (:P1 P) (:P2 B)))
+
+      ;; nearer the edge lies outside
+      (RULE &outer_rank
+        (&nest.rank (:t *K) *R))
+
+      (RULE &innermost
+        (&nest.maximal (:t *K))))))
+
+(ALTS $unmarked "what a ring with no mark gets" $NeedsMark
+  (ALT $EmptyBg
+    (OUTPUT empty-bg "a ring with no mark keeps &bg")
+    (RULE &draw
+      (&ring *P *K)
+      (OR ((&ring_color K *Col))
+          ((NOT (&mark_ring K))
+           (&bg (:C Col))))))
+  (ALT $RankRings
+    (OUTPUT fill-ring "the output is a square with one ring per marked ring, and its rings, outermost first, take the colors of the marked rings, outermost first"
+      (RULE &canvas
+        (&innermost *K)
+        (&outer_rank K (:R *N))
+        (uniform_inset (:K N) (:B *C))
+        (&outer_rank (:R *K1))
+        (&outer_rank (:R *K2))
+        (axis_of (:D *D1) *A)
+        (perp A *A2)
+        (axis_of (:D *D2) (:A A2))
+        (jump (:P C) (:D D1) (:K K1) *Q)
+        (jump (:P Q) (:D D2) (:K K2) (:Q *P))))
+    (RULE &draw
+      (&canvas *P)
+      (&outer_rank *K (:R *J))
+      (uniform_inset (:K J) *B)
+      (inside (:A P) B)
+      (same_dist (:P1 P) (:P2 B))
+      (&ring_color K *Col))
+
+    (RULE &frame
+      (&canvas *P))))
+
+(RULE &draw
+  (&ring *P *K)
+  (&ring_color K *Col))
+
+(RULE &frame
+  (&ring *P))
+
+(RULE &blank
+  (&frame *P)
+  (NOT (&draw P)))
+
+(RULE &output
+  (&draw *P *Col)
+  (NOT (&blank)))
+
+(OUT (&output ^P ^Col))

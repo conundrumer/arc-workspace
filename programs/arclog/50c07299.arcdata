@@ -1,0 +1,7 @@
+;; inputs d30ad3875795b375226c142fedc29173f8c59a92d8048835d7db3a14516fc9da programs/solvers/50c07299.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 50c07299
+
+(param &bg Color (7))
+(param &ink Color (2))
+(param &dir DiagDir (DIAG_TR))

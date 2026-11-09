@@ -1,0 +1,7 @@
+;; inputs 18b46262bb1e9f90de79d2c3cc3723033278afc91f71305ea9f63b79c92b06d3 programs/solvers/178fcbfb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 178fcbfb
+
+(param &bg Color (0))
+(param &line_axis (Color Axis) (1 AXIS_H) (3 AXIS_H) (2 AXIS_V))
+(param &top_axis Axis (AXIS_H))

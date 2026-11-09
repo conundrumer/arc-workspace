@@ -1,0 +1,63 @@
+;; inputs 63a2b18d1a7a8ec39a60fb2dcac91e1a3a4e3f9c71394a2ff314ac590b935c9f programs/solvers/57edb29d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 57edb29d
+
+(DET &bg VanishedColor)
+
+(INIT &panel Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; Each panel's bounding box.
+(INIT &bbox BoundingBox
+  (key ((&panel.component *P ^Id))
+    (cell (P)
+      (&panel.component *P Id))))
+
+(RULE &field
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B))
+  (input P *Col))
+
+(RULE &panel_inner
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &mark
+  (&panel_inner *Id *P *P_inner)
+  (input P *Col)
+  (NOT (&field Id Col)))
+
+(RULE &target_cell
+  (&panel_inner *Id *P_inner)
+  (NOT (&mark Id)))
+
+(RULE &anchor
+  (&mark *P_inner)
+  (dist_pair (:P P_inner) *D *K *K2)
+  (<= K K2))
+
+(RULE &anchored
+  (&target_cell *P_inner)
+  (&anchor (:P_inner *M_inner) *D *K)
+  (axis_of D *A)
+  (margin (:B P_inner) D K))
+
+(RULE &design
+  (&mark (:P_inner *M_inner) *Col)
+  (perp *A *A2)
+  (&anchored *P_inner M_inner A)
+  (&anchored P_inner M_inner (:A A2)))
+
+(RULE &output
+  (&target_cell *Id (:P_inner *P))
+  (OR ((&design (:P_inner P) *Col))
+      ((NOT (&design (:P_inner P)))
+       (&field Id Col))))
+
+(OUT (&output ^P ^Col))

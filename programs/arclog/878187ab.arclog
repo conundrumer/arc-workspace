@@ -1,0 +1,73 @@
+;; inputs 1fba0e8711868654dcde24ffa3968e4c72a9ed8ecbd7acf5aab515909bf59a12 programs/solvers/878187ab.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 878187ab
+
+(DET &bg DominantColor)
+
+(INIT &marks Cardinality
+  (key ((input (:P *P_grid_in) ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P_grid_in))
+      (input (:P *P_grid_in) Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &counts Order
+  (member ((:t N))
+    (&marks.size *N))
+  (score ((:t N) (:S N))
+    (&marks.size *N)))
+
+(DET &long_axis AxisDomain)
+
+(INIT &box Frame
+  (extent (A N)
+    (&long_axis (:A *A_long))
+    (OR ((perp (:A A_long) (:A2 *A))
+         (&counts.minimal (:t *N)))
+        ((= A A_long)
+         (&counts.maximal (:t N))))))
+
+(DET &anchor DiagDirDomain)
+
+(RULE &x_edge
+  (&anchor (:D *Diag))
+  (&long_axis (:A *A_long))
+  (perp (:A A_long) (:A2 *A))
+  (corner_dir (:C Diag) A *D))
+
+(RULE &xdiag_diagonal
+  (&box.cell *P)
+  (&x_edge (:D *E))
+  (corner_dir (:C *Diag) (:D E))
+  (diag_dist P Diag (:K1 *Ring) (:K2 Ring)))
+
+(DET &fill AnyOutNewColor)
+
+(DET &canvas_side ConstOutDim)
+
+(INIT &canvas Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&canvas_side *N)))
+
+(DET &x_color
+  (ex_output (:Col *C))
+  (NOT (&bg C))
+  (NOT (&fill C)))
+
+(RULE &paint
+  (&canvas.cell (:P *P_grid_out))
+  (&box.cell (:P *P_inner))
+  (&anchor (:D *Diag))
+  (same_corner (:D Diag) (:P1 P_grid_out) (:P2 P_inner))
+  (IF ((&xdiag_diagonal (:P P_inner)))
+      ((&x_color (:C *Col)))
+      ((&fill (:C Col)))))
+
+(RULE &output
+  (&canvas.cell *P)
+  (OR ((&paint (:P_grid_out P) *Col))
+      ((NOT (&paint (:P_grid_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

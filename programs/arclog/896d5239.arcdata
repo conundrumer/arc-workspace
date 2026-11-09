@@ -1,0 +1,7 @@
+;; inputs 64aeb97ebc0e9f857f2826de13eb0d0c8ff66b7b36252aee087816d175bcf195 programs/solvers/896d5239.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 896d5239
+
+(param &mark Color (3))
+(param &fill Color (8))
+(param &reach number (2))

@@ -1,0 +1,48 @@
+;; inputs ebaddc921aedfabffbef516b6d8507610f1955fb43a21fa94970adf94609fa49 programs/solvers/695367ec.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 695367ec
+
+;; Fixed output frame.
+(DET &frame_dim ConstOutDim)
+
+(INIT &frame_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&frame_dim *N)))
+
+;; Corner the ruling grows from.
+(DET &anchor DiagDirDomain)
+
+;; Width of a separating line.
+(DET &gap Period)
+
+;; Background fill between the lines.
+(DET &bg AnyOutNewColor)
+
+(RULE &run
+  (input *P)
+  (frame_extent P *A (:N *K)))
+
+(RULE &on_tile
+  (&frame_frame.cell *P)
+  (&anchor (:D *Diag))
+  (corner_dir (:C Diag) *A *D)
+  (&run A (:K *W))
+  (&gap (:K *G))
+  (margin (:B P) D (:K *T))
+  (divide T (:Side W) (:Gap G)))
+
+(RULE &ruled
+  (&frame_frame.cell *P)
+  (&anchor (:D *Diag))
+  (corner_dir (:C Diag) *D)
+  (NOT (&on_tile P D)))
+
+(RULE &output
+  (OR ((&ruled *P)
+       (input *Col))
+      ((&frame_frame.cell P)
+       (NOT (&ruled P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

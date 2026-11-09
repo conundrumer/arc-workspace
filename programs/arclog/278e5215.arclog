@@ -1,0 +1,63 @@
+;; inputs 326721f98e687195a8fc6d6a6581447cc03785c323cc7a3cbb0277879811045c programs/solvers/278e5215.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 278e5215
+
+(DET &bg DominantColor)
+
+(DET &stencil VanishedColor)
+
+;; The legend box edge the line row sits on.
+(DET &line_dir DirDomain)
+
+(RULE &stencil_cell
+  (input *P *Col)
+  (&stencil (:C Col)))
+
+(RULE &legend_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&stencil (:C Col))))
+
+(INIT &stencil_box BoundingBox
+  (cell (P)
+    (&stencil_cell *P)))
+
+(INIT &legend_box BoundingBox
+  (cell (P)
+    (&legend_cell *P)))
+
+(RULE &across
+  (&line_dir *D)
+  (axis_of D (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+(RULE &legend_inner
+  (&legend_cell *P *Col)
+  (&legend_box.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &line_color
+  (&legend_inner *P_inner *Col)
+  (&line_dir *D)
+  (margin (:B P_inner) D (:K 0)))
+
+(RULE &column_color
+  (&legend_inner *P_inner *Col)
+  (&line_dir *D)
+  (NOT (margin (:B P_inner) D (:K 0)))
+  (&across *A)
+  (split (:P P_inner) A (:Along *P_col)))
+
+(RULE &output
+  (input (:P *P2))
+  (&stencil_box.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (&across *A)
+  (split P A (:Along *P_col))
+  (IF ((&stencil_cell (:P P2)))
+      ((&column_color P_col *Col))
+      ((&line_color Col))))
+
+(OUT (&output ^P ^Col))

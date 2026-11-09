@@ -1,0 +1,130 @@
+;; inputs 166158c32a76bfab64ba6ff5d31192d5f33d18f64eb3968be2aeed76ca135573 programs/solvers/8ba14f53.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8ba14f53
+
+(DET &bg DominantColor)
+
+(DET &out_dim ConstOutDimAxis)
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (&out_dim *A *N)))
+
+;; The reading order the filled cells follow: from corner, axis primary.
+(DET &corner DiagDirDomain)
+
+(DET &axis AxisDomain)
+
+(RULE &stack_dir
+  (&corner (:D *C))
+  (&axis *A)
+  (corner_dir C A (:D *D_corner))
+  (opposite (:D D_corner) (:Opp *D)))
+
+;; Shapes fill in order of their nearest cell to this edge.
+(DET &order_dir DirDomain)
+
+(INIT &shapes Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &obj
+  (&shapes.component (:key *Col) *P *Id))
+
+;; Reading order over the output frame.
+(INIT &reading Order
+  (member ((:t P))
+    (&out_pos_frame.cell *P))
+  (score ((:t P) (:S K1))
+    (&out_pos_frame.cell *P)
+    (&corner (:D *C))
+    (&axis *A)
+    (diag_dist P (:Diag C) A *K1 *K2))
+  (secondary_score ((:t P) (:S K2))
+    (&out_pos_frame.cell *P)
+    (&corner (:D *C))
+    (&axis *A)
+    (diag_dist P (:Diag C) A *K1 *K2)))
+
+(ALTS $choice "what a shape is" $Shape
+  (ALT $Hue
+    (INIT &hues Quotient
+      (equivalent ((:a P) (:b Q))
+        (input *P *Col)
+        (input (:P *Q) Col)
+        (NOT (&bg (:C Col)))))
+
+    (RULE &obj
+      (input *P *Col)
+      (&hues.class (:a P) *Id)))
+  (ALT $Region
+    (INIT &regions Connectivity
+      (node (P)
+        (input *P *Col)
+        (NOT (&bg (:C Col)))))
+
+    (RULE &obj
+      (&regions.component *P *Id)
+      (input P *Col))))
+
+;; The cells a shape closes off from the grid edge.
+(INIT &closed Enclosure
+  (key ((&obj ^Col ^Id))
+    (cell (P)
+      (input *P)
+      (NOT (&obj Col Id P)))))
+
+(INIT &enclosed Cardinality
+  (key ((&closed.enclosed (:key ^Col ^Id) *P))
+    (member ((:m P))
+      (&closed.enclosed (:key Col Id) *P))))
+
+(RULE &block
+  (&enclosed.size (:key *Col *Id) *N)
+  (&reading.rank (:t *P) *R)
+  (< R N))
+
+(RULE &block_line
+  (&block *Col *Id *P)
+  (&axis *A)
+  (split P A (:Along *L)))
+
+;; Shape order: by the nearest cell to order_dir.
+(INIT &bbox BoundingBox
+  (key ((&obj ^Col ^Id *P))
+    (cell (P)
+      (&obj Col Id *P))))
+
+;; The lines the earlier shapes' blocks take: how far this block stacks.
+(INIT &offset Cardinality
+  (key ((OR ((&order_dir *D)
+             (&bbox.box (:key (:Col *C2) (:Id *I2)) (:B *B2))
+             (&bbox.box (:key (:Col ^C) (:Id ^I)) *B)
+             (nearer D (:P B2) (:Q B))
+             (&block_line (:Col C2) (:Id I2) *L))
+            ((&obj (:Col C) (:Id I)))))
+    (member ((:m (:Col C2) (:Id I2) L))
+      (&order_dir *D)
+      (&bbox.box (:key (:Col *C2) (:Id *I2)) (:B *B2))
+      (&bbox.box (:key (:Col C) (:Id I)) *B)
+      (nearer D (:P B2) (:Q B))
+      (&block_line (:Col C2) (:Id I2) *L))
+    (domain ()
+      (&obj (:Col C) (:Id I)))))
+
+(RULE &filled
+  (&block *Col (:Id *K_id) (:P *P0))
+  (&offset.size (:key (:C Col) (:I K_id)) (:N *S))
+  (&stack_dir *D)
+  (jump (:P P0) D (:K S) (:Q *P)))
+
+(RULE &output
+  (OR ((&filled *P *Col))
+      ((&out_pos_frame.cell P)
+       (NOT (&filled P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

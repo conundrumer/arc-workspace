@@ -1,0 +1,7 @@
+;; inputs 6522b99621c34dd5668ee95a560571be1ca93987767bd8f6e1717b6141d9e062 programs/solvers/47996f11.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 47996f11
+
+(param &noise Color (6))
+(param &center Offset ((1 -1 1 -1)))
+(param &sym Sym (SYM_D4))

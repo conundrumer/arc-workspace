@@ -1,0 +1,38 @@
+;; inputs 0b94627f57885a5268b398247c7b72dc199ef279072a413093de2cb82d13ad0b programs/solvers/c3e719e8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c3e719e8
+
+(param &background Color (0))
+
+(alts $choice
+  (alt $TiesAllGate
+    (witness mode-tie foreign any
+      (relaxed unique-mode)
+      (separates "two colors tie for the most cells; the concept has no commonest color and is undefined, $TiesAllGate copies the input at the cells of both tied colors, $TiesNoneGate copies it nowhere")
+      (input (grid
+        (1 1 2)
+        (2 3 4)
+        (5 6 7)))
+      (output concept undefined)
+      (output $TiesAllGate (grid
+        (1 1 2 1 1 2 1 1 2)
+        (2 3 4 2 3 4 2 3 4)
+        (5 6 7 5 6 7 5 6 7)
+        (1 1 2 0 0 0 0 0 0)
+        (2 3 4 0 0 0 0 0 0)
+        (5 6 7 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $TiesNoneGate (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))))
+  (alt $TiesNoneGate
+    (witness mode-tie foreign any)))

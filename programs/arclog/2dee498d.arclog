@@ -1,0 +1,20 @@
+;; inputs b3ef4c8b0b52462531513e298ef38c4fe0c0fb850166bc56528a5a3b07d35185 programs/solvers/2dee498d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2dee498d
+
+(DET &tile_axis AxisDomain)
+
+(DET &tile_count DivisorRatio)
+
+(INIT &output_division Division
+  (cell ((:P P_in))
+    (input (:P *P_in)))
+  (parts (A N)
+    (&tile_axis *A)
+    (&tile_count (:K *N))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&output_division.tile (:P P_in) (:P_inner *P)))
+
+(OUT (&output ^P ^Col))

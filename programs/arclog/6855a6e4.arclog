@@ -1,0 +1,61 @@
+;; inputs d28cdb5145da2d79a93f6f23b889d63efa0e7dd27b2e123654636b32e3499969 programs/solvers/6855a6e4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6855a6e4
+
+(DET &mover ChangedColor)
+
+(RULE &mover_cell
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(DET &mirror UnchangedColor)
+
+(RULE &rays_blocked
+  (input *P *Col)
+  (&mirror (:C Col)))
+
+;; Movers cast every way and halt on the first mirror cell.
+(INIT &rays Ray
+  (source (P)
+    (&mover_cell *P))
+  (node (P)
+    (input *P)
+    (NOT (&rays_blocked P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(INIT &rays_full Ray
+  (source (P)
+    (&mover_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &rays_stop_full
+  (&rays.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&rays_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(DET &bg DominantColor)
+
+(RULE &image
+  (&rays_stop_full (:V1 *B) (:V2 *D) (:V4 *P2))
+  (axis_of D *A)
+  (axis_inversion A (:T *F))
+  (relative (:Base B) (:X P2) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V2))
+  (compose (:A B) (:B V2) (:C *P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&image P)
+       (&mover (:C *Col)))
+      ((NOT (&image P))
+       (&mover_cell P)
+       (&bg (:C Col)))
+      ((NOT (&image P))
+       (NOT (&mover_cell P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

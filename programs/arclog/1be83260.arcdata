@@ -1,0 +1,6 @@
+;; inputs 350668a8cfd7d8bba7d124ac83efd750ce5c6af779ce2c26951b8d31be9d87ac programs/solvers/1be83260.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1be83260
+
+(param &bg Color (0))
+(param &gap number (1))

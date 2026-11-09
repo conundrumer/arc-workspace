@@ -1,0 +1,71 @@
+;; inputs 725aed34508757782fa7b9c1c99a25ed65f1218a9bfbbe246f2cf955c908c72e programs/solvers/62b74c02.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 62b74c02
+
+(DET &dir DirDomain)
+
+(RULE &empty_dir
+  (&dir *D))
+
+(DET &bg ChangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(ALTS $dir "the empty edge" $Dir
+  (ALT $Edge
+    (RULE &empty_dir
+      (&bbox.box *B)
+      (dir_elem *D)
+      (NOT (margin B D (:K 0))))))
+
+(ALTS $fill "which boundary of the block is copied" $Outer
+  (ALT $Inner
+    (RULE &fill_edge
+      (&empty_dir (:D *E1)))))
+
+;; The block slides to the empty edge; the copy lands where it comes to rest.
+(INIT &slide Distance
+  (source_distance (K)
+    (&ink *P)
+    (&empty_dir *D)
+    (margin (:B P) D *K)))
+
+(RULE &slide_travel_full
+  (&slide.distance *K)
+  (&empty_dir *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &copy
+  (&ink (:P *P3) *Col)
+  (&slide_travel_full (:V2 *V))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &fill_edge
+  (&empty_dir *D)
+  (opposite D (:Opp *E1)))
+
+(RULE &fill
+  (input *P (:Col *Bg))
+  (&bg (:C Bg))
+  (&fill_edge (:E1 *E))
+  (NOT (&copy P))
+  (&ink (:P *Q) *Col)
+  (&bbox.box *B)
+  (inside (:A Q) B)
+  (same_dist (:D E) (:P1 Q) (:P2 B))
+  (axis_of (:D E) *A)
+  (same_line A P Q))
+
+(RULE &output
+  (OR ((&ink *P *Col)
+       (&empty_dir))
+      ((&copy P Col))
+      ((&fill P Col))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,60 @@
+;; inputs d2ceb12429176cf601b4b9e1858f2ebc795fe7433f729d46435e9950d10a501f programs/solvers/0b17323b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0b17323b
+
+(DET &mark_color RarestColor)
+
+(DET &new_color AnyOutNewColor)
+
+(DET &dir DiagDirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (&mark_color (:C Col)))
+
+(RULE &sep
+  (&mark *P)
+  (&mark (:P *P2))
+  (diag_dir_elem *D)
+  (sub_extent P *A *K)
+  (jump P D K (:Q P2)))
+
+;; The marks are evenly spaced, so the closest pair gives the spacing.
+(INIT &spacing Order
+  (member ((:t K))
+    (&sep *K))
+  (score ((:t K) (:S K))
+    (&sep *K)))
+
+(RULE &walk_dir
+  (&dir *D))
+
+(ALTS $choice "which ends of the diagonal the sequence continues from" $Ray
+  (ALT $Line
+    ;; A mark pair gives both directions of its diagonal.
+    (RULE &walk_dir
+      (&sep *D))))
+
+(RULE &walk
+  (&mark (:P *P2))
+  (&walk_dir *D)
+  (&spacing.minimal (:t *K))
+  (input *P)
+  (relative (:Base P2) (:X P) (:X_rel *V))
+  (corner_dir (:C D) (:D *D_c))
+  (opposite (:D D_c) (:Opp *O))
+  (margin (:B V) (:D O) (:K *T))
+  (jump_offset D (:K T) V)
+  (divide T (:Side K) (:Gap 0) (:Remainder 0)))
+
+(RULE &added
+  (&walk *P)
+  (NOT (&mark P)))
+
+(RULE &output
+  (OR ((&added *P)
+       (&new_color (:C *Col)))
+      ((input P Col)
+       (NOT (&added P)))))
+
+(OUT (&output ^P ^Col))

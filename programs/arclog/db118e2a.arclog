@@ -1,0 +1,283 @@
+;; inputs 988e6f4a416c4a318fa4ac1a7d669136486ddf088447f063a1686633291e8a85 programs/solvers/db118e2a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db118e2a
+
+(INPUT framed-panel "the whole input is one panel: a border 1 cell thick (`frame_width`) of one frame color runs along the grid's edges, the four corner cells are 7 (`bg`), and the rest of the panel is 7 with some marks of any colors, the frame color included."
+
+  ;; The rings of the grid, from the edge inward.
+  (INIT &ring Boundary
+    (cell (P)
+      (input *P)))
+
+  (INIT &ring_depth CellDistance
+    (node (P)
+      (input *P))
+    (source (P)
+      (&ring.boundary *P)))
+
+  (RULE &grid_corner
+    (input *P)
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  (RULE &frame_col
+    (input *P *Col)
+    (margin (:B P) *D (:K 0))
+    (NOT (&grid_corner P)))
+
+  ;; The first ring with a cell off the frame color, the grid corners aside.
+  (INIT &broken Order
+    (member ((:t N))
+      (&ring_depth.distance *P (:K *N))
+      (input P *Col)
+      (NOT (&frame_col Col))
+      (NOT (&grid_corner P)))
+    (score ((:t N) (:S N))
+      (&ring_depth.distance *P (:K *N))
+      (input P *Col)
+      (NOT (&frame_col Col))
+      (NOT (&grid_corner P)))))
+
+(INPUT content-extent "the marks inside the frame have a 3 × 3 bounding box.")
+
+(OUTPUT crop-content "the picture is the bounding box of the marks inside the frame, cut from the input as it stands.")
+
+(OUTPUT snug-frame "the picture is wrapped in a border `frame_width` cells thick of the input's frame color, with the four corner cells `bg`.")
+
+(OUTPUT two-copies "the output is a `canvas_size` grid of `bg`, and the framed picture is drawn at each of the two corners on the diagonal `copy_axis`, inset `corner_inset` cells from both edges of that corner. Where a copy leaves the canvas, the output is undefined."
+
+  (DET &frame_width TileDim)
+
+  ;; The diagonal whose two corners each get a copy.
+  (DET &copy_axis DiagAxisDomain)
+
+  ;; The gap between a copy and each of the two edges of its corner.
+  (DET &corner_inset TileCount)
+
+  ;; The lines between the two copies.
+  (DET &copy_gap TileDim)
+
+  (DET &bg
+    (ex_output *P (:Col *C))
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  (RULE &bg2
+    (&bg (:C *Col)))
+
+  (RULE &width
+    (&frame_width (:D *K)))
+
+  (RULE &mark
+    (&width (:K *N))
+    (uniform_inset (:K N) (:B *Inner))
+    (input *P *Col)
+    (inside (:A P) (:B Inner))
+    (&bg2)
+    (NOT (&bg2 Col)))
+
+  (INIT &pic BoundingBox
+    (cell (P)
+      (&mark *P)))
+
+  (RULE &framed_box
+    (&pic.box (:B *Bp))
+    (&width (:K *N))
+    (uniform_outset (:K N) (:B *O))
+    (compose (:A Bp) (:B O) (:C *B)))
+
+  (RULE &copy_corner
+    (&framed_box (:B *Bf))
+    (input *P)
+    (inside (:A P) (:B Bf))
+    (same_corner *D (:P1 P) (:P2 Bf)))
+
+  (RULE &framed
+    (&pic.box (:B *Bp))
+    (&framed_box (:B *Bf))
+    (input *P (:Col *Col_in))
+    (inside (:A P) (:B Bf))
+    (relative (:Base Bf) (:X P) (:X_rel *R))
+    (OR ((NOT (inside (:A P) (:B Bp)))
+         (NOT (&copy_corner P))
+         (&frame_col *Col))
+        ((inside (:A P) (:B Bp))
+         (= Col Col_in))
+        ((&copy_corner P)
+         (&bg2 Col))))
+
+  (DET &canvas_size
+    (ex_output *P)
+    (frame_extent P *A *N))
+
+  (INIT &stored_canvas Frame
+    (extent (A N)
+      (&canvas_size *A *N))))
+
+(ALTS $c "how the canvas size is set" $StoredCanvas
+  (ALT $StoredCanvas
+    (ALTS $p "where the two copies go on a stored canvas" $Corners
+      (ALT $CenterGap
+        (OUTPUT two-copies "the copies sit on either side of the canvas center line across `copy_axis`, with one line between them. Undefined where a copy leaves the canvas or a canvas extent is even.")
+        ;; Each copy's far corner sits one diagonal step from the canvas center toward its own corner.
+        (RULE &anchor
+          (&stored_canvas.cell (:P *Z))
+          (centered (:P Z))
+          (&copy_axis *Da)
+          (diag_axis_of (:D *Diag) Da)
+          (diag_opposite (:D Diag) (:Opp *D))
+          (neighbor (:P Z) (:D Diag) (:Q *A))))
+      (ALT $FixedAnchors
+        (OUTPUT two-copies "each copy takes one of its corners to a stored cell, the corner and the cells as `copy_anchor` gives them. Undefined where a copy leaves the canvas or the two copies paint one cell with two colors."
+          ;; The copies: the 8-connected pieces of each output's non-bg cells.
+          (INIT &piece Connectivity
+            (key ((ex_output ^E *P *Col)
+                  (NOT (&bg (:C Col))))
+              (node (P)
+                (ex_output E *P *Col)
+                (NOT (&bg (:C Col)))))
+            (step ((:Delta S))
+              (OR ((diag_dir_elem *D)
+                   (step_offset D (:V *S)))
+                  ((dir_elem (:D *D2))
+                   (step_offset (:D D2) (:V S))))))
+          (INIT &copy_box BoundingBox
+            (key ((&piece.component (:key ^E) *P ^Id))
+              (cell (P)
+                (&piece.component (:key E) *P Id))))
+          (DET &seen_anchor
+            (&piece.component (:key *E) *Id)
+            (&copy_box.box (:key E Id) *B)
+            (ex_output E (:P *A))
+            (inside A B)
+            (same_corner *D (:P1 A) (:P2 B)))
+          (DET &missed_anchor
+            (&seen_anchor *D *A)
+            (ex_output *E)
+            (NOT (&seen_anchor E D A)))
+          (DET &copy_anchor
+            (&seen_anchor *D (:A *P))
+            (NOT (&missed_anchor D (:A P))))
+          (DET &anchor_corner
+            (&copy_anchor *D)
+            (ONE)))
+        (RULE &anchor
+          (&anchor_corner *D)
+          (&copy_anchor D (:P *A))))
+      (ALT $ChainFromCorner
+        (OUTPUT two-copies "the first copy is `corner_inset` in from the corner `chain_corner`, and the second follows it along the diagonal with `copy_gap` cells between them. Undefined where a copy leaves the canvas."
+          ;; The corner the chain of copies starts from.
+          (DET &chain_corner DiagDirDomain)
+          (RULE &chain_start
+            (&chain_corner (:D *Diag))
+            (&corner_inset (:N *I))
+            (corner_inset Diag (:K I) (:B *Bx))
+            (&stored_canvas.cell (:P *A))
+            (inside A (:B Bx))
+            (same_corner (:D Diag) (:P1 A) (:P2 Bx)))
+          (RULE_OR_DET &copy_span "The offset from the framed picture's chain_corner corner to its opposite corner."
+            (&chain_corner *D)
+            (&framed (:R *R0))
+            (inside (:A R0) (:B 0))
+            (same_corner D (:P1 R0) (:P2 0))
+            (diag_opposite D (:Opp *Od))
+            (&framed (:R *R1))
+            (inside (:A R1) (:B 0))
+            (same_corner (:D Od) (:P1 R1) (:P2 0))
+            (relative (:Base R0) (:X R1) (:X_rel *V))))
+        (RULE &anchor
+          (&chain_corner *D)
+          (&chain_start (:A *A3))
+          (OR ((&copy_span *V)
+               (compose (:A A3) (:B V) (:C *C1))
+               (diag_opposite D (:Opp *Od))
+               (&copy_gap (:D *G))
+               (jump (:P C1) (:D Od) (:K G) (:Q *X))
+               (neighbor (:P X) (:D Od) (:Q *A)))
+              ((= A A3)))))))
+  (ALT $FitCanvas
+    (OUTPUT two-copies "the canvas extent on each axis is `corner_inset` + copy + `copy_gap` + copy + `corner_inset`, and the copies sit as in the concept."
+      (RULE_OR_DET &copy_extent
+        (&framed_box (:B *Bf))
+        (input *P)
+        (axis_elem *A)
+        (box_extent (:B Bf) P A *N))
+
+      (RULE &fit_cell
+        (&framed *R)
+        (diag_dirs (:D *Od) (:A *A1) *D1 *D2)
+        (perp (:A A1) *A2)
+        (&copy_extent (:A A1) (:N *N1))
+        (&copy_extent (:A A2) (:N *N2))
+        (edge_inset (:D D1) (:K N1) (:B *Y1))
+        (edge_inset (:D D2) (:K N2) (:B *Y2))
+        (compose (:A Y1) (:B Y2) (:C *Y))
+        (&copy_gap (:D *G))
+        (corner_inset (:Diag Od) (:K G) (:B *Gb))
+        (&corner_inset (:N *I))
+        (uniform_inset (:K I) (:B *Ib))
+        (compose (:A Ib) (:B Gb) (:C *T1))
+        (compose (:A T1) (:B Y) (:C *T2))
+        (compose (:A T2) (:B R) (:C *Q)))
+
+      (INIT &fit Frame
+        (extent (A N)
+          (&fit_cell *Q)
+          (frame_extent (:P Q) *A *N))))
+    (RULE &canvas
+      (&fit.cell *P))))
+
+(ALTS $b "where the background color comes from" $StoredBg
+  (ALT $BgFromCorner
+    (INPUT framed-panel "the background, in every claim, is the color of the input's four corner cells. Undefined where those cells disagree."
+      (RULE &bg2
+        (&grid_corner *P)
+        (input P *Col)))))
+
+(ALTS $w "how thick the frame is" $StoredWidth
+  (ALT $ReadFrameWidth
+    (INPUT framed-panel "the frame width, in every claim, is the number of full rings of the frame color in from the grid edge, the grid corners left out of each ring."
+      (RULE &width
+        (&broken.minimal (:t *K))))))
+
+(RULE &copy_cell
+  (&framed (:R *R0))
+  (inside (:A R0) (:B 0))
+  (same_corner *D (:P1 R0) (:P2 0))
+  (&framed *R *Col)
+  (relative (:Base R0) (:X R) (:X_rel *V)))
+
+(RULE &canvas
+  (&stored_canvas.cell *P))
+
+(RULE &anchor
+  (&canvas (:P *A))
+  (&copy_axis *Da)
+  (diag_axis_of *D Da)
+  (&corner_inset (:N *I))
+  (corner_inset (:Diag D) (:K I) (:B *Bx))
+  (inside A (:B Bx))
+  (same_corner D (:P1 A) (:P2 Bx)))
+
+(RULE &paint
+  (&anchor *D *A)
+  (&copy_cell D *V *Col)
+  (compose A (:B V) (:C *P)))
+
+(RULE &spills
+  (&paint (:P *Q))
+  (NOT (&canvas (:P Q))))
+
+(RULE &drawn
+  (&paint)
+  (NOT (&spills)))
+
+(RULE &output
+  (OR ((&drawn)
+       (&paint *P *Col))
+      ((&drawn)
+       (&canvas P)
+       (NOT (&paint P))
+       (&bg2 Col))))
+
+(OUT (&output ^P ^Col))

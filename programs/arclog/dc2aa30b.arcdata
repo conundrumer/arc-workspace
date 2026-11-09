@@ -1,0 +1,136 @@
+;; inputs 81f1d80431322306e80e3068bb5ba1d753326237f4595de9d7d26146f675afef programs/solvers/dc2aa30b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc2aa30b
+
+(param &divider_color Color (0))
+(param &counted_color Color (1))
+(param &order_corner DiagDir (DIAG_BL))
+(param &fill_axis Axis (AXIS_H))
+
+(alts $choice
+  (alt $TieAnyOrder
+    (witness tied-counts borderline $TieAnyOrder
+      (relaxed distinct-counts)
+      (separates "The tile at rows 0-2, cols 0-2 holds 3 cells of 1, as the tile at rows 0-2, cols 4-6 does. The concept ranks only distinct counts and is undefined; $TieAnyOrder gives both orders of the two tied tiles in rank slots 1 and 2, counted from 0, the slots at rows 8-10, cols 4-6 and cols 8-10.")
+      (input (grid
+        (1 2 2 0 2 1 2 0 2 2 1)
+        (1 2 2 0 1 2 2 0 1 2 1)
+        (2 1 2 0 2 1 2 0 2 1 2)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 2 0 1 1 1 0 1 1 1)
+        (1 2 1 0 1 1 1 0 1 1 2)
+        (1 2 1 0 1 1 1 0 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 1 1 0 2 1 1 0 2 2 2)
+        (1 1 1 0 1 2 1 0 2 2 2)
+        (1 1 2 0 1 2 2 0 2 2 2)))
+      (output concept undefined)
+      (output $TieAnyOrder
+        (grid
+          (2 1 1 0 1 1 1 0 1 1 1)
+          (1 1 1 0 1 1 2 0 1 1 1)
+          (1 1 2 0 1 1 1 0 1 1 1)
+          (0 0 0 0 0 0 0 0 0 0 0)
+          (2 2 1 0 2 1 1 0 1 1 2)
+          (1 2 1 0 1 2 1 0 1 2 1)
+          (2 1 2 0 1 2 2 0 1 2 1)
+          (0 0 0 0 0 0 0 0 0 0 0)
+          (2 2 2 0 2 1 2 0 1 2 2)
+          (2 2 2 0 1 2 2 0 1 2 2)
+          (2 2 2 0 2 1 2 0 2 1 2))
+        (grid
+          (2 1 1 0 1 1 1 0 1 1 1)
+          (1 1 1 0 1 1 2 0 1 1 1)
+          (1 1 2 0 1 1 1 0 1 1 1)
+          (0 0 0 0 0 0 0 0 0 0 0)
+          (2 2 1 0 2 1 1 0 1 1 2)
+          (1 2 1 0 1 2 1 0 1 2 1)
+          (2 1 2 0 1 2 2 0 1 2 1)
+          (0 0 0 0 0 0 0 0 0 0 0)
+          (2 2 2 0 1 2 2 0 2 1 2)
+          (2 2 2 0 1 2 2 0 1 2 2)
+          (2 2 2 0 2 1 2 0 2 1 2))))))
+
+(alts &divider_color
+  (alt &divider_color=$Derived
+    (witness divider_color=SharedColor variant &divider_color=$Derived
+      (relaxed divider-board)
+      (separates "The divider lines are 5, not 0. The concept finds no lines of 0 and is undefined; the derived divider colors are the input's colors, so the lines of 5 cut the tiles, and the output is the sorted board with lines of 5.")
+      (input (grid
+        (2 2 2 5 2 1 2 5 2 2 1)
+        (1 2 2 5 1 2 2 5 1 2 1)
+        (2 1 2 5 2 1 2 5 2 1 2)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (1 1 2 5 1 1 1 5 1 1 1)
+        (1 2 1 5 1 1 1 5 1 1 2)
+        (1 2 1 5 1 1 1 5 1 1 1)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (2 1 1 5 2 1 1 5 2 2 2)
+        (1 1 1 5 1 2 1 5 2 2 2)
+        (1 1 2 5 1 2 2 5 2 2 2)))
+      (output (&divider_color=$Stored &tiling_divider=$Derived) (grid
+        (2 2 2 5 2 1 2 5 2 2 1)
+        (1 2 2 5 1 2 2 5 1 2 1)
+        (2 1 2 5 2 1 2 5 2 1 2)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (1 1 2 5 1 1 1 5 1 1 1)
+        (1 2 1 5 1 1 1 5 1 1 2)
+        (1 2 1 5 1 1 1 5 1 1 1)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (2 1 1 5 2 1 1 5 2 2 2)
+        (1 1 1 5 1 2 1 5 2 2 2)
+        (1 1 2 5 1 2 2 5 2 2 2)))
+      (output &tiling_divider=$Stored &divider_color=$Derived (grid
+        (2 1 1 5 1 1 1 5 1 1 1)
+        (1 1 1 5 1 1 2 5 1 1 1)
+        (1 1 2 5 1 1 1 5 1 1 1)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (2 2 1 5 2 1 1 5 1 1 2)
+        (1 2 1 5 1 2 1 5 1 2 1)
+        (2 1 2 5 1 2 2 5 1 2 1)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (2 2 2 5 2 2 2 5 2 1 2)
+        (2 2 2 5 1 2 2 5 1 2 2)
+        (2 2 2 5 2 1 2 5 2 1 2))))))
+
+(alts &tiling_divider
+  (alt &tiling_divider=$Stored
+    (witness tiling.divider=stored variant &tiling_divider=$Stored
+      (relaxed divider-board)
+      (separates "The divider lines are 8, not 0. The concept finds no lines of 0 and is undefined; the stored layout cuts the tiles at rows and cols 3 and 7 whatever their color, and the output is the sorted board with lines of 8.")
+      (input (grid
+        (1 1 2 8 2 1 2 8 2 1 1)
+        (2 1 2 8 2 1 2 8 1 1 1)
+        (1 2 2 8 1 2 2 8 1 1 2)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 2 1 8 1 1 1 8 2 2 2)
+        (2 1 1 8 1 1 1 8 2 1 2)
+        (1 2 2 8 1 2 1 8 2 2 2)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 2 2 8 1 2 1 8 1 1 1)
+        (2 2 1 8 2 1 1 8 1 1 1)
+        (2 2 2 8 1 2 1 8 1 1 1)))
+      (output (&divider_color=$Stored &tiling_divider=$Derived) (grid
+        (1 1 2 8 2 1 2 8 2 1 1)
+        (2 1 2 8 2 1 2 8 1 1 1)
+        (1 2 2 8 1 2 2 8 1 1 2)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 2 1 8 1 1 1 8 2 2 2)
+        (2 1 1 8 1 1 1 8 2 1 2)
+        (1 2 2 8 1 2 1 8 2 2 2)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 2 2 8 1 2 1 8 1 1 1)
+        (2 2 1 8 2 1 1 8 1 1 1)
+        (2 2 2 8 1 2 1 8 1 1 1)))
+      (output &tiling_divider=$Stored &divider_color=$Derived (grid
+        (2 1 1 8 1 1 1 8 1 1 1)
+        (1 1 1 8 1 1 1 8 1 1 1)
+        (1 1 2 8 1 2 1 8 1 1 1)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 1 2 8 1 2 1 8 1 2 1)
+        (2 1 2 8 2 1 1 8 2 1 1)
+        (1 2 2 8 1 2 2 8 1 2 1)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (2 2 2 8 1 2 2 8 2 1 2)
+        (2 1 2 8 2 2 1 8 2 1 2)
+        (2 2 2 8 2 2 2 8 1 2 2))))))

@@ -1,0 +1,65 @@
+;; inputs 48bb9597f909121ed934614912cebb3479d350493b2851c8048deba23640d0e4 programs/solvers/2697da3f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2697da3f
+
+(DET &bg DominantColor)
+
+;; The edge the input-oriented copy sits against.
+(DET &arm DirDomain)
+
+;; The group carrying the copy to the other arms.
+(DET &sym SymDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &fig BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &fig_extent
+  (&fig.cell *P)
+  (&fig.box *B)
+  (box_extent B P *A *N))
+
+(RULE &arm_margin
+  (&arm *D)
+  (opposite D (:Opp *D_far))
+  (axis_of D *A)
+  (&fig_extent A (:N *Depth))
+  (uniform_inset (:K Depth) (:B *Around))
+  (edge_outset D (:K Depth) (:B *Back))
+  (compose (:A Around) (:B Back) (:C *Depths))
+  (perp A *A2)
+  (&fig_extent (:A A2) (:N *Span))
+  (edge_inset (:D D_far) (:K Span) (:B *Blank))
+  (compose (:A Depths) (:B Blank) (:C *B)))
+
+(RULE &placed
+  (&ink (:P *P2) *Col)
+  (&fig.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P_inner))
+  (&arm_margin (:B *B_arm))
+  (compose (:A B_arm) (:B P_inner) (:C *P)))
+
+;; The margins already span the canvas, so a placed cell reads its extent.
+(INIT &canvas Frame
+  (extent (A N)
+    (&placed *P)
+    (frame_extent P *A *N)))
+
+(RULE &painted
+  (&placed (:P *P3) *Col)
+  (&sym *S)
+  (sym_member S (:D *R))
+  (apply (:D R) (:P P3) (:P_out *P)))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((&canvas.cell P)
+       (NOT (&painted P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

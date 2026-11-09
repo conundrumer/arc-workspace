@@ -1,0 +1,227 @@
+;; inputs 411fae387a83f09bcd7feb29a57b74b39ffcdf407f0981f2ca93af9901b0d30f programs/solvers/47c1f68c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 47c1f68c
+
+;; The outputs' own symmetries, per example.
+(INIT &grid_map Agreement
+  (key ((ex_output ^E (:P *P_grid_out) *Col))
+    (source ((:P P_grid_out) (:v Col))
+      (ex_output E (:P *P_grid_out) *Col))
+    (target ((:P P_grid_out) (:v Col))
+      (ex_output E (:P *P_grid_out) *Col))))
+
+(DET &grid_map_map
+  (ex_output (:E *Key))
+  (d4_elem *D)
+  (NOT (&grid_map.mismatch (:key (:E Key)) D)))
+
+(DET &divisor SepTileCount)
+
+(DET &gap DimDiff)
+
+(INIT &cell_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&divisor *N))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:D *G))))
+
+(INIT &cell_tiling Tiling
+  (outer ((:P P_tile))
+    (&cell_division.tile (:P_outer *P_tile)))
+  (inner ((:P P_intile))
+    (&cell_division.tile (:P_inner *P_intile))))
+
+(DET &bg DominantColor)
+
+(DET &anchor DiagDirDomain)
+
+(RULE &cell
+  (&cell_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+  (&cell_tiling.cell (:P_outer P_tile) (:P_inner P_intile) (:P *P_grid_out)))
+
+(RULE &line_color
+  (input (:P *P_grid) *Col)
+  (NOT (&cell P_grid)))
+
+(RULE &ink
+  (input (:P *P_grid) *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &broken
+  (ex_output *E)
+  (d4_elem *D)
+  (NOT (&grid_map_map (:Key E) D)))
+
+;; The named subgroup matching the transforms every output holds.
+(INIT &sym_id Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&broken D))))
+
+(DET &sym
+  (&sym_id.equal (:pattern *S)))
+
+(RULE &paint
+  (&ink *P_grid)
+  (&cell P_grid (:P_grid_out *P_grid_out2))
+  (&sym *S)
+  (sym_member S *D)
+  (apply D (:P P_grid_out2) (:P_out *P_grid_out)))
+
+(RULE &anchor_tile2
+  (&cell *P_tile)
+  (&anchor (:D *Diag))
+  (same_corner (:D Diag) (:P1 P_tile) (:P2 0)))
+
+(RULE &pattern
+  (&ink *P_grid)
+  (&cell P_grid *P_tile *P_intile)
+  (&anchor_tile2 P_tile))
+
+(ALTS $choice "how the pattern in the anchor quadrant is carried into the other quadrants — data-equivalent on this task" $Complete
+  (ALT $Lookup
+    (INIT &tile_cell_division Division
+      (cell ((:P P_grid_out))
+        (ex_output (:P *P_grid_out)))
+      (parts (A N)
+        (axis_elem *A)
+        (&divisor *N)))
+
+    (DET &tile_cell
+      (ex_output *E (:P *P_grid_out) *Col)
+      (&tile_cell_division.tile (:P P_grid_out) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+    (DET &anchor_tile
+      (&tile_cell *P_tile)
+      (&anchor (:D *Diag))
+      (same_corner (:D Diag) (:P1 P_tile) (:P2 0)))
+
+    (INIT &tile_map Agreement
+      (key ((OR ((&tile_cell ^E ^P_tile)
+                 (&anchor_tile (:P_tile *T_anc))
+                 (&tile_cell E (:P_tile T_anc) *P_intile *Col))
+                ((&tile_cell E P_tile P_intile Col))))
+        (source ((:P P_intile) (:v Col))
+          (&tile_cell E P_tile)
+          (&anchor_tile (:P_tile *T_anc))
+          (&tile_cell E (:P_tile T_anc) *P_intile *Col))
+        (target ((:P P_intile) (:v Col))
+          (&tile_cell E P_tile *P_intile *Col))))
+
+    (DET &tile_map_src
+      (&tile_cell *E *P_tile)
+      (&anchor_tile (:P_tile *T_anc))
+      (&tile_cell E (:P_tile T_anc) (:P_intile *P) (:Col *V)))
+
+    (DET &tile_map_map
+      (&tile_map_src *E *P_tile)
+      (d4_elem *D)
+      (NOT (&tile_map.mismatch (:key E P_tile) D)))
+
+    (DET &tile_broken
+      (&tile_cell *E *P_tile)
+      (d4_elem *D)
+      (NOT (&tile_map_map E P_tile D)))
+
+    (DET &tile_d4
+      (&tile_cell *P_tile)
+      (d4_elem *D)
+      (NOT (&tile_broken P_tile D)))
+
+    (INIT &paint_tiling Tiling
+      (key ((OR ((&tile_d4 *P_tile ^D))
+                ((&pattern *P_intile)
+                 (&tile_d4 D)
+                 (apply D (:P P_intile) (:P_out *P_intile2)))))
+        (outer ((:P P_tile))
+          (&tile_d4 *P_tile D))
+        (inner ((:P P_intile2))
+          (&pattern *P_intile)
+          (&tile_d4 D)
+          (apply D (:P P_intile) (:P_out *P_intile2)))))
+
+    (RULE &paint
+      (&paint_tiling.cell (:key *D) (:P_outer *P_tile) (:P *P_grid_out))
+      (&tile_d4 P_tile D)))
+  (ALT $Mirror
+    (RULE &mirror
+      (&cell *P_tile *P_intile)
+      (&anchor (:D *Diag))
+      (corner_dir (:C Diag) *A *D)
+      (OR ((NOT (margin (:B P_tile) D (:K 0)))
+           (axis_inversion A (:T *F))
+           (apply (:D F) (:P P_intile) (:P_out *P_img)))
+          ((margin (:B P_tile) D (:K 0))
+           (= P_img P_intile))))
+
+    (INIT &paint_tiling2 Tiling
+      (outer ((:P P_tile))
+        (&pattern *P_intile)
+        (perp (:A *A1))
+        (&mirror (:A A1) *P_tile P_intile))
+      (inner ((:P P_intile2))
+        (perp *A2)
+        (&mirror (:A A2) (:P_img *P_intile2))))
+
+    (RULE &paint
+      (&pattern *P_intile)
+      (perp (:A *A1) *A2)
+      (&mirror (:A A1) *P_tile P_intile (:P_img *P1))
+      (&mirror (:A A2) P_tile (:P_intile P1) (:P_img *P_intile2))
+      (&paint_tiling2.cell (:P_outer P_tile) (:P_inner P_intile2) (:P *P_grid_out))))
+  (ALT $Unfold
+    ;; The pattern reflected across a shared boundary on each axis, once per
+    ;; tile step away from the anchor tile along that axis.
+    (INIT &reflect Walk
+      (key ((OR ((&cell *P_intile)
+                 (axis_inversion ^A (:T *F)) (axis_elem A)
+                 (apply (:D F) (:P P_intile) (:P_out *P_img)))
+                ((&cell *P_tile)
+                 (&anchor (:D *Diag))
+                 (corner_dir (:C Diag) A *D)
+                 (margin (:B P_tile) D *K))))
+        (successor ((:p P_intile) (:p_next P_img))
+          (&cell *P_intile)
+          (axis_inversion A (:T *F))
+          (apply (:D F) (:P P_intile) (:P_out *P_img)))
+        (steps ((:N K))
+          (&cell *P_tile)
+          (&anchor (:D *Diag))
+          (corner_dir (:C Diag) A *D)
+          (margin (:B P_tile) D *K))))
+
+    (INIT &paint_tiling3 Tiling
+      (outer ((:P P_tile))
+        (&cell *P_tile))
+      (inner ((:P P_intile2))
+        (perp (:A *A1) *A2)
+        (corner_dir (:A A2))
+        (&reflect.walk (:key (:A A1)) (:p *P1))
+        (&reflect.walk (:key (:A A2)) (:p0 P1) (:p *P_intile2))))
+
+    (RULE &paint
+      (&pattern *P_intile)
+      (&paint_tiling3.cell (:P_outer *P_tile) (:P_inner *P_intile2) (:P *P_grid_out))
+      (&anchor (:D *Diag))
+      (perp (:A *A1) *A2)
+      (corner_dir (:C Diag) (:A A1) (:D *D1))
+      (margin (:B P_tile) (:D D1) (:K *K1))
+      (corner_dir (:C Diag) (:A A2) (:D *D2))
+      (margin (:B P_tile) (:D D2) (:K *K2))
+      (&reflect.walk (:key (:A A1)) (:p0 P_intile) (:N K1) (:p *P1))
+      (&reflect.walk (:key (:A A2)) (:p0 P1) (:N K2) (:p P_intile2)))))
+
+(RULE &output
+  (OR ((&paint (:P_grid_out *P))
+       (&line_color *Col))
+      ((&cell (:P_grid_out P))
+       (NOT (&paint (:P_grid_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

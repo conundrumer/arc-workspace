@@ -1,0 +1,9 @@
+;; inputs a928f2db3b8d9447c1dbbef74477789e34725c4f35f71e223412562ba5e9982d programs/solvers/a8610ef7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a8610ef7
+
+(param &mirror D4 (D4_TB))
+(param &bg Color (0))
+(param &matched Color (2))
+(param &unmatched Color (5))
+(param &recolor (Color Color Color) (0 0 0) (0 8 0) (8 0 5) (8 8 2))

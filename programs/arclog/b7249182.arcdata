@@ -1,0 +1,118 @@
+;; inputs f119ab736578fda47af47e57f4ee0a89509050503708cee8504f366a6a5e4c34 programs/solvers/b7249182.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7249182
+
+(param &background Color (0))
+(param &bar_reach number (2))
+(param &box_depth number (2))
+
+(alts $span
+  (alt $OddSpanGap
+    (witness odd-span borderline $OddSpanGap
+      (relaxed even-span)
+      (separates "an odd run of 11 cells between the dots: the concept and the other branches are undefined; the gap branch draws each half 5 cells long and leaves the middle row unpainted")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $Meet undefined)
+      (output $OddSpanGap (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0)
+        (0 0 0 0 2 0 0 0 0)
+        (0 0 2 2 2 2 2 0 0)
+        (0 0 2 0 0 0 2 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 8 0 0)
+        (0 0 8 8 8 8 8 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0))))))
+
+(alts $dots
+  (alt $EachPair
+    (witness two-pairs variant $EachPair
+      (relaxed two-dots)
+      (separates "two pairs of dots, one on a column and one on a row: the concept and the other branches read two dots and are undefined; the each-pair branch draws a bracket for each pair")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 4 0 0 0 0 0 0 0 0 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Two undefined)
+      (output $EachPair (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0 0 4 4 1 1 0 0 0)
+        (0 2 2 2 2 2 0 0 0 0 0 4 0 0 1 0 0 0)
+        (0 2 0 0 0 2 0 0 4 4 4 4 0 0 1 1 1 1)
+        (0 8 0 0 0 8 0 0 0 0 0 4 0 0 1 0 0 0)
+        (0 8 8 8 8 8 0 0 0 0 0 4 4 1 1 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed two-dots)
+      (separates "a field of 3 in place of 0: the stored background reads every cell as a dot and is undefined; the derived background reads the field as background and draws the bracket")
+      (input (grid
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 2 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 8 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 2 3 3 3 3)
+        (3 3 3 3 2 3 3 3 3)
+        (3 3 3 3 2 3 3 3 3)
+        (3 3 2 2 2 2 2 3 3)
+        (3 3 2 3 3 3 2 3 3)
+        (3 3 8 3 3 3 8 3 3)
+        (3 3 8 8 8 8 8 3 3)
+        (3 3 3 3 8 3 3 3 3)
+        (3 3 3 3 8 3 3 3 3)
+        (3 3 3 3 8 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3))))))

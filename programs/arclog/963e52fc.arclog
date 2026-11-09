@@ -1,0 +1,80 @@
+;; inputs 6671b9868185b7586b18da5de49ba9a0b1508c368355a1571bdb9c873d0930dc programs/solvers/963e52fc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 963e52fc
+
+(DET &dir DirDomain)
+
+(DET &scale ScaleRatio)
+
+;; Output frame: &scale copies of the input frame along &dir.
+(INIT &copies Frame
+  (key ((&dir *D)
+        (axis_of D ^A)
+        (&scale (:K *N)))
+    (extent (A N)
+      (&dir *D)
+      (axis_of D A)
+      (&scale (:K *N)))))
+
+(INIT &out_cell_tiling Tiling
+  (outer ((:P P_outer))
+    (&copies.cell (:P *P_outer)))
+  (inner ((:P P_grid_in))
+    (input (:P *P_grid_in))))
+
+(RULE &cell_line
+  (input *P *Col)
+  (&dir *D)
+  (axis_of D *A)
+  (split P A (:Across *Line)))
+
+(RULE &out_cell
+  (&copies.cell (:P *P_outer))
+  (&out_cell_tiling.cell P_outer *P))
+
+(RULE &base
+  (&out_cell *P)
+  (input (:P *P_grid_in) *Col)
+  (&dir *D)
+  (opposite D (:Opp *O))
+  (same_slab (:D O) (:P1 P_grid_in) (:P2 P)))
+
+(INIT &si_line Periods
+  (key ((&cell_line *P ^Line *Col))
+    (cell (P (:v Col))
+      (&cell_line *P Line *Col))))
+
+(RULE &period_at
+  (&dir *D)
+  (axis_of D *A)
+  (&si_line.fundamental_period (:key *Line) A *K))
+
+(ALTS $choice "the period's scope" $Line
+  (ALT $Grid
+    (INIT &si_grid Periods
+      (cell (P (:v Col))
+        (input *P *Col)))
+
+    ;; The grid's period, so every line takes it.
+    (RULE &period_at
+      (&cell_line *Line)
+      (&dir *D)
+      (axis_of D *A)
+      (&si_grid.fundamental_period A *K))))
+
+;; Each output cell repeats the base cell of its line that stands at its
+;; place within the period, counted from the edge the growth moves away from.
+(RULE &output
+  (&out_cell *P)
+  (&dir *D)
+  (axis_of D *A)
+  (opposite D (:Opp *O))
+  (split P A (:Across *Line))
+  (&period_at Line *K)
+  (margin (:B P) (:D O) (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder *R))
+  (&base (:P *P2) *Col)
+  (split (:P P2) A (:Across Line))
+  (margin (:B P2) (:D O) (:K R)))
+
+(OUT (&output ^P ^Col))

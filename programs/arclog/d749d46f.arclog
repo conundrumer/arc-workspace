@@ -1,0 +1,264 @@
+;; inputs 58c94db3ccea9519b0f983323a25fe13c7934c88352af1b7a4c536fd7811ce46 programs/solvers/d749d46f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d749d46f
+
+(INPUT two-colors "the input holds two colors, a background and a bar color")
+
+(INPUT bars-hang-from-top "each bar is a solid rectangle of the bar color whose side toward &hang_edge lies on that edge"
+
+  (DET &hang_edge DirDomain))
+
+(INPUT bars-in-a-row "the bars stand side by side, separated by &gap background columns, the first bar starting at the &pack_edge edge and the last ending at the opposite edge"
+
+  (DET &pack_edge DirDomain)
+
+  (RULE &corner
+    (&hang_edge (:D *H))
+    (&pack_edge (:D *K))
+    (diag_dirs (:D *C) (:D1 H) (:D2 K)))
+
+  (RULE &corner_color
+    (&corner *C)
+    (input *P *Col)
+    (corner_dist P (:Diag C) (:K 0)))
+
+  (RULE &bar_color
+    (&corner_color *Col))
+
+  (INIT &bars Connectivity
+    (node (P)
+      (&bar_color *Col)
+      (input *P Col)))
+
+  ;; The runs of background cells along the hang edge.
+  (INIT &run Connectivity
+    (key ((ex_input ^E *P *Col)
+          (NOT (&corner_color E Col))
+          (&hang_edge (:D *H))
+          (margin (:B P) (:D H) (:K 0)))
+      (node (P)
+        (ex_input E *P *Col)
+        (NOT (&corner_color E Col))
+        (&hang_edge (:D *H))
+        (margin (:B P) (:D H) (:K 0)))))
+
+  (DET &open_run
+    (&run.component (:key *E) *P *Id)
+    (&pack_edge (:D *K))
+    (OR ((margin (:B P) (:D K) (:K 0)))
+        ((opposite (:D K) (:Opp *K2))
+         (margin (:B P) (:D K2) (:K 0)))))
+
+  (INIT &run_len Cardinality
+    (key ((&run.component (:key ^E) *P ^Id))
+      (member ((:m P))
+        (&run.component (:key E) *P Id))))
+
+  (DET &gap
+    (&run_len.size (:key *E *Id) *N)
+    (NOT (&open_run E Id)))
+
+  (RULE &spanned
+    (input *P)
+    (&pack_edge (:D *K))
+    (&bars.component (:P *Q))
+    (same_dist (:D K) (:P1 P) (:P2 Q)))
+
+  (RULE &gap_run_node
+    (&hang_edge (:D *H))
+    (input *P)
+    (margin (:B P) (:D H) (:K 0))
+    (NOT (&spanned P)))
+
+  (INIT &gap_run Ray
+    (source (P)
+      (&gap_run_node *P))
+    (node (P)
+      (&gap_run_node *P))
+    (dir (D)
+      (&pack_edge (:D *K))
+      (opposite (:D K) (:Opp *D)))))
+
+(OUTPUT bar-color "the bar color is the color of the cell at the corner of &hang_edge and &pack_edge, the corner of the first bar, and the other color is the background"
+
+  (INIT &color_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col)))))
+
+(OUTPUT top-lies-flat "along &hang_edge, each bar is turned so that its longer side runs along the row, with its top side on the edge row; the bars are packed from &pack_edge, in input order, with &gap background columns between neighbors"
+
+  (RULE &row_edge
+    (OR ((&hang_edge *D))
+        ((&hang_edge (:D *H))
+         (opposite (:D H) (:Opp D)))))
+
+  ;; The two bar colors give equal node sets or disjoint ones, so a bar's id
+  ;; names one bar under every key.
+  (INIT &bar_box BoundingBox
+    (key ((&bars.component *P (:Id ^Bar)))
+      (cell (P)
+        (&bars.component *P (:Id Bar)))))
+
+  (RULE &anchor
+    (&bars.component *P (:Id *Bar))
+    (&bar_box.box (:key Bar) *B)
+    (&corner *C)
+    (inside (:A P) B)
+    (same_corner (:D C) (:P1 P) (:P2 B)))
+
+  (RULE &bar_before
+    (&anchor (:Bar *Bar1) (:P *P1))
+    (&anchor (:Bar *Bar2) (:P *P2))
+    (&pack_edge (:D *K))
+    (nearer (:D K) (:P P1) (:Q P2)))
+
+  (RULE &side_len
+    (&anchor *Bar *P)
+    (&bar_box.box (:key Bar) *B)
+    (OR ((&hang_edge (:D *E1)))
+        ((&pack_edge (:D E1))))
+    (axis_of (:D E1) *A)
+    (perp A *A2)
+    (box_extent B P (:A A2) *N))
+
+  (RULE &slot_side
+    (&hang_edge (:D *H))
+    (&pack_edge (:D *K))
+    (&side_len *Bar (:E1 H) (:N *Nh))
+    (&side_len Bar (:E1 K) (:N *Nk))
+    (OR ((opposite (:D H) (:Opp *D))
+         (OR ((<= Nh Nk)
+              (= *E1 H))
+             ((< Nk Nh)
+              (= E1 K))))
+        ((= D H)
+         (OR ((>= Nh Nk)
+              (= E1 H))
+             ((> Nk Nh)
+              (= E1 K))))))
+
+  (RULE &bar_slot
+    (&slot_side *D *Bar *E1)
+    (&bars.component *P (:Id Bar))
+    (&bar_box.box (:key Bar) *B)
+    (inside (:A P) B)
+    (same_dist (:D E1) (:P1 P) (:P2 B)))
+
+  (INIT &gap_strip Frame
+    (key ((&gap *N)
+          (&pack_edge (:D *K))
+          (axis_of (:D K) ^A))
+      (extent (A N)
+        (&gap *N)
+        (&pack_edge (:D *K))
+        (axis_of (:D K) A))))
+
+  ;; &gap cells toward the pack edge from the anchor of each bar but the
+  ;; first.
+  (RULE &gap_slot
+    (&gap_strip.cell (:P *C))
+    (&pack_edge (:D *K))
+    (margin (:B C) (:D K) (:K *J))
+    (&bar_before (:Bar2 *Bar))
+    (&anchor Bar (:P *P2))
+    (neighbor (:P P2) (:D K) (:Q *P1))
+    (jump (:P P1) (:D K) (:K J) (:Q *P)))
+
+  (RULE &slot
+    (OR ((&bar_slot (:D *Ky) *Bar *P))
+        ((&gap_slot Bar P)
+         (&row_edge (:D Ky)))))
+
+  (INIT &row Order
+    (key ((OR ((&slot (:Ky ^D) (:Bar *S_bar) (:P *S_p)))
+              ((&slot (:Ky D) (:Bar *Bar1) (:P *P1))
+               (&slot (:Ky D) (:Bar *Bar2) (:P *P2))
+               (&bar_before Bar1 Bar2))
+              ((&slot (:Ky D) *Bar (:P *P12))
+               (&slot (:Ky D) Bar (:P *P22))
+               (&corner *C)
+               (nearer (:D C) (:P P12) (:Q P22)))))
+      (member ((:t (:Bar S_bar) (:P S_p)))
+        (&slot (:Ky D) (:Bar *S_bar) (:P *S_p)))
+      (before ((:a (:Bar Bar1) (:P P1)) (:b (:Bar Bar2) (:P P2)))
+        (OR ((&slot (:Ky D) (:Bar *Bar1) (:P *P1))
+             (&slot (:Ky D) (:Bar *Bar2) (:P *P2))
+             (&bar_before Bar1 Bar2))
+            ((&slot (:Ky D) (:Bar Bar1) (:P P1))
+             (&slot (:Ky D) (:Bar Bar1) (:P P2))
+             (&corner *C)
+             (nearer (:D C) (:P P1) (:Q P2))
+             (= Bar2 Bar1)))))))
+
+(OUTPUT bottom-stands-up "along the edge opposite &hang_edge, each bar is turned so that its longer side runs down the column, with its bottom side on the edge row; the bars are packed as in top-lies-flat")
+
+(OUTPUT square-unchanged "a square bar is the same in both rows")
+
+(OUTPUT output-size "the output is &output_height rows tall, and as wide as the top row of bars"
+
+  (DET &output_height ConstOutDim)
+
+  (INIT &row_len Cardinality
+    (key ((&slot (:Ky ^D) (:Bar *S_bar) (:P *S_p)))
+      (member ((:m (:Bar S_bar) (:P S_p)))
+        (&slot (:Ky D) (:Bar *S_bar) (:P *S_p))))))
+
+(OUTPUT rest-background "every other cell is the background color")
+
+(ALTS $g "the spacing between neighboring bars in the output" $StoredGap
+  (ALT $GapPerNeighbor
+    (OUTPUT top-lies-flat "each output gap between two neighbors is the input gap between those two bars"
+      ;; The cells of the hang edge row in the lines between a bar and the bar
+      ;; before it.
+      (RULE &gap_slot
+        (&gap_run.end (:P *Q) *D (:Origin *P))
+        (neighbor (:P Q) D (:Q *R))
+        (&pack_edge (:D *K))
+        (&anchor *Bar (:P *A))
+        (same_dist (:D K) (:P1 R) (:P2 A))
+        (&bar_before (:Bar2 Bar))))
+    (OUTPUT bottom-stands-up "the same gaps as top-lies-flat")))
+
+(ALTS $c "which of the two input colors is the bar color" $Corner
+  (ALT $BarColorMinority
+    (OUTPUT bar-color "the bar color is the color with fewer cells; undefined where the two colors have equal counts"
+      (RULE &bar_color
+        (&color_count.size (:key *Col) *N)
+        (&color_count.size (:N *N2))
+        (< N N2)))))
+
+(RULE &bg
+  (&bar_color (:Col *Bc))
+  (input *Col)
+  (!= Col Bc))
+
+(INIT &frame Frame
+  (extent (A N)
+    (OR ((&hang_edge (:D *H))
+         (axis_of (:D H) *A)
+         (&output_height *N))
+        ((&hang_edge (:D *H2))
+         (&row_len.size (:key (:D H2)) N)
+         (axis_of (:D H2) (:A *A_h))
+         (perp (:A A_h) (:A2 A))))))
+
+(RULE &covered
+  (&frame.cell *P)
+  (margin (:B P) *D *K)
+  (&pack_edge (:D *Kp))
+  (margin (:B P) (:D Kp) (:K *R))
+  (&row.rank (:key D) (:t *Bar (:P *S)) R)
+  (&bar_slot D Bar (:P S) (:E1 *E))
+  (opposite (:D E) (:Opp *E_in))
+  (jump (:P S) (:D E_in) K *Q)
+  (&bars.component (:P Q) (:Id Bar)))
+
+(RULE &output
+  (OR ((&covered *P)
+       (&bar_color *Col))
+      ((&frame.cell P)
+       (NOT (&covered P))
+       (&bg Col))))
+
+(OUT (&output ^P ^Col))

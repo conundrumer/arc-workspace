@@ -1,0 +1,120 @@
+;; inputs 51d8cbf04cbec84df2a38eccf7b08501561fa8330344230c0922314ffbde068d programs/solvers/fd4b2b02.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fd4b2b02
+
+(INPUT one-bar "one solid rectangle of one color of the partner pair on the background, longer on one axis than on the other."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &part Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &part_box BoundingBox
+    (key ((&part.component *P ^Id))
+      (cell (P)
+        (&part.component *P Id))))
+
+  (INIT &part_color Singleton
+    (key ((&part.component *P ^Id)
+          (&ink P *Col))
+      (member ((:v Col))
+        (&part.component *P Id)
+        (&ink P *Col)))))
+
+(OUTPUT keep-bar "the input bar stays where it is, and the output has the input's size.")
+
+(OUTPUT diagonal-chains "toward each of the four diagonal directions, a chain of bars runs from the input bar: each next bar has the extents of the last one swapped, takes the partner of its color, and sits so its corner cell nearest the last bar is diagonally adjacent, in that direction, to the last bar's corner cell."
+
+  (INIT &whole_box BoundingBox
+    (cell (P)
+      (&ink *P)))
+
+  (INIT &whole_color Singleton
+    (member ((:v Col))
+      (&ink *Col)))
+
+  (RULE &bar
+    (&whole_box.box *B)
+    (&whole_color.value (:v *Col)))
+
+  (DET &partner
+    (ex_input *E (:Col *C))
+    (NOT (&background C))
+    (ex_output E (:Col *C2))
+    (NOT (&background (:C C2)))
+    (!= C C2))
+
+  (RULE &start
+    (&bar *B *Col)
+    (diag_opposite *D (:Opp *D0))
+    (input (:P *Near))
+    (inside (:A Near) B)
+    (same_corner (:D D0) (:P1 Near) (:P2 B))
+    (relative (:Base Near) (:X B) (:X_rel *Shape)))
+
+  (RULE &shape
+    (&start *D (:Shape *S0))
+    (diag_axis_of D *Da)
+    (reflection (:A Da) (:T *R))
+    (OR ((apply (:D R) (:P S0) (:P_out *S)))
+        ((= S S0))))
+
+  (INIT &chain Propagation
+    (source ((:n (:D Nd_d) (:Near Nd_near) (:Shape Nd_shape) (:Col Nd_col)))
+      (&start (:D *Nd_d) (:Near *Nd_near) (:Shape *Nd_shape) (:Col *Nd_col)))
+    (edge ((:a D (:Near N) (:Shape S) Col) (:b D (:Near N2) (:Shape S2) (:Col Col2)))
+      (&shape *D *S)
+      (input (:P *N))
+      (&partner (:C *Col) (:C2 *Col2))
+      (compose (:A N) (:B S) (:C *B))
+      (diag_dirs D *A *D1 *D2)
+      (axis_of (:D D2) (:A *A2))
+      (box_extent B (:P N) A (:N *K1))
+      (box_extent B (:P N) (:A A2) (:N *K2))
+      (jump (:P N) (:D D1) (:K K1) *Q)
+      (jump (:P Q) (:D D2) (:K K2) (:Q *N2))
+      (diag_axis_of D *Da)
+      (reflection (:A Da) (:T *R))
+      (apply (:D R) (:P S) (:P_out *S2)))))
+
+(OUTPUT clip-at-edge "a chain runs until a bar lies wholly outside the grid, and the part of a bar outside the grid is dropped.")
+
+(OUTPUT rest-background "every other cell is background.")
+
+(ALTS $choice "what counts as the bar the chains start from" $OneBar
+  (ALT $PerBar
+    (INPUT one-bar "each 4-connected component of non-background cells is a bar, its bounding box in its one color; undefined where a component holds two colors.")
+    (OUTPUT keep-bar "every input bar stays where it is.")
+    (OUTPUT diagonal-chains "each bar sends its own four chains; undefined where two bars' chains give a cell different colors."
+      (RULE &bar
+        (&part_box.box (:key *Id) *B)
+        (&part_color.value (:key Id) (:v *Col))))
+    (RULE &bar_defect
+      (OR ((&part_color.plural))
+          ((&bar *Col)
+           (NOT (&partner (:C Col))))))))
+
+(RULE &bar_defect
+  (&bar *Col)
+  (NOT (&partner (:C Col))))
+
+(RULE &chain_cell
+  (&chain.reached (:n *D (:Near *N) (:Shape *S) *Col))
+  (NOT (&start D (:Near N) (:Shape S) Col))
+  (compose (:A N) (:B S) (:C *B))
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &output
+  (&bar)
+  (NOT (&bar_defect))
+  (OR ((&chain_cell *P *Col))
+      ((input P Col)
+       (NOT (&chain_cell P)))))
+
+(OUT (&output ^P ^Col))

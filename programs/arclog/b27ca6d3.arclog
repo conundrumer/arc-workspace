@@ -1,0 +1,132 @@
+;; inputs 7b8c8dd84d2b9a0bba407850131163c68e4e47bff13710e6614c131cfd015e9c programs/solvers/b27ca6d3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b27ca6d3
+
+(INPUT field "every cell that is not a mark has the &background color"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT marks "the marks are cells of &mark, and each group of marks joined by shared sides is one cell or has &pair_size cells"
+
+  (DET_OR_RULE &mark RarestColor)
+
+  (DET_OR_RULE &pair_size "the cell count of a group that gets a frame" TileCount))
+
+(OUTPUT pick-pairs "a group of marks joined by shared sides that has &pair_size cells is a pair; a mark that touches others only at a corner does not join them"
+
+  (INIT &groups Connectivity
+    (node (P)
+      (input *P *Col)
+      (&mark (:C Col))))
+
+  (DET &kept_beside
+    (&groups.component *E *Id *P)
+    (neighbor P *D *Q)
+    (NOT (&groups.component E Id (:P Q)))
+    (ex_input E (:P Q) *Col)
+    (ex_output E (:P Q) Col))
+
+  (INIT &box BoundingBox
+    (key ((&groups.component ^Id *P))
+      (cell (P)
+        (&groups.component Id *P))))
+
+  (RULE &shape
+    (&box.cell (:key (:Id *G)) (:P *P2))
+    (&box.box (:key (:Id G)) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (DET &footprint
+    (&shape *E (:G *Id) *P)
+    (ex_output E)
+    (NOT (&kept_beside E Id)))
+
+  ;; the shape of a group that gets a frame
+  (RIGID_DET &pair
+    (instance ((&footprint ^E ^Id))
+      (&footprint E Id *P)))
+
+  (INIT &size Cardinality
+    (key ((&groups.component ^Id *P))
+      (member ((:m P))
+        (&groups.component Id *P))))
+
+  (INIT &largest Order
+    (member ((:t N))
+      (&size.size *N))
+    (score ((:t N) (:S N))
+      (&size.size *N)))
+
+  (INIT &shape2 Inclusion
+    (pattern ((:pattern D) (:m P))
+      (&pair.footprint (:Pose *D) *P))
+    (observed ((:observed Id) (:m P))
+      (&shape (:G *Id) *P))))
+
+(OUTPUT frame "each background cell that touches a cell of a pair at a side or a corner takes &frame"
+
+  (DET &frame AnyOutNewColor))
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (RULE &pair2
+    (&size.size (:key *Id) *N)
+    (&pair_size N))
+
+  ;; The cells that touch a cell of the group at a side or a corner.
+  (RULE &reach
+    (&groups.component *Id *P)
+    (neighbor P *D *Q)
+    (input (:P Q))))
+
+(ALTS $select "which groups get a frame" $SizeEquals
+  (ALT $SizeAtLeast
+    (OUTPUT pick-pairs "a group of at least &pair_size cells is a pair"
+      (RULE &pair2
+        (&size.size (:key *Id) *N)
+        (&pair_size (:N *K))
+        (>= N K))))
+  (ALT $LargestSize
+    (OUTPUT pick-pairs "the groups of the largest size in the input are the pairs"
+      (RULE &pair2
+        (&size.size (:key *Id) *N)
+        (&largest.maximal (:t N)))))
+  (ALT $ShapeMatch
+    (OUTPUT pick-pairs "a group whose shape is &pair_footprint in some placement is a pair"
+      (RULE &pair2
+        (&shape2.equal (:observed *Id))))))
+
+(ALTS $cells "which cells form a pair's frame" $Halo
+  (ALT $BoxRing
+    (OUTPUT frame "the frame is the ring of cells just outside the pair's bounding box"
+      ;; The cells that touch the group's box at a side or a corner.
+      (RULE &reach
+        (&box.box (:key *Id) *B)
+        (input *P)
+        (inside (:A P) B)
+        (neighbor P *D *Q)
+        (input (:P Q))
+        (NOT (inside (:A Q) B))))))
+
+(ALTS $target "which cells of the frame take its color" $OnBackground
+  (ALT $FrameOverMarks
+    (OUTPUT frame "every frame cell that the pair does not hold takes &frame, a mark included")
+    (RULE &frame_cell
+      (&pair2 *Id)
+      (&reach Id (:Q *P))
+      (NOT (&groups.component Id P)))))
+
+(RULE &frame_cell
+  (&pair2 *Id)
+  (&reach Id (:Q *P))
+  (input P *Col)
+  (&background (:C Col)))
+
+(RULE &output
+  (OR ((&frame_cell *P)
+       (&frame (:C *Col)))
+      ((input P Col)
+       (NOT (&frame_cell P)))))
+
+(OUT (&output ^P ^Col))

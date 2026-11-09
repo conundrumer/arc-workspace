@@ -1,0 +1,46 @@
+;; inputs 145e07bef6aba86bb22abc0006eca2cb36931748e8b68a517e7aaaa9b09c79a4 programs/solvers/342dd610.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 342dd610
+
+(DET &bg DominantColor)
+
+(DET &ink
+  (ex_input *E *P (:Col *C))
+  (NOT (&bg C)))
+
+;; Seat each color's ink among its output's cells, color for color.
+(INIT &occ Occurrences
+  (key ((OR ((&ink ^E (:P *P_in) (:C ^Col)))
+            ((&ink E (:C Col))
+             (ex_output E (:P *P_out) (:Col *Col2)))))
+    (cell ((:P P_out) (:v Col2))
+      (&ink E (:C Col))
+      (ex_output E (:P *P_out) (:Col *Col2)))
+    (shape ((:P P_in) (:v Col))
+      (&ink E (:P *P_in) (:C Col)))))
+
+(DET &broken
+  (&occ.occurrence (:key (:Col *C)) (:P *Delta))
+  (&ink *E C)
+  (ex_output E)
+  (NOT (&occ.occurrence (:key E (:Col C)) (:P Delta))))
+
+(DET &move
+  (&occ.occurrence (:key (:Col *C)) (:P *Delta))
+  (NOT (&broken C Delta))
+  (dist_pair (:P Delta) *D (:K *K1) (:K2 *K))
+  (< K1 K)
+  (jump_offset D K (:V Delta)))
+
+(RULE &moved
+  (input (:P *P_in) *Col)
+  (&move (:C Col) *D *K)
+  (jump (:P P_in) D K (:Q *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P)
+       (NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,168 @@
+;; inputs 1de455479de3693613456b682113d1bf849e7f46d40c23719f53c84ff61fad86 programs/solvers/9bbf930d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9bbf930d
+
+(INPUT wall "the edge on &wall_dir is a solid line of one ink, and the line inside it is blank"
+
+  ;; The edge the wall lies on.
+  (DET &wall_dir DirDomain)
+
+  ;; The one color of each edge's cells.
+  (INIT &edge_color Singleton
+    (key ((dir_elem ^D))
+      (member ((:v Col))
+        (input *P *Col)
+        (margin (:B P) D (:K 0))))))
+
+(INPUT pipes "a pipe is two parallel bars of one ink with a one-cell blank channel between them; a pipe may bend, and a pipe's mouth faces the wall")
+
+(OUTPUT inlet "a wall cell opens — takes the blank color — when the blank run inward from it reaches a pipe's channel")
+
+(OUTPUT roll "the ink of an opened wall cell rolls inward: it runs straight through blank cells until blocked, follows a bend at a corner where a pipe of one ink turns, and lands where it is blocked outside a bend or meets the grid edge"
+
+  (DET &bg DominantColor)
+
+  (RULE &blank
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (INIT &run Ray
+    (source (P)
+      (&blank *P))
+    (node (P)
+      (&blank *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &run_run_full
+    (&run.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &wall_side
+    (&wall_dir *D))
+
+  (RULE &wall
+    (&wall_side *D)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (margin (:B P) D (:K 0)))
+
+  (RULE &walled
+    (&blank *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &channel
+    (perp *A (:A2 *A_across))
+    (axis_of (:D *D1) (:A A_across))
+    (opposite (:D D1) (:Opp *D2))
+    (&walled *P (:D D1) *Col)
+    (&walled P (:D D2) Col))
+
+  (RULE &channel_turn
+    (&blank (:P *Q))
+    (perp_dir *D *D2)
+    (opposite D (:Opp *D_back))
+    (neighbor (:P Q) (:D D_back) (:Q *B))
+    (axis_of D *A)
+    (&channel (:P B) A *Col)
+    (neighbor (:P Q) (:D D2) (:Q *N))
+    (axis_of (:D D2) (:A *A2))
+    (&channel (:P N) (:A A2) Col))
+
+  (RULE &bend
+    (&channel_turn *Q *D *D2 *Col)
+    (&walled (:P Q) D Col)
+    (opposite (:D D2) (:Opp *D_side))
+    (&walled (:P Q) (:D D_side) Col))
+
+  (RULE &mouth
+    (&wall (:P *P_wall))
+    (&wall_side (:D *D_wall))
+    (opposite (:D D_wall) (:Opp *D))
+    (neighbor (:P P_wall) D *Q)
+    (&blank (:P Q)))
+
+  (RULE &inlet
+    (&mouth (:P_wall *P) *Q *D)
+    (axis_of D *A)
+    (OR ((&channel (:P Q) A))
+        ((&run_run_full (:V1 Q) (:V2 D) (:V3 *R))
+         (&channel (:P R) A))))
+
+  ;; The roll: from the end of the run inward from the mouth, each bend turns
+  ;; the ink into a new run.
+  (INIT &roll Propagation
+    (key ((&inlet (:P ^P0)))
+      (source ((:n (:P R) D))
+        (&mouth (:P_wall P0) *Q *D)
+        (&run.end (:P *R) D (:Origin Q))))
+    (edge ((:a (:P Q) D) (:b (:P R) (:D D2)))
+      (&bend *Q *D *D2)
+      (&run.end (:P *R) (:D D2) (:Origin Q)))))
+
+(OUTPUT keep "every other cell keeps its color")
+
+(ALTS $follow "what the rolling ink follows around a corner" $Pipe
+  (ALT $Channel
+    (OUTPUT roll "the ink follows the blank channel of a pipe around its bend, whether or not the outer bar closes the far side"
+      (RULE &bend
+        (&channel_turn *Q *D *D2 *Col)
+        (&walled (:P Q) D Col))))
+  (ALT $Exit
+    (OUTPUT roll "the ink, stopped in a channel, turns to the side the channel opens"
+      (RULE &bend
+        (&walled (:P *Q) *D)
+        (opposite D (:Opp *D_back))
+        (neighbor (:P Q) (:D D_back) (:Q *B))
+        (axis_of D *A)
+        (&channel (:P B) A)
+        (perp_dir D *D2)
+        (neighbor (:P Q) (:D D2) (:Q *N))
+        (&blank (:P N))
+        (opposite (:D D2) (:Opp *D_side))
+        (&walled (:P Q) (:D D_side))))))
+
+(ALTS $open "what opens the wall" $Reach
+  (ALT $Mouth
+    (OUTPUT inlet "a wall cell opens where a pipe's mouth faces it across a clear lane, with no ink beside the lane before the channel"
+      (RULE &lane_blocked
+        (&mouth *P_wall *Q *D)
+        (&run_run_full (:V1 Q) (:V2 D) (:V3 *S))
+        (&run_run_full (:V1 S) (:V2 D) (:V3 *R))
+        (!= S R)
+        (perp_dir D (:D2 *D_perp))
+        (&walled (:P S) (:D D_perp)))
+
+      ;; Mouth adds to Reach that no ink lies beside the lane before the channel.
+      (RULE &inlet
+        (&mouth (:P_wall *P) *Q *D)
+        (axis_of D *A)
+        (OR ((&channel (:P Q) A))
+            ((&run_run_full (:V1 Q) (:V2 D) (:V3 *R))
+             (&channel (:P R) A)
+             (NOT (&lane_blocked (:P_wall P) R))))))))
+
+(ALTS $locate "how the wall is located" $Stored
+  (ALT $Derived
+    (INPUT wall "the wall is the edge that is a solid line of one ink, and the line inside it is blank"
+      (RULE &wall_side
+        (&edge_color.value (:key *D) (:v *Col))
+        (NOT (&bg (:C Col)))))))
+
+(RULE &landing
+  (&roll.reached (:key (:P0 *P_wall)) (:n *P *D))
+  (NOT (&bend (:Q P) D)))
+
+(RULE &output
+  (OR ((&inlet *P)
+       (&bg (:C *Col)))
+      ((&landing (:P_wall *P0) P)
+       (&wall (:P P0) Col))
+      ((input P Col)
+       (NOT (&inlet P))
+       (NOT (&landing P)))))
+
+(OUT (&output ^P ^Col))

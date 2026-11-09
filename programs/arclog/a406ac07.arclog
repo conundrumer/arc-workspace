@@ -1,0 +1,65 @@
+;; inputs 473fa7a3d1987a3c667750e4c2f0b176f4d7ad69be5c89ffa67c6f32493b38aa programs/solvers/a406ac07.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a406ac07
+
+(DET &header DiagDirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &line_color
+  (input *P)
+  (&header (:D *Diag))
+  (corner_dir (:C Diag) *A *D)
+  (input (:P *Q) *Col)
+  (margin (:B Q) D (:K 0))
+  (same_line A P Q))
+
+(RULE &agree
+  (&header (:D *Diag))
+  (diag_dirs (:D Diag) *D1 *D2)
+  (&line_color *P (:D D1) *Col)
+  (&line_color P (:D D2) Col))
+
+(ALTS $choice "how the line colors are read, and what an unmatched cell becomes" $Passthrough
+  (ALT $Repaint
+    (RULE &on_header
+      (input *P)
+      (&header (:D *Diag))
+      (corner_dir (:C Diag) *D)
+      (margin (:B P) D (:K 0)))
+
+    (RULE &output
+      (OR ((input *P *Col)
+           (&on_header P))
+          ((&agree P Col)
+           (NOT (&on_header P)))
+          ((input P)
+           (NOT (&on_header P))
+           (NOT (&agree P))
+           (&bg (:C Col))))))
+  (ALT $Coincide
+    (RULE &line_ink
+      (input *P)
+      (input (:P *Q) *Col)
+      (NOT (&bg (:C Col)))
+      (axis_elem *A)
+      (same_line A P Q))
+
+    (RULE &coincide
+      (input *P (:Col *C0))
+      (&bg (:C C0))
+      (perp (:A *A1) *A2)
+      (&line_ink P (:A A1) *Col)
+      (&line_ink P (:A A2) Col))
+
+    (RULE &output
+      (OR ((&coincide *P *Col))
+          ((input P Col)
+           (NOT (&coincide P)))))))
+
+(RULE &output
+  (OR ((&agree *P *Col))
+      ((input P Col)
+       (NOT (&agree P)))))
+
+(OUT (&output ^P ^Col))

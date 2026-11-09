@@ -1,0 +1,126 @@
+;; inputs ef54b8be605cdbf0e3e494f3ab26c17595464df44a1bf535b031b6d1d7d78a3a programs/solvers/5d588b4d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5d588b4d
+
+(DET &bg DominantColor)
+
+(DET &read_corner DiagDirDomain)
+
+(DET &read_axis AxisDomain)
+
+(RULE &read_dir
+  (&read_corner (:D *Cor))
+  (&read_axis *A)
+  (diag_dirs (:D Cor) A *D1 *D2))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &mark_tally Cardinality
+  (member ((:m P))
+    (&mark *P)))
+
+;; The square whose side is the number the marks give.
+(INIT &square Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&mark_tally.size *N)))
+
+(RULE &width
+  (input *P)
+  (&read_dir *D2)
+  (axis_of (:D D2) *A)
+  (frame_extent P A *N))
+
+(ALTS $choice "what the number counts" $Count
+  (ALT $Span
+    (DET &span_axis AxisDomain)
+
+    (INIT &span BoundingBox
+      (cell (P)
+        (&mark *P)))
+
+    ;; The square whose side is the number the marks give.
+    (INIT &square Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&span_axis (:A *A2))
+        (&span.box *B)
+        (&mark *P)
+        (box_extent B P (:A A2) *N)))))
+
+(RULE &run_cell
+  (&square.cell *P)
+  (&read_corner (:D *Cor))
+  (corner_dist P (:Diag Cor) (:K *R)))
+
+;; Each run's cells rank into slots 0, 1, ... along the run.
+(INIT &slot Order
+  (key ((&run_cell (:R ^K) *P)
+        (&read_dir *D1)
+        (margin (:B P) (:D D1) (:K *T)))
+    (member ((:t T))
+      (&run_cell (:R K) *P)
+      (&read_dir *D1)
+      (margin (:B P) (:D D1) (:K *T)))
+    (score ((:t T) (:S T))
+      (&run_cell (:R K) *P)
+      (&read_dir *D1)
+      (margin (:B P) (:D D1) (:K *T)))))
+
+(INIT &run_slots Cardinality
+  (key ((&slot.rank (:key ^K) (:R *J)))
+    (member ((:m J))
+      (&slot.rank (:key K) (:R *J)))))
+
+(RULE &item
+  (OR ((&slot.rank (:key (:K *Run)) (:R *Slot)))
+      ;; The gap after a run takes the slot past that run's last slot. No run
+      ;; follows the final run, so that run takes no gap.
+      ((&run_slots.size (:key (:K Run)) (:N Slot))
+       (&run_cell (:R *K2))
+       (> K2 Run))))
+
+(INIT &seq Order
+  (member ((:t (:Run I_run) (:Slot I_slot)))
+    (&item (:Run *I_run) (:Slot *I_slot)))
+  (score ((:t (:Run K) (:Slot J)) (:S K))
+    (&item (:Run *K) (:Slot *J)))
+  (secondary_score ((:t (:Run K) (:Slot J)) (:S J))
+    (&item (:Run *K) (:Slot *J))))
+
+(RULE &place
+  (&seq.rank (:t *Run *Slot) (:R *F))
+  (&width (:N *W))
+  (divide (:T F) (:Side W) (:Gap 0) (:Part *R) (:Remainder *C)))
+
+(INIT &line_tally Cardinality
+  (member ((:m R))
+    (&place *R)))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (OR ((&read_dir *D1)
+         (axis_of (:D D1) *A)
+         (&line_tally.size *N))
+        ((&read_dir *D2)
+         (axis_of (:D D2) A)
+         (&width N)))))
+
+(RULE &filled
+  (&slot.rank (:key (:K *I_run)) (:R *I_slot))
+  (&place (:Run I_run) (:Slot I_slot) *R *C)
+  (&canvas.cell *P)
+  (&read_dir *D1 *D2)
+  (margin (:B P) (:D D1) (:K R))
+  (margin (:B P) (:D D2) (:K C)))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&mark *Col))
+      ((&canvas.cell P)
+       (NOT (&filled P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

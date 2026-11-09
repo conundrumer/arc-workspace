@@ -1,0 +1,9 @@
+;; inputs cef50823de1fe9fc404d7dc8ca15141b5ef6a2e273e173d649498688c86108e9 programs/solvers/9aaea919.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9aaea919
+
+(param &base Dir (DIR_B))
+(param &gap number (1))
+(param &spend Color (2))
+(param &gain Color (3))
+(param &spent_color Color (5))

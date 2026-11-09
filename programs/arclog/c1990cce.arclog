@@ -1,0 +1,173 @@
+;; inputs a68bdba824af5f50613050f14c9a4785387c7ed36bb3ac75dd0b7dca196781c6 programs/solvers/c1990cce.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c1990cce
+
+(RULE &side
+  (input *P)
+  (axis_extents P (:N1 *N) (:N2 *K))
+  (> N K))
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side *N)))
+
+(DET &grow DirDomain)
+
+(RULE &corner
+  (&grow *D)
+  (corner_dir (:C *Diag) D))
+
+(DET &echo_axis DiagAxisDomain)
+
+(RULE &cast_corner
+  (&corner *Diag)
+  (diag_axis_of (:D Diag) (:Da *DA))
+  (&echo_axis (:Da DA)))
+
+(RULE &mirror_corner
+  (&corner *Diag)
+  (NOT (&cast_corner Diag)))
+
+(DET &bg DominantColor)
+
+(RULE &seed2
+  (input (:P *P_in) *Col)
+  (NOT (&bg (:C Col)))
+  (&frame.cell *P)
+  (&grow *D)
+  (opposite D (:Opp *D0))
+  (same_slab (:D D0) (:P1 P_in) (:P2 P)))
+
+(DET &spacing SepTileCount)
+
+(RULE &emitter
+  (&seed2 (:P *S))
+  (&grow *D)
+  (axis_of D *A)
+  (opposite D (:Opp *O))
+  (&frame.cell (:P *Q))
+  (same_line A (:P S) Q)
+  (relative (:Base S) (:X Q) (:X_rel *V))
+  (margin (:B V) (:D O) *K)
+  (&spacing (:N *Sp))
+  (divide (:T K) (:Side Sp) (:Gap 0) (:Remainder 0))
+  (&mirror_corner (:Diag *MD))
+  (jump (:P S) (:D MD) K (:Q *P)))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&emitter *P)
+    (frame_extent P *A *N)))
+
+(DET &echo AnyOutNewColor)
+
+(RULE &arm
+  (&frame.cell *P)
+  (&seed2 (:P *S))
+  (&corner *Diag)
+  (diag_axis_of (:D Diag) (:Da *DA))
+  (same_line (:A DA) P (:Q S)))
+
+(INIT &rays Ray
+  (source (P)
+    (&emitter *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir ((:D Diag))
+    (&cast_corner *Diag)))
+
+(RULE &echo2
+  (&rays.ray *P)
+  (&frame.cell P)
+  (NOT (&arm P)))
+
+(RULE &v_color2
+  (&seed2 *Col))
+
+(ALTS $v "V color" $VSeed
+  (ALT $VFixed
+    (DET &v_color RarestColor)
+
+    (RULE &v_color2
+      (&v_color (:C *Col)))))
+
+(ALTS $e "echo placement" $Emit
+  (ALT $Stripe
+    (RULE &within2
+      (&frame.cell *P)
+      (&seed2 (:P *S))
+      (&cast_corner (:Diag *CD))
+      (nearer (:D CD) P (:Q S))
+      (&mirror_corner (:Diag *MD))
+      (nearer (:D MD) P (:Q S)))
+
+    (DET &seed
+      (ex_input *E (:P *P_in) *Col)
+      (NOT (&bg (:C Col)))
+      (ex_output E *P)
+      (&grow *D)
+      (opposite D (:Opp *D0))
+      (same_slab (:D D0) (:P1 P_in) (:P2 P)))
+
+    (DET &within
+      (ex_output *E *P)
+      (&seed E (:P *S))
+      (&cast_corner (:Diag *CD))
+      (nearer (:D CD) P (:Q S))
+      (&mirror_corner (:Diag *MD))
+      (nearer (:D MD) P (:Q S)))
+
+    ;; The steps from each echoed cell inside the cone to the seed, counted
+    ;; as the seed's distance to the mirror corner less the cell's.
+    (INIT &near Order
+      (key ((ex_output ^E *P *Col)
+            (&echo (:C Col))
+            (&within E P)
+            (&seed E (:P *S))
+            (relative (:Base P) (:X S) (:X_rel *V))
+            (&mirror_corner (:Diag *MD))
+            (corner_dist (:P V) (:Diag MD) *K))
+        (member ((:t K))
+          (ex_output E *P *Col)
+          (&echo (:C Col))
+          (&within E P)
+          (&seed E (:P *S))
+          (relative (:Base P) (:X S) (:X_rel *V))
+          (&mirror_corner (:Diag *MD))
+          (corner_dist (:P V) (:Diag MD) *K))
+        (score ((:t K) (:S K))
+          (ex_output E *P *Col)
+          (&echo (:C Col))
+          (&within E P)
+          (&seed E (:P *S))
+          (relative (:Base P) (:X S) (:X_rel *V))
+          (&mirror_corner (:Diag *MD))
+          (corner_dist (:P V) (:Diag MD) *K))))
+
+    (DET &period
+      (&near.minimal (:t *K)))
+
+    ;; $Stripe — diagonal offset from the echo-axis arm is a multiple of
+    ;; &period: the same corner_dist class from the mirror corner as the seed.
+    (RULE &echo2
+      (&within2 *P)
+      (&seed2 (:P *S))
+      (&mirror_corner (:Diag *MD))
+      (corner_dist P (:Diag MD) (:K *Kp))
+      (corner_dist (:P S) (:Diag MD) (:K *Ks))
+      (&period (:K *Per))
+      (divide (:T Kp) (:Side Per) (:Gap 0) (:Remainder *R))
+      (divide (:T Ks) (:Side Per) (:Gap 0) (:Remainder R)))))
+
+(RULE &output
+  (OR ((&arm *P)
+       (&v_color2 *Col))
+      ((&echo2 P)
+       (&echo (:C Col)))
+      ((&frame.cell P)
+       (NOT (&arm P))
+       (NOT (&echo2 P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,184 @@
+;; inputs df2aab782855c1c52dbd3f7764d318505918903df8da759d380c1661277c5592 programs/solvers/e4941b18.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e4941b18
+
+(INPUT background "every cell that is not of the block or a mark has the color `background`")
+
+(INPUT block "one solid rectangle of the color `block_color`, whose side toward `gravity` lies on the grid edge toward `gravity`")
+
+(INPUT marks-on-top "one cell of `pusher_color` and one cell of `pushed_color` stand in the line next to the block on its side away from `gravity`, both within the block's extent across `gravity`")
+
+(INPUT room-to-fall "the line next to the block's side toward which the pusher pushes lies inside the grid")
+
+(OUTPUT pusher-takes-place "the pusher's cell becomes `background`, and the pushed mark's cell becomes `pusher_color`")
+
+(OUTPUT pushed-falls-off "the pushed mark moves in the direction from the pusher toward it, to the first cell past the end of the block, then falls toward `gravity` to the grid edge, where its cell becomes `pushed_color`")
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET_OR_RULE &background DominantColor
+    (&common.maximal (:t *C)))
+
+  (DET &pusher_color
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Bg))
+    (&background (:C Bg))
+    (NOT (&background (:C Col))))
+
+  (RULE &pusher
+    (input *P *Col)
+    (&pusher_color Col))
+
+  (DET &pushed_color
+    (ex_input *E *P (:Col *Bg))
+    (&background (:C Bg))
+    (ex_output E P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &pushed
+    (input *P *Col)
+    (&pushed_color Col))
+
+  (DET &off_edge
+    (dir_elem *D)
+    (ex_output *P *Col)
+    (&pushed_color Col)
+    (NOT (margin (:B P) D (:K 0))))
+
+  (DET &gravity
+    (dir_elem *D)
+    (NOT (&off_edge D)))
+
+  (DET &block_color
+    (ex_input *E *P (:Col *C2))
+    (&pushed_color (:Col C2))
+    (&gravity (:D *Down))
+    (neighbor P (:D Down) *Q)
+    (ex_input E (:P Q) *Col))
+
+  ;; The block, as the bounding box of the cells each Find branch takes.
+  (INIT &block BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&block_color Col)))
+
+  (RULE &block_cell
+    (&block.box *B)
+    (input *P)
+    (inside (:A P) B))
+
+  (RULE &perch
+    (input *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&block_cell (:P Q)))
+
+  (RULE &down
+    (&gravity *D))
+
+  (RULE &push
+    (&down (:D *Down))
+    (&pusher (:P *P1))
+    (&perch (:P P1) (:D Down))
+    (&pushed (:P *P2))
+    (&perch (:P P2) (:D Down))
+    (perp_dir (:D Down) (:D2 *D))
+    (nearer D (:P P2) (:Q P1)))
+
+  (RULE &past
+    (&push (:D *Push))
+    (&down (:D *Down))
+    (opposite (:D Down) (:Opp *Up))
+    (diag_dirs (:D *Diag) (:D1 Up) (:D2 Push))
+    (&block.box *B)
+    (input (:P *Q))
+    (inside (:A Q) B)
+    (same_corner (:D Diag) (:P1 Q) (:P2 B))
+    (neighbor (:P Q) (:D Diag) (:Q *P))))
+
+(ALTS $f "what the block is" $BlockByColor
+  (ALT $BlockAsNonBackground
+    (INPUT block "the bounding box of the cells whose color is none of `background`, `pusher_color` and `pushed_color`"
+      ;; The block, as the bounding box of the cells each Find branch takes.
+      (INIT &block BoundingBox
+        (cell (P)
+          (input *P *Col)
+          (NOT (&background (:C Col)))
+          (NOT (&pusher_color Col))
+          (NOT (&pushed_color Col)))))))
+
+(ALTS $s "where the pushed mark stops falling" $FallToEdge
+  (ALT $LandOnBlockBase
+    (OUTPUT pushed-falls-off "the pushed mark moves in the direction from the pusher toward it, to the first cell past the end of the block, then lands in the line of the block's side toward `gravity`")
+    (RULE &landing
+      (&push (:D *Push))
+      (&down (:D *Down))
+      (diag_dirs (:D *Diag) (:D1 Down) (:D2 Push))
+      (&block.box *B)
+      (input (:P *Q))
+      (inside (:A Q) B)
+      (same_corner (:D Diag) (:P1 Q) (:P2 B))
+      (neighbor (:P Q) (:D Push) (:Q *P))
+      (input P)))
+  (ALT $FallUntilBlocked
+    (OUTPUT pushed-falls-off "the pushed mark moves in the direction from the pusher toward it, to the first cell past the end of the block, then falls toward `gravity` until the next cell is off the grid or not `background`"
+      (INIT &fall Ray
+        (source (P)
+          (input *P *Col)
+          (&background (:C Col)))
+        (node (P)
+          (input *P *Col)
+          (&background (:C Col)))
+        (dir ((:D Down))
+          (&down (:D *Down)))))
+    (RULE &landing
+      (&past (:P *T) *Down)
+      (&fall.end *P (:D Down) (:Origin T)))))
+
+(ALTS $g "where gravity comes from" $StoredGravity
+  (ALT $GravityFromMarks
+    (INPUT block "gravity is the direction from the marks' line toward the block; undefined where the marks stand on no side of the block"
+      ;; the direction from the marks toward the block
+      (RULE &down
+        (&pusher (:P *P1))
+        (&perch (:P P1) *D)
+        (&pushed (:P *P2))
+        (&perch (:P P2) D)))
+    (INPUT marks-on-top "the marks stand in the line next to one side of the block, within the block's extent along that side")))
+
+(RULE &landing
+  (&past (:P *T) *Down *Push)
+  (input *P)
+  (same_dist (:D Push) (:P1 T) (:P2 P))
+  (margin (:B P) (:D Down) (:K 0)))
+
+(RULE &moved
+  (OR ((&landing)
+       (&push (:P1 *P))
+       (&background (:C *Col)))
+      ((&landing)
+       (&push (:P2 P))
+       (&pusher_color Col))
+      ((&landing P)
+       (&pushed_color Col))))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((&landing)
+       (input P Col)
+       (NOT (&moved P)))))
+
+(OUT (&output ^P ^Col))

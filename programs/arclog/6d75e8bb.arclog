@@ -1,0 +1,51 @@
+;; inputs 484e5334aa6c37af03e81b16042b6ff3b13a8cb1ae2d6691737ced63364e12bc programs/solvers/6d75e8bb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6d75e8bb
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &filled
+  (input *P *Col)
+  (&bg (:C Col))
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(ALTS $choice "what owns a box" $Whole
+  (ALT $Each
+    (INIT &comps Connectivity
+      (node (P)
+        (&ink *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (INIT &comp_box BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &filled
+      (input *P *Col)
+      (&bg (:C Col))
+      (&comp_box.box *B)
+      (inside (:A P) B))))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

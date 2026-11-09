@@ -66,8 +66,8 @@ run that writes the rows of its solver faulted; or it has no rows file.
 The rows of a relation whose columns the type check gives no types are not
 written, so its line says no rows file was written.
 
-The corpus is the arclog files of `gen/` of `corpus_out()`: `arclog_convert.out`
-in the main worktree, `work/arclog/` of the worktree in a linked one. They
+The corpus is the arclog files of `corpus_dir()`: `programs/arclog/` in the main worktree,
+`work/arclog/gen/` of the worktree in a linked one. They
 reflect a solver's `.dl` file once `uv run python -m arclog_convert.convert
 <stem>` has run on it. A run of the default corpus on given task ids runs that
 command on them first, and prints its summary on stderr; a run on every
@@ -109,7 +109,7 @@ from study.corpus_survey.bodies import (
     names,
     strip,
 )
-from study.corpus_survey.trees import Node, arclog, gen_dir, head
+from study.corpus_survey.trees import Node, arclog, head
 from study.relation_shapes import BOX, RowsFile, Value, best_factoring, distinct_values, pair_shapes, read_rows_file
 
 THRESHOLD = 1000
@@ -161,8 +161,13 @@ def in_linked_worktree() -> bool:
 
 
 def corpus_out() -> Path:
-    """The directory whose `gen/` is the default corpus: `work/arclog/` of this linked worktree, or `arclog_convert.out()` in the main worktree."""
+    """The output directory of the default corpus: `work/arclog/` of this linked worktree, or `arclog_convert.out()` in the main worktree."""
     return checkout.ROOT / "work" / "arclog" if in_linked_worktree() else arclog_convert.out()
+
+
+def corpus_dir() -> Path:
+    """The default corpus: the converted solvers of `corpus_out()`, which are `programs/arclog/` in the main worktree and `gen/` of `corpus_out()` in a linked one."""
+    return arclog_convert.corpus(corpus_out())
 
 
 def reconvert(ids: Sequence[str]) -> None:
@@ -683,7 +688,7 @@ def counts_of(solver: str, text: str) -> str:
             if entry.name != "solvers":
                 (programs / entry.name).symlink_to(entry)
         (solvers / f"{solver}.dl").write_text(text)
-        plan = gen_dir().parent / "plan" / f"{solver}.txt"
+        plan = arclog_convert.out() / "plan" / f"{solver}.txt"
         checkout_solvers = checkout.ROOT / "programs" / "solvers"
         if plan.exists() and (checkout_solvers / f"{solver}.dl").read_text() == text:
             was = plans.PLAN_HASH + plans.inputs_hash(solver, checkout_solvers)
@@ -695,7 +700,7 @@ def counts_of(solver: str, text: str) -> str:
                               env={**os.environ, "ARCLOG_SOLVERS": str(solvers)}, capture_output=True, text=True)
         if done.returncode != 0:
             raise RuntimeError(f"the conversion of {solver} failed:\n{done.stdout}{done.stderr}")
-        got = row_counts(out / "gen", TASKS_DIR, [solver])
+        got = row_counts(arclog_convert.corpus(out), TASKS_DIR, [solver])
         names = json.loads((out / "names" / f"{solver}.json").read_text())
     MEASURES.mkdir(parents=True, exist_ok=True)
     cached.with_suffix(".names.json").write_text(json.dumps(names))
@@ -760,7 +765,7 @@ def measure(solver: str, before: str, after: str, texts: tuple[str, str] = ("", 
 
 def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="python -m study.table_lint", description=(__doc__ or "").split("\n\n")[0])
-    parser.add_argument("--corpus", type=Path, default=corpus_out() / "gen", help="the directory of the arclog files, `gen/` of `corpus_out()` by default: `arclog_convert.out` in the main worktree, `work/arclog/` in a linked one")
+    parser.add_argument("--corpus", type=Path, default=corpus_dir(), help="the directory of the arclog files, `corpus_dir()` by default: `programs/arclog/` in the main worktree, `work/arclog/gen/` in a linked one")
     parser.add_argument("--measure", action="store_true", help="print each given solver's tables as committed and as its file now holds them, then its lint lines")
     parser.add_argument("task_ids", nargs="*", help="the solvers to lint, every solver of the corpus by default")
     args = parser.parse_args(argv)
@@ -773,7 +778,7 @@ def main(argv: Sequence[str]) -> int:
             before, after = counts_of(solver, old), counts_of(solver, new)
             for line in measure(solver, before, after, (old, new), sourced(solver, old) | sourced(solver, new)):
                 print(line, flush=True)
-    if args.task_ids and args.corpus == corpus_out() / "gen":
+    if args.task_ids and args.corpus == corpus_dir():
         reconvert(args.task_ids)
     for line in lint(args.corpus, TASKS_DIR, args.task_ids):
         print(line, flush=True)

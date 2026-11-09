@@ -1,0 +1,12 @@
+;; inputs 9757e0fa478b87dff24b259536da94d52c506f8601f3acf901a5edaa398d02c6 programs/solvers/891232d6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 891232d6
+
+(param &wall Color (7))
+(param &marker Color (6))
+(param &trail Color (2))
+(param &hit Color (8))
+(param &aside Color (4))
+(param &onward Color (3))
+(param &climb_dir Dir (DIR_T))
+(param &aside_sense Sense (SENSE_CW))

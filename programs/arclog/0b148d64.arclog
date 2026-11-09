@@ -1,0 +1,72 @@
+;; inputs 0bade432f44ebaee21f4af28485d65baa7b0e1956c820f1e6cbcee7e6219aad0 programs/solvers/0b148d64.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0b148d64
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &ink_slice
+  (&ink *P)
+  (split P *A *Along))
+
+(RULE &sep_cell
+  (input *P)
+  (split P *A *Along)
+  (NOT (&ink_slice Along)))
+
+(INIT &sep Ray
+  (source (P)
+    (&sep_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &side
+  (input *P)
+  (opposite *D *Opp)
+  (NOT (&sep.ray P (:D Opp))))
+
+(RULE &panel
+  (diag_dirs (:D *Q) *D1 *D2)
+  (&side *P (:D D1))
+  (&side P (:D D2)))
+
+;; The panel a color belongs to; a color two panels share belongs to neither.
+(INIT &color_panel Singleton
+  (key ((&panel *P *Q)
+        (&ink P ^Col))
+    (member ((:v Q))
+      (&panel *P *Q)
+      (&ink P Col))))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&color_panel.value (:v *Q))
+    (&panel *P Q)))
+
+(ALTS $choice "what the crop's box is" $Panel
+  (ALT $Ink
+    (INIT &view BoundingBox
+      (cell (P)
+        (&color_panel.value (:v *Q))
+        (&panel *P Q)
+        (&ink P)))
+
+    (RULE &viewed
+      (input *P))))
+
+(RULE &viewed
+  (&view.cell *P))
+
+(RULE &output
+  (&viewed (:P *P2))
+  (&view.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (input (:P P2) *Col))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,101 @@
+;; inputs a49d1a49bd9d260b93e61eed939164e0de1631bb79a60d06a7b1c6dff7f30968 programs/solvers/184a9768.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 184a9768
+
+(DET &bg DominantColor)
+
+;; Scattered single cells that take no part.
+(DET &noise VanishedColor)
+
+(RULE &flood_node
+  (input *P *Col)
+  (&bg (:C Col)))
+
+;; Background the grid's content closes off from the edge.
+(INIT &flood Flood
+  (node (P)
+    (&flood_node *P))
+  (source (P)
+    (&flood_node *P)
+    (margin (:B P) *D (:K 0))))
+
+(RULE &hole
+  (&flood_node *P)
+  (NOT (&flood.reached P)))
+
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&noise (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&noise (:C Col))))))
+
+(RULE &frame
+  (&obj.component (:Id *O) *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&hole (:P Q)))
+
+(RULE &piece
+  (&obj.component (:Id *O))
+  (NOT (&frame O)))
+
+;; A piece's shape, viewed from its own bbox.
+(INIT &bbox BoundingBox
+  (key ((&piece ^O))
+    (cell (P)
+      (&obj.component (:Id O) *P))))
+
+;; Where a piece lands with each of its cells on a hole.
+(INIT &occ Occurrences
+  (key ((OR ((&bbox.cell (:key ^O) *P)
+             (&bbox.box (:key O) *B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel *P_inner)))
+            ((&piece O)
+             (&hole P))))
+    (cell (P)
+      (&piece O)
+      (&hole *P))
+    (shape ((:P P_inner))
+      (&bbox.cell (:key O) *P)
+      (&bbox.box (:key O) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &covers
+  (&occ.occurrence (:key *O) (:P *Cd_p))
+  (&occ.shape (:key O) (:P *P_inner))
+  (compose (:A Cd_p) (:B P_inner) (:C *P)))
+
+;; Where the covers differ, every rival spot stays alive; the rivals agree
+;; on the color they paint.
+(CHOOSE &pruning
+  (for ((&occ.occurrence (:key ^O)))
+    (from (&occ.occurrence (:key O) (:P *P_spot))))
+  (never
+    (&occ.occurrence (:key *O) (:P *P_spot))
+    (&occ.occurrence (:key (:O *O2)) (:P *P_spot2))
+    (&covers O (:Cd_p P_spot) *P)
+    (&covers (:O O2) (:Cd_p P_spot2) P)))
+
+(RULE &frame_cell
+  (&obj.component (:Id *O) (:key *Col) *P)
+  (&frame O))
+
+(RULE &fill
+  (&pruning *O (:P_spot *Cd_p_spot))
+  (&covers O (:Cd_p Cd_p_spot) *P)
+  (&obj.component (:Id O) (:key *Col)))
+
+(RULE &output
+  (input *P)
+  (OR ((&frame_cell P *Col))
+      ((&fill P Col))
+      ((NOT (&frame_cell P))
+       (NOT (&hole P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

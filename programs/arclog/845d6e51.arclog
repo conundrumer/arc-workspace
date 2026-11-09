@@ -1,0 +1,105 @@
+;; inputs cc0698d28ceda7384d8d997fe48c86d51c1df1464426088748c2f4a87e187a0e programs/solvers/845d6e51.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 845d6e51
+
+(DET &bg DominantColor)
+
+(DET &frame SharedColor)
+
+;; The group under which a shape and a legend shape are the same shape.
+(DET &shape_sym SymDomain)
+
+;; Same-colored ink objects.
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&frame (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&frame (:C Col))))))
+
+(INIT &border BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&frame (:C Col))))
+
+(RULE &boxed
+  (input *P)
+  (&border.box *B)
+  (inside (:A P) B))
+
+(RULE &legend
+  (&obj.component *P *Id)
+  (&boxed P))
+
+(RULE &query2
+  (&obj.component *P *Id)
+  (NOT (&boxed P)))
+
+;; Each object's shape: its cells read in its own box.
+(INIT &obj_box BoundingBox
+  (key ((&obj.component *P ^Id))
+    (cell (P)
+      (&obj.component *P Id))))
+
+(RULE &shape
+  (&obj_box.cell (:key *Id) *P)
+  (&obj_box.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(ALTS $choice "what separates the legend shapes from the shapes to recolor" $Boxed
+  (ALT $Marked
+    (DET &query ChangedColor)
+
+    (RULE &legend
+      (&obj.component (:key *Col) *Id)
+      (NOT (&query (:C Col))))
+
+    (RULE &query2
+      (&obj.component (:key *Col) *Id)
+      (&query (:C Col)))))
+
+(INIT &cong Agreement
+  (key ((&query2 (:Id ^Q))
+        (&legend (:Id ^L)))
+    (source ((:P P_inner))
+      (&shape (:Id Q) *P_inner))
+    (target ((:P P_inner))
+      (&shape (:Id L) *P_inner))))
+
+(RULE &cong_src
+  (&query2 (:Id *Q))
+  (&legend)
+  (&shape (:Id Q) (:P_inner *P)))
+
+(RULE &over
+  (&query2 (:Id *Q))
+  (&legend (:Id *L))
+  (&shape (:Id L) (:P_inner *P_legend))
+  (d4_inverse *D (:D_inv *D_back))
+  (apply (:D D_back) (:P P_legend) (:P_out *P))
+  (NOT (&cong_src Q P)))
+
+(RULE &onto
+  (&cong_src *Q)
+  (&legend (:Id *L))
+  (d4_elem *D)
+  (NOT (&cong.mismatch (:key Q L) D))
+  (NOT (&over Q L D)))
+
+(RULE &recolor
+  (&onto *Q *L *D)
+  (&shape_sym *S)
+  (sym_member S D)
+  (&obj.component *P (:Id Q))
+  (&obj.component (:key *Col) (:Id L)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&recolor P *Col))
+      ((NOT (&recolor P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

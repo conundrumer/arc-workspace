@@ -1,0 +1,350 @@
+;; inputs 2e7d3428236e2e4ebf8c0d6b1b22b36a571bdbb5c4380194f28f355e832b0f21 programs/solvers/b10624e5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b10624e5
+
+(INPUT cross "one full row and one full column of &divider_color cross at the center and cut the grid into four equal quadrants on a field of &bg"
+
+  (DET_OR_RULE &divider_color SharedColor)
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT template-quadrant "the top-left quadrant holds one figure: a solid square of &core_color with blocks of other colors attached around it"
+
+  ;; The color of each line of the grid that holds one color alone.
+  (INIT &line_color Singleton
+    (key ((axis_elem ^A)
+          (input *P *Col)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE_OR_DET &quad_divider "The quadrants the full lines of a divider color cut."
+    (&line_color.value (:key *A *L) (:v *Col))
+    (&divider_color (:C Col)))
+
+  (RULE &quad_on_divider
+    (input *P)
+    (&quad_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  ;; The quadrants the full lines of a divider color cut.
+  (INIT &quad_rank Order
+    (key ((OR ((&quad_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&quad_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&quad_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &quad_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&quad_on_divider P A))
+    (margin (:B P) D *K)
+    (&quad_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &quad_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&quad_part_idx *P D (:N *N1))
+    (&quad_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE_OR_DET &quad_tile_of "The quadrants the full lines of a divider color cut."
+    (&quad_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&quad_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET &core_color SharedColor)
+
+  (RULE &quad_cell
+    (&quad_tile_of *P (:P_tile *T))
+    (input P *Col))
+
+  (RULE &lacked
+    (&quad_cell *Col)
+    (&quad_cell *T)
+    (NOT (&quad_cell T Col)))
+
+  (INIT &shared Singleton
+    (member ((:v Col))
+      (&quad_cell *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&lacked Col)))))
+
+(INPUT lone-cores "each other quadrant holds one solid square of &core_color and nothing else")
+
+(OUTPUT template "the template is the one quadrant that holds a color other than &bg and &core_color")
+
+(OUTPUT keep-input "each input cell stays in the output unless a rule below paints it")
+
+(OUTPUT mirror "the figure a lone core gets is the template quadrant reflected across each divider that lies between the template quadrant and that core's quadrant: one reflection for a side neighbor, both for the diagonal quadrant"
+
+  (RULE &core_col
+    (&core_color (:C *Col)))
+
+  (INIT &template Singleton
+    (member ((:v T))
+      (&core_col)
+      (&quad_cell *T *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&core_col Col))))
+
+  (RULE_OR_DET &template.value)
+
+  (RULE &tmpl_ink
+    (&template.value (:v *T))
+    (&quad_cell T *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &piece8 Connectivity
+    (node (P)
+      (&tmpl_ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &piece4 Connectivity
+    (node (P)
+      (&tmpl_ink *P))))
+
+(OUTPUT scale "on each axis, the template's blocks of side u, the largest side whose tiling aligned to the template core leaves the template quadrant constant on each block, number k = t / u across the template core. Each such block becomes a block of side s / k, where s is the lone core's extent on that axis, laid out so that the template core's blocks land on the lone core. The model is undefined where k does not divide s")
+
+(OUTPUT paint "each cell of a lone core's quadrant that the scaled figure covers with a block of a color other than &bg takes that color. A block's part outside the quadrant is dropped"
+
+  ;; Each quadrant's core.
+  (INIT &core BoundingBox
+    (key ((&core_col *Col)
+          (&quad_cell ^T *P Col))
+      (cell (P)
+        (&core_col *Col)
+        (&quad_cell T *P Col))))
+
+  (INIT &side_cand_division Division
+    (key ((&template.value (:v *T))
+          (&core.box (:key T) *B)
+          (&core.cell (:key T) *P)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_in))
+          (sub_extent (:P P_in) ^A (:K ^U)))
+      (cell ((:P P_in))
+        (&template.value (:v *T))
+        (&core.box (:key T) *B)
+        (&core.cell (:key T) *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_in))
+        (sub_extent (:P P_in) A (:K U)))
+      (side (A (:K U))
+        (&template.value (:v *T))
+        (&core.box (:key T) *B)
+        (&core.cell (:key T) *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_in))
+        (sub_extent (:P P_in) A (:K U)))))
+
+  (INIT &side_cand_division2 Division
+    (key ((&template.value (:v *T))
+          (&core.box (:key T) *B)
+          (&core.cell (:key T) *P)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_in))
+          (frame_extent (:P P_in) ^A (:N ^U)))
+      (cell ((:P P_in))
+        (&template.value (:v *T))
+        (&core.box (:key T) *B)
+        (&core.cell (:key T) *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_in))
+        (frame_extent (:P P_in) A (:N U)))
+      (side (A (:K U))
+        (&template.value (:v *T))
+        (&core.box (:key T) *B)
+        (&core.cell (:key T) *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_in))
+        (frame_extent (:P P_in) A (:N U)))))
+
+  (RULE &lone
+    (&template.value (:v *T2))
+    (&core.box (:key *T) *B)
+    (!= T T2))
+
+  (RULE &side_cand
+    (OR ((&template.value (:v *T))
+         (&core.box (:key T) *B)
+         (&core.cell (:key T) *P)
+         (inside (:A P) B)
+         (relative (:Base B) (:X P) (:X_rel *P_in))
+         (&side_cand_division.tile (:key *A *U) (:P P_in) (:P_outer *P_blk))
+         (frame_extent (:P P_blk) A *N))
+        ((&template.value (:v *T2))
+         (&core.box (:key (:T T2)) (:B *B2))
+         (&core.cell (:key (:T T2)) (:P *P2))
+         (inside (:A P2) (:B B2))
+         (relative (:Base B2) (:X P2) (:X_rel *P_in2))
+         (&side_cand_division2.tile (:key A U) (:P P_in2) (:P_outer *P_blk2))
+         (frame_extent (:P P_blk2) A N))))
+
+  (RULE &tmpl_idx
+    (&side_cand *A *U)
+    (axis_of *D A)
+    (&template.value (:v *T))
+    (&core.box (:key T) *B)
+    (&quad_cell T *P)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) D (:K *X))
+    (divide (:T X) (:Side U) (:Gap 0) (:Part *N)))
+
+  (RULE &mixed
+    (&tmpl_idx *U (:P *P1) *D *N)
+    (&tmpl_idx U (:P *P2) D N)
+    (axis_of D *A)
+    (same_line A (:P P1) (:Q P2))
+    (input (:P P1) (:Col *Col1))
+    (input (:P P2) (:Col *Col2))
+    (!= Col1 Col2))
+
+  ;; The template's block side on each axis: the largest that leaves the template
+  ;; quadrant constant on its blocks.
+  (INIT &side Order
+    (key ((&side_cand ^A *U)
+          (NOT (&mixed A U)))
+      (member ((:t U))
+        (&side_cand A *U)
+        (NOT (&mixed A U)))
+      (score ((:t U) (:S U))
+        (&side_cand A *U)
+        (NOT (&mixed A U)))))
+
+  (INIT &lone_side_division Division
+    (key ((OR ((&lone (:T *L) *B)
+               (&core.cell (:key (:T L)) (:P *Q))
+               (inside (:A Q) B)
+               (relative (:Base B) (:X Q) (:X_rel *Q_in))
+               (&side.maximal (:key ^A) (:t *U))
+               (&side_cand A U))
+              ((&side.maximal (:key A) (:t U))
+               (&side_cand A U *N))))
+      (cell ((:P Q_in))
+        (&lone (:T *L) *B)
+        (&core.cell (:key (:T L)) (:P *Q))
+        (inside (:A Q) B)
+        (relative (:Base B) (:X Q) (:X_rel *Q_in))
+        (&side.maximal (:key A) (:t *U))
+        (&side_cand A U))
+      (parts (A N)
+        (&side.maximal (:key A) (:t *U))
+        (&side_cand A U *N))))
+
+  (RULE &tmpl_block
+    (&side.maximal (:key *A) (:t *U))
+    (axis_of *D A)
+    (&tmpl_idx U *P D *N))
+
+  (RULE &lone_side
+    (&lone *T *B)
+    (&core.cell (:key T) (:P *Q))
+    (inside (:A Q) B)
+    (relative (:Base B) (:X Q) (:X_rel *Q_in))
+    (&lone_side_division.tile (:key *A) (:P Q_in) (:P_inner *P_slab))
+    (split (:P P_slab) A (:Along *Q_blk))
+    (frame_extent (:P Q_blk) A (:N *V)))
+
+  (RULE &lone_idx
+    (&lone *T *B)
+    (&lone_side T *A *V)
+    (axis_of *D A)
+    (input (:P *Q))
+    (relative (:Base B) (:X Q) (:X_rel *Q_rel))
+    (margin (:B Q_rel) D (:K *X))
+    (divide (:T X) (:Side V) (:Gap 0) (:Part *N)))
+
+  (RULE_OR_DET &mirror "Direction D at lone quadrant L, as the template quadrant sees it: reversed across each divider between the two."
+    (&template.value (:v *T2))
+    (&lone *T)
+    (dir_elem *D)
+    (OR ((NOT (same_dist D (:P1 T2) (:P2 T)))
+         (opposite D (:Opp *E1)))
+        ((same_dist D (:P1 T2) (:P2 T))
+         (= E1 D))))
+
+  (RULE &scaled
+    (&lone_idx *T *Q (:D *D1) (:N *N1))
+    (&mirror T (:D D1) *E1)
+    (&tmpl_block *P (:D E1) (:N N1))
+    (perp_dir (:D D1) *D2)
+    (&lone_idx T Q (:D D2) (:N *N2))
+    (&mirror T (:D D2) (:E1 *E2))
+    (&tmpl_block P (:D E2) (:N N2)))
+
+  (RULE &figure
+    (&tmpl_ink *P *Col)))
+
+(ALTS $clip "what happens to the part of a scaled figure that leaves the lone core's quadrant" $QuadrantClip
+  (ALT $GridClip
+    (OUTPUT paint "each grid cell that the scaled figure covers with a block of a color other than &bg takes that color, over the dividers and the other quadrants too; a block's part off the grid is dropped; undefined where two figures give one cell different colors")
+    (RULE &paint
+      (&scaled *Q *P)
+      (&figure P *Col))))
+
+(ALTS $core "how the core color is known" $StoredCore
+  (ALT $CoreByQuadrants
+    (OUTPUT core-by-quadrants "the core color is the one color other than &bg that every quadrant holds, in place of &core_color; nothing is painted where no one color is"
+      (RULE &core_col
+        (&shared.value (:v *Col))))))
+
+(ALTS $extent "what the template carries" $WholeQuadrant
+  (ALT $FigureOnly
+    (OUTPUT mirror "only the 8-connected piece of cells other than &bg that holds the template core is reflected, in place of the whole template quadrant"
+      (RULE &tmpl_core
+        (&template.value (:v *T))
+        (&core.cell (:key T) *P))
+
+      (RULE &figure
+        (&tmpl_core (:P *P0))
+        (&piece8.component (:P P0) *Id)
+        (&piece8.component *P Id)
+        (input P *Col)))
+    (ALTS $adj "which cells join the figure's piece" $Adjacency8
+      (ALT $Adjacency4
+        (OUTPUT mirror "the piece joins cells that share a side"
+          (RULE &figure
+            (&tmpl_core (:P *P0))
+            (&piece4.component (:P P0) *Id)
+            (&piece4.component *P Id)
+            (input P *Col)))))))
+
+(RULE &unscaled
+  (&lone (:T *L))
+  (&side.maximal (:key *A))
+  (NOT (&lone_side (:T L) A)))
+
+(RULE &paint
+  (&scaled (:T *L) *Q *P)
+  (&quad_tile_of (:P Q) (:P_tile L))
+  (&figure P *Col))
+
+(RULE &output
+  (NOT (&unscaled))
+  (OR ((&paint (:Q *P) *Col))
+      ((input P Col)
+       (NOT (&paint (:Q P))))))
+
+(OUT (&output ^P ^Col))

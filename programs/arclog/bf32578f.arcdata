@@ -1,0 +1,218 @@
+;; inputs 2fa3196274c8bf1e4bc248b52a33e6e3a1313a11c7f0575b85697f1f75eaa26f programs/solvers/bf32578f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bf32578f
+
+(param &bg Color (0))
+(param &mirror_dir Dir (DIR_R))
+
+(alts $i
+  (alt $SpanAlong
+    (witness top-notch ordinary concept
+      (separates "The closed outline has a notch at the top of its axis. The enclosed reading leaves the notch 0, and a span along the mirror axis fills the notch cells that lie between outline cells in their row.")
+      (input (grid
+        (4 4 0 0 0 0 0 0)
+        (4 0 4 0 0 0 0 0)
+        (4 0 0 4 0 0 0 0)
+        (4 0 0 0 0 0 0 0)
+        (4 0 0 0 0 0 0 0)
+        (4 4 4 4 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $Enclosed $SpanAcross $SpanBoth $ErodeFilled (grid
+        (0 0 0 0 0 0 0 0)
+        (0 4 0 0 0 0 4 0)
+        (0 4 4 0 0 4 4 0)
+        (0 4 4 4 4 4 4 0)
+        (0 4 4 4 4 4 4 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $SpanAlong $SpanEither $SpanAny (grid
+        (0 0 4 4 4 4 0 0)
+        (0 4 0 4 4 0 4 0)
+        (0 4 4 0 0 4 4 0)
+        (0 4 4 4 4 4 4 0)
+        (0 4 4 4 4 4 4 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))))
+  (alt $SpanAcross
+    (witness left-dent ordinary concept
+      (separates "The left wall dents inward at row 3. The enclosed reading leaves the dent cell 0, and a span across the mirror axis fills it, since the wall lies above and below it.")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0)
+        (0 2 0 0 0 0 0 0)
+        (0 0 2 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $Enclosed $SpanAlong $SpanBoth $ErodeFilled (grid
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 0 0)
+        (0 0 0 2 2 0 0 0)
+        (0 0 2 2 2 2 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $SpanAcross $SpanEither $SpanAny (grid
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 0 0)
+        (0 2 0 2 2 0 2 0)
+        (0 0 2 2 2 2 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))))
+  (alt $SpanBoth
+    (witness curl-pocket borderline concept
+      (separates "An outside pocket enters from the top and turns under a ledge. The enclosed reading leaves the pocket 0; the span readings fill the pocket cells with outline on each side, and the eroded fill keeps the thick wall cells off the rim.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (3 3 3 3 0 3 0 0 0 0 0 0)
+        (3 0 0 3 0 3 0 0 0 0 0 0)
+        (3 0 3 3 0 3 0 0 0 0 0 0)
+        (3 0 3 0 0 3 0 0 0 0 0 0)
+        (3 0 3 3 3 3 0 0 0 0 0 0)
+        (3 0 0 0 0 0 0 0 0 0 0 0)
+        (3 3 3 3 3 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Enclosed (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 0 0 0 0 0 3 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 3 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $SpanAlong $SpanEither $SpanAny (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 0 0 3 0 0 0 0)
+        (0 3 3 0 3 0 0 3 0 3 3 0)
+        (0 3 0 0 3 0 0 3 0 0 3 0)
+        (0 3 0 3 3 0 0 3 3 0 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 3 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $SpanAcross $SpanBoth (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 0 0 0 0 0 3 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 0 3 0 0 0 0 3 0 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 3 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ErodeFilled (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 0 0 0 0 0 3 3 0)
+        (0 3 3 0 0 0 0 0 0 3 3 0)
+        (0 3 0 0 0 0 0 0 0 0 3 0)
+        (0 3 3 0 0 3 3 0 0 3 3 0)
+        (0 3 3 3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))))
+  (alt $SpanEither
+    (witness top-notch ordinary concept))
+  (alt $ErodeFilled
+    (witness hanging-tip ordinary concept
+      (separates "The top end of the curve hangs down one cell into the inside. The enclosed reading erases the tip and its image, and the eroded fill paints them, since they are off the rim of the filled shape.")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 5 0 5 0 0 0 0)
+        (0 5 0 0 0 0 0 0)
+        (0 5 0 0 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output concept $SpanAlong $SpanAcross $SpanBoth $SpanEither $SpanAny (grid
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 5 0 0 5 0 0)
+        (0 0 5 5 5 5 0 0)
+        (0 0 5 5 5 5 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $MirrorDirFromEnds undefined)
+      (output $ErodeFilled (grid
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 5 5 5 5 0 0)
+        (0 0 5 5 5 5 0 0)
+        (0 0 5 5 5 5 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))))
+  (alt $SpanAny
+    (witness goblet-neck ordinary concept
+      (separates "The outline narrows from a wide bowl to a neck. The enclosed reading and the row and column spans leave the cells beside the top of the neck 0, and a span along some row, column or diagonal fills them, since outline lies on both sides of each along a diagonal.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 4 4 4 4 0 0 0 0 0)
+        (4 0 0 0 0 0 0 0 0 0)
+        (0 4 4 0 0 0 0 0 0 0)
+        (0 0 0 4 0 0 0 0 0 0)
+        (0 0 0 4 0 0 0 0 0 0)
+        (0 0 0 0 4 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Enclosed $SpanAlong $SpanAcross $SpanBoth $SpanEither $ErodeFilled (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 4 4 4 4 4 4 4 4 0)
+        (0 0 0 4 4 4 4 0 0 0)
+        (0 0 0 0 4 4 0 0 0 0)
+        (0 0 0 0 4 4 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $SpanAny (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 4 4 4 4 4 4 4 4 0)
+        (0 0 0 4 4 4 4 0 0 0)
+        (0 0 4 0 4 4 0 4 0 0)
+        (0 0 0 0 4 4 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $m
+  (alt $MirrorDirFromEnds
+    (witness opens-left variant $MirrorDirFromEnds
+      (relaxed half-outline)
+      (relaxed room)
+      (separates "The shape opens to the left at the right edge of the grid. At the stored direction the image leaves the grid, and the direction the ends give mirrors it to the left and fills the inside.")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 0 6 0 0)
+        (0 0 0 0 6 0)
+        (0 0 0 0 0 6)
+        (0 0 0 0 6 0)
+        (0 0 0 6 0 0)))
+      (output $StoredDir undefined)
+      (output $MirrorDirFromEnds (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 6 6 0 0)
+        (0 6 6 6 6 0)
+        (0 0 6 6 0 0)
+        (0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed one-shape)
+      (separates "The field is 3 in place of 0. At the stored background the non-0 cells hold two colors, and the background the commonest color gives reads the shape and fills its inside on a field of 3.")
+      (input (grid
+        (3 3 3 3 3 3)
+        (3 3 6 3 3 3)
+        (3 6 3 3 3 3)
+        (6 3 3 3 3 3)
+        (3 6 3 3 3 3)
+        (3 3 6 3 3 3)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (3 3 3 3 3 3)
+        (3 3 3 3 3 3)
+        (3 3 6 6 3 3)
+        (3 6 6 6 6 3)
+        (3 3 6 6 3 3)
+        (3 3 3 3 3 3))))))

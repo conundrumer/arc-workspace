@@ -1,0 +1,7 @@
+;; inputs 884ef56dac2c95f528bb55a40bbae832df848eb40a66fa4d00209ed9807abef7 programs/solvers/93b581b8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 93b581b8
+
+(param &bg Color (0))
+(param &transform D4 (D4_HT))
+(param &stride number (2))

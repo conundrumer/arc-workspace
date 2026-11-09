@@ -1,0 +1,12 @@
+;; inputs 7c9f1828218ed3057341f0c4ac322ff8a3669b0aabce3071eece17798f333cef programs/solvers/2c0b0aff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2c0b0aff
+
+(param &bg Color (0))
+(param &mark Color (3))
+(param &shape Position
+  (grid
+    (_ 1 _)
+    (1 1 1)
+    (_ 1 _)))
+(param &piece_size number (5))

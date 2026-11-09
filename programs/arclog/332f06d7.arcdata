@@ -1,0 +1,8 @@
+;; inputs c16ce89687dd83a1de3612d92c6dca35d4665a3a4e0e20d906ab83264d1504c6 programs/solvers/332f06d7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 332f06d7
+
+(param &bg Color (3))
+(param &piece Color (0))
+(param &corridor Color (1))
+(param &marker Color (2))

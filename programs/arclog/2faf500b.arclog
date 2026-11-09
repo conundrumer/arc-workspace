@@ -1,0 +1,70 @@
+;; inputs 52c0b76d6363d38b09117f1c89964bf2908b502541333ed17c0547443422f25f programs/solvers/2faf500b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2faf500b
+
+(DET &bg DominantColor)
+
+(DET &mark ChangedColor)
+
+(INIT &shapes Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &mark_cell
+  (&shapes.component *Id *P)
+  (input P *Col)
+  (&mark (:C Col)))
+
+(RULE &cut_cell
+  (&shapes.component *Id *P)
+  (&mark_cell Id (:P *M))
+  (axis_elem *A)
+  (same_line A P (:Q M)))
+
+(RULE &uncut_cell
+  (&shapes.component *Id *P)
+  (axis_elem *A)
+  (NOT (&cut_cell Id A P)))
+
+(RULE &cut_axis
+  (&shapes.component *Id)
+  (axis_elem *A)
+  (NOT (&uncut_cell Id A)))
+
+(RULE &moved
+  (&cut_axis *Id *A)
+  (&cut_cell Id A (:P *P2) *M)
+  (input (:P P2) *Col)
+  (NOT (&mark (:C Col)))
+  (axis_of *D A)
+  (nearer D (:P P2) (:Q M))
+  (neighbor (:P P2) D (:Q *P)))
+
+(ALTS $choice "where the cut runs" $Marks
+  (ALT $Midline
+    (INIT &bbox BoundingBox
+      (key ((&shapes.component ^Id *P))
+        (cell (P)
+          (&shapes.component Id *P))))
+
+    (RULE &moved
+      (&shapes.component *Id (:P *P2))
+      (&bbox.box (:key Id) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P_inner))
+      (input (:P P2) *Col)
+      (NOT (&mark (:C Col)))
+      (&cut_axis Id *A)
+      (axis_of *D A)
+      (dist_pair (:P P_inner) D *K (:K2 *K_far))
+      (< K K_far)
+      (neighbor (:P P2) D (:Q *P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

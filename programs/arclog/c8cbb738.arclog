@@ -1,0 +1,163 @@
+;; inputs eeab8315b8a5c17cba511b453e9353402728581222d5f1777cbaaae4d75b4cbc programs/solvers/c8cbb738.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c8cbb738
+
+(INPUT plain-background "one color fills every cell that is not a mark")
+
+(INPUT one-figure-per-color "each mark color other than the background marks exactly 4 cells, and those cells form one figure"
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (RULE &class_cell
+    (input *P *Col)
+    (NOT (&palette.maximal (:t Col))))
+
+  (INIT &class_size Cardinality
+    (key ((&class_cell ^Col *P))
+      (member ((:m P))
+        (&class_cell Col *P)))))
+
+(INPUT odd-extents "each figure's bounding box has an odd height and an odd width, so each figure has a center cell")
+
+(INPUT largest-figure-is-square "one figure's bounding box is a square whose side is at least the height and the width of each other figure's bounding box")
+
+(OUTPUT output-is-largest-box "the output is a square whose side is the side of the largest figure's bounding box, filled with the background color"
+
+  (RULE &mark
+    (&class_cell (:Col *F) *P))
+
+  (INIT &fig_box BoundingBox
+    (key ((&mark (:F ^Col) *P))
+      (cell (P)
+        (&mark (:F Col) *P))))
+
+  (RULE &extent
+    (&fig_box.box (:key (:Col *F)) *B)
+    (&mark F *P)
+    (box_extent B P *A *N))
+
+  ;; The largest extent of any figure on either axis.
+  (INIT &side Order
+    (member ((:t N))
+      (&extent *N))
+    (score ((:t N) (:S N))
+      (&extent *N)))
+
+  (INIT &span Order
+    (key ((&extent ^A *N))
+      (member ((:t N))
+        (&extent A *N))
+      (score ((:t N) (:S N))
+        (&extent A *N))))
+
+  ;; The largest side of a figure whose bounding box is a square.
+  (INIT &square_side Order
+    (member ((:t N))
+      (&extent (:F *Col) (:A *A1) *N)
+      (perp (:A A1) *A2)
+      (&extent (:F Col) (:A A2) N))
+    (score ((:t N) (:S N))
+      (&extent (:F *Col) (:A *A1) *N)
+      (perp (:A A1) *A2)
+      (&extent (:F Col) (:A A2) N))))
+
+(OUTPUT figures-share-center "each figure is copied into the output, translated so that the center of its bounding box is at the center of the output, with each mark keeping its color"
+
+  (DET &bg2
+    (&palette.maximal *E (:t *Col))
+    (ex_output E))
+
+  (DET &class_cell2
+    (ex_input *E *P *Col)
+    (ex_output E)
+    (NOT (&bg2 E Col)))
+
+  (INIT &class_size2 Cardinality
+    (key ((&class_cell2 (:E ^Ky) ^Col *P))
+      (member ((:m P))
+        (&class_cell2 (:E Ky) Col *P)))))
+
+(ALTS $frame "the output's frame" $LargestSquare
+  (ALT $UnionFrame
+    (OUTPUT output-is-largest-box "the output's height is the largest figure height and its width the largest figure width, so the output is the bounding box of the centered figures")
+    (INIT &frame Frame
+      (extent (A N)
+        (&span.maximal (:key *A) (:t *N)))))
+  (ALT $SquareFigureFrame
+    (OUTPUT output-is-largest-box "the output is the bounding box of the largest figure whose bounding box is a square, and marks that fall outside it are dropped; undefined where no figure's bounding box is a square")
+    (INIT &frame Frame
+      (extent (A N)
+        (&square_side.maximal (:t *N))
+        (axis_elem *A)))))
+
+(ALTS $figures "which color classes are figures" $EveryColorClass
+  (ALT $CountedClasses
+    (OUTPUT counted-classes "only the color classes of &marks_per_figure cells are figures; the cells of every other class take the background color"
+      (INIT &size_mode_count Cardinality
+        (key ((&class_size2.size (:key (:Ky ^E) *Col) ^N))
+          (member ((:m Col))
+            (&class_size2.size (:key (:Ky E) *Col) N))))
+
+      ;; The commonest class size in each input.
+      (INIT &size_mode Order
+        (key ((&size_mode_count.size (:key ^E (:N *M))))
+          (member ((:t M))
+            (&size_mode_count.size (:key E (:N *M))))
+          (score ((:t M) (:S N))
+            (&size_mode_count.size (:key E (:N *M)) *N))))
+
+      (DET &unshared
+        (&size_mode.maximal (:t *N))
+        (&size_mode.maximal (:t *N2))
+        (!= N N2))
+
+      (DET_OR_RULE &marks_per_figure TileCount TileDim
+        (&size_mode.maximal (:t *N))
+        (NOT (&unshared N)))
+
+      (RULE &mark
+        (&class_size.member (:key (:Col *F)) (:m *P))
+        (&class_size.size (:key (:Col F)) *N)
+        (&marks_per_figure N)))))
+
+(RULE &center
+  (&fig_box.box (:key (:Col *F)) *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(RULE &uncentered
+  (&mark (:F *Col))
+  (NOT (&center (:F Col))))
+
+(INIT &frame Frame
+  (extent (A N)
+    (&side.maximal (:t *N))
+    (axis_elem *A)))
+
+(RULE &landing
+  (&frame.cell (:P *Z))
+  (centered (:P Z))
+  (&center (:F *Col) (:P *C))
+  (&mark (:F Col) *P)
+  (relative (:Base C) (:X P) (:X_rel *V))
+  (compose (:A Z) (:B V) (:C *Q)))
+
+(RULE &output
+  (&frame.cell *P)
+  (NOT (&uncentered))
+  (OR ((&landing (:Q P) *Col))
+      ((NOT (&landing (:Q P)))
+       (&palette.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

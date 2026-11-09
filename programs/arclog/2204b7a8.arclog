@@ -1,0 +1,24 @@
+;; inputs fcef76cb047baafb97faaf9ca65ef7463e0c804c077f2af08ff031d149b40f23 programs/solvers/2204b7a8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2204b7a8
+
+;; The scattered cells that take a line's color.
+(DET &mark ChangedColor)
+
+;; An edge of two colors is no line.
+(INIT &line Singleton
+  (key ((dir_elem ^D))
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) D (:K 0)))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&mark (:C Col_in))
+       (&line.value (:key *D) (:v *Col))
+       (dist_pair P D *K *K2)
+       (< K K2))
+      ((NOT (&mark (:C Col_in)))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

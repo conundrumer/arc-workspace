@@ -200,7 +200,7 @@ def run_task(args, task):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--export", type=Path, default=MAIN_ROOT / 'work/lm/data-full-9fac8128')
-    parser.add_argument("--corpus", type=Path, default=MAIN_ROOT / 'work/arclog/gen')
+    parser.add_argument("--corpus", type=Path, default=MAIN_ROOT / 'programs/arclog')
     parser.add_argument("--tasks", type=Path, default=DATA_ROOT / "ast/engine/data/tasks")
     parser.add_argument("--output", type=Path, default=DATA_ROOT / "ast/stage1-all")
     parser.add_argument("--only", nargs="*")

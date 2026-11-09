@@ -1,0 +1,51 @@
+;; inputs 63209b4db6701e8d447abf555ed1e86cea5e34b9823a67ffa6f16f28c0965f1c programs/solvers/12eac192.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 12eac192
+
+(DET &bg DominantColor)
+
+(DET &max_size TileCount)
+
+(DET &paint AnyOutNewColor)
+
+;; Touching cells of one ink color. A cell holds one color, so the color
+;; keys nothing downstream: the label alone names the component.
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &comp_size Cardinality
+  (key ((&comps.component ^Id *P))
+    (member ((:m P))
+      (&comps.component Id *P))))
+
+(RULE &repaint
+  (&comps.component (:Id *K) *P)
+  (&comp_size.size (:key (:Id K)) *N)
+  (&max_size (:N *Max))
+  (<= N Max)
+  (&paint (:C *Col)))
+
+(ALTS $choice "what makes a component small" $Threshold
+  (ALT $Lookup
+    (DET &size_paint
+      (&comps.component *E *Id *P)
+      (&comp_size.size E (:key Id) *N)
+      (ex_input E P (:Col *C_in))
+      (ex_output E P *Col)
+      (!= Col C_in))
+
+    (RULE &repaint
+      (&comps.component (:Id *K) *P)
+      (&comp_size.size (:key (:Id K)) *N)
+      (&size_paint N *Col))))
+
+(RULE &output
+  (OR ((&repaint *P *Col))
+      ((input P Col)
+       (NOT (&repaint P)))))
+
+(OUT (&output ^P ^Col))

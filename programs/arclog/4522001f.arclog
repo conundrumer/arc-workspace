@@ -1,0 +1,244 @@
+;; inputs 245e940a219b7d335db337ac6e9876fb6cfe407a3b27e0d13b3e76efcd0dc777 programs/solvers/4522001f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4522001f
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(DET &input
+  (ex_output *E)
+  (ex_input E *P *Col))
+
+(DET &output2
+  (ex_output *E *P *Col))
+
+(DET &pose4
+  (ex_output *E)
+  (c4_elem *D))
+
+;; The exemplar pair, with the poses of the rotations of the training
+;; instance it is.
+(RIGID_DET &pair
+  (instance ((OR ((&input ^E)) ((&output2 E)) ((&pose4 E))))
+    (&input E *P *Col)
+    (&output2 E *P *Col)
+    (&pose4 E *D)))
+
+(RULE &block
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bb BoundingBox
+  (cell (P)
+    (&block *P)))
+
+;; The grid corner the block touches.
+(RULE &diag
+  (&bb.box *B)
+  (same_corner *D (:P1 B) (:P2 0)))
+
+(RULE &paint
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&mark (:C Col))))
+
+;; The placements of the stored input that equal the observed input.
+(INIT &pair_match Inclusion
+  (pattern ((:pattern P) (:m (:P Q) Col))
+    (&pair.input (:Pose *P) (:P *Q) *Col))
+  (observed ((:m (:P Q) Col))
+    (input (:P *Q) *Col)))
+
+(ALTS $choice "how the rotation is found and what it carries" $Pair
+  (ALT $Loc
+    (DET &cell
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col))))
+
+    ;; The corner the picture seats against.
+    (INIT &pbox BoundingBox
+      (key ((&cell ^E *P))
+        (cell (P)
+          (&cell E *P))))
+
+    (DET &corner2
+      (&pbox.box (:key *E) *B)
+      (same_corner *D (:P1 B) (:P2 0)))
+
+    (DET &anchor
+      (&corner2 *E *D))
+
+    ;; The boxes as separate objects; the stored one seats at the corner.
+    (INIT &sq2 Connectivity
+      (key ((&cell ^E *P))
+        (node (P)
+          (&cell E *P))))
+
+    (INIT &sqbox BoundingBox
+      (key ((&sq2.component (:key ^E) *P ^Id))
+        (cell (P)
+          (&sq2.component (:key E) *P Id))))
+
+    (DET &margin
+      (&sqbox.box (:key *E) *B)
+      (&corner2 E (:D *Diag))
+      (same_corner (:D Diag) (:P1 B) (:P2 0))
+      (margin B *D *K))
+
+    (DET &pose2
+      (ex_output *E)
+      (c4_elem *D))
+
+    ;; The first box, as its margin at each edge, with the corner it seats at
+    ;; and the poses of the rotations of the training instance it is drawn
+    ;; from.
+    (RIGID_DET &box
+      (instance ((OR ((&anchor ^E)) ((&margin E)) ((&pose2 E))))
+        (&anchor E *D)
+        (&margin E *D *K)
+        (&pose2 E *D)))
+
+    (RULE &box_seated
+      (&box.anchor (:Pose *P) (:D *C))
+      (&box.pose (:Pose *D0))
+      (pose_difference (:A D0) (:B P) (:D *R))
+      (c4_elem (:D R))
+      (&box.margin (:Pose P) *D *K))
+
+    (RULE &sq_edge
+      (&diag (:D *Diag))
+      (&box_seated (:C Diag) *D *K))
+
+    (RULE &sq_axis
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&sq_edge D (:K *K1))
+      (&sq_edge (:D D2) (:K *K2))
+      (axis_inset D K1 K2 *B))
+
+    (RULE &sq
+      (&sq_axis *A (:B *B1))
+      (perp A *A2)
+      (&sq_axis (:A A2) (:B *B2))
+      (compose (:A B1) (:B B2) (:C *B)))
+
+    (DET &canvas_dim ConstOutDim)
+
+    (INIT &canvas_frame Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&canvas_dim *N)))
+
+    (RULE &sq_jump
+      (&diag (:D *Diag))
+      (diag_opposite (:D Diag) (:Opp *Od))
+      (diag_dirs (:D Od) *A (:D1 *O1) (:D2 *O2))
+      (&sq *B)
+      (&canvas_frame.cell *P)
+      (perp A *A2)
+      (box_extent B P A (:N *K1))
+      (box_extent B P (:A A2) (:N *K2))
+      (jump_offset (:D O1) (:K K1) (:V *V1))
+      (jump_offset (:D O2) (:K K2) (:V *V2))
+      (compose (:A V1) (:B V2) (:C *V)))
+
+    (RULE &grow_box
+      (OR ((&sq *B))
+          ((&sq (:B *B3))
+           (&sq_jump *V)
+           (compose (:A B3) (:B V) (:C B))
+           (inside (:A B) (:B 0)))))
+
+    (RULE &lit
+      (&grow_box *B)
+      (&canvas_frame.cell *P)
+      (inside (:A P) B)
+      (&paint *Col))
+
+    (RULE &output
+      (OR ((&canvas_frame.cell *P)
+           (NOT (&lit P))
+           (&bg (:C *Col)))
+          ((&lit P Col))))
+    (ALTS $l "the boxes' corner" $Corner
+      (ALT $Mark
+        ;; The block corner opposite the mark cell.
+        (RULE &diag
+          (input *P *Col)
+          (&mark (:C Col))
+          (&block P)
+          (&bb.box *B)
+          (inside (:A P) B)
+          (same_corner (:D *D2) (:P1 P) (:P2 B))
+          (diag_opposite (:D D2) (:Opp *D)))))
+    (ALTS $r "the boxes" $Grow
+      (ALT $Fit
+        (RULE &fit_cell
+          (&diag (:D *Diag))
+          (diag_opposite (:D Diag) (:Opp *Od))
+          (diag_dirs (:D Od) *A (:D1 *O1) (:D2 *O2))
+          (&sq *B)
+          (&canvas_frame.cell *P)
+          (perp A *A2)
+          (box_extent B P A (:N *K1))
+          (box_extent B P (:A A2) (:N *K2))
+          (relative (:Base B) (:X P) (:X_rel *R))
+          (opposite (:D O1) (:Opp *C1))
+          (opposite (:D O2) (:Opp *C2))
+          (margin (:B R) (:D C1) (:K *T1))
+          (divide (:T T1) (:Side K1) (:Gap 0) (:Part *N) (:Remainder *R1))
+          (margin (:B R) (:D C2) (:K *T2))
+          (divide (:T T2) (:Side K2) (:Gap 0) (:Part N) (:Remainder *R2))
+          (jump P (:D C1) (:K R1) (:Q *P1))
+          (jump (:P P1) (:D C2) (:K R2) (:Q *P_corner))
+          (&canvas_frame.cell (:P *P0))
+          (inside (:A P0) B)
+          (same_corner (:D Diag) (:P1 P0) (:P2 B))
+          (relative (:Base P0) (:X P_corner) (:X_rel *V))
+          (compose (:A B) (:B V) (:C *B_n))
+          (inside (:A B_n) (:B 0)))
+        (RULE &lit
+          (&fit_cell *P)
+          (&paint *Col)))
+      (ALT $Stamp
+        (DET &corner
+          (&corner2 *E *D))
+        (DET &pose3
+          (ex_output *E)
+          (c4_elem *D))
+        ;; The output picture, whose member cells take the paint, with the corner
+        ;; it seats at and the poses of the rotations of the training instance it
+        ;; is drawn from.
+        (RIGID_DET &mask
+          (instance ((OR ((&corner ^E)) ((&cell E)) ((&pose3 E))))
+            (&corner E *D)
+            (&cell E *P)
+            (&pose3 E *D)))
+        (RULE &mask_seated
+          (&mask.corner (:Pose *P2) (:D *C))
+          (&mask.pose (:Pose *D0))
+          (pose_difference (:A D0) (:B P2) (:D *R))
+          (c4_elem (:D R))
+          (&mask.cell (:Pose P2) *P))
+        (RULE &lit
+          (&diag (:D *Diag))
+          (&mask_seated (:C Diag) *P)
+          (&paint *Col))))
+    (ALTS $f "box color" $Block
+      (ALT $Ink
+        (DET &ink
+          (ex_output (:Col *C))
+          (NOT (&bg C)))
+        (RULE &paint
+          (&ink (:C *Col)))))))
+
+;; Canvas and colors both come from the stored output.
+(RULE &output
+  (&pair_match.equal (:pattern *P2))
+  (&pair.pose (:Pose *D0))
+  (pose_difference (:A D0) (:B P2) (:D *R))
+  (c4_elem (:D R))
+  (&pair.output2 (:Pose P2) *P *Col))
+
+(OUT (&output ^P ^Col))

@@ -29,7 +29,7 @@ from pathlib import Path
 REPO = Path('/Users/davidlu/code/arc-workspace')
 sys.path.insert(0, str(REPO / 'src'))
 from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
-CORPUS = REPO / 'work/arclog/gen'
+CORPUS = REPO / 'programs/arclog'
 REGISTRY = REPO / 'engine/lib/registry.sexpr'
 TASKS = REPO / 'model/contracts/dev/out-expand/tasks.txt'
 SKIP = {'981571dc'}

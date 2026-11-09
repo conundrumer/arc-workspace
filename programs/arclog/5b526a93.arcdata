@@ -1,0 +1,11 @@
+;; inputs 2cadc124da81f79da314388b618433214d99a14d5d1afb3bd184159354c245cb programs/solvers/5b526a93.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5b526a93
+
+(param &bg Color (0))
+(param &fill Color (8))
+(param &footprint Position
+  (grid
+    (1 1 1)
+    (1 _ 1)
+    (1 1 1)))

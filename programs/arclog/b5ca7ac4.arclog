@@ -1,0 +1,258 @@
+;; inputs b70484c1e51f6a92c7210cd81693101efc3c5c8705c0078a83e87b203e1f1ee1 programs/solvers/b5ca7ac4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b5ca7ac4
+
+(INPUT background "one background color fills every cell outside the squares"
+
+  (DET &at_edge
+    (ex_output *E *P *Col)
+    (margin (:B P) *D (:K 0)))
+
+  (DET &missing
+    (ex_output *E)
+    (&at_edge *Col *D)
+    (NOT (&at_edge E Col D)))
+
+  (DET &heading
+    (&at_edge *Col *D)
+    (NOT (&missing Col D)))
+
+  (RULE &slide
+    (&heading *Col *D))
+
+  ;; The rectangle outlines of each frame color.
+  (INIT &outline Outlines
+    (key ((&slide ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &square_box
+    (&outline.box (:key *Col) *B)
+    (input *P Col)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B))
+    (perp *A *A2)
+    (box_extent B P A *N)
+    (box_extent B P (:A A2) N))
+
+  ;; The interior color of each square outline.
+  (INIT &fill Singleton
+    (key ((&square_box ^B))
+      (member ((:v Col))
+        (input *P *Col)
+        (interior (:A P) B))))
+
+  (RULE &framed
+    (&square_box *Col *B)
+    (&fill.value (:key B)))
+
+  (RULE &inner_square
+    (&framed *B)
+    (&framed (:B *B2))
+    (!= B B2)
+    (inside (:A B) (:B B2)))
+
+  (RULE &square
+    (&framed *Col *B)
+    (NOT (&inner_square B)))
+
+  (RULE &body_cell
+    (&square *B)
+    (input *P)
+    (inside (:A P) B))
+
+  (INIT &outside Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (NOT (&body_cell P)))))
+
+(INPUT framed-squares "the other cells form squares of side 5, each a one-cell outline in one of the colors of &heading around a solid interior of one color, and the interior color may equal a frame color"
+
+  (INIT &component8 Connectivity
+    (key ((&slide ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT disjoint-squares "no two squares share a cell, and two squares may touch along an edge or at a corner")
+
+(OUTPUT slide-by-frame "each square keeps its rows and moves along the row axis toward the direction &heading gives its frame color")
+
+(OUTPUT stack-per-color "the squares of one frame color fall together as rigid bodies: each square stops at the first place where it meets the grid edge or a stopped square of the same frame color, and squares of the other frame color do not block it"
+
+  ;; The squares of each frame color fall together toward its heading.
+  (INIT &square_fall Distance
+    (key ((OR ((&square ^Col *B)
+               (input *P)
+               (inside (:A P) B)
+               (&slide Col *D)
+               (margin (:B P) D *K))
+              ((&square Col B)
+               (input P)
+               (inside (:A P) B)
+               (&slide Col D)
+               (&square Col (:B *B2))
+               (input (:P *P2))
+               (inside (:A P2) (:B B2))
+               (!= B B2)
+               (gap D P (:Q P2) K))))
+      (weight ((:a B2) (:b B) (:W K))
+        (&square Col *B)
+        (input *P)
+        (inside (:A P) B)
+        (&slide Col *D)
+        (&square Col (:B *B2))
+        (input (:P *P2))
+        (inside (:A P2) (:B B2))
+        (!= B B2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n B) K)
+        (&square Col *B)
+        (input *P)
+        (inside (:A P) B)
+        (&slide Col *D)
+        (margin (:B P) D *K))))
+
+  (INIT &component4 Connectivity
+    (key ((&slide ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &component
+    (&component4.component (:key *Col) *P *Id))
+
+  ;; The cells each component closes off from the grid edge.
+  (INIT &enclosed Enclosure
+    (key ((&component ^Id))
+      (cell (P)
+        (input *P)
+        (NOT (&component Id P)))))
+
+  (RULE &nested
+    (&component *Id *P)
+    (&enclosed.enclosed (:key (:Id *Id2)) P)
+    (!= Id Id2))
+
+  (RULE &frame_body
+    (&component *Col *Id)
+    (NOT (&nested Id))
+    (OR ((&component Col Id *P))
+        ((&enclosed.enclosed (:key Id) P))))
+
+  ;; The bodies of each frame color fall together toward its heading.
+  (INIT &frame_fall Distance
+    (key ((&frame_body ^Col))
+      (weight ((:a Id2) (:b Id) (:W K))
+        (&frame_body Col *Id *P)
+        (&slide Col *D)
+        (&frame_body Col (:Id *Id2) (:P *P2))
+        (!= Id Id2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n Id) K)
+        (&frame_body Col *Id *P)
+        (&slide Col *D)
+        (margin (:B P) D *K)))))
+
+(OUTPUT background-rest "every cell that no moved square covers takes the background color"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &dominant Singleton
+    (member ((:v Col))
+      (&commonest.maximal (:t *Col)))))
+
+(ALTS $bodies "what moves as one body" $Squares
+  (ALT $FrameComponents
+    (INPUT framed-squares "a body is a 4-connected component of one frame color's cells together with the cells it closes off from the grid edge, and a component inside another body's closed-off cells belongs to that body"
+      (RULE &frame_fall_dir
+        (&frame_body (:Col *Key))
+        (&slide (:Col Key) *D))
+
+      (RULE &frame_fall_travel_full
+        (&frame_fall.distance (:key (:Col *V0)) (:n *V1) *K)
+        (&frame_fall_dir (:Key V0) *D)
+        (jump_offset D K (:V *V2)))
+
+      (RULE &body_cell
+        (&frame_body *P)))
+    (RULE &moved
+      (&frame_fall_travel_full (:V0 *Col2) (:V1 *Id) (:V2 *V))
+      (&frame_body (:Col Col2) Id (:P *P3))
+      (input (:P P3) *Col)
+      (compose (:A P3) (:B V) (:C *P)))
+    (ALTS $adj "which cells join one component" $Adjacent4
+      (ALT $Adjacent8
+        (INPUT framed-squares "components join by 8-adjacency, so squares that touch at a corner only join one body"
+          (RULE &component
+            (&component8.component (:key *Col) *P *Id)))))))
+
+(ALTS $heading "where a square's heading comes from" $StoredHeading
+  (ALT $HeadingOpposite
+    (OUTPUT slide-by-frame "&lead_heading gives the lead frame color's direction, and the squares of &trail_color slide the opposite way"
+      ;; The cells of each color across the train outputs.
+      (INIT &color_cells Cardinality
+        (key ((ex_output *E *P ^Col))
+          (member ((:m E P))
+            (ex_output *E *P Col))))
+
+      (DET &lead_trail
+        (&heading *Col *D)
+        (&heading (:Col *Col2) (:D *D2))
+        (opposite D (:Opp D2))
+        (&color_cells.size (:key Col) *N)
+        (&color_cells.size (:key (:Col Col2)) (:N *N2))
+        (< N2 N))
+
+      (DET &lead_heading
+        (&lead_trail *Col *D))
+
+      (DET &trail_color
+        (&lead_trail (:Col2 *Col)))
+
+      (RULE &slide
+        (OR ((&lead_heading *Col *D))
+            ((&trail_color Col)
+             (&lead_heading (:D *D_lead))
+             (opposite (:D D_lead) (:Opp D))))))))
+
+(ALTS $background "the color of the cells no moved square covers" $OutsideBodies
+  (ALT $BackgroundDominant
+    (OUTPUT background-rest "every cell that no moved square covers takes the commonest color of the input; undefined where two colors tie")
+    (RULE &background
+      (&dominant.value (:v *Col)))))
+
+(RULE &square_fall_travel_full
+  (&square_fall.distance (:key (:Col *V0)) (:n *V1) *K)
+  (&slide (:Col V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &background
+  (&outside.value (:v *Col)))
+
+(RULE &moved
+  (&square_fall_travel_full (:V0 *Col2) (:V1 *B) (:V2 *V))
+  (input (:P *P3) *Col)
+  (inside (:A P3) B)
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (&background (:Col *Col_bg))
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (= Col Col_bg))))
+
+(OUT (&output ^P ^Col))

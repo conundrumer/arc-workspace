@@ -1,0 +1,139 @@
+;; inputs 44c1761392256cdbf50350e05f1e8e1247cf382260aba2d773c8aaebee6e80d0 programs/solvers/9af7a82c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9af7a82c
+
+(INPUT fill "the fill color appears in no input")
+
+(INPUT blobs "each color covers one connected region")
+
+(INPUT distinct "no two colors cover the same number of cells")
+
+(OUTPUT counted "the chart counts the cells of every color but the fill")
+
+(OUTPUT chart "each color with counted cells takes one bar: the bars stand side by side from the chart corner in descending order of the colors' counts, and each bar runs from the corner's edge along the bar axis for as many cells as its color counts"
+
+  ;; The connected regions of each color, cells joined along edges.
+  (INIT &regions Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &region
+    (&regions.component (:key *Col) *P *Id))
+
+  ;; The regions with corner touches joined as well.
+  (INIT &regions8 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  ;; How many cells each region covers.
+  (INIT &size Cardinality
+    (key ((&region *P ^Id))
+      (member ((:m P))
+        (&region *P Id)))))
+
+(OUTPUT frame "the chart is as long as the longest bar and as wide as the number of bars, and the fill color takes the cells no bar covers"
+
+  ;; The color of the chart's empty cells.
+  (DET &bg AnyOutNewColor)
+
+  (DET &bar_axis AxisDomain)
+
+  (RULE &counted
+    (input *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; How many cells each color covers.
+  (INIT &cover Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The counted colors, ordered by their count, the smallest first.
+  (INIT &colors Order
+    (member ((:t Col))
+      (&counted *Col))
+    (score ((:t Col) (:S N))
+      (&counted *Col)
+      (&cover.size (:key Col) *N)))
+
+  (RULE &bars
+    (&colors.dual_rank (:t *Col) *R)
+    (&cover.size (:key Col) *N))
+
+  ;; How many bars there are.
+  (INIT &width Cardinality
+    (member ((:m R))
+      (&bars *R)))
+
+  ;; The longest bar.
+  (INIT &longest Order
+    (member ((:t N))
+      (&bars *N))
+    (score ((:t N) (:S N))
+      (&bars *N)))
+
+  (INIT &chart Frame
+    (extent (A N)
+      (OR ((&bar_axis *A)
+           (&longest.maximal (:t *N)))
+          ((&bar_axis (:A *A3))
+           (perp (:A A3) (:A2 A))
+           (&width.size N))))))
+
+(ALTS $bars "what each bar stands for" $PerColor
+  (ALT $PerRegion
+    (INPUT distinct "no two regions cover the same number of cells")
+    (OUTPUT chart "each region with counted cells takes one bar in its color: the bars stand side by side from the chart corner in descending order of the regions' sizes, and each bar runs from the corner's edge along the bar axis for as many cells as its region counts"
+      ;; The counted regions, ordered by their size, the smallest first.
+      (INIT &pieces Order
+        (member ((:t Id))
+          (&counted *Col)
+          (&region Col *Id))
+        (score ((:t Id) (:S N))
+          (&counted *Col)
+          (&region Col *Id)
+          (&size.size (:key Id) *N)))
+
+      (RULE &bars
+        (&pieces.dual_rank (:t *Id) *R)
+        (&size.size (:key Id) *N)
+        (&region *Col Id)))
+    (ALTS $adj "what joins two cells of one color into one region" $Edge
+      (ALT $Corner
+        (OUTPUT chart "a corner touch also joins two cells into one region"
+          (RULE &region
+            (&regions8.component (:key *Col) *P *Id)))))))
+
+(ALTS $fill "whether the fill color's cells count" $Excluded
+  (ALT $Included
+    (OUTPUT counted "the chart counts every cell"
+      (RULE &counted
+        (input *Col)))))
+
+;; The corner the bars start from, and the axis they run along.
+(DET &corner DiagDirDomain)
+
+(RULE &bar
+  (&chart.cell *P)
+  (&corner (:D *Dg))
+  (&bar_axis *A)
+  (diag_dirs (:D Dg) A (:D1 *D_bar) (:D2 *D_rank))
+  (margin (:B P) (:D D_rank) (:K *R))
+  (&bars R *Col *N)
+  (margin (:B P) (:D D_bar) *K)
+  (< K N))
+
+(RULE &output
+  (&chart.cell *P)
+  (OR ((&bar P *Col))
+      ((NOT (&bar P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

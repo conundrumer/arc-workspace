@@ -1,0 +1,138 @@
+;; inputs 8a3061f2865137cd6c4f22d1b8c81d47cf64aad34c109230a8babfe019c703f9 programs/solvers/e681b708.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e681b708
+
+(param &background Color (0))
+(param &line_color Color (1))
+
+(alts $rooms
+  (alt $Rooms8
+    (witness diagonal-pinch foreign concept
+      (relaxed wall-lines)
+      (separates "two walls that touch only at a corner, (2,3) and (3,4): the 4-connected rooms keep the lower-left room apart and give its dots 2; $Rooms8 joins it to the room above through (2,4) and gives every dot 3")
+      (input (grid
+        (0 0 1 0 0 1 0 3 0)
+        (0 0 0 0 0 0 0 1 0)
+        (2 1 1 2 0 0 0 1 0)
+        (0 0 0 0 2 0 0 1 0)
+        (0 0 0 0 1 0 0 3 3)
+        (0 1 0 0 1 0 0 1 0)
+        (0 0 0 0 1 0 0 1 0)
+        (0 0 1 0 1 0 0 1 0)
+        (0 0 0 0 3 0 0 3 0)))
+      (output $Rooms4 (grid
+        (0 0 3 0 0 3 0 3 0)
+        (0 0 0 0 0 0 0 1 0)
+        (2 1 1 2 0 0 0 1 0)
+        (0 0 0 0 2 0 0 1 0)
+        (0 0 0 0 1 0 0 3 3)
+        (0 2 0 0 1 0 0 1 0)
+        (0 0 0 0 1 0 0 1 0)
+        (0 0 2 0 1 0 0 1 0)
+        (0 0 0 0 3 0 0 3 0)))
+      (output $Rooms8 (grid
+        (0 0 3 0 0 3 0 3 0)
+        (0 0 0 0 0 0 0 1 0)
+        (2 1 1 2 0 0 0 1 0)
+        (0 0 0 0 2 0 0 1 0)
+        (0 0 0 0 1 0 0 3 3)
+        (0 3 0 0 1 0 0 1 0)
+        (0 0 0 0 1 0 0 1 0)
+        (0 0 3 0 1 0 0 1 0)
+        (0 0 0 0 3 0 0 3 0))))))
+
+(alts $dots
+  (alt $IsolatedDots
+    (witness domino-dot variant concept
+      (relaxed loose-dots)
+      (separates "two 4-adjacent dots in the top-left room: concept, $MarkerFreeParts, $Rooms8 and background=DominantColor recolor both to 2; $IsolatedDots keeps both 1")
+      (input (grid
+        (0 0 0 0 2 0 0 0 0)
+        (0 1 1 0 1 0 0 1 0)
+        (0 0 0 0 1 0 0 0 0)
+        (3 1 1 1 2 1 1 1 3)
+        (0 0 0 0 1 0 0 0 0)
+        (0 1 0 0 1 0 1 0 0)
+        (0 0 0 0 3 0 0 0 0)))
+      (output $MarkerFreeParts $RunDots (grid
+        (0 0 0 0 2 0 0 0 0)
+        (0 2 2 0 1 0 0 2 0)
+        (0 0 0 0 1 0 0 0 0)
+        (3 1 1 1 2 1 1 1 3)
+        (0 0 0 0 1 0 0 0 0)
+        (0 3 0 0 1 0 3 0 0)
+        (0 0 0 0 3 0 0 0 0)))
+      (output $IsolatedDots (grid
+        (0 0 0 0 2 0 0 0 0)
+        (0 1 1 0 1 0 0 2 0)
+        (0 0 0 0 1 0 0 0 0)
+        (3 1 1 1 2 1 1 1 3)
+        (0 0 0 0 1 0 0 0 0)
+        (0 3 0 0 1 0 3 0 0)
+        (0 0 0 0 3 0 0 0 0)))))
+  (alt $MarkerFreeParts
+    (witness dot-touching-wall variant concept
+      (relaxed loose-dots)
+      (separates "a dot at (1,3) 4-adjacent to the vertical wall: concept, $Rooms8 and background=DominantColor recolor it to 2; $IsolatedDots and $MarkerFreeParts keep it 1")
+      (input (grid
+        (0 0 0 0 2 0 0 0 0)
+        (0 1 0 1 1 0 0 1 0)
+        (0 0 0 0 1 0 0 0 0)
+        (3 1 1 1 2 1 1 1 3)
+        (0 0 0 0 1 0 0 0 0)
+        (0 1 0 0 1 0 1 0 0)
+        (0 0 0 0 3 0 0 0 0)))
+      (output $RunDots (grid
+        (0 0 0 0 2 0 0 0 0)
+        (0 2 0 2 1 0 0 2 0)
+        (0 0 0 0 1 0 0 0 0)
+        (3 1 1 1 2 1 1 1 3)
+        (0 0 0 0 1 0 0 0 0)
+        (0 3 0 0 1 0 3 0 0)
+        (0 0 0 0 3 0 0 0 0)))
+      (output $IsolatedDots $MarkerFreeParts (grid
+        (0 0 0 0 2 0 0 0 0)
+        (0 2 0 1 1 0 0 2 0)
+        (0 0 0 0 1 0 0 0 0)
+        (3 1 1 1 2 1 1 1 3)
+        (0 0 0 0 1 0 0 0 0)
+        (0 3 0 0 1 0 3 0 0)
+        (0 0 0 0 3 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (relaxed loose-dots)
+      (separates "dots fill each room in a checkerboard, so 1 outnumbers 0: the stored background 0 recolors every dot by its room; the derived background 1 makes every 0 cell a marker, and the four corner dots take 0 while every other cell keeps its color")
+      (input (grid
+        (1 0 1 2 1 0 1)
+        (0 1 0 1 0 1 0)
+        (1 0 1 1 1 0 1)
+        (2 1 1 3 1 1 3)
+        (1 0 1 1 1 0 1)
+        (0 1 0 1 0 1 0)
+        (1 0 1 3 1 0 1)))
+      (output ($RunDots &background=$Stored) (grid
+        (2 0 2 2 3 0 3)
+        (0 2 0 1 0 3 0)
+        (2 0 2 1 3 0 3)
+        (2 1 1 3 1 1 3)
+        (3 0 3 1 3 0 3)
+        (0 3 0 1 0 3 0)
+        (3 0 3 3 3 0 3)))
+      (output $IsolatedDots $MarkerFreeParts (grid
+        (2 0 1 2 1 0 3)
+        (0 2 0 1 0 3 0)
+        (1 0 1 1 1 0 1)
+        (2 1 1 3 1 1 3)
+        (1 0 1 1 1 0 1)
+        (0 3 0 1 0 3 0)
+        (3 0 1 3 1 0 3)))
+      (output &background=$Derived (grid
+        (0 0 1 2 1 0 0)
+        (0 1 0 1 0 1 0)
+        (1 0 1 1 1 0 1)
+        (2 1 1 3 1 1 3)
+        (1 0 1 1 1 0 1)
+        (0 1 0 1 0 1 0)
+        (0 0 1 3 1 0 0))))))

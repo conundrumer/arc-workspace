@@ -1,0 +1,220 @@
+;; inputs 08e53db4f19280252f15b1066673ac7970bcd75e268dc0dcaec0f93a7d39ad3d programs/solvers/6165ea8f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6165ea8f
+
+(DET &bg DominantColor)
+
+;; The edge the color list runs along.
+(DET &legend_dir DirDomain)
+
+(RULE &legend
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&legend_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &legend_axis
+  (&legend_dir *D)
+  (axis_of D (:A *A2))
+  (perp (:A A2) (:A2 *A)))
+
+(INIT &order Order
+  (key ((&legend_axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (before ((:a Col) (:b Col2))
+      (&legend *Col *P)
+      (&legend_axis *A)
+      (split P A (:Along *L))
+      (&legend (:Col *Col2) (:P *P2))
+      (&legend_axis (:A *A22))
+      (split (:P P2) (:A A22) (:Along *L2))
+      (!= Col Col2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Col))
+    (&legend *Col *P)
+    (&legend_axis *A)
+    (split P A (:Along *L))))
+
+(RULE &order_pos
+  (&order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+  (&order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+;; Gap cells stand between the blocks, so each block is one component.
+(INIT &ink Connectivity
+  (key ((ex_output ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (ex_output E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &blk BoundingBox
+  (key ((&ink.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&ink.component (:key E) *P Id))))
+
+(DET &block
+  (&blk.cell (:key *E *Id) *P)
+  (&blk.box (:key E Id) *B)
+  (box_extent B P *N))
+
+(INIT &entry Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&block *N)))
+
+(DET &cand_gap
+  (ex_output *P)
+  (sub_extent P *A (:K *G)))
+
+(INIT &tiled_division Division
+  (key ((&cand_gap ^G)
+        (&block (:N ^K)))
+    (side (A K)
+      (axis_elem *A))
+    (gap (A G)
+      (axis_elem *A)))
+  (cell (P)
+    (ex_output *P)))
+
+(DET &tiled
+  (ex_output *E *P)
+  (&tiled_division.tile (:key *G) P (:P_outer *P_tile)))
+
+(DET &loose
+  (ex_output *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (&cand_gap *G)
+  (NOT (&tiled E G P)))
+
+(DET &gap
+  (&cand_gap *G)
+  (NOT (&loose G)))
+
+;; What a block says about the two shapes it stands for.
+(DET &alike AnyOutNewColor)
+
+(RULE &shape_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&legend_dir *D)
+  (NOT (margin (:B P) D (:K 0))))
+
+(INIT &bbox BoundingBox
+  (key ((&shape_cell ^Col *P))
+    (cell (P)
+      (&shape_cell Col *P))))
+
+(RULE &shape_inner
+  (&shape_cell *Col *P)
+  (&bbox.box (:key Col) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &cong Agreement
+  (key ((OR ((&shape_inner (:Col ^A) *P_inner)
+             (&shape_inner (:Col ^B)))
+            ((&shape_inner (:Col A))
+             (&shape_inner (:Col B) P_inner))))
+    (source ((:P P_inner))
+      (&shape_inner (:Col A) *P_inner)
+      (&shape_inner (:Col B)))
+    (target ((:P P_inner))
+      (&shape_inner (:Col A))
+      (&shape_inner (:Col B) *P_inner))))
+
+(RULE &same_shape
+  (&shape_inner (:Col *A))
+  (&shape_inner (:Col *B))
+  (d4_inverse *D (:D_inv *D_back))
+  (NOT (&cong.mismatch (:key A B) D))
+  (NOT (&cong.mismatch (:key (:A B) (:B A)) (:D D_back))))
+
+;; The output corner the two header lines meet at. Its diagonal carries the blocks where a color meets itself.
+(DET &header_corner DiagDirDomain)
+
+(DET &ring
+  (ex_output *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (&gap *G)
+  (&tiled E G P *P_tile)
+  (&header_corner (:D *Cn))
+  (corner_dist (:P P_tile) (:Diag Cn) *K))
+
+(INIT &near Order
+  (member ((:t K))
+    (&ring *K))
+  (score ((:t K) (:S K))
+    (&ring *K)))
+
+(DET &header
+  (&near.minimal (:t *N)))
+
+(RULE &list_slot
+  (&order_pos (:M *Col) (:P_pos *P_order))
+  (&legend_axis *A)
+  (&header_corner (:D *Cn))
+  (diag_dirs (:D Cn) A (:D1 *D))
+  (&header (:N *K))
+  (edge_inset D K (:B *Delta))
+  (compose (:A P_order) (:B Delta) (:C *P)))
+
+(RULE &slot
+  (&list_slot *Col (:A *A0) (:P *P0))
+  (OR ((perp (:A A0) (:A2 *A))
+       (&header_corner (:D *Cn))
+       (diag_axis_of (:D Cn) (:Da *DA))
+       (reflection (:A DA) *T)
+       (apply (:D T) (:P P0) (:P_out *P)))
+      ((= A A0)
+       (= P P0))))
+
+(INIT &tile_line Frame
+  (key ((&slot ^A *P)
+        (frame_extent P A *N))
+    (extent (A N)
+      (&slot A *P)
+      (frame_extent P A *N))))
+
+(DET &unlike AnyOutNewColor)
+
+(RULE &tile_color
+  (&slot (:Col *C2) (:A *A2) (:P *P2))
+  (perp *A A2)
+  (OR ((&slot (:Col *C1) A (:P *P1))
+       (!= C1 C2)
+       (IF ((&same_shape (:A C1) (:B C2)))
+           ((&alike (:C *Col)))
+           ((&unlike (:C Col)))))
+      ((&tile_line.cell (:key A) (:P P1))
+       (NOT (&slot A (:P P1)))
+       (= Col C2)))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &painted_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile_color *P_tile))
+  (inner ((:P P_intile))
+    (&entry.cell (:P *P_intile)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap *G)))
+
+(RULE &painted
+  (&tile_color *P_tile *Col)
+  (&painted_tiling.cell (:P_outer P_tile) *P))
+
+(INIT &sheet Frame
+  (extent (A N)
+    (&painted *P)
+    (frame_extent P *A *N)))
+
+(RULE &output
+  (&sheet.cell *P)
+  (OR ((&painted P *Col))
+      ((NOT (&painted P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

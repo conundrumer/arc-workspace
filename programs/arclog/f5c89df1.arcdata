@@ -1,0 +1,125 @@
+;; inputs fc7adb0d2dac3e2abcb0ce016fcce3b19714f7e0a40627fb98b8da332f56b242 programs/solvers/f5c89df1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f5c89df1
+
+(param &background Color (0))
+(param &anchor_color Color (3))
+(param &marker_color Color (2))
+(param &pattern_color Color (8))
+
+(alts $reach
+  (alt $AnchorComponent
+    (witness detached-piece variant concept
+      (separates "a pattern-colored cell two rows above train0's plus touches no other shape cell: the concept stamps it with the rest of the shape; AnchorComponent leaves it out of the stamps and wipes it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 8 2 0 0 0 0 0 0)
+        (0 0 0 0 8 3 8 0 0 0 0 0 0)
+        (0 0 0 0 2 8 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $AllInk (grid
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $AnchorComponent (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $color
+  (alt $ColorShape
+    (witness second-shape-color variant concept
+      (relaxed pattern)
+      (separates "one cell of train0's plus is drawn in 4: the concept stamps it in 4; ColorShape takes only the cells of the stored pattern color as the shape and drops it; PaintStored stamps it in the stored pattern color 8")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 4 2 0 0 0 0 0 0)
+        (0 0 0 0 8 3 8 0 0 0 0 0 0)
+        (0 0 0 0 2 8 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $SourceColor undefined)
+      (output $PaintStored (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ColorShape (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 8 0 8 0 8 0 0 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $s
+  (alt $PaintStored
+    (witness second-shape-color variant concept)))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "a 3x4 grid where the pattern color outnumbers 0: the concept stamps the shape one column right on a 0 field; DominantColor takes 8 as background, so the shape is the 0 column, whose copy falls off the grid, and the output is all 8")
+      (input (grid
+        (8 8 8 0)
+        (8 3 2 0)
+        (8 8 8 0)))
+      (output &background=$Stored (grid
+        (0 8 8 8)
+        (0 8 0 0)
+        (0 8 8 8)))
+      (output &background=$Derived (grid
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8))))))

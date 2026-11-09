@@ -1,0 +1,196 @@
+;; inputs 2dfef04807aba76b2c4ed2c884b8aa1b9bf3f1baa2245dc30e13617342f15ff7 programs/solvers/bcb3040b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bcb3040b
+
+(INPUT noise-field "every cell other than the markers is 0 or 1")
+
+(INPUT two-markers "exactly two cells have the color `marker_color`")
+
+(INPUT markers-aligned "the two markers lie on one row, one column, or one diagonal")
+
+(INPUT markers-on-opposite-edges "the two markers sit on opposite edges of the grid, so the segment between them spans the grid")
+
+(OUTPUT draw-segment "each cell strictly between the two markers on their common line is recolored by `line_paint`, keyed by its input color")
+
+(OUTPUT keep-rest "every other cell, the markers included, keeps its input color"
+
+  ;; The cells of each color.
+  (INIT &color_size Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (DET_OR_RULE &marker_count TileCount TileDim)
+
+  (RULE &two_cell
+    (&color_size.size (:key *Col) *N)
+    (&marker_count N))
+
+  (DET &two_cell_train
+    (&two_cell (:E *E_train) *Col)
+    (ex_output (:E E_train)))
+
+  ;; the color a segment cell takes, keyed by its input color
+  (DET &line_paint ChangedPairs)
+
+  (DET &uneven
+    (&two_cell_train *Col)
+    (ex_output *E)
+    (NOT (&two_cell E Col)))
+
+  (DET_OR_RULE &marker_color RarestColor
+    (&two_cell_train (:Col *C))
+    (NOT (&uneven (:Col C))))
+
+  (RULE &marker_color2
+    (&marker_color (:C *Col)))
+
+  (RULE &marker
+    (&marker_color2 *Col)
+    (input *P Col))
+
+  (RULE &lines_dir
+    (&marker_color2)
+    (dir8_elem *D))
+
+  (INIT &lines Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&lines_dir *D)))
+
+  (RULE &aligned
+    (&marker (:P *Q))
+    (&lines.ray (:P Q) *D (:Origin *P))
+    (!= P Q))
+
+  (RULE &extra
+    (&aligned *P *Q)
+    (&marker (:P *R))
+    (!= R P)
+    (!= R Q))
+
+  (RULE &joined
+    (&aligned *P *Q *D)
+    (NOT (&extra P Q)))
+
+  (DET &bg
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col_out))
+    (&marker_color (:C Col_out))
+    (!= Col Col_out)))
+
+(ALTS $source "where the marker color comes from" $StoredColor
+  (ALT $TwoCellColor
+    (INPUT two-markers "exactly two cells share one color, the marker color"
+      (INIT &two_cell2 Singleton
+        (member ((:v Col))
+          (&two_cell *Col))))
+    (OUTPUT draw-segment "the marker color is the one color of exactly `marker_count` cells; undefined where several colors have that count"
+      (RULE &marker_color2
+        (&two_cell2.value (:v *Col)))))
+  (ALT $NonFieldColor
+    (INPUT two-markers "exactly two cells have a color outside `field_colors`")
+    (OUTPUT draw-segment "the markers are the cells of a color outside `field_colors`"
+      (DET &field_colors
+        (ex_input *E *P *Col)
+        (ex_output E P (:Col *Col_out))
+        (!= Col Col_out))
+
+      (RULE &marker_color2
+        (input *Col)
+        (NOT (&field_colors Col))))))
+
+(ALTS $extent "how far the line reaches along the markers' common line" $Segment
+  (ALT $ExtendFullLine
+    (OUTPUT draw-segment "the whole line through the two markers, from grid edge to grid edge, takes `line_paint`, the markers excepted")
+    (RULE &segment
+      (&joined (:P *P1) (:Q *P2) *D)
+      (axis4_of D *A)
+      (input *P)
+      (same_line A (:P P1) (:Q P))
+      (!= P P1)
+      (!= P P2))))
+
+(ALTS $markers "which markers are joined" $TwoMarkers
+  (ALT $EveryAlignedPair
+    (INPUT two-markers "any number of cells have the color `marker_color`")
+    (INPUT markers-aligned "the markers need not share a line")
+    (OUTPUT draw-segment "every pair of markers on one row, column or diagonal is joined; undefined where a segment crosses a cell with no `line_paint` entry, a third marker in line included"
+      (RULE &joined
+        (&aligned *P *Q *D)))
+    (RULE &output
+      (NOT (&unsourced))
+      (input *P (:Col *Col_in))
+      (IF ((&segment P))
+          ((&paint (:C_in Col_in) (:C_out *Col)))
+          ((= Col Col_in))))))
+
+(ALTS $cross "what a segment cell's paint is keyed by" $KeyedPaint
+  (ALT $CrossAnyFg
+    (INPUT noise-field "every cell other than the markers is `bg` or of another color")
+    (OUTPUT draw-segment "a segment cell of `bg` takes `bg_paint`, and a cell of any other color takes `cross_paint`; undefined where a segment crosses a marker cell"
+      (DET_OR_RULE &bg_paint RarestColor
+        (ex_input *E *P (:Col *Bg))
+        (&bg (:Col Bg))
+        (ex_output E P (:Col *C))
+        (!= C Bg))
+
+      (DET &cross_paint
+        (ex_input *E *P (:Col *Col_in))
+        (NOT (&bg (:Col Col_in)))
+        (ex_output E P *Col)
+        (!= Col Col_in)))
+    (RULE &paint
+      (OR ((input (:Col *C_in))
+           (NOT (&bg (:Col C_in)))
+           (NOT (&marker_color2 (:Col C_in)))
+           (&cross_paint (:Col *C_out)))
+          ((&bg (:Col C_in))
+           (&bg_paint (:C C_out)))))
+    (ALT $LineInMarkerColor
+      (RULE &paint
+        (OR ((input (:Col *C_in))
+             (NOT (&bg (:Col C_in)))
+             (NOT (&marker_color2 (:Col C_in)))
+             (&cross_paint (:Col *C_out)))
+            ((&bg (:Col C_in))
+             (&marker_color2 (:Col C_out))))))))
+
+(ALTS $line "where the paint of a background segment cell comes from" $StoredPaint
+  (ALT $LineInMarkerColor
+    (OUTPUT draw-segment "a segment cell of `bg` takes `marker_color`, and a cell of another color is recolored by `line_paint`")
+    (RULE &paint
+      (OR ((&line_paint (:C_from *C_in) (:C_to *C_out))
+           (NOT (&bg (:Col C_in))))
+          ((&bg (:Col C_in))
+           (&marker_color2 (:Col C_out)))))))
+
+(RULE &unsourced
+  (NOT (&marker_color2)))
+
+(RULE &paint
+  (&line_paint (:C_from *C_in) (:C_to *C_out)))
+
+(RULE &segment
+  (&joined (:P *P1) (:Q *P2) *D)
+  (dir8_opposite D (:D2 *D_back))
+  (&lines.ray *P D (:Origin P1))
+  (!= P P1)
+  (&lines.ray P (:D D_back) (:Origin P2))
+  (!= P P2))
+
+(RULE &unpaired
+  (NOT (&joined)))
+
+(RULE &output
+  (NOT (&unsourced))
+  (NOT (&unpaired))
+  (input *P (:Col *Col_in))
+  (IF ((&segment P))
+      ((&paint (:C_in Col_in) (:C_out *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

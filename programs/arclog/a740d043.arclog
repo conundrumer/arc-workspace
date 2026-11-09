@@ -1,0 +1,26 @@
+;; inputs ae125c71dc89e43fa5c6809fc5ff7bfad75c24c5fe454e5b6cc4159696a425ea programs/solvers/a740d043.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a740d043
+
+(DET &bg DominantColor)
+
+(DET &hole AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &output
+  (OR ((&ink (:P *P2) *Col))
+      ((input (:P P2) (:Col *C))
+       (&bg C)
+       (&hole (:C Col))))
+  (&bbox.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

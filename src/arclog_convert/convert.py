@@ -1,7 +1,8 @@
 """Convert the Souffle solvers under programs/solvers/ to arclog and arcdata
-files under gen/ of `arclog_convert.out`: `work/arclog/` of the main
-worktree, or the directory `--out` gives; in a linked worktree, `--out` is
-required (or `ARCLOG_OUT`).
+files under `programs/arclog/` of the checkout, and write the other output
+under `work/arclog/` of the main worktree. Where `--out` gives a directory, the
+run writes all of it under that directory, the arclog and arcdata files in
+`gen/` of it. In a linked worktree, `--out` is required (or `ARCLOG_OUT`).
 
     uv run python -m arclog_convert.convert [--out <dir>] [--require-current-lib] [<stem> ...]
 
@@ -25,11 +26,11 @@ and columns/, are those of `arclog_convert.names`, and names/ also holds the
 Souffle texts that derive the rows of the relations the converter adds
 (`arclog_convert.parity_text`): `<stem>.dl`, which the runs of the cases add to
 the solver's program, and `<stem>.determination.dl`, which the determination's
-run adds. Beside gen/, the directory
-`paths.CORPUS` holds, for the row-parity check alone, a copy of each
+run adds. The directory
+`paths.CORPUS` of the output directory holds, for the row-parity check alone, a copy of each
 converted program with the check relations of the relations it folds
 (`arclog_convert.checks`) and the clauses of the relations the projection pass
-removes from `gen/`; nothing else reads it.
+removes from the converted program; nothing else reads it.
 A pass after the conversion moves the unjoined factors of clause bodies into
 the clauses that join them (`arclog_convert.pull_up`); it runs on both texts,
 and the column map lists the columns it took away from each relation no more.
@@ -65,27 +66,27 @@ A form the script cannot translate is written literally, under a
 A clause or a factor that a pass keeps because a block other than the reader's derives its relation again, or because
 its relation has clauses in several blocks, holds in the flat program of a case, where each relation has one deriving
 form (`projections.Projected.blocked`, `pull_up.Pulled.blocked`). On each solver where a pass keeps one, the run
-writes, once every solver stands in `gen/`, the files of the cases whose program read alone differs after the
-passes (`convert_cases`): `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files`
+writes, once every solver stands in the converted solvers' directory, the files of the cases whose program read alone differs after the
+passes (`convert_cases`): `cases/<stem>/<case>.arclog` and `.arcdata` of that directory, with `<case>` as `arclog.case_files`
 names the file of the case. A case whose program the passes leave as `arclog.case_files` gives it, and a case of
 which it gives a fault (the checker refuses the case program read alone), have no files: the run skips that case, and
 the summary gives the number of such cases of each solver. A solver none of whose cases has files gets no case files.
 The passes read Souffle's rows of the whole program (`pull_up.Rows.single`).
-Each file the run writes under `gen/` (`<stem>.arclog`, `<stem>.arcdata` and each case file) is read-only, and begins with
+Each file the run writes to the converted solvers' directory (`<stem>.arclog`, `<stem>.arcdata` and each case file) is read-only, and begins with
 the two comment lines of `arclog_convert.provenance.header`: `;; inputs <inputs hash> programs/solvers/<stem>.dl` and
 `;; converter <code hash>`. The inputs hash is `plans.inputs_hash` (the solver file, task file and witness file of the
 solver), and the code hash is `provenance.code_digest` (the modules this file imports, followed through their imports,
 the sources of the Souffle runs, and the lib's files).
-After a solver's files stand, `case_records/` beside `gen/` holds a file `<stem>.sha256`, the record of
+After a solver's files stand, `case_records/` of the output directory holds a file `<stem>.sha256`, the record of
 `arclog_convert.provenance`: the inputs hash and the code hash, the sha256 of the `.arclog`, of the `.arcdata` and of each
 case file, a line `skipped <n>` where the run skipped `n` cases for a fault, and a line `error <JSON string>` where the
 case files stopped with an error. A record is current only where its inputs hash is the solver's and its code hash is
 the current one, so that a change in the converter, the lib or a solver's files makes the case files of the solver
 again. The run keeps the case files of a solver whose record is current, whose `.arclog` and `.arcdata` the run just
 wrote with the recorded hashes, and whose case files on disk have the recorded hashes and no others; otherwise it removes
-the record and `gen/cases/<stem>/`, and writes the files again, over the pool in parts of the solver's cases, and writes
+the record and `cases/<stem>/` of the converted solvers' directory, and writes the files again, over the pool in parts of the solver's cases, and writes
 the record once every part ends with no error. Where the files cannot be made and the error is a `ValueError` or a
-`Fault`, the run removes `gen/cases/<stem>/` and the record gets the line `error`; the run reports that error without
+`Fault`, the run removes `cases/<stem>/` of that directory and the record gets the line `error`; the run reports that error without
 making the files again, while the record is current. A solver that is not converted has neither the directory nor the
 record; a solver that is converted and has no case files has a record without case files.
 `python -m arclog_convert.readback` checks the files of the solvers against their records.
@@ -296,7 +297,7 @@ def convert_one(stem: str) -> Converted:
     error that stopped it, the arclog and the arcdata of its program with
     the check relations, and the answers of `Rows.single` where
     `convert_cases` is to run: a pool worker's unit of work. Where it fails or
-    gives no answers, it removes `cases/<stem>/` of `gen/` and the record of
+    gives no answers, it removes `cases/<stem>/` of the converted solvers' directory and the record of
     the solver, which `convert_into` and `convert_cases` write."""
     global _LIBS
     if _LIBS is None:
@@ -559,8 +560,8 @@ def _equality_bindings(stem: str, text: str, matches: list[dict]) -> str:
 
 def _write_cases(stem: str, answers: Answers, part: CaseTexts, head: str) -> tuple[str, int, str | None, dict[str, str]]:
     """The second round of the case phase for the cases `part` of the solver `stem`: write the files of those whose
-    normal form differs from the case as `arclog.case_files` gives it, `gen/cases/<stem>/<case>.arclog` and
-    `.arcdata`. The normal form is the pull-up and projection passes (which read
+    normal form differs from the case as `arclog.case_files` gives it, `cases/<stem>/<case>.arclog` and
+    `.arcdata` of the converted solvers' directory. The normal form is the pull-up and projection passes (which read
     Souffle's rows through `Rows.single`), the implied-atom pass, deletion of native static-valid
     tests, then `_equality_bindings`. Deletion reads only the checked program, and `_equality_bindings` the decoder on
     the task's inputs, not task rows.
@@ -631,11 +632,11 @@ def _submit[**P, R](pool: Executor | None, fn: Callable[P, R], *args: P.args, **
 
 def convert_cases(pool: Executor | None, workers: int, asked: Mapping[str, Answers],
                   written_files: Mapping[str, tuple[str, str]]) -> list[Cased]:
-    """Write the files of the cases of the solvers `asked` names, whose normal form differs from the case as `gen/`
-    gives it, `gen/cases/<stem>/<case>.arclog` and `.arcdata`, with `<case>` as `arclog.case_files` gives it. `asked`
+    """Write the files of the cases of the solvers `asked` names, whose normal form differs from the case as the converted solver
+    gives it, `cases/<stem>/<case>.arclog` and `.arcdata` of the converted solvers' directory, with `<case>` as `arclog.case_files` gives it. `asked`
     gives, by solver, the answers of `Rows.single` that `convert_one` found, and `written_files` gives, by solver, the
     sha256 of the `.arclog` and of the `.arcdata` that the run wrote. A case of which `arclog.case_files`
-    gives a fault gets no files. It reads the texts, the column map and the files of the solvers `gen/` holds that
+    gives a fault gets no files. It reads the texts, the column map and the files of the solvers that directory holds that
     `convert_one` and the run wrote, so it runs after every solver is converted, and it writes nothing but those files
     and the records of `case_records/`.
 
@@ -727,7 +728,7 @@ def convert_into(stems: list[str], out: Path) -> list[str]:
     solver gets its record in `case_records/`."""
     from concurrent.futures import ProcessPoolExecutor
     out.mkdir(parents=True, exist_ok=True)
-    corpus = out.parent / paths.CORPUS
+    corpus = paths.OUT_ROOT / paths.CORPUS
     total = Counter()
     per_kind_solvers = Counter()
     merges: Counter[str] = Counter()

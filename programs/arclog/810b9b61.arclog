@@ -1,0 +1,72 @@
+;; inputs 5e4231fa434fbc5c260927441db38c389b5a702cb920aa1b125b0f8c37d1101b programs/solvers/810b9b61.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 810b9b61
+
+(DET &recolor ChangedPairs)
+
+(RULE &ink
+  (input *P *Col)
+  (&recolor (:C_from Col)))
+
+(INIT &drect Outlines
+  (key ((&ink ^Col *P))
+    (node (P)
+      (&ink Col *P))))
+
+(RULE &painted
+  (&drect.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(INIT &objs Connectivity
+  (key ((&ink ^Col *P))
+    (node (P)
+      (&ink Col *P))))
+
+(ALTS $choice "how a closed rectangle is recognized" $Rect
+  (ALT $Object
+    (INIT &bbox BoundingBox
+      (key ((&objs.component (:key ^Col) ^Id *P))
+        (cell (P)
+          (&objs.component (:key Col) Id *P))))
+
+    (RULE &edge_gap
+      (&bbox.box (:key *Col *Id) *B)
+      (input *P)
+      (inside (:A P) B)
+      (same_dist (:P1 P) (:P2 B))
+      (NOT (&objs.component (:key Col) Id P)))
+
+    (RULE &painted
+      (&objs.component (:key (:Col *K_col)) (:Id *K_id) *P)
+      (&bbox.box (:key (:Col K_col) (:Id K_id)) *B)
+      (NOT (&edge_gap (:Col K_col) (:Id K_id)))
+      (input (:P *Q))
+      (interior (:A Q) B)))
+  (ALT $Enclose
+    ;; Each ink color walls the rest of the grid off.
+    (INIT &closed Enclosure
+      (key ((&recolor (:C_from ^Col)))
+        (cell (P)
+          (input *P)
+          (NOT (&ink Col P)))))
+
+    (RULE &wall
+      (&closed.enclosed (:key *Col) (:P *Q))
+      (dir_elem *D)
+      (neighbor (:P Q) D (:Q *P))
+      (&objs.component (:key Col) *Id P))
+
+    (RULE &painted
+      (&wall (:Col *K_col) (:Id *K_id))
+      (&objs.component (:key (:Col K_col)) (:Id K_id) *P))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (input P (:Col *Col2))
+       (&recolor (:C_from Col2) (:C_to *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

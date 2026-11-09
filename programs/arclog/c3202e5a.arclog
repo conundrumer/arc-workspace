@@ -1,0 +1,176 @@
+;; inputs 16c66944e7824a98a5b2c13674737c5cdf53b47c75fc922542b3be6ecd5d6b4c programs/solvers/c3202e5a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c3202e5a
+
+(INPUT divider-tiling "full rows and full columns of one color, evenly spaced, cut the grid into equal square tiles, with no line on the grid's edge")
+
+(INPUT one-mono-tile "exactly one tile has marks of a single color; every other tile has marks of two or more colors")
+
+(OUTPUT crop-mono-tile "the output is the one tile that holds background (0) cells and marks of a single color, cropped to the tile's cells, with its marks and its background cells as they are"
+
+  ;; The one color of each line that holds one color.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &cut_on_divider
+    (input *P)
+    (&line_color.value (:key *A *L))
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &cut_rank Order
+    (key ((OR ((&line_color.value (:key *A *L))
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&line_color.value (:key *A *L))
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&line_color.value (:key *A *L))
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &cut_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&cut_on_divider P A))
+    (margin (:B P) D *K)
+    (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &cut_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&cut_part_idx *P D (:N *N1))
+    (&cut_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &cut_tile_of
+    (&cut_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&cut_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET &out_color
+    (ex_output *E *Col))
+
+  (DET &lacking
+    (&out_color *Col)
+    (&out_color *E)
+    (NOT (&out_color E Col)))
+
+  (DET_OR_RULE &bg DominantColor
+    (&out_color (:Col *C))
+    (NOT (&lacking (:Col C))))
+
+  (INIT &tile_box BoundingBox
+    (key ((&cut_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&cut_tile_of *P (:P_tile T)))))
+
+  (RULE &has_bg
+    (&cut_tile_of *P (:P_tile *T))
+    (input P *Col)
+    (&bg (:C Col)))
+
+  (RULE &mark
+    (&cut_tile_of *P (:P_tile *T))
+    (input P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The one color of a tile's marks.
+  (INIT &mark_color Singleton
+    (key ((&mark ^T *Col))
+      (member ((:v Col))
+        (&mark T *Col))))
+
+  (RULE &chosen
+    (&mark_color.value (:key *T))
+    (&has_bg T))
+
+  ;; The one tile a case keeps.
+  (INIT &pick Singleton
+    (member ((:v T))
+      (&chosen *T)))
+
+  (INIT &mark_colors Cardinality
+    (key ((OR ((&mark ^T *Col))
+              ((&tile_box.box (:key T)))))
+      (member ((:m Col))
+        (&mark T *Col))
+      (domain ()
+        (&tile_box.box (:key T)))))
+
+  (INIT &fewest Order
+    (member ((:t (:V T) (:S N)))
+      (&mark_colors.size (:key *T) *N))
+    (score ((:t (:V T) (:S N)) (:S N))
+      (&mark_colors.size (:key *T) *N)))
+
+  (INIT &color_cells Cardinality
+    (key ((&mark ^T *P ^Col))
+      (member ((:m P))
+        (&mark T *P Col))))
+
+  (INIT &most Order
+    (member ((:t (:V T) (:S N)))
+      (&color_cells.size (:key *T) *N))
+    (score ((:t (:V T) (:S N)) (:S N))
+      (&color_cells.size (:key *T) *N)))
+
+  (INIT &cell_colors Cardinality
+    (key ((&cut_tile_of *P (:P_tile ^T))
+          (input P *Col))
+      (member ((:m Col))
+        (&cut_tile_of *P (:P_tile T))
+        (input P *Col))))
+
+  (INIT &fewest_all Order
+    (member ((:t (:V T) (:S N)))
+      (&cell_colors.size (:key *T) *N))
+    (score ((:t (:V T) (:S N)) (:S N))
+      (&cell_colors.size (:key *T) *N))))
+
+(ALTS $sel "which tile the output crops" $OneColor
+  (ALT $FewestColors
+    (OUTPUT crop-mono-tile "the output crops the tile with the fewest mark colors, a tile with no marks counting zero; undefined on a tie for fewest"
+      (RULE &chosen
+        (&fewest.minimal (:t (:V *T))))))
+  (ALT $MostOfOneColor
+    (OUTPUT crop-mono-tile "the output crops the tile that holds the most cells of one mark color; undefined on a tie"
+      (RULE &chosen
+        (&most.maximal (:t (:V *T))))))
+  (ALT $NoBackground
+    (OUTPUT crop-mono-tile "the output crops the tile with the fewest colors over all its cells, background counted as a color; undefined on a tie"
+      (RULE &chosen
+        (&fewest_all.minimal (:t (:V *T)))))))
+
+(ALTS $ink "which cells of a tile are marks" $CountDividerInk
+  (ALT $IgnoreDividerInk
+    (OUTPUT divider-ink-not-mark "cells of the divider color inside a tile are not marks"
+      (RULE &mark
+        (&cut_tile_of *P (:P_tile *T))
+        (input P *Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&line_color.value (:v Col)))))))
+
+(RULE &output
+  (&pick.value (:v *T))
+  (&tile_box.box (:key T) *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

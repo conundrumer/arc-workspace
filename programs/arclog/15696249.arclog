@@ -1,0 +1,40 @@
+;; inputs aadb37f5752e21a7e1de3e2ef7f6322ec98112f21cbe55b122bd119f3b329cef programs/solvers/15696249.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 15696249
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &bg AnyOutNewColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Across ^P_across)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Across P_across)))))
+
+(RULE &gate
+  (input *P)
+  (split P *A (:Across *P_across))
+  (NOT (&line_color.plural (:key A P_across))))
+
+(ALTS $choice "two models of the gate; they coincide while that color stays on its line, and diverge on a stray cell of it" $Line
+  (ALT $Color
+    (RULE &gate
+      (input *P *Col)
+      (&line_color.value (:v Col)))))
+
+(RULE &output
+  (&output_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) *P)
+  (input (:P P_intile) (:Col *Col_in))
+  (OR ((NOT (&gate (:P P_tile)))
+       (&bg (:C *Col)))
+      ((&gate (:P P_tile))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

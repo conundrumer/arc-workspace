@@ -1,0 +1,187 @@
+;; inputs 4f37b426cd07e5b446cc936f5d0fe219d5260ac6a9c120faf9712708b7fbb07f programs/solvers/dc0a314f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc0a314f
+
+(param &cover_color Color (3))
+(param &symmetry Sym (SYM_D4))
+(param &center_frame Box ((0 0 0 0)))
+
+(exclude ($GroupPerInput $ImageMajority) "The majority branch adds nothing to a derived group or a found center, about which a covered cell's images always agree.")
+(exclude ($CenterFound $ImageMajority) "The majority branch adds nothing to a derived group or a found center, about which a covered cell's images always agree.")
+
+(alts $s
+  (alt $GroupPerInput
+    (witness two-mirror-axes variant $GroupPerInput
+      (relaxed symmetric-pattern)
+      (separates "the pattern is mirror-symmetric on both axes and not under the diagonal reflections: the stored eight symmetries meet disagreeing images and the concept is undefined; the group derived per input, and the whole cover image under a mirror, restore under the two mirrors; the commonest image color gives another grid")
+      (input (grid
+        (5 2 5 2 5 2 2 2 2 2 2 5 2 5 2 5)
+        (5 2 5 2 2 2 5 5 5 5 2 2 2 5 2 5)
+        (2 2 5 4 2 5 5 2 2 5 5 2 4 5 2 2)
+        (5 5 8 5 2 5 2 2 2 2 5 2 5 8 5 5)
+        (2 5 5 5 4 9 9 6 6 9 9 4 5 5 5 2)
+        (5 5 2 2 6 6 6 6 6 3 3 3 3 3 5 5)
+        (5 2 2 5 6 9 6 6 6 3 3 3 3 3 2 5)
+        (5 2 5 5 9 9 9 9 9 3 3 3 3 3 2 5)
+        (5 2 5 5 9 9 9 9 9 3 3 3 3 3 2 5)
+        (5 2 2 5 6 9 6 6 6 3 3 3 3 3 2 5)
+        (5 5 2 2 6 6 6 6 6 6 6 6 2 2 5 5)
+        (2 5 5 5 4 9 9 6 6 9 9 4 5 5 5 2)
+        (5 5 8 5 2 5 2 2 2 2 5 2 5 8 5 5)
+        (2 2 5 4 2 5 5 2 2 5 5 2 4 5 2 2)
+        (5 2 5 2 2 2 5 5 5 5 2 2 2 5 2 5)
+        (5 2 5 2 5 2 2 2 2 2 2 5 2 5 2 5)))
+      (output ($SymStored $CellRestore $ImagesAgree) undefined)
+      (output $GroupPerInput $WholeBlockImage (grid
+        (6 6 6 2 2)
+        (6 9 6 5 2)
+        (9 9 9 5 5)
+        (9 9 9 5 5)
+        (6 9 6 5 2)))
+      (output $ImageMajority (grid
+        (6 6 9 5 5)
+        (6 6 9 2 5)
+        (6 6 6 2 2)
+        (6 6 6 2 2)
+        (6 6 9 2 5))))
+    (witness pinwheel variant $GroupPerInput
+      (relaxed symmetric-pattern)
+      (separates "the pattern is symmetric under the four rotations and under no mirror: the stored eight symmetries meet disagreeing images, and the concept and the whole cover image are undefined; the group derived per input is the rotations, and it restores the cover")
+      (input (grid
+        (4 2 5 8 1 1 9 6 1 4 6 1 6 2 1 4)
+        (1 1 5 5 1 2 1 6 5 3 3 3 3 3 1 2)
+        (2 2 8 8 6 1 6 6 5 3 3 3 3 3 5 5)
+        (6 1 6 9 2 4 5 2 6 3 3 3 3 3 5 8)
+        (1 6 1 4 6 9 8 2 1 3 3 3 3 3 1 1)
+        (6 9 2 6 6 8 2 4 1 6 8 9 4 1 2 1)
+        (4 1 1 1 6 6 8 1 6 8 2 8 5 6 1 9)
+        (1 5 5 6 1 1 6 1 1 1 4 2 2 6 6 6)
+        (6 6 6 2 2 4 1 1 1 6 1 1 6 5 5 1)
+        (9 1 6 5 8 2 8 6 1 8 6 6 1 1 1 4)
+        (1 2 1 4 9 8 6 1 4 2 8 6 6 2 9 6)
+        (1 1 6 2 6 6 6 1 2 8 9 6 4 1 6 1)
+        (8 5 8 9 4 6 1 6 2 5 4 2 9 6 1 6)
+        (5 5 8 6 1 2 1 5 6 6 1 6 8 8 2 2)
+        (2 1 2 1 6 9 1 5 6 1 2 1 5 5 1 1)
+        (4 1 2 6 1 6 4 1 6 9 1 1 8 5 2 4)))
+      (output $SymStored undefined)
+      (output $GroupPerInput (grid
+        (1 9 6 1 2)
+        (1 2 1 6 8)
+        (1 6 4 9 8)
+        (6 6 6 2 6))))))
+
+(alts $c
+  (alt $CenterStored
+    (witness pattern-overhangs variant $CenterStored
+      (relaxed symmetric-pattern)
+      (separates "the pattern is centered on the corner of cells (7,7)-(8,8) in a 14x14 grid: the grid center meets disagreeing images and the concept is undefined; the stored center and the found center restore about that corner")
+      (assign &center_frame ((0 -2 0 -2)))
+      (input (grid
+        (5 5 2 5 2 5 5 5 5 5 5 2 5 2)
+        (5 2 2 5 5 5 2 2 2 2 5 5 5 2)
+        (2 2 5 8 5 2 2 5 5 2 2 5 8 5)
+        (5 5 8 5 5 2 5 5 5 5 2 5 5 8)
+        (2 5 5 5 4 6 6 9 9 6 6 4 5 5)
+        (5 5 2 2 6 6 9 9 9 3 3 3 3 3)
+        (5 2 2 5 6 9 6 9 9 3 3 3 3 3)
+        (5 2 5 5 9 9 9 9 9 3 3 3 3 3)
+        (5 2 5 5 9 9 9 9 9 3 3 3 3 3)
+        (5 2 2 5 6 9 6 9 9 3 3 3 3 3)
+        (5 5 2 2 6 6 9 9 9 9 6 6 2 2)
+        (2 5 5 5 4 6 6 9 9 6 6 4 5 5)
+        (5 5 8 5 5 2 5 5 5 5 2 5 5 8)
+        (2 2 5 8 5 2 2 5 5 2 2 5 8 5)))
+      (output $GridCenter undefined)
+      (output $CenterFound $CenterStored (grid
+        (9 6 6 2 2)
+        (6 9 6 5 2)
+        (9 9 9 5 5)
+        (9 9 9 5 5)
+        (6 9 6 5 2))))
+    (witness overhang-stray borderline $CenterStored
+      (relaxed symmetric-pattern)
+      (separates "the pattern is centered on the corner of cells (7,7)-(8,8) in a 14x14 grid, and uncovered cell (1,2) breaks its symmetry away from the cover's images: the stored center restores the cover; no found center has uncovered cells that agree, so the found center is undefined, and so is the grid center")
+      (assign &center_frame ((0 -2 0 -2)))
+      (input (grid
+        (5 5 2 5 2 5 5 5 5 5 5 2 5 2)
+        (5 2 8 5 5 5 2 2 2 2 5 5 5 2)
+        (2 2 5 8 5 2 2 5 5 2 2 5 8 5)
+        (5 5 8 5 5 2 5 5 5 5 2 5 5 8)
+        (2 5 5 5 4 6 6 9 9 6 6 4 5 5)
+        (5 5 2 2 6 6 9 9 9 3 3 3 3 3)
+        (5 2 2 5 6 9 6 9 9 3 3 3 3 3)
+        (5 2 5 5 9 9 9 9 9 3 3 3 3 3)
+        (5 2 5 5 9 9 9 9 9 3 3 3 3 3)
+        (5 2 2 5 6 9 6 9 9 3 3 3 3 3)
+        (5 5 2 2 6 6 9 9 9 9 6 6 2 2)
+        (2 5 5 5 4 6 6 9 9 6 6 4 5 5)
+        (5 5 8 5 5 2 5 5 5 5 2 5 5 8)
+        (2 2 5 8 5 2 2 5 5 2 2 5 8 5)))
+      (output $GridCenter $CenterFound undefined)
+      (output $CenterStored (grid
+        (9 6 6 2 2)
+        (6 9 6 5 2)
+        (9 9 9 5 5)
+        (9 9 9 5 5)
+        (6 9 6 5 2)))))
+  (alt $CenterFound
+    (witness off-center variant $CenterFound
+      (relaxed symmetric-pattern)
+      (separates "the pattern is centered on the corner of cells (5,5)-(6,6) in a 14x14 grid: the grid center and the stored center meet disagreeing images and are undefined; the found center restores about that corner")
+      (input (grid
+        (5 8 5 2 2 5 5 2 2 5 8 5 2 2)
+        (8 5 5 2 5 5 5 5 2 5 5 8 5 5)
+        (5 5 4 6 6 9 9 6 6 4 5 5 5 2)
+        (2 2 6 6 9 9 9 3 3 3 3 3 5 5)
+        (2 5 6 9 6 9 9 3 3 3 3 3 2 5)
+        (5 5 9 9 9 9 9 3 3 3 3 3 2 5)
+        (5 5 9 9 9 9 9 3 3 3 3 3 2 5)
+        (2 5 6 9 6 9 9 3 3 3 3 3 2 5)
+        (2 2 6 6 9 9 9 9 6 6 2 2 5 5)
+        (5 5 4 6 6 9 9 6 6 4 5 5 5 2)
+        (8 5 5 2 5 5 5 5 2 5 5 8 5 5)
+        (5 8 5 2 2 5 5 2 2 5 8 5 2 2)
+        (2 5 5 5 2 2 2 2 5 5 5 2 2 5)
+        (2 5 2 5 5 5 5 5 5 2 5 2 5 5)))
+      (output $GridCenter $CenterStored undefined)
+      (output $CenterFound (grid
+        (9 6 6 2 2)
+        (6 9 6 5 2)
+        (9 9 9 5 5)
+        (9 9 9 5 5)
+        (6 9 6 5 2))))))
+
+(alts $u
+  (alt $WholeBlockImage
+    (witness stray-cell borderline any
+      (relaxed symmetric-pattern)
+      (separates "one uncovered cell (11,10) breaks the symmetry, and it is an image of covered cell (4,10): the concept is undefined there; the whole cover image under a mirror that misses that cell, and the commonest image color, restore the cover")
+      (input (grid
+        (5 5 2 5 2 5 5 5 5 5 5 2 5 2 5 5)
+        (5 2 2 5 5 5 2 2 2 2 5 5 5 2 2 5)
+        (2 2 5 8 5 2 2 5 5 2 2 5 8 5 2 2)
+        (5 5 8 5 5 2 5 5 5 5 2 5 5 8 5 5)
+        (2 5 5 5 4 6 6 9 3 3 3 3 3 5 5 2)
+        (5 5 2 2 6 6 9 9 3 3 3 3 3 2 5 5)
+        (5 2 2 5 6 9 6 9 3 3 3 3 3 2 2 5)
+        (5 2 5 5 9 9 9 9 3 3 3 3 3 5 2 5)
+        (5 2 5 5 9 9 9 9 3 3 3 3 3 5 2 5)
+        (5 2 2 5 6 9 6 9 9 6 9 6 5 2 2 5)
+        (5 5 2 2 6 6 9 9 9 9 6 6 2 2 5 5)
+        (2 5 5 5 4 6 6 9 9 6 4 4 5 5 5 2)
+        (5 5 8 5 5 2 5 5 5 5 2 5 5 8 5 5)
+        (2 2 5 8 5 2 2 5 5 2 2 5 8 5 2 2)
+        (5 2 2 5 5 5 2 2 2 2 5 5 5 2 2 5)
+        (5 5 2 5 2 5 5 5 5 5 5 2 5 2 5 5)))
+      (output ($CellRestore $ImagesAgree) undefined)
+      (output $WholeBlockImage $ImageMajority (grid
+        (9 6 6 4 5)
+        (9 9 6 6 2)
+        (9 6 9 6 5)
+        (9 9 9 9 5)
+        (9 9 9 9 5))))))
+
+(alts $i
+  (alt $ImageMajority
+    (witness two-mirror-axes variant $GroupPerInput)))

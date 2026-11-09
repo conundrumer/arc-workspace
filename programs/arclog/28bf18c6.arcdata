@@ -1,0 +1,7 @@
+;; inputs ac53ba22eb9c9678866f9fcbc88d1259c7b661e6ccf305cec85ba8cc9f36b17e programs/solvers/28bf18c6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 28bf18c6
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_H))
+(param &copies number (2))

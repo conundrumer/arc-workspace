@@ -1,0 +1,7 @@
+;; inputs f15dedda99b5329b3b40f6b5b7e450bb6047712c7b06f2000b867ec737301d7c programs/solvers/d492a647.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d492a647
+
+(param &bg Color (0))
+(param &noise Color (5))
+(param &period number (2))

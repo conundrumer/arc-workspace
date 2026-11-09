@@ -1,0 +1,101 @@
+;; inputs dff271af3cd60ed798cef9b083d3a67611256b5ce5f5c6f64c65e235d3ebccc4 programs/solvers/d4a91cb9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d4a91cb9
+
+(OUTPUT corner "the path turns at the cell that lies, for each axis, on the line along that axis through the mark of that axis's leg_mark color.")
+
+(OUTPUT l-path "the output is the input with path_color painted on each leg, the cells from a mark of an axis's leg_mark color along that axis to the corner, the corner included; the marks keep their colors."
+
+  (DET &path_color
+    (ex_output (:Col *C))
+    (NOT (ex_input (:Col C))))
+
+  (DET &painted
+    (&path_color *C)
+    (ex_output *E *P (:Col C))
+    (NOT (ex_input E P (:Col C))))
+
+  (DET &beside
+    (&painted *E (:P *Q))
+    (axis_of *D *A)
+    (neighbor (:P Q) D (:Q *P))
+    (ex_input E P))
+
+  (DET &contradicted
+    (ex_output *E)
+    (ex_input E *P (:Col *C))
+    (axis_elem *A)
+    (NOT (&beside E P A)))
+
+  (DET &leg_mark
+    (ex_output *E)
+    (&beside E *P *A)
+    (ex_input E P (:Col *C))
+    (NOT (&painted E P))
+    (NOT (&contradicted A C)))
+
+  (RULE &corner
+    (input *P)
+    (&leg_mark (:A *A1) (:C *C1))
+    (input (:P *P1) (:Col C1))
+    (same_line (:A A1) P (:Q P1))
+    (&leg_mark (:A *A2) (:C *C2))
+    (perp (:A A1) A2)
+    (input (:P *P2) (:Col C2))
+    (same_line (:A A2) P (:Q P2)))
+
+  (RULE &leg_axis
+    (&leg_mark *A *C)
+    (input (:P *Mark) (:Col C))
+    (&corner (:P *Corner)))
+
+  (INIT &leg_frame Frame
+    (key ((&leg_axis (:Mark ^P_mark) (:Corner ^P_corner)))
+      (extent (A N)
+        (OR ((= *P P_mark))
+            ((= P P_corner)))
+        (frame_extent P *A *N))))
+
+  ;; A leg is the run between its mark and a corner along its axis; a corner off
+  ;; that line gives nothing between. The mark is outside the domain, so it keeps
+  ;; its color.
+  (INIT &leg Ray
+    (key ((OR ((&leg_axis (:Mark ^P_mark) (:Corner ^P_corner))
+               (OR ((= *P P_mark))
+                   ((= P P_corner))))
+              ((&leg_mark *A *C)
+               (input (:P P_mark) (:Col C))
+               (&corner (:P P_corner))
+               (axis4_of *D A))
+              ((&leg_frame.cell (:key P_mark P_corner) P))))
+      (source (P)
+        (&leg_axis (:Mark P_mark) (:Corner P_corner))
+        (OR ((= *P P_mark))
+            ((= P P_corner))))
+      (node (P)
+        (&leg_frame.cell (:key P_mark P_corner) *P))
+      (dir (D)
+        (&leg_mark *A *C)
+        (input (:P P_mark) (:Col C))
+        (&corner (:P P_corner))
+        (axis4_of *D A)))))
+
+(RULE &leg_between
+  (&leg_axis *Mark *Corner)
+  (input *P)
+  (!= P Mark)
+  (&leg_mark *A *C)
+  (input (:P Mark) (:Col C))
+  (&corner (:P Corner))
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&leg.ray (:key (:P_mark Mark) (:P_corner Corner)) P D)
+  (&leg.ray (:key (:P_mark Mark) (:P_corner Corner)) P (:D O)))
+
+(RULE &output
+  (OR ((&leg_between *P)
+       (&path_color (:C *Col)))
+      ((input P Col)
+       (NOT (&leg_between P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,49 @@
+;; inputs 50f078540dc2367515d08ba8aafede927e34c826d8c9f9a5960a5a4d3c20eeaa programs/solvers/ba97ae07.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ba97ae07
+
+(INPUT background "every cell outside the two bands is `background`.")
+
+(INPUT two-crossing-bands "one vertical band of whole columns and one horizontal band of whole rows, each of one color other than `background`, the two colors different, cross once.")
+
+(INPUT one-band-on-top "the crossing cells all hold the color of one of the two bands, the band on top.")
+
+(OUTPUT swap-on-top "the output is the input with every crossing cell painted the color of the band that was underneath.")
+
+(OUTPUT rest-kept "every cell outside the crossing keeps its input color.")
+
+(DET &background_stored ColorDomain)
+
+(DET_OR_RULE &background DominantColor
+  (&background_stored *C))
+
+(RULE &open_line
+  (input *P (:Col *C))
+  (&background C)
+  (split P *A (:Across *L)))
+
+(RULE &in_band
+  (input *P)
+  (split P *A (:Across *L))
+  (NOT (&open_line A L)))
+
+(RULE &crossing
+  (&in_band *P *A)
+  (perp A *A2)
+  (&in_band P (:A A2)))
+
+(RULE &band_color
+  (&in_band *P *A)
+  (NOT (&crossing P))
+  (split P A (:Across *L))
+  (input P (:Col *C)))
+
+(RULE &output
+  (OR ((&crossing *P)
+       (split P *A (:Across *L))
+       (&band_color A L (:C *Col))
+       (NOT (input P Col)))
+      ((input P Col)
+       (NOT (&crossing P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,68 @@
+;; inputs a4ce87f8965af7ea86b2db149279284016b26b18901645c181d5edadc59a1bbd programs/solvers/5117e062.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5117e062
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(INIT &figures Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &region
+  (&mark_cell (:P *M))
+  (&figures.component (:P M) *Id)
+  (&figures.component *P Id))
+
+(ALTS $choice "which region the mark designates" $Object
+  (ALT $Touch
+    ;; The ring's box covers the mark, so the mark needs no rule of its own.
+    (RULE &region
+      (&mark_cell (:P *M))
+      (neighbor (:P M) *D (:Q *P))
+      (input P)))
+  (ALT $Window
+    (DET &win_dim ConstOutDim)
+
+    (INIT &win Frame
+      (extent (A N)
+        (&win_dim *N)
+        (axis_elem *A)))
+
+    (RULE &region
+      (&win.cell (:P *W_c))
+      (centered (:P W_c))
+      (&win.cell (:P *W))
+      (relative (:Base W_c) (:X W) (:X_rel *V))
+      (&mark_cell (:P *M))
+      (compose (:A M) (:B V) (:C *P))
+      (input P))))
+
+;; The region carries one color besides bg and the mark, and the mark takes it.
+(INIT &fill Singleton
+  (member ((:v Col))
+    (&region *P)
+    (input P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&mark (:C Col)))))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&region *P)))
+
+(RULE &output
+  (input (:P *P2) (:Col *Col_in))
+  (&view.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (IF ((&mark (:C Col_in)))
+      ((&fill.value (:v *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

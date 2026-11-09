@@ -1,0 +1,154 @@
+;; inputs c7ac678391fd4082d4ad7b3052cb74613287e7c57cee388e93ab7d30af084535 programs/solvers/cad67732.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cad67732
+
+(INPUT diagonal-band "A square grid of &background holds a band of colored cells along one corner-to-corner diagonal, the main diagonal or the anti-diagonal."
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest colors of each input.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&common.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&common.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&background_defect (:Col C)))))
+
+(INPUT periodic-band "The band repeats under a translation of some number of cells along its diagonal, the period, wherever both cells lie in the grid.")
+
+(OUTPUT scaled-frame "The output is &scale times the input's extent on each axis."
+
+  (INIT &scale_division Division
+    (key ((OR ((ex_output ^E (:P *P_grid_out))
+               (ex_input E (:P *P_grid_in))
+               (frame_extent (:P P_grid_in) ^A))
+              ((ex_input E (:P P_grid_in))
+               (frame_extent (:P P_grid_in) A (:N *K)))))
+      (cell ((:P P_grid_out))
+        (ex_output E (:P *P_grid_out))
+        (ex_input E (:P *P_grid_in))
+        (frame_extent (:P P_grid_in) A))
+      (side (A K)
+        (ex_input E (:P *P_grid_in))
+        (frame_extent (:P P_grid_in) A (:N *K)))))
+
+  (DET &scale
+    (&scale_division.tile (:key *A) *P_outer)
+    (frame_extent (:P P_outer) A *N)))
+
+(OUTPUT anchored-input "The input sits in the output at the corner where the band's diagonal meets the &anchor_edge edge."
+
+  ;; The output edge the input touches.
+  (DET &anchor_edge DirDomain))
+
+(OUTPUT least-period "The period is the least positive translation along the band's diagonal under which the input is unchanged where both cells lie in the grid."
+
+  (RULE &shift
+    (input *P)
+    (margin (:B P) *D *K)
+    (> K 0))
+
+  (RULE &mismatch
+    (input *P *Col)
+    (&shift *K)
+    (diag_axis_of *D *Da)
+    (jump P D K *Q)
+    (input (:P Q) (:Col *Col2))
+    (!= Col Col2))
+
+  (INIT &period Order
+    (key ((diag_axis_elem (:Da ^DA)))
+      (member ((:t K))
+        (&shift *K)
+        (NOT (&mismatch (:Da DA) K)))
+      (score ((:t K) (:S K))
+        (&shift *K)
+        (NOT (&mismatch (:Da DA) K))))))
+
+(OUTPUT continue-band "Each output cell takes the color of the cell a whole number of periods back along the band toward the anchored input, where that cell lies in the input; a cell that no such input cell reaches is &background.")
+
+(ALTS $choice "How the program finds the diagonal the band runs along." $CornerDiagonal
+  (ALT $LeastPeriodDiagonal
+    (INPUT diagonal-band "the band's diagonal is the one whose least period is smaller; undefined where the two least periods tie."
+      (RULE &matched
+        (&period.minimal (:key (:DA *Da)) (:t *K))
+        (diag_perp Da (:Da2 *DA2))
+        (&period.minimal (:key (:DA DA2)) (:t *K2))
+        (<= K2 K)))
+    (RULE &band_axis
+      (&period.minimal (:key (:DA *Da)))
+      (NOT (&matched Da)))))
+
+;; The output frame: &scale copies of the input frame on each axis.
+(INIT &copies Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&scale *N)))
+
+(INIT &out_cell_tiling Tiling
+  (outer ((:P P_outer))
+    (&copies.cell (:P *P_outer)))
+  (inner ((:P P_grid_in))
+    (input (:P *P_grid_in))))
+
+(RULE &inked_corner
+  (input *P *Col)
+  (NOT (&background (:C Col)))
+  (corner_dist P (:Diag *D) (:K 0)))
+
+(RULE &inked_diagonal
+  (&inked_corner *D)
+  (diag_opposite D (:Opp *D2))
+  (&inked_corner (:D D2))
+  (diag_axis_of D *Da))
+
+(RULE &band_axis
+  (&inked_diagonal *Da)
+  (diag_perp Da (:Da2 *DA2))
+  (NOT (&inked_diagonal (:Da DA2))))
+
+(RULE &course
+  (&band_axis (:Da *DA))
+  (&period.minimal (:key DA) (:t *K))
+  (&anchor_edge (:D *E1))
+  (diag_axis_of (:D *C) (:Da DA))
+  (corner_dir C (:D E1)))
+
+(RULE &placed
+  (&course *E1 *C)
+  (&out_cell_tiling.cell *P)
+  (input (:P *P_grid_in) *Col)
+  (same_corner (:D C) (:P1 P_grid_in) (:P2 P)))
+
+(RULE &reach
+  (&placed *E1 *P *Col)
+  (&course E1 *C *K)
+  (diag_axis_of (:D C) (:Da *DA))
+  (&out_cell_tiling.cell (:P *Q))
+  (same_line (:A DA) P Q)
+  (margin (:B P) (:D E1) (:K *S))
+  (divide (:T S) (:Side K) (:Gap 0) (:Remainder *R))
+  (margin (:B Q) (:D E1) (:K *T))
+  (<= S T)
+  (divide T (:Side K) (:Gap 0) (:Remainder R)))
+
+(RULE &output
+  (&course (:E1 *E))
+  (&out_cell_tiling.cell *P)
+  (OR ((&reach (:E1 E) (:Q P) *Col))
+      ((NOT (&reach (:E1 E) (:Q P)))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

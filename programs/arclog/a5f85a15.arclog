@@ -1,0 +1,170 @@
+;; inputs 167461506d7e49854dcdd45ba0c626af7fd724d7ab71475e9cf3115e9e4da6eb programs/solvers/a5f85a15.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a5f85a15
+
+(INPUT diagonal-lines "on a background of &bg, cells of one color form straight lines along &line_dir; each line runs from one grid edge to another, and no two lines touch"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  ;; The step from a line's first cell to its next.
+  (DET &line_dir DiagDirDomain)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The diagonal axes on which two ink cells touch.
+  (INIT &touch Singleton
+    (member ((:v Da))
+      (&ink *P)
+      (neighbor P *D *Q)
+      (&ink (:P Q))
+      (diag_axis_of D *Da))))
+
+(OUTPUT alternate-from-start "along each line, cells are counted toward &line_dir from 0 at the line's first cell; a cell whose count falls at &mark_phase in each &period takes &mark"
+
+  (DET &mark AnyOutNewColor)
+
+  ;; The counts repeat every period cells, and the count at mark_phase in each repeat takes the mark.
+  (DET &period TileCount)
+
+  (DET &mark_phase DivisorRatio)
+
+  (RULE &heading
+    (&line_dir *D))
+
+  (RULE &kin
+    (&ink *P)
+    (&ink (:P *Q)))
+
+  (RULE &start
+    (&heading (:D *L))
+    (&ink *P)
+    (diag_opposite (:D L) (:Opp *O))
+    (neighbor P (:D O) *Q)
+    (NOT (&kin P Q)))
+
+  (RULE &run_blocked
+    (&heading (:D *Key))
+    (input *P)
+    (OR ((NOT (&ink P)))
+        ((&start (:L Key) P))))
+
+  ;; Each unit cast from its first cell; it stops at the background and at the
+  ;; first cell of the next unit.
+  (INIT &run Ray
+    (key ((OR ((&start (:L ^D) *P))
+              ((&heading D))))
+      (source (P)
+        (&start (:L D) *P))
+      (node (P)
+        (&heading D)
+        (input *P)
+        (NOT (&run_blocked (:Key D) P)))
+      (dir (D)
+        (&heading D))))
+
+  ;; Each grid diagonal along D, cast from its cell on the grid edge.
+  (INIT &diagonal Ray
+    (key ((OR ((input *P)
+               (diag_opposite ^D (:Opp *O))
+               (corner_dir (:C O) (:D *E))
+               (margin (:B P) (:D E) (:K 0)))
+              ((&heading D))))
+      (source (P)
+        (input *P)
+        (diag_opposite D (:Opp *O))
+        (corner_dir (:C O) (:D *E))
+        (margin (:B P) (:D E) (:K 0)))
+      (node (P)
+        (&heading D)
+        (input *P))
+      (dir (D)
+        (&heading D))))
+
+  (RULE_OR_DET &diagonal.ray "Each grid diagonal along D, cast from its cell on the grid edge.")
+
+  ;; The kin cells before each ink cell on its grid diagonal.
+  (INIT &behind Cardinality
+    (key ((OR ((&heading (:D ^L))
+               (&ink ^P))
+              ((&diagonal.ray (:key (:D L)) P (:D L) *K (:Origin *E))
+               (&diagonal.ray (:key (:D L)) (:P *Q) (:D L) (:K *K2) (:Origin E))
+               (< K2 K)
+               (&kin P Q))))
+      (member ((:m Q))
+        (&diagonal.ray (:key (:D L)) P (:D L) *K (:Origin *E))
+        (&diagonal.ray (:key (:D L)) (:P *Q) (:D L) (:K *K2) (:Origin E))
+        (< K2 K)
+        (&kin P Q))
+      (domain ()
+        (&heading (:D L))
+        (&ink P)))))
+
+(OUTPUT rest-kept "every other cell keeps its color")
+
+(ALTS $origin "which cell a count starts from" $LineStart
+  (ALT $LineStart
+    (ALTS $segment "what one counted unit is" $Run
+      (ALT $DiagonalClass
+        (OUTPUT alternate-from-start "all ink cells on one grid diagonal along the line direction form one unit, and the count skips the gaps between them")
+        (RULE &pos
+          (&behind.size (:key (:L *D) *P) (:N *K)))))
+    (ALTS $split "whether a unit ends where the color changes" $ColorBlind
+      (ALT $ColorRuns
+        (OUTPUT alternate-from-start "a unit also ends where the color changes"
+          (RULE &kin
+            (&ink *P)
+            (input P *Col)
+            (input (:P *Q) Col))))))
+  (ALT $GridDiagonal
+    (OUTPUT alternate-from-start "an ink cell's count starts at the grid-edge cell of its grid diagonal, background cells included")
+    (RULE &pos
+      (&diagonal.ray (:key *D) *P D *K)
+      (&ink P)))
+  (ALT $ColumnParity
+    (OUTPUT alternate-from-start "an ink cell's count is its distance from &parity_edge"
+      (DET &parity_edge DirDomain))
+    (RULE &pos
+      (&heading *D)
+      (&ink *P)
+      (&parity_edge (:D *E))
+      (margin (:B P) (:D E) *K))))
+
+(ALTS $heading "where the line direction comes from" $StoredStep
+  (ALT $DerivedAxis
+    (INPUT diagonal-lines "on a background of &bg, cells of one color form straight lines along the one diagonal axis on which two ink cells touch; each line runs from one grid edge to another, and no two lines touch")
+    (OUTPUT alternate-from-start "a line's count starts at its end nearer &start_edge"
+      ;; A line's count starts at its end nearer this edge.
+      (DET &start_edge DirDomain)
+
+      (RULE &heading
+        (&touch.value (:v *Da))
+        (diag_axis_of *D Da)
+        (&start_edge (:D *E))
+        (opposite (:D E) (:Opp *E_far))
+        (corner_dir (:C D) (:D E_far))))))
+
+(RULE &run_cell
+  (&heading (:D *Key))
+  (&ink))
+
+(RULE &pos
+  (&run.ray (:key *D) *P D *K)
+  (&run_cell (:Key D))
+  (&ink P))
+
+(RULE &marked
+  (&pos *D *P *K)
+  (&period (:N *W))
+  (divide (:T K) (:Side W) (:Gap 0) (:Remainder *R))
+  (&mark_phase (:K R)))
+
+(RULE &output
+  (&heading *D)
+  (OR ((&marked D *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&marked D P)))))
+
+(OUT (&output ^P ^Col))

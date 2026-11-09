@@ -1,0 +1,7 @@
+;; inputs 0f61b0c81b6857efb7f14a246be8d40b211e1cea2eb54ba5873212798ed79fda programs/solvers/4a21e3da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4a21e3da
+
+(param &bg Color (1))
+(param &mark Color (2))
+(param &ink Color (7))

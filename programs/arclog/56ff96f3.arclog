@@ -1,0 +1,24 @@
+;; inputs ef9e1794a1cfb250a1b821f6d8a41528e0e1adb5f9f3e663bfefe94f6f786bc2 programs/solvers/56ff96f3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 56ff96f3
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &spanned
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &output
+  (OR ((&spanned *P *Col))
+      ((input P Col)
+       (NOT (&spanned P)))))
+
+(OUT (&output ^P ^Col))

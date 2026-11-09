@@ -1,0 +1,198 @@
+;; inputs 4fb439be0cc7e6fbd314ed0abfdf270645ee108885c3b866e717fc4be3a392f3 programs/solvers/baf41dbf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; baf41dbf
+
+(INPUT frame "one rectangle outline of `frame_color` on a field of `background`, with zero or more full-span divider lines of `frame_color` across its inside; every other inside cell is `background`")
+
+(INPUT markers "single cells of `marker_color`, each outside the frame's box and beyond at least one of its sides")
+
+(OUTPUT side-moves-to-marker "each side of the frame that has a marker beyond it moves out to stand `marker_gap` cells short of the farthest such marker; a side with no marker beyond it stays")
+
+(OUTPUT outline-redrawn "the output draws the outline of the new box in `frame_color`, and the old outline's cells that are not on the new outline or on a divider become `background`")
+
+(OUTPUT dividers-stretch "each divider keeps its row or column and runs across the whole new box")
+
+(OUTPUT markers-stay "the markers and the rest of the grid are unchanged"
+
+  (DET &frame_color ColorDomain)
+
+  ;; The input frame's box.
+  (INIT &frame BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C2))
+    (&frame_color (:C C2))
+    (ex_output E P (:Col *C))
+    (NOT (&frame_color C)))
+
+  (DET_OR_RULE &marker_color RarestColor
+    (ex_input (:Col *C))
+    (NOT (&frame_color C))
+    (NOT (&background C)))
+
+  (RULE &mark
+    (input *P *Col)
+    (&marker_color (:C Col))
+    (&frame.box *B)
+    (NOT (inside (:A P) B)))
+
+  (RULE &state
+    (&frame.box *B))
+
+  (RULE &beyond
+    (&state *B)
+    (&mark *P)
+    (margin (:B P) *D (:K *K1))
+    (margin B D (:K *K2))
+    (< K1 K2))
+
+  (RULE &puller
+    (&beyond *B *D *P))
+
+  ;; The background cells between a marker and the side it pulls.
+  (DET &marker_gap NumberDomain)
+
+  (RULE &pull
+    (&mark *P)
+    (opposite *D (:Opp *D_back))
+    (&marker_gap (:N *G))
+    (neighbor P (:D D_back) (:Q *Q1))
+    (jump (:P Q1) (:D D_back) (:K G) *Q)
+    (margin (:B Q) D *K))
+
+  (INIT &reach Order
+    (key ((&puller ^B ^D *P)
+          (&pull P D *K))
+      (member ((:t K))
+        (&puller B D *P)
+        (&pull P D *K))
+      (score ((:t K) (:S K))
+        (&puller B D *P)
+        (&pull P D *K))))
+
+  (RULE &margin
+    (OR ((&state (:B *St))
+         (margin (:B St) *D *K)
+         (NOT (&puller (:B St) D)))
+        ((&reach.minimal (:key (:B St) D) (:t K)))))
+
+  (RULE &moved_axis
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&margin (:St *Key) D *K)
+    (&margin (:St Key) (:D D2) (:K *K2))
+    (axis_inset D (:K1 K) K2 *B))
+
+  (RULE &moved
+    (&moved_axis *Key *A (:B *B1))
+    (perp A *A2)
+    (&moved_axis Key (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B)))
+
+  (RULE &box
+    (&moved *B)))
+
+(ALTS $side "which sides of the frame a marker pulls" $Beyond
+  (ALT $InLineMarkers
+    (OUTPUT side-moves-to-marker "a marker pulls only the side it faces while it lies in line with the frame's span on the other axis, and the moves repeat until no side moves"
+      (RULE &side_margin
+        (OR ((&frame.box *B)
+             (margin B *D *K))
+            ((&pull D K))))
+
+      (RULE &state
+        (&side_margin (:D *D1) (:K *K1))
+        (opposite (:D D1) (:Opp *D2))
+        (&side_margin (:D D2) (:K *K2))
+        (axis_inset (:D D1) K1 K2 (:B *B1))
+        (perp_dir (:D D1) (:D2 *D3))
+        (opposite (:D D3) (:Opp *D4))
+        (&side_margin (:D D3) (:K *K3))
+        (&side_margin (:D D4) (:K *K4))
+        (axis_inset (:D D3) (:K1 K3) (:K2 K4) (:B *B2))
+        (compose (:A B1) (:B B2) (:C *B)))
+
+      (RULE &off_line
+        (perp_dir *D *D2)
+        (&beyond *B (:D D2) *P))
+
+      (RULE &puller
+        (&beyond *B *D *P)
+        (NOT (&off_line B D P)))
+
+      ;; The boxes the repeated moves reach from the input frame's box.
+      (INIT &walk Propagation
+        (source ((:n B))
+          (&frame.box *B))
+        (edge ((:a B) (:b B2))
+          (&moved (:Key *B) (:B *B2))))
+
+      ;; The reached box that no move changes.
+      (RULE &box
+        (&walk.reached (:n *B))
+        (&moved (:Key B) B)))))
+
+(ALTS $pick "which of the markers beyond one side sets that side" $Farthest
+  (ALT $NearestMarker
+    (OUTPUT side-moves-to-marker "the nearest marker beyond a side sets it"
+      (RULE &margin
+        (OR ((&reach.maximal (:key (:B *St) *D) (:t *K)))
+            ((&state (:B St))
+             (margin (:B St) D K)
+             (NOT (&puller (:B St) D))))))))
+
+(ALTS $enc "what becomes of a marker that ends inside or on the new box" $MarkersStay
+  (ALT $EnclosedMarkersCleared
+    (OUTPUT markers-stay "a marker inside or on the new box becomes `background`, or `frame_color` where the outline or a divider runs")
+    (RULE &kept
+      (&box *B)
+      (&mark *P)
+      (NOT (inside (:A P) B)))))
+
+(RULE &broken
+  (&frame.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (NOT (&frame_color (:C Col)))
+  (split P *A (:Along *L)))
+
+(RULE &divider
+  (&frame.box *B)
+  (input *P)
+  (interior (:A P) B)
+  (split P *A (:Along *L))
+  (NOT (&broken A L)))
+
+(RULE &drawn
+  (&box *B)
+  (input *P)
+  (inside (:A P) B)
+  (OR ((inside (:A P) B)
+       (same_dist (:P1 P) (:P2 B)))
+      ((split P *A (:Along *L))
+       (&divider A L))))
+
+(RULE &kept
+  (&mark *P))
+
+(RULE &output
+  (OR ((&kept *P)
+       (input P *Col))
+      ((&drawn P)
+       (NOT (&kept P))
+       (&frame_color (:C Col)))
+      ((input P (:Col *C))
+       (NOT (&drawn P))
+       (NOT (&kept P))
+       (OR ((&frame_color C)
+            (&background (:C Col)))
+           ((&mark P)
+            (&background (:C Col)))
+           ((NOT (&frame_color C))
+            (NOT (&mark P))
+            (= Col C))))))
+
+(OUT (&output ^P ^Col))

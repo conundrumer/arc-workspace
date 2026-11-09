@@ -1,0 +1,342 @@
+;; inputs 279531e34b6dc2f5eee29fd0cf91e9fc7365dcba13ee6c6ebfbd3990c38fba16 programs/solvers/d017b73f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d017b73f
+
+(INPUT strip-of-pieces "the input is a strip 3 rows high on a field of &background; it holds pieces, each a 4-connected set of cells of one color, and each column holds cells of at most one piece."
+
+  (INIT &ground_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; Each training input's commonest color.
+  (INIT &ground Order
+    (key ((&ground_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&ground_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&ground_count.size (:key E *Col) *N))))
+
+  (DET &trained
+    (ex_output *E))
+
+  (DET &off_ground
+    (&ground.maximal (:t *C))
+    (&trained *E)
+    (NOT (&ground.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&ground.maximal (:key *E) (:t *C))
+    (&trained E)
+    (NOT (&off_ground C)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &comp4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &comp8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &comp4_color Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (INIT &comp8_color Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT pieces-in-column-bands "the pieces take disjoint column bands in order along &chain_dir, and every column between two bands is empty."
+
+  ;; The direction the pieces chain along, from the first piece to the last.
+  (DET &chain_dir DirDomain))
+
+(INPUT piece-is-path "each piece is a simple path with one end in its first column and the other end in its last column (along &chain_dir); its first column holds only its start cell.")
+
+(INPUT chain-fits "each piece, once moved, stays inside the strip's rows.")
+
+(OUTPUT drop-empty-columns "the output has the input's height and the pieces' columns alone, in order, with no empty column between them."
+
+  (RULE &chain_axis
+    (&chain_dir *D)
+    (axis_of D *A))
+
+  (RULE &ink_column
+    (&ink *P)
+    (&chain_axis *A)
+    (split P A (:Along *L)))
+
+  ;; The output's columns: the non-empty columns, closed up in order.
+  (INIT &columns Order
+    (key ((&chain_axis ^A)
+          (axis_of ^D A))
+      (before ((:a L) (:b L2))
+        (&ink_column *L)
+        (&ink_column (:L *L2))
+        (!= L L2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2)))
+    (member ((:t L))
+      (&ink_column *L)))
+
+  (RULE &columns_pos
+    (&columns.rank (:key *A *D) (:t *M) (:R *R1))
+    (&columns.dual_rank (:key A D) (:t M) (:R *R2))
+    (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+  (RULE &row
+    (input *P)
+    (&chain_axis *A)
+    (split P A (:Across *R)))
+
+  ;; The bands: runs of neighboring non-empty columns.
+  (INIT &bands Connectivity
+    (node ((:P L))
+      (&ink_column *L)))
+
+  (RULE &piece_of
+    (&ink_column *P *L)
+    (&bands.component (:P L) *Id))
+
+  (RULE &link
+    (&piece_of *P *Id)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&piece_of (:P Q) Id))
+
+  (RULE &forked
+    (&link *P *D)
+    (&link P (:D *D2))
+    (!= D D2))
+
+  (RULE &path_end
+    (&piece_of *P *Id)
+    (NOT (&forked P)))
+
+  (RULE &outdone
+    (&piece_of *P *Id)
+    (&piece_of (:P *Q) Id)
+    (dir_elem *D)
+    (nearer D (:P Q) (:Q P)))
+
+  (RULE &piece_side
+    (&piece_of *P *Id)
+    (dir_elem *D)
+    (NOT (&outdone P D)))
+
+  (RULE &first_column
+    (&chain_dir (:D *C))
+    (opposite (:D C) (:Opp *D))
+    (&piece_side *Id *P D))
+
+  (RULE &last_column
+    (&chain_dir (:D *C))
+    (&piece_side *Id *P (:D C)))
+
+  (RULE &start_cand
+    (&path_end *Id *P)
+    (&first_column Id P))
+
+  (RULE &start_tie
+    (&start_cand *Id *P)
+    (&start_cand Id (:P *Q))
+    (!= P Q))
+
+  (RULE &start
+    (&start_cand *Id *P)
+    (NOT (&start_tie Id)))
+
+  (RULE &end_cand
+    (&path_end *Id *P)
+    (&last_column Id P))
+
+  (RULE &end_tie
+    (&end_cand *Id *P)
+    (&end_cand Id (:P *Q))
+    (!= P Q))
+
+  (RULE &side_column
+    (&piece_side *Id *P *D)
+    (&ink_column P *L)
+    (&columns_pos (:M L) (:P_pos *X)))
+
+  (RULE &follows
+    (&chain_dir (:D *C))
+    (opposite (:D C) (:Opp *D))
+    (&side_column *Id (:D C) *X)
+    (&side_column (:Id *Id2) D (:X *X2))
+    (neighbor (:P X) (:D C) (:Q X2)))
+
+  (RULE &first_piece
+    (&chain_dir (:D *C))
+    (opposite (:D C) (:Opp *D))
+    (&side_column *Id D *X)
+    (margin (:B X) D (:K 0)))
+
+  ;; The walk: the first piece's start stays in its row, and each next piece's
+  ;; start lands in the row where the previous piece's end lands.
+  (INIT &walk Propagation
+    (source ((:n Id R))
+      (&first_piece *Id)
+      (&start Id (:P *S))
+      (&row (:P S) *R))
+    (edge ((:a (:Id I) R) (:b (:Id J) (:R R2)))
+      (&follows (:Id *I) (:Id2 *J))
+      (&start (:Id I) (:P *S))
+      (&row (:P S) (:R *R_s))
+      (&row *R)
+      (relative (:Base R_s) (:X R) (:X_rel *V))
+      (&end_cand (:Id I) (:P *F))
+      (NOT (&end_tie (:Id I)))
+      (&row (:P F) (:R *R_f))
+      (compose (:A R_f) (:B V) (:C *R2))
+      (&row (:R R2))))
+
+  (RULE &place
+    (&walk.reached (:n *Id *R))
+    (&start Id (:P *S))
+    (&row (:P S) (:R *R_s))
+    (relative (:Base R_s) (:X R) (:X_rel *V))
+    (&piece_of (:P *P_in) Id)
+    (compose (:A P_in) (:B V) (:C *P)))
+
+  ;; The output frame, as a box of the input frame.
+  (INIT &frame BoundingBox
+    (cell (P)
+      (input *P))))
+
+(OUTPUT first-piece-stays "the first piece keeps its rows.")
+
+(OUTPUT continue-path "each later piece moves across the strip so that its start cell lies in the row of the previous piece's end cell (the cell of the previous piece's last column that has at most one neighbor in its piece), right next to that end cell."
+
+  ;; The last-column cells farthest from the start row.
+  (INIT &farthest Order
+    (key ((&last_column ^Id *P)
+          (&start Id (:P *S))
+          (&row P *R)
+          (&row (:P S) (:R *R_s))
+          (relative (:Base R_s) (:X R) (:X_rel *V))
+          (&chain_dir (:D *C))
+          (perp_dir (:D C) (:D2 *D))
+          (margin (:B V) D *K)
+          (>= K 0))
+      (member ((:t (:V P) (:S K)))
+        (&last_column Id *P)
+        (&start Id (:P *S))
+        (&row P *R)
+        (&row (:P S) (:R *R_s))
+        (relative (:Base R_s) (:X R) (:X_rel *V))
+        (&chain_dir (:D *C))
+        (perp_dir (:D C) (:D2 *D))
+        (margin (:B V) D *K)
+        (>= K 0))
+      (score ((:t (:V P) (:S K)) (:S K))
+        (&last_column Id *P)
+        (&start Id (:P *S))
+        (&row P *R)
+        (&row (:P S) (:R *R_s))
+        (relative (:Base R_s) (:X R) (:X_rel *V))
+        (&chain_dir (:D *C))
+        (perp_dir (:D C) (:D2 *D))
+        (margin (:B V) D *K)
+        (>= K 0)))))
+
+(OUTPUT colors-kept "each piece keeps its color, and every other cell is &background.")
+
+(ALTS $piece "what one piece is" $Band
+  (ALT $PieceComponent
+    (INPUT pieces-in-column-bands "a piece is a 4-connected component of non-background cells, and the pieces are ordered by their first column; undefined where two pieces share a column"
+      (RULE &piece_of
+        (&comp4.component *P *Id)))
+    (ALTS $adj "which cells join one component" $Adj4
+      (ALT $Adjacency8
+        (INPUT pieces-in-column-bands "cells that touch at a corner join one piece"
+          (RULE &piece_of
+            (&comp8.component *P *Id)))
+        (ALT $OneColor
+          (INPUT pieces-in-column-bands "a piece is a 4-connected component of one color"
+            (RULE &piece_of
+              (&comp8_color.component *P *Id))))))
+    (ALTS $color "whether a component holds one color" $AnyColor
+      (ALT $OneColor
+        (INPUT pieces-in-column-bands "a piece is a 4-connected component of one color"
+          (RULE &piece_of
+            (&comp4_color.component *P *Id)))))))
+
+(ALTS $end "the cell of the previous piece that the next piece's start lies beside" $EndLastColumn
+  (ALT $EndFarthestRow
+    (OUTPUT continue-path "the end cell is the cell of the last column farthest from the piece's start row; undefined on a tie"
+      (RULE &end_cand
+        (&farthest.maximal (:key *Id) (:t (:V *P))))))
+  (ALT $EndPathEnd
+    (OUTPUT continue-path "the end cell is the path end other than the start, wherever it lies; undefined where the piece has no single such cell"
+      (RULE &end_cand
+        (&path_end *Id *P)
+        (&start Id (:P *S))
+        (!= P S)))))
+
+(ALTS $overflow "what the output does where a moved piece passes the strip's rows" $KeepHeight
+  (ALT $GrowFrame
+    (OUTPUT drop-empty-columns "the output frame extends to every row the moved pieces reach"
+      ;; The output frame, as a box of the input frame.
+      (INIT &frame BoundingBox
+        (cell (P)
+          (OR ((input *P))
+              ((&place P))))))))
+
+(RULE &shared_column
+  (&piece_of *P *Id)
+  (&piece_of (:P *Q) (:Id *Id2))
+  (!= Id Id2)
+  (&ink_column P *L)
+  (&ink_column (:P Q) L))
+
+(RULE &stuck
+  (OR ((&shared_column))
+      ((&piece_of *Id)
+       (NOT (&walk.reached (:n Id))))))
+
+(RULE &row_of
+  (&frame.box *B)
+  (OR ((input *P))
+      ((&place P)))
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_rel))
+  (&chain_axis *A)
+  (split (:P P_rel) A (:Across *R)))
+
+(RULE &drawn
+  (&place *P_in (:P *P2))
+  (input (:P P_in) *Col)
+  (&row_of (:P P2) *R)
+  (&ink_column (:P P_in) *L)
+  (&columns_pos (:M L) (:P_pos *X))
+  (compose (:A R) (:B X) (:C *P)))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((&row_of *R)
+       (&columns_pos (:P_pos *X))
+       (compose (:A R) (:B X) (:C P))
+       (NOT (&drawn P))
+       (NOT (&stuck))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

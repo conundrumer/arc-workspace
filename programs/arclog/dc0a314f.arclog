@@ -1,0 +1,271 @@
+;; inputs 4f37b426cd07e5b446cc936f5d0fe219d5260ac6a9c120faf9712708b7fbb07f programs/solvers/dc0a314f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc0a314f
+
+(INPUT symmetric-pattern "the grid is square, and once the covered cells are filled in, it is unchanged under each symmetry of the `symmetry` group (SYM_D4) about the grid's center."
+
+  ;; The 2x2 blocks: their centers are the corners of four cells.
+  (INIT &block BoundingBox
+    (key ((input ^P)
+          (input (:P ^Q)))
+      (cell ((:P P2))
+        (OR ((diag_dir_elem *D)
+             (neighbor P D Q)
+             (= *P2 P))
+            ((diag_dir_elem (:D *D2))
+             (neighbor P (:D D2) Q)
+             (= P2 Q)))))))
+
+(INPUT cover-block "one solid rectangle of `cover_color` (3) covers part of the pattern, and `cover_color` occurs nowhere else.")
+
+(INPUT cover-recoverable "each covered cell has an image under the `symmetry` group that is not covered.")
+
+(OUTPUT fill-from-image "each covered cell takes the color of an uncovered image of it under the `symmetry` group."
+
+  (DET &not_everywhere
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET &cover_color
+    (ex_input (:Col *C))
+    (NOT (&not_everywhere C))
+    (NOT (ex_output (:Col C))))
+
+  (RULE &covered
+    (input *P *Col)
+    (&cover_color (:C Col)))
+
+  (RULE &frame_at
+    (= *B 0))
+
+  ;; The uncovered cells of each input, under each D4 element.
+  (INIT &inv Agreement
+    (key ((ex_input ^E *P (:Col *C))
+          (NOT (&cover_color C)))
+      (source (P (:v C))
+        (ex_input E *P (:Col *C))
+        (NOT (&cover_color C)))
+      (target (P (:v C))
+        (ex_input E *P (:Col *C))
+        (NOT (&cover_color C)))))
+
+  (DET &sym_clash
+    (sym_member *S *D)
+    (&inv.conflict D))
+
+  (INIT &sym_size2 Cardinality
+    (key ((sym_member ^S *D))
+      (member ((:m D))
+        (sym_member S *D))))
+
+  ;; The largest subgroup under which every input's uncovered cells agree.
+  (INIT &largest Order
+    (member ((:t (:V S) (:S N)))
+      (sym_elem *S)
+      (NOT (&sym_clash S))
+      (&sym_size2.size (:key S) *N))
+    (score ((:t (:V S) (:S N)) (:S N))
+      (sym_elem *S)
+      (NOT (&sym_clash S))
+      (&sym_size2.size (:key S) *N)))
+
+  (DET &symmetry
+    (&largest.maximal (:t (:V *S))))
+
+  (RULE &group
+    (&frame_at *B)
+    (&symmetry *S)
+    (sym_member S *D))
+
+  (RULE &image
+    (&frame_at *B)
+    (input *P)
+    (relative (:Base B) (:X P) (:X_rel *Q))
+    (apply *D (:P Q) (:P_out *Q2))
+    (compose (:A B) (:B Q2) (:C *P2))
+    (input (:P P2)))
+
+  (RULE &uncovered
+    (input *P *Col)
+    (NOT (&cover_color (:C Col))))
+
+  (RULE &unit_image
+    (&covered *P)
+    (&group *B *D)
+    (&image B D P *P2)
+    (&uncovered (:P P2) *Col))
+
+  (INIT &majority_count Cardinality
+    (key ((&unit_image ^B ^P ^Col *P2))
+      (member ((:m P2))
+        (&unit_image B P Col *P2))
+      (domain ()
+        (&unit_image B P Col *P2))))
+
+  (RULE &clash
+    (&image *B *D *P *P2)
+    (&uncovered P *Col)
+    (&uncovered (:P P2) (:Col *Col2))
+    (!= Col Col2))
+
+  (RULE &sym_clash2
+    (sym_member *S *D)
+    (&clash *B D))
+
+  (INIT &sym_size Cardinality
+    (key ((sym_member ^S *D))
+      (member ((:m D))
+        (sym_member S *D))))
+
+  ;; The largest subgroup under which the uncovered cells agree, where one is.
+  (INIT &largest2 Order
+    (key ((&frame_at ^B))
+      (member ((:t (:V S) (:S N)))
+        (sym_elem *S)
+        (NOT (&sym_clash2 B S))
+        (&sym_size.size (:key S) *N))
+      (score ((:t (:V S) (:S N)) (:S N))
+        (sym_elem *S)
+        (NOT (&sym_clash2 B S))
+        (&sym_size.size (:key S) *N))))
+
+  (INIT &derived_group Singleton
+    (key ((&largest2.maximal (:key ^B) (:t (:V *S))))
+      (member ((:v S))
+        (&largest2.maximal (:key B) (:t (:V *S))))))
+
+  (INIT &majority Order
+    (key ((&majority_count.size (:key ^B ^P *Col)))
+      (member ((:t Col))
+        (&majority_count.size (:key B P *Col)))
+      (score ((:t Col) (:S N))
+        (&majority_count.size (:key B P *Col) *N)))))
+
+(OUTPUT crop-cover "the output is the cover's rectangle of the filled grid."
+
+  ;; The cover's rectangle.
+  (INIT &cover BoundingBox
+    (cell (P)
+      (&covered *P))))
+
+(ALTS $s "Where the symmetry group comes from." $SymStored
+  (ALT $GroupPerInput
+    (OUTPUT fill-from-image "the group is derived on each input as the largest subgroup of D4 under which the uncovered cells agree; undefined where two subgroups tie for largest."
+      (RULE &group
+        (&derived_group.value (:key *B) (:v *S))
+        (sym_member S *D)))))
+
+(ALTS $c "Where the center of the symmetry lies." $GridCenter
+  (ALT $CenterStored
+    (INPUT symmetric-pattern "the symmetries act about a stored point, the center of the `center_frame` box."
+      (DET &extent
+        (ex_input *P)
+        (frame_extent P *A *N))
+
+      (DET &extent_clash
+        (&extent *N)
+        (&extent (:N *N2))
+        (!= N2 N))
+
+      (DET &center_frame
+        (&extent *N)
+        (NOT (&extent_clash N))
+        (uniform_inset (:K 0) *B))
+
+      (RULE &frame_at
+        (&center_frame *B))))
+  (ALT $CenterFound
+    (INPUT symmetric-pattern "the symmetries act about each point, a cell or the corner of four cells, about which the uncovered cells agree and every covered cell has an uncovered image; undefined where those points give different outputs."
+      (RULE &center_cand
+        (OR ((input (:P *B)))
+            ((&block.box B))))
+
+      (RULE &probe
+        (OR ((&covered *P))
+            ((&uncovered P)
+             (dir_elem *D)
+             (neighbor P D *Q)
+             (&covered (:P Q)))))
+
+      (RULE &probe_image
+        (&center_cand *B)
+        (&probe *P)
+        (relative (:Base B) (:X P) (:X_rel *Q))
+        (apply *D (:P Q) (:P_out *Q2))
+        (compose (:A B) (:B Q2) (:C *P2))
+        (input (:P P2)))
+
+      (RULE &probe_clash
+        (&probe_image *B *D *P *P2)
+        (&uncovered P *Col)
+        (&uncovered (:P P2) (:Col *Col2))
+        (!= Col Col2))
+
+      ;; A center has an element that takes a covered cell onto an uncovered one and
+      ;; that no two uncovered cells contradict.
+      (RULE &frame_at
+        (&probe_image *B *D *P *P2)
+        (&covered P)
+        (&uncovered (:P P2))
+        (NOT (&probe_clash B D)))
+
+      (RULE &unit_image2
+        (&covered *P)
+        (&group *B *D)
+        (&image B D P *P2)
+        (&uncovered (:P P2) *Col))
+
+      (RULE &center_defect
+        (OR ((&group *B *D)
+             (&clash B D))
+            ((&group B)
+             (&covered *P)
+             (NOT (&unit_image2 B P))))))
+    (RULE &center
+      (&group *B)
+      (NOT (&center_defect B)))))
+
+(ALTS $u "What restores together." $CellRestore
+  (ALT $WholeBlockImage
+    (OUTPUT fill-from-image "the cover restores from the image of its whole rectangle under each element of the group whose image lies in the grid and holds no covered cell; those images must agree, and it is undefined where none exists."
+      (RULE &uncovered_image
+        (&image *B *D *P *P2)
+        (&uncovered (:P P2)))
+
+      (RULE &block_defect
+        (&frame_at *B)
+        (d4_elem *D)
+        (&covered *P)
+        (NOT (&uncovered_image B D P)))
+
+      ;; The image of the whole cover under each element that takes it onto uncovered
+      ;; cells.
+      (RULE &unit_image
+        (&covered *P)
+        (&group *B *D)
+        (NOT (&block_defect B D))
+        (&image B D P *P2)
+        (&uncovered (:P P2) *Col)))))
+
+(ALTS $i "How a covered cell's disagreeing images resolve." $ImagesAgree
+  (ALT $ImageMajority
+    (OUTPUT fill-from-image "a covered cell takes the commonest color among its uncovered images; undefined at a tie.")
+    (RULE &restored
+      (&majority.maximal (:key *B *P) (:t *Col)))))
+
+(RULE &restored
+  (&unit_image *B *P *Col))
+
+(RULE &center
+  (&group *B))
+
+(RULE &output
+  (&center *B)
+  (&cover.box (:B *B_cover))
+  (OR ((&restored B (:P *P2) *Col))
+      ((&uncovered (:P P2) Col)))
+  (inside (:A P2) (:B B_cover))
+  (relative (:Base B_cover) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

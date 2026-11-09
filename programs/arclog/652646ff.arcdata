@@ -1,0 +1,13 @@
+;; inputs a327f9a8a494abc7a3c1584838e3a4d5ecae7f96b8f4ca6251a80208088cae13 programs/solvers/652646ff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 652646ff
+
+(param &shape Position
+  (grid
+    (_ _ 1 1 _ _)
+    (_ 1 _ _ 1 _)
+    (1 _ _ _ _ 1)
+    (1 _ _ _ _ 1)
+    (_ 1 _ _ 1 _)
+    (_ _ 1 1 _ _)))
+(param &stack_dir Dir (DIR_T))

@@ -1,0 +1,143 @@
+;; inputs ba8f6b02c3288f129a64e2d7383fe988116f5bc9386853ac0937877ee9426939 programs/solvers/b7999b51.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7999b51
+
+(INPUT distinct-extents "no two colors have the same extent on the axis of &anchor"
+
+  ;; The edge every bar starts from.
+  (DET &anchor DirDomain))
+
+(OUTPUT extent-per-color "each color other than &background has an extent, the count of lines on the axis of &anchor that its cells span"
+
+  (DET_OR_RULE &background DominantColor))
+
+(OUTPUT bar-per-color "the output has one line across that axis per color, and that line holds the color's bar: the color fills its first extent cells from &anchor, and &background fills the rest")
+
+(OUTPUT bars-ordered-by-extent "the bars stand in order of extent, the longest at &order_edge and each next one shorter"
+
+  ;; The edge the longest bar stands at.
+  (DET &order_edge DirDomain)
+
+  (RULE &axis
+    (&anchor *D)
+    (axis_of D *A))
+
+  ;; The bounding box of each color's cells.
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (cell (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &extent
+    (&color_box.box (:key *Col) *B)
+    (input *P Col)
+    (&axis *A)
+    (box_extent B P A *N))
+
+  ;; The colors in order of extent: the longer colors of a color are those
+  ;; after it.
+  (INIT &order Order
+    (member ((:t Col))
+      (&extent *Col))
+    (score ((:t Col) (:S N))
+      (&extent *Col *N)))
+
+  ;; The colors in order of the distance of their cells from the order edge,
+  ;; then from the anchor.
+  (INIT &place Order
+    (member ((:t Col))
+      (&extent *Col))
+    (score ((:t Col) (:S K))
+      (&color_box.box (:key *Col) *B)
+      (&order_edge (:D *O))
+      (margin B (:D O) *K))
+    (secondary_score ((:t Col) (:S J))
+      (&color_box.box (:key *Col) *B)
+      (&anchor *D)
+      (margin B D (:K *J)))))
+
+(OUTPUT output-size "the output's extent on that axis is the longest bar's extent, and its extent across that axis is the count of colors"
+
+  (INIT &longest Order
+    (member ((:t N))
+      (&extent *N))
+    (score ((:t N) (:S N))
+      (&extent *N)))
+
+  (INIT &bar_count Cardinality
+    (member ((:m Col))
+      (&extent *Col)))
+
+  (INIT &chart Frame
+    (extent (A N)
+      (OR ((&axis *A)
+           (&longest.maximal (:t *N)))
+          ((&axis (:A *A3))
+           (perp (:A A3) (:A2 A))
+           (&bar_count.size N)))))
+
+  (RULE &slot_of
+    (&chart.cell *P)
+    (&axis *A)
+    (split P A (:Across *P_slot))))
+
+(ALTS $choice "how bars of one extent are ordered" $TieUndefined
+  (ALT $TieByPlace
+    (OUTPUT bars-ordered-by-extent "the bars stand in order of extent, the longest at &order_edge; bars of one extent stand in order of their colors' distance from &order_edge, then from &anchor, and the model is undefined where both distances tie"
+      ;; The colors in order of extent: the longer colors of a color are those
+      ;; after it.
+      (INIT &order Order
+        (member ((:t Col))
+          (&extent *Col))
+        (score ((:t Col) (:S N))
+          (&extent *Col *N))
+        (secondary_score ((:t Col) (:S R))
+          (&extent *Col)
+          (&place.dual_rank (:t Col) *R)))))
+  (ALT $TieBothOrders
+    (OUTPUT bars-ordered-by-extent "the bars stand in order of extent, the longest at &order_edge, and the output holds each order of the bars of one extent")
+    ;; A bar line holds each color that has no more longer colors than lines
+    ;; before it, and no more shorter colors than lines after it.
+    (RULE &ties_item
+      (&slot_of (:P_slot *S))
+      (&order_edge (:D *O))
+      (opposite (:D O) (:Opp *O2))
+      (margin (:B S) (:D O) (:K *K1))
+      (&order.dual_rank (:t *X) (:R *R1))
+      (<= R1 K1)
+      (margin (:B S) (:D O2) (:K *K2))
+      (&order.rank (:t X) (:R *R2))
+      (<= R2 K2))))
+
+;; A bar line holds the color with as many colors after it as the line's
+;; distance from the order edge. Where two colors share a rank, a line holds
+;; none, and the output is not total.
+(RULE &ties_item
+  (&slot_of (:P_slot *S))
+  (&order_edge (:D *O))
+  (margin (:B S) (:D O) (:K *R))
+  (&order.dual_rank (:t *X) R))
+
+;; The color each bar line holds, under each resolution of a tie.
+(CHOOSE &ties
+  (for ((&ties_item ^S))
+    (from (&ties_item S *X)))
+  (never
+    (&ties_item *S *X)
+    (&ties_item (:S *S2) X)
+    (!= S S2)))
+
+(RULE &output
+  (&slot_of *P *P_slot)
+  (&ties (:S P_slot) (:X *C))
+  (&extent (:Col C) *N)
+  (&anchor *D)
+  (margin (:B P) D *K)
+  (OR ((>= K N)
+       (&background (:C *Col)))
+      ((< K N)
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

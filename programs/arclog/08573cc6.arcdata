@@ -1,0 +1,12 @@
+;; inputs bf3e9e5165e5efb3e6467d5b6cf69603b0136ab9548bcb5ef02b71747122e7f1 programs/solvers/08573cc6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 08573cc6
+
+(param &bg Color (0))
+(param &dot Color (1))
+(param &len0 number (2))
+(param &legend.corner DiagDir (DIAG_TL))
+(param &legend.along Dir (DIR_R))
+(param &legend.start_dir Dir (DIR_L))
+(param &legend.sense Sense (SENSE_CC))
+(param &color_axis Axis (AXIS_H))

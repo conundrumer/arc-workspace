@@ -1,0 +1,283 @@
+;; inputs a1ec4e4e747a50fabc1111cc17ef29ae49e8f6b9c99310bfe5b862a47a9c43fd programs/solvers/fcc82909.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fcc82909
+
+(INPUT blocks "a few 2×2 blocks of non-&bg cells, each cell any color other than &bg and &bar_color, the blocks apart from one another"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &bar_color AnyOutNewColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &comps Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (DET &block2
+    (&comps.component *E *P (:Id *B))
+    (ex_input E P *Col))
+
+  (INIT &box2 BoundingBox
+    (key ((&block2 (:E ^K) (:B ^Bk) *P))
+      (cell (P)
+        (&block2 (:E K) (:B Bk) *P))))
+
+  (INIT &comps8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (DET &block_size
+    (&box2.box (:key (:K *E) (:Bk *Bk_w)) *B)
+    (&block2 E (:B Bk_w) *P)
+    (box_extent B P *A (:N *K))
+    (perp A *A2)
+    (box_extent B P (:A A2) (:N K)))
+
+  ;; The all-ink squares of &block_size, and the tiling they force.
+  (INIT &square Frame
+    (extent (A (:N K))
+      (axis_elem *A)
+      (&block_size *K)))
+
+  (INIT &squares Occurrences
+    (cell (P)
+      (&ink *P))
+    (shape ((:P S))
+      (&square.cell (:P *S))))
+
+  (RULE &tiling_item
+    (&squares.occurrence (:P *B))
+    (&ink *P)
+    (inside (:A P) B))
+
+  (CHOOSE &tiling
+    (for ((&tiling_item ^P))
+      (from (&tiling_item P *B)))
+    (never
+      (&tiling_item *B)
+      (&tiling_item (:P *P2) (:B *B2))
+      (&tiling_item (:P P2) B)
+      (!= B B2)))
+
+  (INIT &tile_id Quotient
+    (equivalent ((:a B) (:b B))
+      (&tiling *B))))
+
+(INPUT room-below "below each block, toward &direction, the cells its bar covers are &bg and inside the grid"
+
+  ;; the side of the block the bar hangs from
+  (DET &direction DirDomain))
+
+(OUTPUT keep "every input cell keeps its color")
+
+(OUTPUT bar "under each block, toward &direction, the cells in the block's columns from the row next to the block out to as many rows as the block has distinct colors take &bar_color"
+
+  (RULE &block
+    (&comps.component *P (:Id *B))
+    (input P *Col))
+
+  (INIT &colors Cardinality
+    (key ((&block (:B ^Bk) *Col))
+      (member ((:m Col))
+        (&block (:B Bk) *Col))))
+
+  (INIT &colors2 Cardinality
+    (key ((&block2 (:E ^K) (:B ^Bk) *Col))
+      (member ((:m Col))
+        (&block2 (:E K) (:B Bk) *Col))))
+
+  (INIT &box BoundingBox
+    (key ((&block (:B ^Bk) *P))
+      (cell (P)
+        (&block (:B Bk) *P))))
+
+  (RULE &cast_dir
+    (&box.box (:key (:Bk *Key)))
+    (&direction *D))
+
+  (RULE &cast_mark
+    (&box.box (:key (:Bk *Key)) *B)
+    (input *P)
+    (&direction *D)
+    (inside (:A P) B)
+    (same_dist D (:P1 P) (:P2 B)))
+
+  ;; The cells each block's bar is cast from.
+  (INIT &cast Ray
+    (key ((OR ((&cast_mark (:Key ^Id) *P))
+              ((&cast_dir (:Key Id) *D))
+              ((&cast_dir (:Key Id))
+               (input P))))
+      (source (P)
+        (&cast_mark (:Key Id) *P))
+      (node (P)
+        (&cast_dir (:Key Id))
+        (input *P))
+      (dir (D)
+        (&cast_dir (:Key Id) *D))))
+
+  (DET &cast_dir2
+    (&box2.box (:key *K (:Bk *Id)))
+    (&direction *D))
+
+  (DET &cast_mark2
+    (&box2.box (:key *K (:Bk *Id)) *B)
+    (ex_input (:E K) *P)
+    (&direction *D)
+    (inside (:A P) B)
+    (same_dist D (:P1 P) (:P2 B)))
+
+  ;; The cells each block's bar is cast from.
+  (INIT &cast2 Ray
+    (key ((OR ((&cast_mark2 ^K ^Id *P))
+              ((&cast_dir2 K Id *D))
+              ((&cast_dir2 K Id)
+               (ex_input (:E K) P))))
+      (source (P)
+        (&cast_mark2 K Id *P))
+      (node (P)
+        (&cast_dir2 K Id)
+        (ex_input (:E K) *P))
+      (dir (D)
+        (&cast_dir2 K Id *D))))
+
+  (RULE &cast_cell
+    (&box.box (:key (:Bk *Key)))
+    (input))
+
+  (RULE &height
+    (&colors.size (:key (:Bk *K)) *N))
+
+  (RULE &reach
+    (&cast.ray (:key (:Id *K)) *P (:K *D))
+    (&cast_cell (:Key K))
+    (input P)
+    (> D 0)
+    (&height K *N)
+    (<= D N)))
+
+(ALTS $h "how the bar's row count is found" $Distinct
+  (ALT $Height_table
+    (OUTPUT bar "the row count is &bar_height at the block's distinct color count; undefined on a block whose count is not a key"
+      (DET &cast_cell2
+        (&box2.box (:key *K (:Bk *Id)))
+        (ex_input (:E K) *P))
+
+      (DET &bar_cell
+        (ex_output *E *P *Col)
+        (&bar_color (:C Col)))
+
+      (DET &gap_below
+        (&cast2.ray (:key (:K *E) *Id) *P (:K *D))
+        (&cast_cell2 (:K E) Id P)
+        (&bar_cell E P)
+        (&cast2.ray (:key (:K E) Id) (:P *Q) (:K *K2))
+        (&cast_cell2 (:K E) Id (:P Q))
+        (> K2 0)
+        (< K2 D)
+        (ex_output E (:P Q))
+        (NOT (&bar_cell E (:P Q))))
+
+      (DET &bar_height
+        (&colors2.size (:key (:K *E) (:Bk *Id)) *N)
+        (&cast2.ray (:key (:K E) Id) *P *D *K)
+        (&cast_cell2 (:K E) Id P)
+        (> K 0)
+        (&bar_cell E P)
+        (NOT (&gap_below E Id (:D K)))
+        (neighbor P D *Q)
+        (NOT (&bar_cell E (:P Q))))
+
+      (RULE &height
+        (&colors.size (:key (:Bk *K)) (:N *T))
+        (&bar_height (:N T) (:K *N)))
+
+      (RULE &undefined
+        (&colors.size (:N *T))
+        (NOT (&bar_height (:N T)))))
+    (RULE &output
+      (OR ((&bar *P)
+           (NOT (&undefined))
+           (&bar_color (:C *Col)))
+          ((input P Col)
+           (NOT (&bar P))
+           (NOT (&undefined)))))
+    (ALT $Square_blocks
+      (INPUT blocks "the non-&bg cells tile into &block_size×&block_size squares, each square a block; undefined where they do not tile"
+        (RULE &undefined
+          (OR ((&colors.size (:N *T))
+               (NOT (&bar_height (:N T))))
+              ((&ink *P)
+               (NOT (&tiled P)))))))))
+
+(ALTS $b "how the blocks are found" $Four_blocks
+  (ALT $Corner_join
+    (INPUT blocks "blocks are the 8-connected components of non-&bg cells, so blocks meeting at a corner join"
+      (RULE &block
+        (&comps8.component *P (:Id *B))
+        (input P *Col))))
+  (ALT $Square_blocks
+    (INPUT blocks "the non-&bg cells tile into &block_size×&block_size squares, each square a block; undefined where they do not tile"
+      (RULE &block
+        (&tile_id.class (:a *B2) (:Id *B))
+        (input *P *Col)
+        (inside (:A P) (:B B2)))
+
+      (RULE &tiled
+        (&tiling *B)
+        (&ink *P)
+        (inside (:A P) B))
+
+      (RULE &undefined
+        (&ink *P)
+        (NOT (&tiled P))))
+    (RULE &output
+      (OR ((&bar *P)
+           (NOT (&undefined))
+           (&bar_color (:C *Col)))
+          ((input P Col)
+           (NOT (&bar P))
+           (NOT (&undefined))))))
+  (ALT $Column_bars
+    (OUTPUT bar "each column of a block hangs its own bar from the row next to that column's last cell toward &direction"
+      (RULE &cast_mark
+        (&block (:B *Key) *P)
+        (&direction *D)
+        (neighbor P D *Q)
+        (NOT (&block (:B Key) (:P Q)))))))
+
+(ALTS $m "what a bar does where it meets a non-background cell" $Bar_over
+  (ALT $Bar_behind
+    (OUTPUT bar "bar cells that land on a non-&bg cell keep that cell")
+    (RULE &bar
+      (&reach *P)
+      (NOT (&ink P))))
+  (ALT $Bar_stops
+    (OUTPUT bar "the bar ends at the row before the first row where any of its columns meets a non-&bg cell"
+      (RULE &stopped
+        (&reach *K *D)
+        (&reach K (:P *Q) (:D *K2))
+        (&ink (:P Q))
+        (<= K2 D)))
+    (RULE &bar
+      (&reach (:K *K_id) *P (:D *Kd))
+      (NOT (&stopped (:K K_id) (:D Kd))))))
+
+(RULE &bar
+  (&reach *P))
+
+(RULE &output
+  (OR ((&bar *P)
+       (&bar_color (:C *Col)))
+      ((input P Col)
+       (NOT (&bar P)))))
+
+(OUT (&output ^P ^Col))

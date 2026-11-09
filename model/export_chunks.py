@@ -28,10 +28,10 @@ receipts = json.load(open(sys.argv[3]))
 if any(receipts[t]["context"] != D.mask_context() for t in ids):
     raise D.EndCheckFailed("chunk mask engine differs from its admission context")
 for t in ids:
-    D.check_unchanged(receipts[t], Path("work/arclog/gen"), Path("data/tasks"))
-streams, faults = arclog.corpus_streams("work/arclog/gen", all_cases=True, task_ids=ids, tasks="data/tasks")
+    D.check_unchanged(receipts[t], Path("programs/arclog"), Path("data/tasks"))
+streams, faults = arclog.corpus_streams("programs/arclog", all_cases=True, task_ids=ids, tasks="data/tasks")
 for t in ids:
-    D.check_unchanged(receipts[t], Path("work/arclog/gen"), Path("data/tasks"))
+    D.check_unchanged(receipts[t], Path("programs/arclog"), Path("data/tasks"))
 pickle.dump({{"streams": [tables_export.stream_fields(s) for s in streams], "faults": faults,
              "determination_receipts": {{t: receipts[t] for t in ids}}}}, open(sys.argv[2], "wb"))
 """
@@ -67,9 +67,9 @@ def stream(ids, depth=0):
 
 
 os.makedirs(f"{DATA}/chunks", exist_ok=True)
-ids = sorted(os.path.basename(p)[:-7] for p in glob.glob("work/arclog/gen/*.arclog"))
+ids = sorted(os.path.basename(p)[:-7] for p in glob.glob("programs/arclog/*.arclog"))
 t0 = time.time()
-RECEIPTS = D.require(ids, Path("work/arclog/gen"), Path("data/tasks"),
+RECEIPTS = D.require(ids, Path("programs/arclog"), Path("data/tasks"),
                      Path(DATA) / "determination_end_check", D.mask_context())
 Path(f"{DATA}/determination-receipts.json").write_text(json.dumps(RECEIPTS))
 streams, faults = [], []
@@ -77,6 +77,6 @@ for i in range(0, len(ids), CHUNK):
     part = stream(ids[i:i + CHUNK])
     streams += part["streams"]; faults += part["faults"]
 for task in ids:
-    D.check_unchanged(RECEIPTS[task], Path("work/arclog/gen"), Path("data/tasks"))
+    D.check_unchanged(RECEIPTS[task], Path("programs/arclog"), Path("data/tasks"))
 pickle.dump({"streams": streams, "faults": faults, "determination_receipts": RECEIPTS}, open(f"{DATA}/streams.pkl", "wb"))
 print(f"{len(ids)} solvers, {len(streams)} streams, {len(faults)} fault lines, {time.time() - t0:.0f}s", flush=True)

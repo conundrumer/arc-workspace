@@ -1,0 +1,113 @@
+;; inputs 279531e34b6dc2f5eee29fd0cf91e9fc7365dcba13ee6c6ebfbd3990c38fba16 programs/solvers/d017b73f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d017b73f
+
+(param &background Color (0))
+(param &chain_dir Dir (DIR_R))
+
+(alts $piece
+  (alt $PieceComponent
+    (witness diagonal-step borderline $PieceComponent
+      (relaxed strip-of-pieces)
+      (separates "Piece B of the middle band turns by a diagonal step, with no empty column inside it. The concept and $Adjacency8 keep the band as one piece and leave it in place; $PieceComponent and $OneColor take its two 4-connected halves as two pieces and lift the second half and piece C one row so that each continues the previous one.")
+      (input (grid
+        (0 2 0 1 1 0 0 0 0 0 0)
+        (2 2 0 0 0 1 1 0 3 3 0)
+        (0 0 0 0 0 0 0 0 0 3 0)))
+      (output ($Band $EndLastColumn) $EndFarthestRow $Adjacency8 (grid
+        (0 2 1 1 0 0 0 0)
+        (2 2 0 0 1 1 3 3)
+        (0 0 0 0 0 0 0 3)))
+      (output ($Band $EndPathEnd) undefined)
+      (output $Adj4 (grid
+        (0 2 1 1 1 1 3 3)
+        (2 2 0 0 0 0 0 3)
+        (0 0 0 0 0 0 0 0))))))
+
+(alts $adj
+  (alt $Adjacency8
+    (witness diagonal-step borderline $PieceComponent)))
+
+(alts $color
+  (alt $OneColor
+    (witness two-color-piece borderline $OneColor
+      (relaxed strip-of-pieces)
+      (relaxed piece-is-path)
+      (separates "The first band holds a color-2 hook and a color-4 cell touching it. The concept and $PieceComponent take the band as one piece whose end is the color-4 cell in row 1, and drop piece B one row; $OneColor takes the color-4 cell as its own piece, lifts it to row 0 beside the hook's end, and leaves B in place.")
+      (input (grid
+        (0 2 0 0 1 1)
+        (2 2 4 0 0 1)
+        (0 0 0 0 0 0)))
+      (output ($Band $EndLastColumn) $EndFarthestRow ($AnyColor $EndLastColumn) (grid
+        (0 2 0 0 0)
+        (2 2 4 1 1)
+        (0 0 0 0 1)))
+      (output $EndPathEnd undefined)
+      (output $OneColor (grid
+        (0 2 4 1 1)
+        (2 2 0 0 1)
+        (0 0 0 0 0))))))
+
+(alts $end
+  (alt $EndFarthestRow
+    (witness u-shape ordinary concept
+      (separates "The first piece is a U whose end, in its last column, lies in its start row. The concept attaches B at that end in row 1 and leaves it in place; $EndFarthestRow takes the last column's cell in row 2, farthest from the start row, and drops B one row.")
+      (input (grid
+        (0 0 0 0 0 0 1)
+        (2 2 0 2 0 1 1)
+        (0 2 2 2 0 0 0)))
+      (output $EndLastColumn $EndPathEnd (grid
+        (0 0 0 0 0 1)
+        (2 2 0 2 1 1)
+        (0 2 2 2 0 0)))
+      (output $EndFarthestRow (grid
+        (0 0 0 0 0 0)
+        (2 2 0 2 0 1)
+        (0 2 2 2 1 1)))))
+  (alt $EndPathEnd
+    (witness hook-end-inside foreign $EndPathEnd
+      (relaxed piece-is-path)
+      (separates "The first piece's path ends at (0,1), outside its last column, so no cell of the last column is a path end. The concept is undefined; $EndPathEnd attaches B in row 0, the row of that end, and $EndFarthestRow takes the same row as the cell farthest from the start row.")
+      (input (grid
+        (0 3 3 0 1 1)
+        (0 0 3 0 0 1)
+        (3 3 3 0 0 0)))
+      (output $EndLastColumn undefined)
+      (output $EndFarthestRow $EndPathEnd (grid
+        (0 3 3 1 1)
+        (0 0 3 0 1)
+        (3 3 3 0 0))))))
+
+(alts $overflow
+  (alt $GrowFrame
+    (witness descending-chain borderline $GrowFrame
+      (relaxed chain-fits)
+      (separates "Each piece ends one row below its start, so the third piece reaches below the strip. The concept keeps the three rows and drops the cell past them; $GrowFrame adds a fourth row that holds it.")
+      (input (grid
+        (2 2 0 1 1 0 3 3)
+        (0 2 0 0 1 0 0 3)
+        (0 0 0 0 0 0 0 0)))
+      (output $KeepHeight (grid
+        (2 2 0 0 0 0)
+        (0 2 1 1 0 0)
+        (0 0 0 1 3 3)))
+      (output $GrowFrame (grid
+        (2 2 0 0 0 0)
+        (0 2 1 1 0 0)
+        (0 0 0 1 3 3)
+        (0 0 0 0 0 3))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed strip-of-pieces)
+      (separates "Train 0's input with colors 0 and 5 swapped, on a field of 5. The concept, at background 0, takes the whole grid as one piece with no path start and is undefined; the derived background is 5, and the branch gives train 0's output with the same swap.")
+      (input (grid
+        (5 2 5 5 5 5 5 5 5)
+        (2 2 5 1 1 5 2 2 2)
+        (5 5 5 5 1 5 5 5 5)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (5 2 1 1 5 5 5)
+        (2 2 5 1 2 2 2)
+        (5 5 5 5 5 5 5))))))

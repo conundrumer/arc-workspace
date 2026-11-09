@@ -1,0 +1,106 @@
+;; inputs 1de455479de3693613456b682113d1bf849e7f46d40c23719f53c84ff61fad86 programs/solvers/9bbf930d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9bbf930d
+
+(param &bg Color (7))
+(param &wall_dir Dir (DIR_L))
+
+(alts $follow
+  (alt $Channel
+    (witness twoopen borderline concept
+      (relaxed pipes)
+      (separates "$Channel from $Pipe: the outer bar is missing beside the corner")
+      (input (grid
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 7 7 7)
+        (6 7 7 7 7 7 7 3 7)
+        (6 7 3 3 3 3 7 3 7)
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 7 7 7 7 7 7 7)))
+      (output $Exit $Pipe (grid
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 7 7 7)
+        (7 7 7 7 7 7 6 3 7)
+        (6 7 3 3 3 3 7 3 7)
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 7 7 7 7 7 7 7)))
+      (output $Channel (grid
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 7 7 7)
+        (7 7 7 7 7 7 7 3 7)
+        (6 7 3 3 3 3 7 3 7)
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 7 7 7 7 6 7 7)))))
+  (alt $Exit
+    (witness hook borderline concept
+      (relaxed pipes)
+      (separates "$Exit from $Pipe: the inner bar ends at the corner, so the channel past it is walled one side only")
+      (input (grid
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 3 3 7)
+        (6 7 7 7 7 7 7 3 7)
+        (6 7 3 3 3 3 7 7 7)
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 7 7 7 7 7 7 7)))
+      (output $Channel $Pipe (grid
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 3 3 7)
+        (7 7 7 7 7 7 6 3 7)
+        (6 7 3 3 3 3 7 7 7)
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 7 7 7 7 7 7 7)))
+      (output $Exit (grid
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 3 3 7)
+        (7 7 7 7 7 7 7 3 7)
+        (6 7 3 3 3 3 7 7 7)
+        (6 7 7 7 7 7 7 7 7)
+        (6 7 7 7 7 7 6 7 7))))))
+
+(alts $open
+  (alt $Mouth
+    (witness stagger borderline concept
+      (relaxed pipes)
+      (separates "$Mouth from $Reach: the pipe bars start at different columns, so ink lies beside the lane before the channel")
+      (input (grid
+        (6 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 3 7)
+        (6 7 7 7 7 7 7 7)
+        (6 7 7 7 3 3 3 7)
+        (6 7 7 7 7 7 7 7)))
+      (output $Reach (grid
+        (6 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 3 7)
+        (7 7 7 7 7 7 7 6)
+        (6 7 7 7 3 3 3 7)
+        (6 7 7 7 7 7 7 7)))
+      (output $Mouth (grid
+        (6 7 7 7 7 7 7 7)
+        (6 7 3 3 3 3 3 7)
+        (6 7 7 7 7 7 7 7)
+        (6 7 7 7 3 3 3 7)
+        (6 7 7 7 7 7 7 7))))))
+
+(alts $locate
+  (alt $Derived
+    (witness relocated variant $Derived
+      (relaxed wall)
+      (separates "$Derived from $Stored: the wall is the solid ink edge on the right, not the left")
+      (input (grid
+        (7 7 7 7 7 7 7 6)
+        (7 1 1 1 1 7 7 6)
+        (7 7 7 7 7 7 7 6)
+        (7 1 1 1 1 7 7 6)
+        (7 7 7 7 7 7 7 6)))
+      (output $Stored (grid
+        (7 7 7 7 7 7 7 6)
+        (7 1 1 1 1 7 7 6)
+        (7 7 7 7 7 7 7 6)
+        (7 1 1 1 1 7 7 6)
+        (7 7 7 7 7 7 7 6)))
+      (output $Derived (grid
+        (7 7 7 7 7 7 7 6)
+        (7 1 1 1 1 7 7 6)
+        (6 7 7 7 7 7 7 7)
+        (7 1 1 1 1 7 7 6)
+        (7 7 7 7 7 7 7 6))))))

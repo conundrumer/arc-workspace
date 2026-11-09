@@ -1,0 +1,176 @@
+;; inputs 1a64303f62d3118e2c4244135abb2ef43ab851d881a3bf481d30e2e58044dc95 programs/solvers/8abad3cf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8abad3cf
+
+(DET &pack_dir DirDomain)
+
+(DET &bg DominantColor)
+
+(DET &reaches
+  (ex_output *E (:P *P_grid) *Col)
+  (margin (:B P_grid) *D (:K 0)))
+
+(DET &short_of
+  (ex_output *E *Col)
+  (NOT (&bg (:C Col)))
+  (dir_elem *D)
+  (NOT (&reaches E Col D)))
+
+(DET &rest_sense
+  (&pack_dir *D)
+  (turn *S D (:D2 *D_rest))
+  (NOT (&short_of (:D D_rest))))
+
+(RULE &rest_dir
+  (&pack_dir (:D *D2))
+  (&rest_sense *S)
+  (turn S (:D D2) (:D2 *D)))
+
+(RULE &cand_side
+  (input (:P *P_grid))
+  (axis_elem *A)
+  (OR ((sub_extent (:P P_grid) A *K))
+      ((frame_extent (:P P_grid) A (:N K)))))
+
+(INIT &square Frame
+  (key ((&cand_side ^K)
+        (perp *A *A2))
+    (extent (A (:N K))
+      (&cand_side K)
+      (axis_elem *A))))
+
+(INIT &area Cardinality
+  (key ((&square.cell (:key ^K) *P))
+    (member ((:m P))
+      (&square.cell (:key K) *P))))
+
+(INIT &ink Cardinality
+  (key ((input (:P *P_grid) ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P_grid))
+      (input (:P *P_grid) Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &side
+  (&ink.size (:key *Col) *N)
+  (&area.size (:key *K) N))
+
+(RULE &square_cell
+  (&side *Col *K)
+  (&square.cell (:key K) (:P *P_inner)))
+
+;; The output's lines across the row: those of the tallest square, counted
+;; from the rest edge.
+(INIT &rows_size Cardinality
+  (member ((:m J))
+    (&square_cell *P_inner)
+    (&rest_dir *D)
+    (margin (:B P_inner) D (:K *J))))
+
+(INIT &rows_frame Frame
+  (extent (A N)
+    (&rest_dir *D)
+    (axis_of D *A)
+    (&rows_size.size *N)))
+
+(RULE &rows_pos
+  (&rows_frame.cell *P)
+  (&rest_dir *D)
+  (margin (:B P) D *K)
+  (&square_cell *P_inner)
+  (margin (:B P_inner) D K))
+
+;; The background lines between neighboring squares.
+(DET &gap TileDim)
+
+(INIT &row Order
+  (member ((:t Col))
+    (&side *Col))
+  (score ((:t Col) (:S K))
+    (&side *Col *K)))
+
+;; The lines a square and the gap after it take along the row: its side and
+;; the gap.
+(INIT &span Frame
+  (key ((&side ^Col *K)
+        (&pack_dir *D)
+        (axis_of D ^A)
+        (edge_inset D K (:B *B_side))
+        (&gap (:D *G))
+        (edge_inset D (:K G) (:B *B_gap))
+        (compose (:A B_side) (:B B_gap) (:C *B))
+        (margin B D (:K *N)))
+    (extent (A N)
+      (&side Col *K)
+      (&pack_dir *D)
+      (axis_of D A)
+      (edge_inset D K (:B *B_side))
+      (&gap (:D *G))
+      (edge_inset D (:K G) (:B *B_gap))
+      (compose (:A B_side) (:B B_gap) (:C *B))
+      (margin B D (:K *N)))))
+
+;; The lines between a square and edge d: those of every square outward of
+;; it, each with its gap.
+(INIT &lead Cardinality
+  (key ((OR ((&pack_dir (:D *D0))
+             (&span.cell (:key (:Col *Col2)) *P)
+             (&row.rank (:t Col2) (:R *R2))
+             (&row.rank (:t ^Col) *R)
+             (OR ((opposite (:D D0) (:Opp ^D))
+                  (< R R2))
+                 ((= D D0)
+                  (< R2 R))))
+            ((&side Col)
+             (&pack_dir (:D D0))
+             (axis_of (:D D0) *A)
+             (axis_of D A))))
+    (member ((:m (:Col Col2) P))
+      (&pack_dir (:D *D0))
+      (&span.cell (:key (:Col *Col2)) *P)
+      (&row.rank (:t Col2) (:R *R2))
+      (&row.rank (:t Col) *R)
+      (OR ((= D D0)
+           (< R2 R))
+          ((opposite (:D D0) (:Opp D))
+           (< R R2))))
+    (domain ()
+      (&side Col)
+      (&pack_dir (:D *D0))
+      (axis_of (:D D0) *A)
+      (axis_of D A))))
+
+(RULE &edge_box
+  (&lead.size (:key *D *Col) *N)
+  (edge_inset D (:K N) *B))
+
+(RULE &row_box
+  (opposite *D (:Opp *D2))
+  (&edge_box D *Col (:B *B1))
+  (&edge_box (:D D2) Col (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &paint
+  (&square_cell *Col *P_inner)
+  (&rest_dir (:D *D_rest))
+  (margin (:B P_inner) (:D D_rest) (:K *J))
+  (&rows_pos (:K J) (:P *P_line))
+  (&pack_dir *D)
+  (axis_of D *A)
+  (split (:P P_inner) A (:Along *P_along))
+  (&row_box Col *B)
+  (compose (:A B) (:B P_along) (:C *P_place))
+  (compose (:A P_line) (:B P_place) (:C *P)))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (&paint (:P *P_grid))
+    (frame_extent (:P P_grid) *A *N)))
+
+(RULE &output
+  (&canvas.cell *P)
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

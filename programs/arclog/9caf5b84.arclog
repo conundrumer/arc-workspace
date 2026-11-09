@@ -1,0 +1,41 @@
+;; inputs ae17aa567c653d0b39ba2efca6913123277d535297cbecd5568f5afbc80411c3 programs/solvers/9caf5b84.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9caf5b84
+
+(DET &mark AnyOutNewColor)
+
+(DET &keep_n TileCount)
+
+(INIT &color_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &by_count Order
+  (member ((:t Col))
+    (&color_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&color_count.size (:key *Col) *N)))
+
+(RULE &survives
+  (&by_count.dual_rank (:t *Col) *R)
+  (&keep_n (:N *K))
+  (< R K))
+
+(ALTS $choice "where the cut between kept and marked colors sits" $Keep
+  (ALT $Drop
+    (DET &drop_n NumberDomain)
+
+    (RULE &survives
+      (&by_count.rank (:t *Col) *R)
+      (&drop_n (:N *K))
+      (>= R K))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&survives Col))
+      ((input P (:Col *C0))
+       (NOT (&survives (:Col C0)))
+       (&mark (:C Col)))))
+
+(OUT (&output ^P ^Col))

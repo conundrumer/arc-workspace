@@ -1,0 +1,6 @@
+;; inputs 00437290ce73e14d2388dd268c8a4a67343a0a394be97a459556d548b38db2bc programs/solvers/72207abc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 72207abc
+
+(param &grow Dir (DIR_R))
+(param &bg Color (0))

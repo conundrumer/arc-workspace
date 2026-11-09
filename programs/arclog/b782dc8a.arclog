@@ -1,0 +1,204 @@
+;; inputs 9f272910d77215489cfe2f50287a7ae0a9fc5598a33a07ed9651038819e33e39 programs/solvers/b782dc8a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b782dc8a
+
+(INPUT maze "every cell is &wall or &bg, apart from the seed cells"
+
+  (DET &bg SharedColor)
+
+  (DET_OR_RULE &wall DominantColor))
+
+(INPUT seed "the seed is a few cells of two colors, neither of them &wall or &bg: one cell of the first color, and each of its 4-neighbors that is not &wall, in the second color")
+
+(INPUT seed-checkerboard "two seed cells have the same color exactly when their row+column sums have the same parity")
+
+(OUTPUT flood-seed-region "the seed cells are the cells of neither &wall nor &bg that touch another such cell; each &bg cell that a 4-adjacent walk through &bg cells joins to a seed cell takes the color of the seed cells whose row+column parity is its own"
+
+  (RULE &passable
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&wall (:C Col))))
+
+  (RULE &seed
+    (&ink *P *Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&ink (:P Q)))
+
+  (INIT &flood4_label Connectivity
+    (node (P)
+      (OR ((&passable *P))
+          ((&seed P)))))
+
+  ;; Two cells share a row+column parity when a chain of two-step walks joins
+  ;; them.
+  (INIT &parity Quotient
+    (edge ((:a P) (:b R))
+      (input *P)
+      (dir_elem (:D *D1))
+      (neighbor P (:D D1) *Q)
+      (dir_elem (:D *D2))
+      (neighbor (:P Q) (:D D2) (:Q *R))
+      (input (:P R))))
+
+  (INIT &flood4 Flood
+    (node (P)
+      (OR ((&passable *P))
+          ((&seed P))))
+    (source (P)
+      (&seed *P)))
+
+  (RULE &system
+    (&flood4.reached *P)
+    (&flood4_label.component P *Id))
+
+  (RULE &scope_seed
+    (&system *P)
+    (&seed (:P *S)))
+
+  (RULE &scope_color
+    (&scope_seed *P *S)
+    (&seed (:P S) *Col))
+
+  (INIT &class_paint Singleton
+    (key ((&scope_seed ^P *S)
+          (&seed (:P S) *Col)
+          (&parity.class (:a P) (:Id *K))
+          (&parity.class (:a S) (:Id K)))
+      (member ((:v Col))
+        (&scope_seed P *S)
+        (&seed (:P S) *Col)
+        (&parity.class (:a P) (:Id *K))
+        (&parity.class (:a S) (:Id K)))))
+
+  (RULE &walk_step
+    (dir_elem *D)
+    (step_offset D *V))
+
+  (INIT &flood8 Flood
+    (node (P)
+      (OR ((&passable *P))
+          ((&seed P))))
+    (source (P)
+      (&seed *P))
+    (step ((:Delta V))
+      (OR ((diag_dir_elem *D)
+           (step_offset D *V))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) V))))))
+
+(OUTPUT rest-unchanged "every other cell keeps its input color")
+
+(ALTS $adj "which cells a walk step joins" $Flood4
+  (ALT $Flood8
+    (OUTPUT flood-seed-region "the walk also steps between diagonal neighbors; undefined where the concept is"
+      (INIT &flood8_label Connectivity
+        (node (P)
+          (OR ((&passable *P))
+              ((&seed P))))
+        (step ((:Delta V))
+          (OR ((diag_dir_elem *D)
+               (step_offset D *V))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) V)))))
+
+      (RULE &system
+        (&flood8.reached *P)
+        (&flood8_label.component P *Id))
+
+      (RULE &walk_step
+        (&flood8.step (:Delta *V))))))
+
+(ALTS $paint "which color a flooded cell takes" $SeedParity
+  (ALT $PathParity
+    (INPUT seed-checkerboard "the seed holds two colors")
+    (OUTPUT flood-seed-region "a flooded cell takes, from each seed cell nearest to it by a walk, that cell's color at an even distance and the seed's other color at an odd one; undefined where the seed has other than two colors, or where two nearest seed cells disagree"
+      ;; Each step of a walk from a seed cell changes the seed color it gives.
+      (INIT &walk Distance
+        (edge ((:a P (:C Col)) (:b (:P Q) (:C Col2)))
+          (&scope_color *P *Col)
+          (&scope_color P (:Col *Col2))
+          (!= Col Col2)
+          (&walk_step *V)
+          (compose (:A P) (:B V) (:C *Q))
+          (&system (:P Q)))
+        (source ((:n (:P S) (:C Col)))
+          (&seed (:P *S) *Col)))
+
+      ;; The colors of the walks that reach P in the fewest steps.
+      (INIT &nearest Order
+        (key ((&walk.distance (:n ^P (:C *Col)) (:K *N)))
+          (member ((:t (:V Col) (:S N)))
+            (&walk.distance (:n P (:C *Col)) (:K *N)))
+          (score ((:t (:V Col) (:S N)) (:S N))
+            (&walk.distance (:n P (:C *Col)) (:K *N))))))
+    (RULE &paint
+      (&nearest.minimal (:key *P) (:t (:V *Col)))))
+  (ALT $CenterParity
+    (INPUT seed-checkerboard "one seed cell, the center, has each of its 4-neighbors that is not &wall in the other seed color")
+    (OUTPUT flood-seed-region "a flooded cell of the center's row+column parity takes the center's color, and every other flooded cell the other seed color; undefined where the seed has no center, or more than one, or other than two colors"
+      (RULE &arm
+        (&seed (:P *S) *Col)
+        (dir_elem *D)
+        (neighbor (:P S) D *Q)
+        (&seed (:P Q) (:Col *Col2))
+        (!= Col2 Col))
+
+      (RULE &off_center
+        (&seed (:P *S))
+        (dir_elem *D)
+        (neighbor (:P S) D *Q)
+        (input (:P Q) *Col)
+        (NOT (&wall (:C Col)))
+        (NOT (&arm S Q)))
+
+      (RULE &center_of
+        (&scope_seed *P *S)
+        (NOT (&off_center S))))
+    (RULE &paint
+      (&center_of *P *S)
+      (ALL ((&center_of P (:S *S1))
+            (&center_of P (:S *S2)))
+           ((= S1 S2)))
+      (&seed (:P S) (:Col *Col_c))
+      (&parity.class (:a P) (:Id *K))
+      (OR ((NOT (&parity.class (:a S) (:Id K)))
+           (&scope_color P *Col)
+           (!= Col Col_c))
+          ((&parity.class (:a S) (:Id K))
+           (= Col Col_c))))))
+
+(ALTS $pass "which cells the walk passes through and paints" $PassBackground
+  (ALT $PassNonWall
+    (OUTPUT flood-seed-region "the walk passes through, and paints, every cell outside the seed that is not &wall; undefined where the concept is"
+      (RULE &passable
+        (input *P *Col)
+        (NOT (&wall (:C Col)))
+        (NOT (&seed P))))))
+
+(ALTS $scope "which seed cells give a flooded cell its colors" $OneSeed
+  (ALT $PerSeed
+    (OUTPUT flood-seed-region "each corridor system that holds seed cells is painted from its own seed cells; undefined where one system's seed cells put two colors on one parity class"
+      (RULE &scope_seed
+        (&system *P *Id)
+        (&seed (:P *S))
+        (&system (:P S) Id)))))
+
+(RULE &painted
+  (&system *P)
+  (&passable P))
+
+(RULE &paint
+  (&class_paint.value (:key *P) (:v *Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,182 @@
+;; inputs 6132d9ac2eebe53a961dd812d6a0dd708c061e3628ef8099de4b553783416429 programs/solvers/fb791726.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fb791726
+
+(INPUT square-field "each input is a square field of `background`.")
+
+(INPUT marks-in-pairs "the marks, the input's non-background cells, come in pairs on one column, `pair_gap` cells apart along the `pair_axis` axis, with background between them.")
+
+(OUTPUT diagonal-copies "the output is `copy_count` times the input's extent on each axis; the input is copied into each block on the `copy_diag` diagonal, and every other block is background.")
+
+(OUTPUT bridge-lines "in every row that lies between two marks of one column standing `pair_gap` apart along `pair_axis`, in any copy, each cell across the whole output's width takes `line_color`."
+
+  ;; the axis along which the two marks of a pair stand
+  (DET &pair_axis AxisDomain)
+
+  (DET &ray_dir
+    (ex_input (:E *Key))
+    (&pair_axis *A)
+    (axis_of *D A))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET &ray_mark
+    (ex_input (:E *Key) *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; Each mark casts along pair_axis, stopped by the next mark of its line.
+  (INIT &ray Ray
+    (key ((OR ((&ray_mark (:Key ^Ky) *P))
+              ((&ray_dir (:Key Ky) *D))
+              ((&ray_dir (:Key Ky))
+               (ex_input (:E Ky) P)
+               (NOT (&ray_mark (:Key Ky) P)))))
+      (source (P)
+        (&ray_mark (:Key Ky) *P))
+      (node (P)
+        (&ray_dir (:Key Ky))
+        (ex_input (:E Ky) *P)
+        (NOT (&ray_mark (:Key Ky) P)))
+      (dir (D)
+        (&ray_dir (:Key Ky) *D))))
+
+  (INIT &ray_full Ray
+    (key ((OR ((&ray_mark (:Key ^Ky) *P))
+              ((&ray_dir (:Key Ky) *D))
+              ((&ray_dir (:Key Ky))
+               (ex_input (:E Ky) P))))
+      (source (P)
+        (&ray_mark (:Key Ky) *P))
+      (node (P)
+        (&ray_dir (:Key Ky))
+        (ex_input (:E Ky) *P))
+      (dir (D)
+        (&ray_dir (:Key Ky) *D))))
+
+  (DET &ray_stop_full
+    (&ray.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&ray_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  ;; the number of copies, and the output's scale on each axis
+  (DET &copy_count ScaleRatio)
+
+  ;; The output canvas: a copy_count by copy_count arrangement of input-sized
+  ;; blocks, with the input in each block on the copy_diag diagonal.
+  (INIT &blocks Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&copy_count (:K *N))))
+
+  ;; the diagonal of blocks that receives the copies
+  (DET &copy_diag DiagAxisDomain)
+
+  (RULE &copies_diagonal
+    (&blocks.cell *P)
+    (&copy_diag *Da)
+    (diag_axis_of *D Da)
+    (diag_dist P (:Diag D) (:K1 *Ring) (:K2 Ring)))
+
+  (INIT &canvas_tiling Tiling
+    (outer ((:P P_tile))
+      (&blocks.cell (:P *P_tile)))
+    (inner ((:P P_intile))
+      (input (:P *P_intile))))
+
+  (DET &line_color AnyOutNewColor)
+
+  (RULE &base
+    (OR ((&canvas_tiling.cell *P (:P_outer *P_tile) (:P_inner *P_intile))
+         (&copies_diagonal (:P P_tile))
+         (input (:P P_intile) *Col))
+        ((&canvas_tiling.cell P (:P_outer *P_tile2))
+         (NOT (&copies_diagonal (:P P_tile2)))
+         (&bg (:C Col)))))
+
+  (RULE &mark
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &marked
+    (axis_elem *A)
+    (&mark *P))
+
+  (RULE &between
+    (&marked *A (:P *M1))
+    (&marked A (:P *M2))
+    (axis_of *D A)
+    (same_line A (:P M1) (:Q M2))
+    (input *P)
+    (same_line A P (:Q M1))
+    (nearer D (:P M2) (:Q P))
+    (nearer D P (:Q M1)))
+
+  (DET &pair_gap
+    (&ray_stop_full (:V3 *K)))
+
+  (RULE &bridged
+    (&between *P *M1 *M2 *D)
+    (axis_of D *A)
+    (&pair_gap *K)
+    (jump (:P M1) D K (:Q M2)))
+
+  (RULE &pair_axes
+    (&pair_axis *A))
+
+  (RULE &line
+    (&pair_axes *A)
+    (&bridged (:P *P2) A)
+    (&canvas_tiling.cell (:P *P_img) (:P_outer *P_tile) (:P_inner P2))
+    (&copies_diagonal (:P P_tile))
+    (perp A *A2)
+    (&canvas_tiling.cell *P)
+    (same_line (:A A2) P (:Q P_img))))
+
+(ALTS $d "how far apart the two marks around a line stand" $ExactGap
+  (ALT $BridgeAnyGap
+    (OUTPUT bridge-lines "every row strictly between two consecutive marks of one column takes the line, whatever their distance."
+      (RULE &interrupted
+        (&between (:P *M) *M1 *M2 *D)
+        (axis_of D *A)
+        (&marked A (:P M)))
+
+      (RULE &bridged
+        (&between *P *M1 *M2 *D)
+        (axis_of D *A)
+        (NOT (&interrupted M1 M2))))))
+
+(ALTS $al "whether the two marks around a line share a column" $SameColumn
+  (ALT $PerCopy
+    (OUTPUT bridge-lines "within each copy, a row that lies between two rows standing `pair_gap` apart that each hold a mark, in any columns, takes the line."
+      ;; Every cell of a line across axis a that holds a mark.
+      (RULE &marked
+        (input *P)
+        (&mark (:P *M))
+        (perp *A *A2)
+        (same_line (:A A2) P (:Q M))))))
+
+(ALTS $ax "the axes along which a pair of marks bridges" $StoredAxis
+  (ALT $BridgeBothAxes
+    (OUTPUT bridge-lines "pairs along either axis bridge, and a pair along the other axis draws its line across the output on that axis."
+      (RULE &pair_axes
+        (axis_elem *A)))))
+
+(ALTS $ow "which cells of a line row take the line color" $Paint
+  (ALT $LineKeepsMarks
+    (OUTPUT bridge-lines "the line paints only background cells, and a mark in a line row keeps its color.")
+    (RULE &output
+      (OR ((&base *P *Col)
+           (NOT (&line P)))
+          ((&line P)
+           (&base P (:Col *B))
+           (IF ((&bg (:C B)))
+               ((&line_color (:C Col)))
+               ((= Col B))))))))
+
+(RULE &output
+  (OR ((&base *P *Col)
+       (NOT (&line P)))
+      ((&line P)
+       (&line_color (:C Col)))))
+
+(OUT (&output ^P ^Col))

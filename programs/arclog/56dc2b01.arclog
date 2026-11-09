@@ -1,0 +1,89 @@
+;; inputs 9ff48d91a2f814849743eecb2bbd31a046db8969dab432db719577dd7788516f programs/solvers/56dc2b01.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 56dc2b01
+
+(DET &anchor RarestColor)
+
+(RULE &anchor_cell
+  (input *P *Col)
+  (&anchor (:C Col)))
+
+(DET &mover ChangedColor)
+
+(RULE &mover_cell
+  (input *P *Col)
+  (&mover (:C Col)))
+
+;; The anchor lies toward one edge from the mover, on a shared line.
+(INIT &sight Ray
+  (source (P)
+    (&mover_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &sight_ray
+  (&sight.ray *P *D *K (:Origin *Src))
+  (&anchor_cell P))
+
+(RULE &move_dir
+  (dir_elem *D)
+  (&sight_ray D))
+
+;; The mover travels until it meets the line.
+(INIT &gravity Distance
+  (source_distance (K)
+    (OR ((&mover_cell *P)
+         (&move_dir *D)
+         (margin (:B P) D *K))
+        ((&mover_cell (:P *P3))
+         (&move_dir (:D *D2))
+         (&anchor_cell (:P *P2))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &gravity_travel_full
+  (&gravity.distance *K)
+  (&move_dir *D)
+  (jump_offset D K (:V *V2)))
+
+(DET &bg DominantColor)
+
+(DET &back AnyOutNewColor)
+
+(RULE &landed
+  (&gravity_travel_full (:V2 *V))
+  (&mover_cell (:P *P3))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&landed *P)))
+
+(RULE &back_line
+  (&move_dir *D)
+  (opposite D (:Opp *O))
+  (&landed (:P *P2))
+  (&bbox.box *B)
+  (inside (:A P2) B)
+  (same_dist (:D O) (:P1 P2) (:P2 B))
+  (neighbor (:P P2) (:D O) (:Q *P_back))
+  (input *P)
+  (same_dist (:D O) (:P1 P_back) (:P2 P)))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&mover_cell P)))
+      ((&mover_cell P)
+       (&bg (:C Col)))))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((&back_line P)
+       (&back (:C Col)))
+      ((&cleared P Col)
+       (NOT (&landed P))
+       (NOT (&back_line P)))))
+
+(OUT (&output ^P ^Col))

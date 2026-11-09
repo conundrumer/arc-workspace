@@ -1,0 +1,22 @@
+;; inputs 36f25be299a0866a7efabe402614ce0af63d5d760b031b629408597ff4ce7d6e programs/solvers/f0df5ff0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0df5ff0
+
+(DET &bg DominantColor)
+
+(DET &ink RarestColor)
+
+(RULE &painted
+  (input *P *Col)
+  (&bg (:C Col))
+  (neighbor P *D (:Q *P2))
+  (input (:P P2) (:Col *Ink))
+  (&ink (:C Ink)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&ink (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

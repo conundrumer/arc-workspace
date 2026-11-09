@@ -1,0 +1,190 @@
+;; inputs 38e7b697e7d90c3404919cd4cfc6251c1c06404e1fa1f5fdb06c0e3eb0914d3e programs/solvers/c4d1a9ae.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c4d1a9ae
+
+(INPUT background "one color fills most of the grid and every cell that no panel draws"
+
+  ;; the direction, along the line of panels, in which a panel finds the panel whose color it takes
+  (DET &source_dir DirDomain)
+
+  (RULE &on_line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  (RULE &line_other
+    (&on_line *A *P *L)
+    (input P (:Col *Col2))
+    (input *Col)
+    (!= Col Col2))
+
+  (RULE &uniform
+    (&on_line *A *P *L)
+    (input P *Col)
+    (NOT (&line_other A L Col)))
+
+  (RULE &flanked
+    (&uniform *A *L *Col)
+    (axis_of *D A)
+    (&line_other A (:L *L2) Col)
+    (nearer D (:P L2) (:Q L)))
+
+  (INIT &separator_color Singleton
+    (member ((:v Col))
+      (&source_dir *D)
+      (axis_of D *A)
+      (&uniform A *L *Col)
+      (ALL ((axis_of (:D *Dm) A))
+           ((&flanked A L Col (:D Dm)))))))
+
+(INPUT separator-columns "full lines of background color, perpendicular to the axis of source_dir, cut the grid into 3 panels"
+
+  (INIT &color_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (input *Col))))
+
+(INPUT one-color-panel "each panel draws its marks in one color other than the background, and no two panels share a color")
+
+(OUTPUT fill-from-next "each background cell of a panel takes the color of the panel next to it toward source_dir"
+
+  (INIT &color_count_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &color_count Order
+    (member ((:t Col))
+      (&color_count_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&color_count_count.size (:key *Col) *N)))
+
+  (INIT &commonest Singleton
+    (member ((:v Col))
+      (&color_count.maximal (:t *Col))))
+
+  (RULE &bg
+    (&commonest.value (:v *Col)))
+
+  ;; A panel is a maximal run of lines that are not full background lines.
+  (INIT &runs Connectivity
+    (key ((&source_dir ^D))
+      (node ((:P L))
+        (axis_of D *A)
+        (&on_line A *L)
+        (&bg *Col)
+        (NOT (&uniform A L Col)))))
+
+  (RULE &panel
+    (&runs.component (:key (:D *K)) (:P *L) (:Id *M)))
+
+  ;; The lines of each panel, bounded.
+  (INIT &extent BoundingBox
+    (key ((&panel ^K ^M *L))
+      (cell ((:P L))
+        (&panel K M *L))))
+
+  ;; The panels in order toward the fill direction.
+  (INIT &order Order
+    (key ((OR ((&panel (:K ^D) *M))
+              ((&extent.box (:key (:K D) M) *B)
+               (opposite D (:Opp *D_far))
+               (margin B (:D D_far) (:K *S)))))
+      (member ((:t M))
+        (&panel (:K D) *M))
+      (score ((:t M) S)
+        (&extent.box (:key (:K D) *M) *B)
+        (opposite D (:Opp *D_far))
+        (margin B (:D D_far) (:K *S))))))
+
+(OUTPUT wrap "the last panel toward source_dir takes the color of the first panel, the panel furthest the other way")
+
+(OUTPUT keep-rest "each mark of a panel and each cell of a separator line keeps its color")
+
+(ALTS $region "what a panel's region is" $Runs
+  (ALT $ColorSpan
+    (INPUT separator-columns "each ink color is a panel, whose region is the full lines from the first to the last line its cells reach along the axis of source_dir, and the panels are ordered by that span; undefined where fewer than two ink colors stand"
+      ;; The lines each ink color reaches.
+      (INIT &span BoundingBox
+        (key ((&source_dir ^D)
+              (axis_of D *A)
+              (&on_line A *P *L)
+              (input P ^Col)
+              (NOT (&bg Col)))
+          (cell ((:P L))
+            (&source_dir D)
+            (axis_of D *A)
+            (&on_line A *P *L)
+            (input P Col)
+            (NOT (&bg Col)))))
+
+      ;; A panel is the full lines from the first to the last line its color reaches.
+      (RULE &panel
+        (&span.box (:key (:D *K) *Col) *B)
+        (&color_id.class (:a Col) (:Id *M))
+        (axis_of (:D K) *A)
+        (&on_line A *L)
+        (inside (:A L) B)))
+    (INPUT one-color-panel "no two ink colors' spans share a line; undefined where two spans overlap")))
+
+(ALTS $bg "which color is the background" $Commonest
+  (ALT $BgSeparatorColor
+    (INPUT background "the background is the one color of the full single-color lines across the axis of source_dir that have a line holding another color on each side; undefined where those lines hold more than one color or none stand"
+      (RULE &bg
+        (&separator_color.value (:v *Col))))))
+
+(ALTS $wrap "which panel the last panel takes its color from" $WrapFirst
+  (ALT $WrapTwoBack
+    (OUTPUT wrap "the last panel toward source_dir takes the color of the panel two before it; undefined where fewer than three panels stand")
+    (RULE &source
+      (OR ((&order.maximal (:key (:D *K)) (:t *M))
+           (&order.successor (:key (:D K)) (:a *M1) (:b M))
+           (&order.successor (:key (:D K)) (:a *M2) (:b M1)))
+          ((&order.successor (:key (:D K)) (:a M) (:b M2)))))))
+
+(RULE &panel_cell
+  (&panel *K *M *L)
+  (axis_of (:D K) *A)
+  (&on_line A *P L))
+
+(RULE &ink
+  (&panel_cell *K *M *P)
+  (input P *Col)
+  (NOT (&bg Col)))
+
+(RULE &broken
+  (OR ((&ink *K *M *Col)
+       (&ink K M (:Col *Col2))
+       (!= Col Col2))
+      ((&panel K (:M *M3) *L)
+       (&panel K (:M *M2) L)
+       (!= M3 M2))))
+
+(RULE &source
+  (OR ((&order.successor (:key (:D *K)) (:a *M) (:b *M2)))
+      ((&order.maximal (:key (:D K)) (:t M))
+       (&order.minimal (:key (:D K)) (:t M2)))))
+
+(RULE &unfed
+  (&order.member (:key (:D *K)) (:t *M))
+  (NOT (&source K M)))
+
+(RULE &fill
+  (&panel_cell *K *M *P)
+  (&source K M *M2)
+  (&ink K (:M M2) *Col)
+  (input P (:Col *Col_bg))
+  (&bg (:Col Col_bg)))
+
+(RULE &site
+  (&source_dir *D)
+  (&order.successor (:key D))
+  (NOT (&broken (:K D)))
+  (NOT (&unfed (:K D))))
+
+(RULE &output
+  (OR ((&site *D)
+       (&fill (:K D) *P *Col))
+      ((&site (:D *D2))
+       (input P Col)
+       (NOT (&fill (:K D2) P)))))
+
+(OUT (&output ^P ^Col))

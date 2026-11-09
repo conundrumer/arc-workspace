@@ -1,0 +1,6 @@
+;; inputs 9a6dc5cd5245c93794f1f9a7cb8a9a6c1b70e06a9bd759477b069c6646dcb681 programs/solvers/64a7c07e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 64a7c07e
+
+(param &bg Color (0))
+(param &move_dir Dir (DIR_R))

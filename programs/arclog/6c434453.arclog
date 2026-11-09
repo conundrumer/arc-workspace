@@ -1,0 +1,105 @@
+;; inputs 0d77d931427619d13424155d999571d0daea50768664b672a98565051e60b667 programs/solvers/6c434453.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6c434453
+
+(DET &changed
+  (ex_input *E *P (:Col *C1))
+  (ex_output E P (:Col *C2))
+  (!= C1 C2))
+
+(INIT &comps Connectivity
+  (key ((&changed ^E *P))
+    (node (P)
+      (&changed E *P))))
+
+(INIT &frame BoundingBox
+  (key ((&comps.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&comps.component (:key E) *P Id))))
+
+(DET &ring_cell
+  (&frame.cell (:key *E *Id) *P)
+  (&frame.box (:key E Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; Every ring reads the same source and the same replacement.
+(INIT &src_read Singleton
+  (key ((&ring_cell *E *P ^P_inner)
+        (ex_input E P *Col))
+    (member ((:v Col))
+      (&ring_cell *E *P P_inner)
+      (ex_input E P *Col))))
+
+(DET &src
+  (&src_read.value (:key (:P_inner *P)) (:v *Col)))
+
+(INIT &occ Occurrences
+  (cell (P (:v Col))
+    (input *P *Col))
+  (shape (P (:v Col))
+    (&src *P *Col)))
+
+(INIT &dst_read Singleton
+  (key ((&ring_cell *E *P ^P_inner)
+        (ex_output E P *Col))
+    (member ((:v Col))
+      (&ring_cell *E *P P_inner)
+      (ex_output E P *Col))))
+
+(DET &dst
+  (&dst_read.value (:key (:P_inner *P)) (:v *Col)))
+
+(RULE &stamped
+  (&occ.occurrence (:P *M))
+  (&dst (:P *S) *Col)
+  (compose (:A M) (:B S) (:C *P)))
+
+(ALTS $choice "how the ring and its replacement are found" $Stamp
+  (ALT $Flank
+    (DET &bg DominantColor)
+
+    (DET &ink RarestColor)
+
+    (DET &fill AnyOutNewColor)
+
+    (RULE &bg_at
+      (input *P *Col)
+      (&bg (:C Col)))
+
+    (RULE &ink_at
+      (input *P *Col)
+      (&ink (:C Col)))
+
+    (RULE &open
+      (&bg_at *P)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (NOT (&ink_at (:P Q))))
+
+    (RULE &hole
+      (&bg_at *P)
+      (NOT (&open P)))
+
+    (RULE &replaced
+      (&hole (:P *P2))
+      (OR ((dir_elem *D)
+           (neighbor (:P P2) D (:Q *P))
+           (&fill (:C *Col)))
+          ((= P P2)
+           (&fill (:C Col)))
+          ((diag_dir_elem D)
+           (neighbor (:P P2) D (:Q P))
+           (&bg (:C Col)))))
+
+    (RULE &output
+      (OR ((&replaced *P *Col))
+          ((input P Col)
+           (NOT (&replaced P)))))))
+
+(RULE &output
+  (OR ((&stamped *P *Col))
+      ((input P Col)
+       (NOT (&stamped P)))))
+
+(OUT (&output ^P ^Col))

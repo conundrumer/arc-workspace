@@ -29,6 +29,7 @@ tests/scratch/
 .claude/coordinator.md
 programs/lib.md
 programs/lib/*.md
+programs/arclog/cases/
 
 # written beside a file and renamed over it, or dropped by a Souffle run
 *.tmp

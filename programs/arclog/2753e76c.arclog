@@ -1,0 +1,62 @@
+;; inputs 55a673327feedda6f17d1dc75e8a973e538bdceedc5c91e800ecfa1c653433ed programs/solvers/2753e76c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2753e76c
+
+(DET &bg DominantColor)
+
+;; The chart corner: the top-ranked row lies against it, and every bar grows from it.
+(DET &corner DiagDirDomain)
+
+;; The axis the rows stack along; the bars run across it.
+(DET &rank_axis AxisDomain)
+
+(INIT &blocks Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &rects Cardinality
+  (key ((&blocks.component (:key ^Col) *Id))
+    (member ((:m Id))
+      (&blocks.component (:key Col) *Id))))
+
+;; Rows descend by count: the color with the most rectangles ranks 0.
+(INIT &order Order
+  (member ((:t N))
+    (&rects.size *N))
+  (score ((:t N) (:S N))
+    (&rects.size *N)))
+
+;; The chart: one row per color, as wide as the longest bar.
+(INIT &colors Cardinality
+  (member ((:m Col))
+    (&rects.size (:key *Col))))
+
+(INIT &chart Frame
+  (extent (A N)
+    (OR ((&rank_axis *A)
+         (&colors.size *N))
+        ((&rank_axis (:A *A3))
+         (perp (:A A3) (:A2 A))
+         (&order.dual_rank (:t N) (:R 0))))))
+
+(RULE &bar
+  (&chart.cell *P)
+  (&corner (:D *Diag))
+  (&rank_axis *A)
+  (diag_dirs (:D Diag) A (:D1 *D_rank) (:D2 *D_bar))
+  (&rects.size (:key *Col) *N)
+  (&order.dual_rank (:t N) *R)
+  (margin (:B P) (:D D_rank) (:K R))
+  (margin (:B P) (:D D_bar) *K)
+  (< K N))
+
+(RULE &output
+  (&chart.cell *P)
+  (OR ((&bar P *Col))
+      ((NOT (&bar P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

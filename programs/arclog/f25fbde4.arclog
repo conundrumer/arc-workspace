@@ -1,0 +1,140 @@
+;; inputs 52da242c98eb2ad4552fca551bcc5a5f9af87eee250c507a25642c62f413fd3d programs/solvers/f25fbde4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f25fbde4
+
+(INPUT blank-field "the grid is filled with the background color bg (0) apart from a drawing.")
+
+(INPUT one-drawing "the non-background cells form one small drawing of one color, ink (4), whose cells all join, at an edge or at a corner, set somewhere inside the grid.")
+
+(OUTPUT crop-to-drawing "the output frame is the bounding box of the non-background cells."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &selected
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &piece Connectivity
+    (node (P)
+      (&selected *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &size_count Cardinality
+    (key ((&piece.component *P ^Id))
+      (member ((:m P))
+        (&piece.component *P Id))))
+
+  (RULE &bounded
+    (&selected *P))
+
+  (INIT &box2 BoundingBox
+    (cell (P)
+      (&bounded *P)))
+
+  ;; The pieces with the most cells.
+  (INIT &size Order
+    (member ((:t Id))
+      (&size_count.size (:key *Id)))
+    (score ((:t Id) (:S N))
+      (&size_count.size (:key *Id) *N)))
+
+  ;; The largest piece, where no other ties it.
+  (INIT &largest Singleton
+    (member ((:v Id))
+      (&size.maximal (:t *Id)))))
+
+(OUTPUT scale-up "each cell of the bounding box becomes a factor × factor block of the same color in the output."
+
+  ;; Each train input's drawing box.
+  (INIT &box BoundingBox
+    (key ((ex_output ^E))
+      (cell (P)
+        (ex_input E *P *Col)
+        (NOT (&bg (:C Col))))))
+
+  (DET &fits
+    (&box.box (:key *E) *B)
+    (&box.cell (:key E) *P)
+    (box_extent B P *A *N)
+    (ex_output E (:P *Q))
+    (frame_extent (:P Q) A (:N *Ext))
+    (tile_size Ext N (:G 0) *K))
+
+  (DET &misfit
+    (&fits *K)
+    (axis_elem *A)
+    (&box.box (:key *E))
+    (NOT (&fits E A K)))
+
+  (INIT &palette Cardinality
+    (member ((:m Col))
+      (input *Col))))
+
+(ALTS $cells "Which cells the cropped box bounds." $NonBg
+  (ALT $CropInkColor
+    (OUTPUT crop-to-drawing "the bounding box of the cells of the stored color ink; undefined where no cell has the color ink."
+      (DET_OR_RULE &ink RarestColor
+        (ex_input (:Col *C))
+        (NOT (&bg C)))
+
+      (RULE &selected
+        (input *P *Col)
+        (&ink (:C Col))))))
+
+(ALTS $extent "How much of the selected cells the box bounds." $AllSelected
+  (ALT $CropObject8
+    (OUTPUT crop-to-drawing "the bounding box of the largest 8-connected component of the selected cells; undefined where two components tie for largest, or where no cell is selected."
+      (RULE &bounded
+        (&largest.value (:v *Id))
+        (&piece.component *P Id)))))
+
+(ALTS $factor "Where the scale factor comes from." $SharedFactor
+  (ALT $FactorColorCount
+    (OUTPUT scale-up "the block side is the number of distinct colors in the input, background included.")
+    ;; The block each cell becomes.
+    (INIT &block Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&palette.size *N))))
+  (ALT $FactorPerAxis
+    (OUTPUT scale-up "each cell becomes a block whose side on each axis is that axis's own stored factor."
+      (DET &axis_factor
+        (&fits *A *K)
+        (NOT (&misfit A K))))
+    ;; The block each cell becomes.
+    (INIT &block Frame
+      (extent (A (:N K))
+        (&axis_factor *A *K)))))
+
+(DET &factor
+  (&fits *K)
+  (NOT (&misfit K)))
+
+;; The block each cell becomes.
+(INIT &block Frame
+  (extent (A (:N K))
+    (axis_elem *A)
+    (&factor *K)))
+
+(RULE &cropped
+  (&box2.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&cropped (:P_inner *P_tile)))
+  (inner ((:P P_intile))
+    (&block.cell (:P *P_intile))))
+
+(RULE &output
+  (&cropped (:P_inner *P_tile) *Col)
+  (&block.cell (:P *P_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P))
+
+(OUT (&output ^P ^Col))

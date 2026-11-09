@@ -1,0 +1,174 @@
+;; inputs 8a8fd02132b98e1afc819456d77f205452ee599a02b07fa10b0ca4da7dd678f1 programs/solvers/e7b06bea.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e7b06bea
+
+(param &background Color (0))
+(param &stripe_edge Dir (DIR_R))
+(param &start_edge Dir (DIR_T))
+
+(exclude ($DerivedStart $BarPhase) "Under a derived start edge the bar starts at that edge, so the bar's phase adds nothing.")
+
+(alts $s
+  (alt $DerivedStart
+    (witness bar-at-bottom variant $DerivedStart
+      (relaxed corner-bar)
+      (separates "the bar starts at the bottom-left corner: concept starts the runs at the top edge, $DerivedStart starts them at the bottom edge where the bar starts")
+      (input (grid
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (5 0 0 0 0 0 4 8 3)
+        (5 0 0 0 0 0 4 8 3)))
+      (output ($StoredStart $EdgePhase) (grid
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 8 0 0 0)))
+      (output $BarPhase (grid
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0)))
+      (output $DerivedStart (grid
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0))))))
+
+(alts $ph
+  (alt $BarPhase
+    (witness bar-off-corner borderline $BarPhase
+      (relaxed corner-bar)
+      (separates "the bar covers rows 1-2 and touches neither the top nor the bottom edge: concept starts the runs at the top edge, $BarPhase starts the first run at the bar's first row and gives row 0 the last stripe color, $DerivedStart finds no start edge and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 4 8 3)
+        (5 0 0 0 0 0 4 8 3)
+        (5 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)
+        (0 0 0 0 0 0 4 8 3)))
+      (output ($StoredStart $EdgePhase) (grid
+        (0 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 8 0 0 0)))
+      (output $BarPhase (grid
+        (0 0 0 0 0 3 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)))
+      (output $DerivedStart undefined))))
+
+(alts $e
+  (alt $DerivedStripeEdge
+    (witness stripes-at-left variant $DerivedStripeEdge
+      (relaxed edge-stripes)
+      (separates "the stripes fill up to the left edge and the bar is at the top-right corner: concept finds no stripe at the right edge and is undefined, $DerivedStripeEdge folds the stripes into the line to their right")
+      (input (grid
+        (1 3 0 0 5)
+        (1 3 0 0 0)
+        (1 3 0 0 0)
+        (1 3 0 0 0)
+        (1 3 0 0 0)))
+      (output $StoredStripeEdge undefined)
+      (output $DerivedStripeEdge (grid
+        (0 0 3 0 5)
+        (0 0 1 0 0)
+        (0 0 3 0 0)
+        (0 0 1 0 0)
+        (0 0 3 0 0))))))
+
+(alts $u
+  (alt $BandStripes
+    (witness repeated-stripe-color borderline $BandStripes
+      (relaxed edge-stripes)
+      (separates "two adjacent stripes share color 4: concept cycles 4, 4, 3 with one run per stripe, $BandStripes takes the two as one band and cycles 4, 3")
+      (input (grid
+        (5 0 0 0 0 0 4 4 3)
+        (5 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)
+        (0 0 0 0 0 0 4 4 3)))
+      (output $LineStripes (grid
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)))
+      (output $BandStripes (grid
+        (5 0 0 0 0 4 0 0 0)
+        (5 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 4 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background-field)
+      (separates "the background is 7 and color 0 is absent: concept at background 0 takes every 7 line as a stripe and is undefined, background=DominantColor takes 7 as the background and folds the stripes")
+      (input (grid
+        (5 7 7 7 7 7 4 8 3)
+        (5 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)
+        (7 7 7 7 7 7 4 8 3)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (5 7 7 7 7 4 7 7 7)
+        (5 7 7 7 7 4 7 7 7)
+        (7 7 7 7 7 8 7 7 7)
+        (7 7 7 7 7 8 7 7 7)
+        (7 7 7 7 7 3 7 7 7)
+        (7 7 7 7 7 3 7 7 7)
+        (7 7 7 7 7 4 7 7 7)
+        (7 7 7 7 7 4 7 7 7)
+        (7 7 7 7 7 8 7 7 7))))))

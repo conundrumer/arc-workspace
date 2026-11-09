@@ -1,0 +1,9 @@
+;; inputs e78fb79c40bb614a499dfaed2cc556235f8bf40f0eb1f4645d57913c8a07a695 programs/solvers/673ef223.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 673ef223
+
+(param &bg Color (0))
+(param &bar Color (2))
+(param &mark Color (8))
+(param &cap Color (4))
+(param &axis Axis (AXIS_V))

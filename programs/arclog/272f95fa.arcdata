@@ -1,0 +1,12 @@
+;; inputs 828a179addbdb3e7f88b1d62afd8cdef2e84b67e81b44553cfc02d7c44ffe213 programs/solvers/272f95fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 272f95fa
+
+(param &line Color (8))
+(param &center_paint Color (6))
+(param &arm_paint (Dir Color) (DIR_T 2) (DIR_B 1) (DIR_L 4) (DIR_R 3))
+(param &tile_paint (Position Color)
+  (grid
+    (_ 2 _)
+    (4 6 3)
+    (_ 1 _)))

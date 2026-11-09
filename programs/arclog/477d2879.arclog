@@ -1,0 +1,84 @@
+;; inputs 346ad6d29835427c9c411706b13375923e2d6d24ffc86999ca4f7c429fef2aa6 programs/solvers/477d2879.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 477d2879
+
+;; The open ground the lines cut.
+(DET &bg DominantColor)
+
+;; The cutting lines.
+(DET &line ChangedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line (:C Col))))
+
+;; The parts a mark names: connected runs of line, and connected areas of open
+;; ground.
+(INIT &part Connectivity
+  (key ((input *P ^Col)
+        (NOT (&mark P)))
+    (node (P)
+      (input *P Col)
+      (NOT (&mark P)))))
+
+(RULE &touches
+  (&mark *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&part.component (:key (:Col *K)) (:P Q) (:Id *R)))
+
+(RULE &line_cell
+  (input *P *Col)
+  (&line (:C Col)))
+
+(RULE &line_nbr
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&line_cell (:P Q)))
+
+;; The line goes on through a cell with more than one line neighbor; at every
+;; other cell it ends.
+(INIT &run Singleton
+  (key ((&line_cell ^P))
+    (member ((:v Q))
+      (&line_nbr P *Q))))
+
+(RULE &run_nbr
+  (&mark *P)
+  (&line_nbr P *Q)
+  (&run.plural (:key (:P Q))))
+
+(RULE &on_line
+  (&mark *P)
+  (&line_nbr P)
+  (NOT (&run_nbr P)))
+
+(RULE &paint
+  (&mark *P *Col)
+  (&touches P *K *R)
+  (IF ((&on_line P))
+      ((&line (:C K)))
+      ((&bg (:C K)))))
+
+(ALTS $choice "which marks name lines" $Line
+  (ALT $Cover
+    (CHOOSE &pruning
+      (for ((&touches ^P))
+        (from (&touches P *K)))
+      (never
+        (&touches *P *K *R)
+        (&touches (:P *P2) K R)))
+
+    (RULE &paint
+      (&pruning *P *K)
+      (&touches P K *R)
+      (&mark P *Col))))
+
+(RULE &output
+  (OR ((&mark *P *Col))
+      ((&part.component P (:Id *R))
+       (&paint R Col))))
+
+(OUT (&output ^P ^Col))

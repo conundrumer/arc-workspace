@@ -1,0 +1,8 @@
+;; inputs 441b27f1c520b3c6ff2ecb477b8128e6747709131481a1741269f8024330b24b programs/solvers/63613498.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 63613498
+
+(param &bg Color (0))
+(param &mark Color (5))
+(param &panel Box ((0 7 0 7)))
+(param &corner DiagDir (DIAG_TL))

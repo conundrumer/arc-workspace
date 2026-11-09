@@ -1,0 +1,161 @@
+;; inputs f5b93711bbfb0cb11627aa38253eefcf4e962e3218718bca7e101e2fcec2fc90 programs/solvers/15660dd6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 15660dd6
+
+(DET &bg DominantColor)
+
+(DET &frame_col VanishedColor)
+
+;; Panel columns run along this axis; bands and their labels run across it.
+(DET &layout_axis AxisDomain)
+
+(DET &ink VanishedColor)
+
+(RULE &frame_cell
+  (input *P *Col)
+  (&frame_col (:C Col)))
+
+;; One panel per ring of frame color.
+(INIT &rings Connectivity
+  (node (P)
+    (&frame_cell *P)))
+
+(INIT &panel BoundingBox
+  (key ((&rings.component *P ^Id))
+    (cell (P)
+      (&rings.component *P Id))))
+
+(RULE &ring_pos
+  (input *P)
+  (&panel.box *B)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B))
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &inner_cell
+  (input *P *Col)
+  (&panel.box (:key *Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile))
+  (interior (:A P_intile) (:B 0)))
+
+(RULE &panel_pos
+  (&panel.box (:key *Id) *B)
+  (&layout_axis *A)
+  (split (:P B) A (:Along *P_col) (:Across *P_band)))
+
+(INIT &tiling BoundingBox
+  (cell (P)
+    (&frame_cell *P)))
+
+(RULE &in_tiling
+  (input *P)
+  (&tiling.box *B)
+  (inside (:A P) B))
+
+(RULE &band_label
+  (input (:P *P_label) *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&in_tiling (:P P_label)))
+  (&panel_pos *P_band)
+  (inside (:A P_label) (:B P_band)))
+
+(INIT &panel_color Singleton
+  (key ((&inner_cell ^Id *Col))
+    (member ((:v Col))
+      (&inner_cell Id *Col))))
+
+(RULE &donor
+  (&panel_pos *Id *P_col)
+  (NOT (&panel_color.plural (:key Id))))
+
+;; One band of the tiling.
+(INIT &out_frame Frame
+  (extent (A N)
+    (OR ((&layout_axis *A)
+         (&tiling.box *B)
+         (&tiling.cell *P)
+         (box_extent B P A *N))
+        ((&layout_axis (:A *A2))
+         (perp (:A A2) (:A2 A))
+         (&panel.box (:key *Id) (:B *B2))
+         (&panel.cell (:key Id) (:P *P2))
+         (box_extent (:B B2) (:P P2) A N)))))
+
+(RULE &out_pos
+  (input (:P *P_grid))
+  (&panel.box (:key *Id) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_intile))
+  (&panel_pos Id *P_col)
+  (&tiling.box (:B *B_tiling))
+  (inside (:A P_grid) (:B B_tiling))
+  (relative (:Base B_tiling) (:X P_grid) (:X_rel *P_tiling))
+  (&layout_axis *A)
+  (split (:P P_tiling) A (:Along *P_along))
+  (split (:P P_intile) A (:Across *P_across))
+  (compose (:A P_along) (:B P_across) (:C *P)))
+
+(ALTS $donor "two hypotheses name the donor of a column" $Solid
+  (ALT $Odd
+    (INIT &same Inclusion
+      (pattern ((:pattern Id) (:m P_intile Col))
+        (&inner_cell *Id *P_intile *Col))
+      (observed ((:observed Id) (:m P_intile Col))
+        (&inner_cell *Id *P_intile *Col)))
+
+    (RULE &twin
+      (&panel_pos *Id *P_col)
+      (&panel_pos (:Id *Id2) P_col)
+      (!= Id Id2)
+      (&same.equal (:observed Id) (:pattern Id2)))
+
+    (RULE &donor
+      (&panel_pos *Id *P_col)
+      (NOT (&twin Id)))))
+
+(ALTS $render "two hypotheses render the interior" $Map
+  (ALT $Mask
+    (RULE &output
+      (OR ((&out_pos *P_col *P_intile *P)
+           (&stencil P_col P_intile (:Col *Col2))
+           (OR ((NOT (&bg (:C Col2)))
+                (&fill P_col *Col))
+               ((&bg (:C Col2))
+                (&bg (:C Col)))))
+          ((&out_pos (:P_col *P_col2) (:P_intile *P_intile2) P)
+           (&ring_pos (:P_intile P_intile2))
+           (&border (:P_col P_col2) Col))
+          ((&out_frame.cell P)
+           (NOT (&out_pos P))
+           (&bg (:C Col)))))))
+
+(RULE &fill
+  (&donor *P_col *Id)
+  (&inner_cell Id *Col))
+
+(RULE &border
+  (&donor *P_col *Id)
+  (&panel_pos Id *P_band)
+  (&band_label P_band *Col))
+
+(RULE &stencil
+  (&donor *P_col)
+  (&panel_pos *Id P_col)
+  (NOT (&donor P_col Id))
+  (&inner_cell Id *P_intile *Col))
+
+(RULE &output
+  (OR ((&out_pos *P_col *P_intile *P)
+       (&ring_pos P_intile)
+       (&border P_col *Col))
+      ((&out_frame.cell P)
+       (NOT (&out_pos P))
+       (&bg (:C Col)))
+      ((&out_pos (:P_col *P_col2) (:P_intile *P_intile2) P)
+       (&stencil (:P_col P_col2) (:P_intile P_intile2) (:Col *Col2))
+       (IF ((&ink (:C Col2)))
+           ((&fill (:P_col P_col2) Col))
+           ((= Col Col2))))))
+
+(OUT (&output ^P ^Col))

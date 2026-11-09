@@ -1,0 +1,192 @@
+;; inputs 72605e21b1ae0565cead021be855c8514db634957bfabb922437fff2ee141b84 programs/solvers/e95e3d8e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e95e3d8e
+
+(INPUT periodic-tiling "the input is a tile repeated on both axes, with some cells covered by holes; on each axis the cells outside the holes repeat with one period, the least such period, and the period differs from input to input."
+
+  (DET &hole_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (RULE &hole_cand
+    (OR ((&hole_color *C))
+        ((input (:Col C)))))
+
+  (RULE &intact
+    (&hole_cand *C)
+    (input *P *Col)
+    (!= Col C))
+
+  (INIT &si Periods
+    (key ((&intact ^C *P *Col))
+      (cell (P (:v Col))
+        (&intact C *P *Col))))
+
+  (RULE &si_mismatch_full
+    (&intact (:C *V0) *P)
+    (frame_offset P (:A *V1) (:K *V2))
+    (NOT (&si.period (:key (:C V0)) (:A V1) (:K V2))))
+
+  (RULE &si_cand_full
+    (&intact (:C *V0) *P)
+    (frame_offset P (:A *V1) (:K *V2) (:V *V3)))
+
+  (RULE &si_pair_full
+    (&intact (:C *V0) (:P *V3))
+    (frame_offset (:P V3) (:A *V1) (:K *V2) *V)
+    (compose (:A V3) (:B V) (:C *V4))
+    (&intact (:C V0) (:P V4)))
+
+  (RULE &refuted
+    (&si_mismatch_full (:V0 *C) (:V1 *A) (:V2 *K))
+    (&si_cand_full (:V0 C) (:V1 A) (:V2 *N))
+    (divide (:T K) (:Side N) (:Gap 0) (:Remainder 0)))
+
+  ;; The shifts some uncovered pair witnesses and no uncovered pair refutes on either axis.
+  (INIT &square Order
+    (key ((&si_pair_full (:V0 ^C) (:V2 *K))
+          (NOT (&refuted C (:N K))))
+      (member ((:t K))
+        (&si_pair_full (:V0 C) (:V2 *K))
+        (NOT (&refuted C (:N K))))
+      (score ((:t K) (:S K))
+        (&si_pair_full (:V0 C) (:V2 *K))
+        (NOT (&refuted C (:N K)))))))
+
+(INPUT hole-patches "the holes are solid rectangles of `hole_color`, and `hole_color` appears nowhere in the tile."
+
+  ;; The shifts on each axis that some uncovered pair witnesses and no uncovered pair refutes.
+  (INIT &least Order
+    (key ((&si_pair_full (:V0 ^C) (:V1 ^A) (:V2 *K))
+          (NOT (&refuted C A (:N K))))
+      (member ((:t K))
+        (&si_pair_full (:V0 C) (:V1 A) (:V2 *K))
+        (NOT (&refuted C A (:N K))))
+      (score ((:t K) (:S K))
+        (&si_pair_full (:V0 C) (:V1 A) (:V2 *K))
+        (NOT (&refuted C A (:N K))))))
+
+  (RULE &period
+    (&least.minimal (:key *A (:C *K)) (:t *N)))
+
+  (RULE &residues_domain
+    (&period *K *A)
+    (&period K (:A *A2))
+    (perp A A2))
+
+  ;; The residue classes on both axes: the sum of the two periods.
+  (INIT &residues Cardinality
+    (key ((&residues_domain (:K ^C)))
+      (member ((:m A R))
+        (&period (:K C) *A *N)
+        (axis_of *D A)
+        (input *P)
+        (margin (:B P) D (:K *T))
+        (divide T (:Side N) (:Gap 0) (:Remainder *R)))))
+
+  (INIT &fewest Order
+    (member ((:t (:V C) (:S N)))
+      (&residues.size (:key *C) *N)
+      (input (:Col C)))
+    (score ((:t (:V C) (:S N)) (:S N))
+      (&residues.size (:key *C) *N)
+      (input (:Col C)))))
+
+(INPUT every-residue-visible "each cell of the tile, by its row and column residue under the periods, shows outside the holes somewhere in the input.")
+
+(OUTPUT fill-from-period "each hole cell takes the color of an uncovered cell in the same row residue and the same column residue under the periods, each the least shift on its axis such that no pair of uncovered cells contradicts any multiple of it; every other cell keeps its color."
+
+  (RULE &hole
+    (&hole_color (:C *K)))
+
+  ;; The period classes, or their orbits, of the frame positions.
+  (INIT &cls Quotient
+    (equivalent ((:a (:C K) P) (:b (:C K) P))
+      (&hole *K)
+      (input *P))
+    (edge ((:a (:C K) P) (:b (:C K) (:P Q)))
+      (&hole *K)
+      (&period K *A *N)
+      (axis_of *D A)
+      (input *P)
+      (jump P D (:K N) *Q)
+      (input (:P Q))))
+
+  (INIT &commonest_count Cardinality
+    (key ((&cls.class (:a *C (:P *Q)) ^Id)
+          (&intact C (:P Q) ^Col))
+      (member ((:m Q))
+        (&cls.class (:a *C (:P *Q)) Id)
+        (&intact C (:P Q) Col))))
+
+  (INIT &wp Wallpaper
+    (key ((&hole (:K ^C)))
+      (cell (P (:v Col))
+        (&intact C *P *Col))
+      (period (A (:K N))
+        (&period (:K C) *A *N)))
+    (transform (D)
+      (d4_elem *D))
+    (grid (P)
+      (input *P)))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^Id *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key Id *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key Id *Col) *N)))))
+
+(ALTS $s "how each axis's period is found" $AxisPeriods
+  (ALT $SquarePeriod
+    (INPUT periodic-tiling "one period that both axes share, the least shift such that no pair of uncovered cells contradicts any multiple of it on either axis."
+      (RULE &period
+        (&square.minimal (:key (:C *K)) (:t *N))
+        (axis_elem *A)))))
+
+(ALTS $f "which cells a hole cell takes its color from" $PeriodClass
+  (ALT $IsometryOrbits
+    (OUTPUT fill-from-period "the period classes merge under each D4 transform, with a translation modulo the periods, that some pair of uncovered classes witnesses and none contradicts; undefined where a hole cell's orbit holds no uncovered cell, or holds two colors."
+      ;; The period classes, or their orbits, of the frame positions.
+      (INIT &cls Quotient
+        (equivalent ((:a (:C K) P) (:b (:C K) P))
+          (&hole *K)
+          (input *P))
+        (edge ((:a (:C K) P) (:b (:C K) (:P Q)))
+          (&wp.action (:key (:C *K)) *P *Q))))))
+
+(ALTS $g "how the uncovered cells of a class settle the fill color" $OneColor
+  (ALT $ModalClass
+    (OUTPUT fill-from-period "the hole cell takes the commonest color among its class's uncovered cells; undefined on a tie.")
+    (RULE &class_color
+      (&commonest.maximal (:key *Id) (:t *Col)))))
+
+(ALTS $h "where the hole color comes from" $StoredHole
+  (ALT $DerivedHoleColor
+    (INPUT hole-patches "the hole color is the color whose cells, read as holes, leave the least sum of the two periods; undefined where two colors tie and give different outputs."
+      (RULE &hole
+        (&fewest.minimal (:t (:V *K)))))))
+
+(RULE &class_color
+  (&cls.class (:a *C (:P *Q)) *Id)
+  (&intact C (:P Q) *Col))
+
+(RULE &fill
+  (&hole (:K *C))
+  (OR ((&intact C *P *Col))
+      ((input P (:Col C))
+       (&cls.class (:a C P) *Id)
+       (&class_color Id Col))))
+
+(RULE &lacks
+  (&fill *P *Col)
+  (&hole (:K *C))
+  (NOT (&fill C P Col)))
+
+;; A cell takes the color that every hole color the case reads gives it.
+(RULE &output
+  (&fill *P *Col)
+  (NOT (&lacks P Col)))
+
+(OUT (&output ^P ^Col))

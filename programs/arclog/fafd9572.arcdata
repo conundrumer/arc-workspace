@@ -1,0 +1,203 @@
+;; inputs 80702d6ebe4a5720fbf2423e5327fd891c77f873101af13a5dc50eeb577ba7b1 programs/solvers/fafd9572.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fafd9572
+
+(param &background Color (0))
+(param &shape_color Color (1))
+(param &copy_gap number (1))
+(param &corner DiagDir (DIAG_TL))
+(param &axis Axis (AXIS_V))
+
+(alts $s
+  (alt $LatticeSlot
+    (witness key-with-gap variant $LatticeSlot
+      (relaxed key)
+      (separates "the key leaves a column of its box empty and the copies leave the matching lattice column empty: ranking the copies maps the right copy to the empty key cell and is undefined; the lattice slot and the reading order give the copies 2 and 3")
+      (input (grid
+        (2 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 0 0 0 0 1 1 0)
+        (0 1 0 0 0 0 0 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Rank $GapFromSpacing undefined)
+      (output $GapStored $OrderMatch (grid
+        (2 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 3 3 0)
+        (0 2 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))
+    (witness skipped-column variant $LatticeSlot
+      (relaxed key)
+      (separates "the key and the copies' lattice both skip a column: the lattice slot, at the stored or the derived gap, and the reading order color the copies 2, 3, 4; ranking the copies gives three columns against the key's four and is undefined")
+      (input (grid
+        (2 3 0 4 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 0 1 1 0 0 0 0 1 1 0)
+        (1 0 0 1 0 0 0 0 0 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Rank undefined)
+      (output $LatticeSlot $OrderMatch (grid
+        (2 3 0 4 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 3 3 0 0 0 0 4 4 0)
+        (2 0 0 3 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))))
+  (alt $OrderMatch
+    (witness copies-off-key-layout foreign $OrderMatch
+      (relaxed layout-matches-key)
+      (separates "a horizontal key 2 3 with two copies stacked vertically: rank and lattice slot map the lower copy outside the key and are undefined; the reading order colors the copies 2 then 3")
+      (input (grid
+        (2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 1 1 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 1 1 0)
+        (0 0 0 0 1 0 0)))
+      (output $LatticeSlot $Rank undefined)
+      (output $OrderMatch (grid
+        (2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 0)
+        (0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 0)
+        (0 0 0 0 3 0 0))))
+    (witness copies-in-a-row foreign $OrderMatch
+      (relaxed layout-matches-key)
+      (separates "a 2 by 2 key with its four copies in one row: the reading order colors the copies 2, 3, 4, 5 by rows of the key, and would color them 2, 4, 3, 5 by its columns; the ranks and the lattice slots give one row against the key's two and are undefined")
+      (input (grid
+        (2 3 0 0 0 0 0 0 0 0 0 0)
+        (4 5 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 0 1 1 0 1 1 0 1 1 0)
+        (1 0 0 1 0 0 1 0 0 1 0 0)))
+      (output $LatticeSlot $Rank undefined)
+      (output $OrderMatch (grid
+        (2 3 0 0 0 0 0 0 0 0 0 0)
+        (4 5 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 3 3 0 4 4 0 5 5 0)
+        (2 0 0 3 0 0 4 0 0 5 0 0))))
+    (witness missing-copy borderline concept
+      (relaxed layout-matches-key)
+      (separates "a full 2 by 2 key with copies only on its diagonal: the ranks and the lattice slots color the copies 2 and 5; the reading order pairs two copies against four key cells and is undefined")
+      (input (grid
+        (2 3 0 0 0 0 0 0)
+        (4 5 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 1 1 0 0 0 0)
+        (0 0 1 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 1 0)
+        (0 0 0 0 0 1 0 0)))
+      (output $LatticeSlot $Rank (grid
+        (2 3 0 0 0 0 0 0)
+        (4 5 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 2 2 0 0 0 0)
+        (0 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 5 0)
+        (0 0 0 0 0 5 0 0)))
+      (output $OrderMatch undefined))))
+
+(alts $gap
+  (alt $GapFromSpacing
+    (witness wide-gap variant $GapFromSpacing
+      (relaxed copies)
+      (separates "train1's layout with two background lines between copies: the lattice at copy_gap 1 lands the copies off its slots and is undefined; the period read from the copies' spacing, and the ranks, recolor them 2, 4, 3")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 1 0 0 1 1 0)
+        (0 0 0 0 0 1 0 0 0 1 0 0)
+        (0 2 4 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 1 0 0 0 0 0)
+        (0 0 0 0 0 1 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Rank $GapFromSpacing $OrderMatch (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 0 0 4 4 0)
+        (0 0 0 0 0 2 0 0 0 4 0 0)
+        (0 2 4 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 3 3 0 0 0 0 0)
+        (0 0 0 0 0 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $GapStored undefined))))
+
+(alts $c
+  (alt $ShapeColorByCount
+    (witness copies-in-another-color variant $ShapeColorByCount
+      (relaxed copies)
+      (separates "train1's input with the copies in 5: the stored shape color finds no copy and returns the input; the shape color read as the commonest non-background color recolors the copies 2, 4, 3")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 5 0 5 5 0 0)
+        (0 0 0 0 0 5 0 0 5 0 0 0)
+        (0 2 4 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 5 5 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $LatticeSlot concept (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 5 0 5 5 0 0)
+        (0 0 0 0 0 5 0 0 5 0 0 0)
+        (0 2 4 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 5 5 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ShapeColorByCount (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 0 4 4 0 0)
+        (0 0 0 0 0 2 0 0 4 0 0 0)
+        (0 2 4 0 0 0 0 0 0 0 0 0)
+        (0 3 0 0 0 3 3 0 0 0 0 0)
+        (0 0 0 0 0 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $OrderMatch undefined))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed key)
+      (separates "train1's input on a background of 6: the stored background takes the 6 field into the key, whose corner cells are 6, so the copies turn 6 or the model is undefined; the background read as the commonest color recolors the copies 2, 4, 3")
+      (input (grid
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 1 1 6 1 1 6 6)
+        (6 6 6 6 6 1 6 6 1 6 6 6)
+        (6 2 4 6 6 6 6 6 6 6 6 6)
+        (6 3 6 6 6 1 1 6 6 6 6 6)
+        (6 6 6 6 6 1 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 2 2 6 4 4 6 6)
+        (6 6 6 6 6 2 6 6 4 6 6 6)
+        (6 2 4 6 6 6 6 6 6 6 6 6)
+        (6 3 6 6 6 3 3 6 6 6 6 6)
+        (6 6 6 6 6 3 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6 6 6))))))

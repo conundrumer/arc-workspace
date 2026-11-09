@@ -1,0 +1,104 @@
+;; inputs 7bb0782794353d4d4a0702e02bda8567e45032eb7b7caf2ff95d969235c34360 programs/solvers/3ed85e70.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3ed85e70
+
+(DET &legend_bg UnchangedColor)
+
+(DET &field_bg DominantColor)
+
+;; The legend's background spans the grid, so it reaches an edge. The field
+;; carries blocks of that color too, and those sit clear of every edge.
+(INIT &ground Flood
+  (node (P)
+    (input *P *Col)
+    (&legend_bg (:C Col)))
+  (source (P)
+    (input *P)
+    (margin (:B P) *D (:K 0))))
+
+(INIT &panel BoundingBox
+  (cell (P)
+    (&ground.reached *P)))
+
+(RULE &panel_cell
+  (&panel.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &legend_cell
+  (input *P *Col)
+  (&panel_cell P)
+  (NOT (&legend_bg (:C Col))))
+
+(RULE &field_cell
+  (input *P *Col)
+  (NOT (&panel_cell P))
+  (NOT (&field_bg (:C Col))))
+
+(INIT &shapes Connectivity
+  (node (P)
+    (&legend_cell *P)))
+
+(RULE &shape_cell
+  (&shapes.component *P (:Id *S))
+  (&legend_cell P *Col))
+
+(INIT &clues Connectivity
+  (node (P)
+    (&field_cell *P)))
+
+(RULE &clue_cell
+  (&clues.component *P (:Id *K))
+  (&field_cell P *Col))
+
+(INIT &clue_palette Singleton
+  (key ((&clue_cell ^K *Col))
+    (member ((:v Col))
+      (&clue_cell K *Col))))
+
+(INIT &clue_box BoundingBox
+  (key ((&clue_cell ^K *P))
+    (cell (P)
+      (&clue_cell K *P))))
+
+(INIT &layer_box BoundingBox
+  (key ((&shape_cell ^S *P ^Col))
+    (cell (P)
+      (&shape_cell S *P Col))))
+
+(RULE &piece
+  (&clue_palette.plural (:key *K))
+  (&shape_cell *S))
+
+(INIT &occ Occurrences
+  (key ((&piece ^K ^S))
+    (cell (P (:v Col))
+      (&shape_cell S *P *Col))
+    (shape (P (:v Col))
+      (&clue_cell K *P *Col))))
+
+(RULE &place
+  (OR ((&clue_palette.value (:key *K) (:v *Col))
+       (&clue_box.cell (:key K) *P)
+       (&clue_box.box (:key K) (:B *B_clue))
+       (&layer_box.box (:key *S Col) (:B *B_layer))
+       (perp *A *A2)
+       (box_extent (:B B_clue) P A (:N *N1))
+       (box_extent (:B B_clue) P (:A A2) (:N *N2))
+       (box_extent (:B B_layer) P A (:N N1))
+       (box_extent (:B B_layer) P (:A A2) (:N N2))
+       (relative (:Base B_layer) (:X B_clue) (:X_rel *V)))
+      ((&occ.occurrence (:key (:K *K2) S) (:P *V_clue))
+       (relative (:Base V_clue) (:X 0) (:X_rel V)))))
+
+(RULE &stamp
+  (&place *S *V)
+  (&shape_cell S (:P *P_shape) *Col)
+  (compose (:A P_shape) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&stamp *P *Col))
+      ((input P Col)
+       (NOT (&stamp P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,54 @@
+;; inputs 74b725535eb544411e6f6f17ce152b738600f99bd074e3b638fe3eb85d63a648 programs/solvers/2d0172a1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2d0172a1
+
+(param &gap number (1))
+
+(approximated position
+  (witness overlap-chain ordinary other
+    (separates "A border ring encloses three blobs in a staircase: the first spans rows 2-4, the second rows 4-6, the third rows 6-8. The first blob's mark meets the second's on row 4 and the second's meets the third's on row 6, while the first and the third are disjoint. The closure puts all three marks in one class, so both cases draw the three cells on one output row. The first blob lies strictly above the third in the input, so the generator's redraw places the three cells on three rows, one per step of the staircase.")
+    (input (grid
+      (3 3 3 3 3 3 3 3 3 3 3 3 3)
+      (3 0 0 0 0 0 0 0 0 0 0 0 3)
+      (3 0 3 3 0 0 0 0 0 0 0 0 3)
+      (3 0 3 3 0 0 0 0 0 0 0 0 3)
+      (3 0 3 3 0 3 3 0 0 0 0 0 3)
+      (3 0 0 0 0 3 3 0 0 0 0 0 3)
+      (3 0 0 0 0 3 3 0 3 3 0 0 3)
+      (3 0 0 0 0 0 0 0 3 3 0 0 3)
+      (3 0 0 0 0 0 0 0 3 3 0 0 3)
+      (3 0 0 0 0 0 0 0 0 0 0 0 3)
+      (3 0 0 0 0 0 0 0 0 0 0 0 3)
+      (3 3 3 3 3 3 3 3 3 3 3 3 3)))
+    (output (grid
+      (3 3 3 3 3 3 3 3 3)
+      (3 0 0 0 0 0 0 0 3)
+      (3 0 3 0 0 0 0 0 3)
+      (3 0 0 0 0 0 0 0 3)
+      (3 0 0 0 3 0 0 0 3)
+      (3 0 0 0 0 0 0 0 3)
+      (3 0 0 0 0 0 3 0 3)
+      (3 0 0 0 0 0 0 0 3)
+      (3 3 3 3 3 3 3 3 3)))))
+
+(alts $choice
+  (alt $Nest
+    (witness lone-ring variant concept
+      (relaxed nesting)
+      (separates "One curve closes cells off from the grid edge and closes off no other curve. $Hollow draws it as a rectangle outline; $Nest collapses it to a single cell, held off the frame edge by the blank line.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 4 4 4 4 4 0)
+        (0 4 0 0 0 4 0)
+        (0 4 0 0 0 4 0)
+        (0 4 0 0 0 4 0)
+        (0 4 4 4 4 4 0)
+        (0 0 0 0 0 0 0)))
+      (output concept (grid
+        (4 4 4)
+        (4 0 4)
+        (4 4 4)))
+      (output $Nest (grid
+        (0 0 0)
+        (0 4 0)
+        (0 0 0))))))

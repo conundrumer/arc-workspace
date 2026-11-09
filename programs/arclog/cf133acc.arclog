@@ -1,0 +1,165 @@
+;; inputs e5e14ab062428c4676ba9e44afde1b7ef50f6175621df26062ceada4b0273f9b programs/solvers/cf133acc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cf133acc
+
+(INPUT background "every cell that is not part of a bar or a post has the background color")
+
+(INPUT bars "some lines across the post side's axis hold bars: runs of one color, each with a gap in each pole line it spans; runs of different colors can abut in one line")
+
+(INPUT posts "some lines along the post side's axis, the pole lines, each hold a post: a run of one color from the post side's edge toward the far edge that stops before the bar nearest that edge in the line"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &bg_missing
+    (&commonest.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&bg_missing (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &ink_edge
+    (&ink *P)
+    (margin (:B P) *D (:K 0)))
+
+  ;; The edges that hold ink while the opposite edge holds none.
+  (INIT &lone_edge Singleton
+    (member ((:v D))
+      (&ink_edge *D)
+      (opposite D (:Opp *O))
+      (NOT (&ink_edge (:D O))))))
+
+(INPUT poles "every bar's gap lies in a pole line; a gap is a background cell whose two neighbors along the bar's line have the bar's color")
+
+(OUTPUT post-grows "in each pole line, the cells between the post and the gap nearest the post side (or the far edge, where the line holds no gap) take the post's color"
+
+  ;; the edge the posts stand on
+  (DET &post_side DirDomain)
+
+  (RULE &blank
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (RULE &side
+    (&post_side *D))
+
+  (RULE &flanked
+    (input *P)
+    (&side *D)
+    (perp_dir D (:D2 *D1))
+    (opposite (:D D1) (:Opp *D2))
+    (neighbor P (:D D1) (:Q *Q1))
+    (input (:P Q1) *Col)
+    (neighbor P (:D D2) (:Q *Q2))
+    (input (:P Q2) Col))
+
+  (RULE &foot_of
+    (&side *D)
+    (input (:P *F))
+    (margin (:B F) D (:K 0))
+    (perp_dir D (:D2 *D1))
+    (input *P)
+    (same_dist (:D D1) (:P1 P) (:P2 F)))
+
+  (RULE &gap_cell
+    (&blank *P)
+    (&flanked P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &pole_foot
+    (&side *D)
+    (&ink (:P *F))
+    (margin (:B F) D (:K 0)))
+
+  (RULE &crossing
+    (&pole_foot *F)
+    (&gap_cell *P *Col)
+    (&foot_of P F))
+
+  (RULE &source
+    (OR ((&pole_foot (:F *P))
+         (&ink P *Col))
+        ((&crossing P Col))))
+
+  ;; Each source's color climbs toward the far edge, up to the next crossing.
+  (INIT &climb Ray
+    (source (P)
+      (&source *P))
+    (node (P)
+      (&side *D)
+      (opposite D (:Opp *D_far))
+      (input *P)
+      (NOT (&crossing P)))
+    (dir ((:D D_far))
+      (&side *D)
+      (opposite D (:Opp *D_far)))))
+
+(OUTPUT bar-color-climbs "in each pole line, each gap, and the cells from it toward the far edge up to the next gap in the line (or up to the far edge), take that bar's color")
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $po "which lines are pole lines" $FootPoles
+  (ALT $PolesFromGaps
+    (INPUT posts "the pole lines are the lines that hold a gap; a line with a post and no gap is no pole line")
+    (OUTPUT post-grows "in each pole line with a post, the cells between the post and the gap nearest the post side take the post's color; a pole line with no post keeps its cells there"
+      (RULE &pole_foot
+        (&gap_cell *P)
+        (&foot_of P *F)))))
+
+(ALTS $g "which cells are gaps" $TwoSidedGap
+  (ALT $OneSidedGap
+    (INPUT poles "a gap is a background cell in a pole line with a non-background neighbor along the bar's line on one side or both, and it takes that neighbor's color; undefined where the two neighbors have different non-background colors"
+      (RULE &gap_cell
+        (&blank *P)
+        (&side *D)
+        (perp_dir D (:D2 *D1))
+        (neighbor P (:D D1) *Q)
+        (&ink (:P Q) *Col)))))
+
+(ALTS $c "what crosses a pole line" $GapOnly
+  (ALT $GaplessBar
+    (OUTPUT post-grows "the post's color also stops below a pole-line cell of a bar that has no gap there"
+      (RULE &crossing
+        (OR ((&pole_foot *F)
+             (&ink *P *Col)
+             (&flanked P Col)
+             (&foot_of P F))
+            ((&pole_foot (:F *F2))
+             (&gap_cell P Col)
+             (&foot_of P (:F F2))))))
+    (OUTPUT bar-color-climbs "such a cell is a crossing too, and its bar's color climbs from it as from a gap")))
+
+(ALTS $s "where the post side comes from" $StoredSide
+  (ALT $PostSideFromInput
+    (INPUT posts "the post side is, on each input, the one edge that holds a non-background cell while the opposite edge holds none; undefined where no edge, or more than one, does"
+      (RULE &side
+        (&lone_edge.value (:v *D))))))
+
+(RULE &climbed
+  (&climb.ray *P (:Origin *Src))
+  (input P)
+  (&source (:P Src) *Col))
+
+(RULE &output
+  (&side)
+  (input *P (:Col *C0))
+  (OR ((&climbed P *Col))
+      ((NOT (&climbed P))
+       (= Col C0))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,485 @@
+;; inputs 06a7580a208ff1ee70261bb633dd608e7e47254c2443234860d98db19842f77f programs/solvers/b0039139.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0039139
+
+(INPUT panels "full lines of &divider_color, one cell wide, cut the input into four panels in a row along one axis, and each panel spans the whole input across that axis"
+
+  (DET &line_cell
+    (ex_input *E *P *Col)
+    (split P *A (:Along *L)))
+
+  ;; The color of each one-colored line of an input.
+  (INIT &line Singleton
+    (key ((&line_cell ^E ^A ^L *Col))
+      (member ((:v Col))
+        (&line_cell E A L *Col))))
+
+  (DET &on_line
+    (&line_cell *E *A *L *P *Col)
+    (&line.value (:key E A L) (:v Col)))
+
+  (DET &lacks
+    (OR ((ex_output *E)
+         (&line.value (:v *Col))
+         (NOT (&line.value (:key E) (:v Col))))
+        ((ex_output E)
+         (ex_input E *P Col)
+         (NOT (&on_line E P)))))
+
+  (DET &divider_color
+    (&line.value (:v *C))
+    (NOT (&lacks (:Col C)))))
+
+(INPUT shape-panel "one end panel holds one connected shape of &shape_color on background 0, with background between the shape and the panel's sides"
+
+  (DET &shape_color SharedColor))
+
+(INPUT count-panel "the panel next to the shape panel holds marks of &mark_color on background 0, each mark a domino of two cells, with background between any two marks"
+
+  (DET &mark_color SharedColor))
+
+(INPUT solid-panels "each of the other two panels is solid in one color, and the two colors differ from each other, from &divider_color and from background 0")
+
+(OUTPUT count "N is the number of marks in the count panel"
+
+  (RULE &broken
+    (input *P *Col)
+    (NOT (&divider_color (:C Col)))
+    (split P *A (:Along *L)))
+
+  (RULE &divider
+    (input *P)
+    (split P *A (:Along *L))
+    (NOT (&broken A L)))
+
+  (RULE &panels_on_divider
+    (input *P)
+    (&divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  ;; The panels the divider lines cut, each named by its tile position.
+  (INIT &panels_rank Order
+    (key ((OR ((&divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *P D (:N *N1))
+    (&panels_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &panels_tile_of
+    (&panels_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (RULE &row_elem
+    (&panels_tile_of (:P_tile *T))
+    (&divider *A)
+    (axis_of (:D *Key) A))
+
+  ;; The panels in order toward each end of the row, nearest that end first.
+  (INIT &row Order
+    (key ((&row_elem (:Key ^D) *T))
+      (member ((:t T))
+        (&row_elem (:Key D) *T))
+      (score ((:t T) (:S K))
+        (&row_elem (:Key D) *T)
+        (margin (:B T) D *K))))
+
+  ;; A solid panel's color; a panel of two colors clashes.
+  (INIT &solid Singleton
+    (key ((&panels_tile_of *P (:P_tile ^T))
+          (input P *Col))
+      (member ((:v Col))
+        (&panels_tile_of *P (:P_tile T))
+        (input P *Col))))
+
+  (RULE &shape_end
+    (&row.minimal (:key *D) (:t *T))
+    (&solid.plural (:key T)))
+
+  (RULE &mark_cell
+    (&shape_end *D *T)
+    (&row.successor (:key D) (:a T) (:b *T2))
+    (&panels_tile_of *P (:P_tile T2))
+    (input P *Col)
+    (&mark_color (:C Col)))
+
+  ;; The marks, 4-connected.
+  (INIT &marks4 Connectivity
+    (node (P)
+      (&mark_cell *P)))
+
+  (INIT &marks Cardinality
+    (member ((:m Id))
+      (&marks4.component *Id)))
+
+  ;; The marks, 8-connected.
+  (INIT &marks8 Connectivity
+    (node (P)
+      (&mark_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &cells Cardinality
+    (member ((:m P))
+      (&mark_cell *P))))
+
+(OUTPUT tile-shape "the output is the shape's bounding box, copied N times in a line along the panel axis, with &gap_width lines between neighbor copies"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &facing_blocked
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &mark
+    (&marks4.component *P *Id))
+
+  (INIT &facing_frame Frame
+    (extent (A N)
+      (&mark *P)
+      (frame_extent P *A *N)))
+
+  ;; Casts from each mark cell along rows and columns, stopped by any cell off
+  ;; the background.
+  (INIT &facing Ray
+    (source (P)
+      (&mark *P))
+    (node (P)
+      (&facing_frame.cell *P)
+      (NOT (&facing_blocked P)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &facing_full Ray
+    (source (P)
+      (&mark *P))
+    (node (P)
+      (&facing_frame.cell *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &facing_stop_full
+    (&facing.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&facing_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (INIT &shape BoundingBox
+    (cell (P)
+      (&shape_end *T)
+      (&panels_tile_of *P (:P_tile T))
+      (input P *Col)
+      (&shape_color (:C Col))))
+
+  (DET &shape_end2
+    (&row.minimal *E (:key *D) (:t *T))
+    (&solid.plural E (:key T)))
+
+  (DET &field_color2
+    (&shape_end2 *E *D)
+    (&row.maximal E (:key D) (:t *T))
+    (&solid.value E (:key T) (:v *Col)))
+
+  (DET &off_field
+    (ex_output *E *P *Col)
+    (&divider E *A)
+    (split P A (:Along *L))
+    (NOT (&field_color2 E Col)))
+
+  ;; The gaps between copies: runs of output lines all in the field color.
+  (INIT &gap Connectivity
+    (key ((ex_output ^E *P)
+          (&divider E *A)
+          (split P A (:Along *L))
+          (NOT (&off_field E L)))
+      (node (P)
+        (ex_output E *P)
+        (&divider E *A)
+        (split P A (:Along *L))
+        (NOT (&off_field E L)))))
+
+  (INIT &gap_lines Cardinality
+    (key ((&gap.component (:key ^E) *P ^Id)
+          (&divider E *A)
+          (split P A (:Along *L)))
+      (member ((:m L))
+        (&gap.component (:key E) *P Id)
+        (&divider E *A)
+        (split P A (:Along *L)))))
+
+  (DET &gap_width
+    (&gap_lines.size (:N *K)))
+
+  (INIT &shape2 BoundingBox
+    (key ((&shape_end2 (:E ^Ky) *T)
+          (&panels_tile_of (:E Ky) *P (:P_tile T))
+          (ex_input (:E Ky) P *Col)
+          (&shape_color (:C Col)))
+      (cell (P)
+        (&shape_end2 (:E Ky) *T)
+        (&panels_tile_of (:E Ky) *P (:P_tile T))
+        (ex_input (:E Ky) P *Col)
+        (&shape_color (:C Col)))))
+
+  (INIT &shape_panel BoundingBox
+    (cell (P)
+      (&shape_end *T)
+      (&panels_tile_of *P (:P_tile T))))
+
+  (INIT &shape_panel2 BoundingBox
+    (key ((&shape_end2 (:E ^Ky) *T)
+          (&panels_tile_of (:E Ky) *P (:P_tile T)))
+      (cell (P)
+        (&shape_end2 (:E Ky) *T)
+        (&panels_tile_of (:E Ky) *P (:P_tile T)))))
+
+  ;; The shape's distance from each side of its panel.
+  (INIT &shape_margin Singleton
+    (member ((:v N))
+      (&shape_panel.box (:B *B0))
+      (&shape.box *B)
+      (relative (:Base B0) (:X B) (:X_rel *B_rel))
+      (margin (:B B_rel) *D (:K *N))))
+
+  ;; The shape's distance from each side of its panel.
+  (INIT &shape_margin2 Singleton
+    (key ((&shape_panel2.box (:key (:Ky ^Key)) (:B *B0))
+          (&shape2.box (:key (:Ky Key)) *B)
+          (relative (:Base B0) (:X B) (:X_rel *B_rel))
+          (margin (:B B_rel) *D (:K *N)))
+      (member ((:v N))
+        (&shape_panel2.box (:key (:Ky Key)) (:B *B0))
+        (&shape2.box (:key (:Ky Key)) *B)
+        (relative (:Base B0) (:X B) (:X_rel *B_rel))
+        (margin (:B B_rel) *D (:K *N)))))
+
+  ;; The background run of a cast that ends on another mark.
+  (INIT &run Cardinality
+    (key ((&facing_stop_full (:V1 *Q) (:V2 ^D) (:V4 ^Src))
+          (&mark (:P Q) (:Id *Id2))
+          (&mark (:P Src) (:Id *Id1))
+          (!= Id1 Id2)
+          (&facing.ray *P D (:Origin Src))
+          (input P *Col)
+          (&background (:C Col)))
+      (member ((:m P))
+        (&facing_stop_full (:V1 *Q) (:V2 D) (:V4 Src))
+        (&mark (:P Q) (:Id *Id2))
+        (&mark (:P Src) (:Id *Id1))
+        (!= Id1 Id2)
+        (&facing.ray *P D (:Origin Src))
+        (input P *Col)
+        (&background (:C Col)))))
+
+  (INIT &shortest Order
+    (member ((:t N))
+      (&run.size *N))
+    (score ((:t N) (:S N))
+      (&run.size *N)))
+
+  ;; The divider bands, each one or more adjacent divider lines.
+  (INIT &divider_band Connectivity
+    (node (P)
+      (&divider *A *L)
+      (input *P)
+      (split P A (:Along L))))
+
+  (INIT &thickness Cardinality
+    (key ((&divider_band.component *P ^Id)
+          (&divider *A *L)
+          (split P A (:Along L)))
+      (member ((:m L))
+        (&divider_band.component *P Id)
+        (&divider *A *L)
+        (split P A (:Along L)))))
+
+  (INIT &same_thickness Singleton
+    (member ((:v N))
+      (&thickness.size *N))))
+
+(OUTPUT recolor "a shape cell takes the color of the solid panel next to the count panel, and every other cell of the output, in a box or in a gap, takes the color of the solid panel at the far end")
+
+(ALTS $m "how the marks give the number of copies" $Marks4
+  (ALT $MarkCells
+    (OUTPUT count "N is the number of &mark_color cells in the count panel divided by &mark_size; undefined where that number is not a multiple of &mark_size"
+      ;; One place per mark cell.
+      (INIT &cell_row Frame
+        (key ((&divider ^A))
+          (extent (A N)
+            (&cells.size *N))))
+
+      ;; The cells of one mark.
+      (DET &mark_size TileDim)
+
+      (INIT &copies_extent_division Division
+        (key ((OR ((&cell_row.cell (:key ^A) *P))
+                  ((&cell_row.cell (:key A))
+                   (&mark_size (:D *K)))))
+          (cell (P)
+            (&cell_row.cell (:key A) *P))
+          (side (A K)
+            (&cell_row.cell (:key A))
+            (&mark_size (:D *K))))))
+    ;; One copy per mark_size mark cells.
+    (RULE &copies_extent
+      (&cell_row.cell (:key *A) *P)
+      (&copies_extent_division.tile (:key A) P *P_outer)
+      (frame_extent (:P P_outer) A *N)))
+  (ALT $Marks8
+    (OUTPUT count "the marks are the 8-connected components of &mark_color in the count panel"
+      (INIT &marks Cardinality
+        (member ((:m Id))
+          (&marks8.component *Id)))
+
+      (RULE &mark
+        (&marks8.component *P *Id)))))
+
+(ALTS $s "the box each copy takes" $ShapeBox
+  (ALT $PanelInset
+    (OUTPUT tile-shape "the box is the shape panel inset by &margin on every side; undefined where the panel is no wider than twice the margin on an axis"
+      (DET &margin
+        (ex_output *E)
+        (&shape_margin2.value (:key (:Key E)) (:v *K))))
+    (RULE &shape_box
+      (&shape_panel.box (:B *B0))
+      (&margin *K)
+      (uniform_inset K (:B *I))
+      (compose (:A B0) (:B I) (:C *B)))))
+
+(ALTS $r "how the panels take their roles" $RolesByContent
+  (ALT $PanelOrder
+    (INPUT shape-panel "the shape panel is the first panel from corner &start_corner along the panel axis, whatever it holds")
+    (INPUT count-panel "the count panel is the second panel from that corner")
+    (OUTPUT recolor "the fill panel is the third panel from that corner and the field panel the last; undefined where either is not solid"
+      ;; The corner whose end of the panel row holds the shape panel.
+      (DET &start_corner DiagDirDomain)
+
+      (RULE &shape_end
+        (&row.minimal (:key *D) (:t *T))
+        (&start_corner (:D *C))
+        (corner_dir C D)))))
+
+(ALTS $g "the lines between neighbor copies" $StoredGap
+  (ALT $GapFromMarkSpacing
+    (OUTPUT tile-shape "the gap is the shortest run of background between two different marks along a row or column of the count panel; undefined where no two marks face each other along a row or column")
+    (RULE &spacing
+      (&shortest.minimal (:t *K))))
+  (ALT $GapFromDivider
+    (OUTPUT tile-shape "the gap is the thickness of the divider lines; undefined where the dividers differ in thickness")
+    (RULE &spacing
+      (&same_thickness.value (:v *K))))
+  (ALT $GapFromShapeMargin
+    (OUTPUT tile-shape "the gap is the shape's distance from the sides of its panel; undefined where its distances from the four sides differ")
+    (RULE &spacing
+      (&shape_margin.value (:v *K)))))
+
+(RULE &copies_extent
+  (&marks.size *N)
+  (&divider *A))
+
+;; The index of each copy, axis-only on the panel axis.
+(INIT &copies Frame
+  (key ((&copies_extent ^A *N))
+    (extent (A N)
+      (&copies_extent A *N))))
+
+(RULE &shape_box
+  (&shape.box *B))
+
+(RULE &spacing
+  (&gap_width *K))
+
+(INIT &copy_tiling Tiling
+  (key ((OR ((&copies.cell (:key ^A) (:P *P_idx))
+             (&spacing))
+            ((&copies.cell (:key A))
+             (&shape_box *B)
+             (&spacing)
+             (input (:P *Q))
+             (inside (:A Q) B)
+             (relative (:Base B) (:X Q) (:X_rel *Q_rel)))
+            ((&copies.cell (:key A))
+             (&spacing *K))))
+    (outer ((:P P_idx))
+      (&copies.cell (:key A) (:P *P_idx))
+      (&spacing))
+    (inner ((:P Q_rel))
+      (&copies.cell (:key A))
+      (&shape_box *B)
+      (&spacing)
+      (input (:P *Q))
+      (inside (:A Q) B)
+      (relative (:Base B) (:X Q) (:X_rel *Q_rel)))
+    (gap (A (:G K))
+      (&copies.cell (:key A))
+      (&spacing *K))))
+
+(RULE &field_color
+  (&shape_end *D)
+  (&row.maximal (:key D) (:t *T))
+  (&solid.value (:key T) (:v *Col)))
+
+(RULE &fill_color
+  (&shape_end *D *T)
+  (&row.successor (:key D) (:a T) (:b *T2))
+  (&row.successor (:key D) (:a T2) (:b *T3))
+  (&solid.value (:key (:T T3)) (:v *Col)))
+
+(RULE &copy
+  (&copies.cell (:key *A) (:P *P_idx))
+  (&shape_box *B)
+  (&copy_tiling.cell (:key A) (:P_outer P_idx) (:P_inner *Q_rel) *P)
+  (input (:P *Q))
+  (inside (:A Q) B)
+  (relative (:Base B) (:X Q) (:X_rel Q_rel)))
+
+;; The output frame.
+(INIT &frame Frame
+  (extent (A N)
+    (&copy *P)
+    (frame_extent P *A *N)))
+
+(RULE &shape_copy
+  (&copy *P *Q)
+  (input (:P Q) *Col)
+  (&shape_color (:C Col)))
+
+(RULE &output
+  (OR ((&shape_copy *P)
+       (&fill_color *Col))
+      ((&frame.cell P)
+       (NOT (&shape_copy P))
+       (&field_color Col))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,95 @@
+;; inputs baf158591b8c83bb5905b51ccce70341f0b578c51351e3f68d5039fdd7b66b58 programs/solvers/58490d8a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58490d8a
+
+(DET &panel SharedColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&panel (:C Col))))
+
+(RULE &on_panel
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &marker
+  (&on_panel *P *P_inner)
+  (input P *Col)
+  (NOT (&panel (:C Col))))
+
+(INIT &spread_frame Frame
+  (extent (A N)
+    (&marker (:P_inner *P))
+    (frame_extent P *A *N)))
+
+(DET &spread_dir DirDomain)
+
+(DET &period TileCount)
+
+(INIT &shapes Connectivity
+  (key ((&marker ^Col))
+    (node (P)
+      (input *P Col)
+      (NOT (&on_panel P))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &shape_count Cardinality
+  (key ((&shapes.component (:key ^Col) *Id))
+    (member ((:m Id))
+      (&shapes.component (:key Col) *Id))))
+
+(RULE &spread_dir2
+  (&spread_dir *D))
+
+(ALTS $choice "the cases differ in where a row's run of copies starts" $FromMark
+  (ALT $FromEdge
+    (RULE &spread_dir2
+      (&spread_dir (:D *D0))
+      (OR ((opposite (:D D0) (:Opp *D)))
+          ((= D D0))))))
+
+(INIT &spread Ray
+  (source (P)
+    (&marker (:P_inner *P)))
+  (node (P)
+    (&spread_frame.cell *P))
+  (dir (D)
+    (&spread_dir2 *D)))
+
+(RULE &slot
+  (&spread.ray (:P *P_inner) (:K *K_ray) (:Origin *Src))
+  (&on_panel P_inner)
+  (&period (:N *W))
+  (divide (:T K_ray) (:Side W) (:Gap 0) (:Remainder 0))
+  (&spread_dir *D)
+  (opposite D (:Opp *D_back))
+  (margin (:B P_inner) (:D D_back) *K))
+
+(INIT &slot_rank Order
+  (key ((&slot ^Src *K))
+    (member ((:t K))
+      (&slot Src *K))
+    (score ((:t K) (:S K))
+      (&slot Src *K))))
+
+(RULE &copy
+  (&slot *Src *P_inner *K)
+  (&slot_rank.rank (:key Src) (:t K) (:R *I))
+  (&marker (:P_inner Src) *Col)
+  (&shape_count.size (:key Col) *N)
+  (< I N))
+
+(RULE &output
+  (OR ((&copy (:P_inner *P) *Col))
+      ((&on_panel (:P_inner P))
+       (NOT (&copy (:P_inner P)))
+       (&panel (:C Col)))))
+
+(OUT (&output ^P ^Col))

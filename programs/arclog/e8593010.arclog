@@ -1,0 +1,251 @@
+;; inputs 3779bf9b263ba364c53c58834cea868ae2ae9785c6ba6ca5a38d86a1d1aa92bf programs/solvers/e8593010.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e8593010
+
+(INPUT field-and-holes "every input is a field of `5` with cells of `hole_color` scattered on it.")
+
+(INPUT small-pieces "each 4-connected piece of `hole_color` cells has a size that is a key of `size_color`.")
+
+(OUTPUT keep-field "each cell not of `hole_color` keeps its color.")
+
+(OUTPUT color-by-size "each cell of a 4-connected piece of `hole_color` takes the color that `size_color` gives for the piece's cell count."
+
+  (DET &hole_color_determined
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (INIT &piece Connectivity
+    (key ((ex_output ^E))
+      (node (P)
+        (ex_input E *P *Col)
+        (&hole_color_determined Col))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component (:key ^E) *P ^Id))
+      (cell (P)
+        (&piece.component (:key E) *P Id))))
+
+  (DET &piece_shape
+    (&piece_box.cell (:key *E *Id) *P)
+    (&piece_box.box (:key E Id) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &size Cardinality
+    (key ((&piece.component (:key ^E) *P ^Id))
+      (member ((:m P))
+        (&piece.component (:key E) *P Id))))
+
+  (INIT &congruent Agreement
+    (key ((OR ((&piece_shape (:E ^K_e) (:Id ^K_id) (:P_inner *P))
+               (&size.size (:key (:E K_e) (:Id K_id)) *N)
+               (&size.size (:key (:E ^K2_e) (:Id ^K2_id)) N))
+              ((&piece_shape (:E K2_e) (:Id K2_id) (:P_inner P))
+               (&size.size (:key (:E K_e) (:Id K_id)) N)
+               (&size.size (:key (:E K2_e) (:Id K2_id)) N))))
+      (source (P)
+        (&piece_shape (:E K_e) (:Id K_id) (:P_inner *P))
+        (&size.size (:key (:E K_e) (:Id K_id)) *N)
+        (&size.size (:key (:E K2_e) (:Id K2_id)) N))
+      (target (P)
+        (&piece_shape (:E K2_e) (:Id K2_id) (:P_inner *P))
+        (&size.size (:key (:E K_e) (:Id K_id)) *N)
+        (&size.size (:key (:E K2_e) (:Id K2_id)) N))))
+
+  (DET &congruent_src
+    (&piece_shape (:E *Key_k_e) (:Id *Key_k_id) (:P_inner *P))
+    (&size.size (:key (:E Key_k_e) (:Id Key_k_id)) *N)
+    (&size.size (:key (:E *Key_k2_e) (:Id *Key_k2_id)) N))
+
+  (DET &congruent_map
+    (&congruent_src *Key_k_e *Key_k_id *Key_k2_e *Key_k2_id)
+    (d4_elem *D)
+    (NOT (&congruent.mismatch (:key (:K_e Key_k_e) (:K_id Key_k_id) (:K2_e Key_k2_e) (:K2_id Key_k2_id)) D)))
+
+  (DET_OR_RULE &hole_color RarestColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= C Col2))
+
+  ;; a piece's free shape is named by the pair of the piece with itself, so that its id
+  ;; is another entity's than the fixed shapes' ids
+  (INIT &free_entry Quotient
+    (equivalent ((:a (:K_E K_e) (:K_Id K_id) (:K2_E K_e) (:K2_Id K_id)) (:b (:K_E K2_e) (:K_Id K2_id) (:K2_E K2_e) (:K2_Id K2_id)))
+      (&congruent_map (:Key_k_e *K_e) (:Key_k_id *K_id) (:Key_k2_e *K2_e) (:Key_k2_id *K2_id))))
+
+  (DET &member
+    (&free_entry.class (:a (:K_E *E) (:K_Id *Piece) (:K2_E E) (:K2_Id Piece)) *Id)
+    (&piece_shape E (:Id Piece) (:P_inner *P)))
+
+  (RIGID_DET &shape
+    (key ((&member ^Id))
+      (instance ((&member ^E ^Piece Id))
+        (&member E Piece Id *P))))
+
+  (RULE &ink
+    (input *P *Col)
+    (&hole_color (:C Col)))
+
+  (INIT &piece2 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &piece_cell
+    (&piece2.component *P *Id))
+
+  (INIT &size2 Cardinality
+    (key ((&piece_cell *P ^Id))
+      (member ((:m P))
+        (&piece_cell *P Id))))
+
+  (DET &piece_color
+    (&size.size (:key *E *Id) *N)
+    (&piece.component (:key E) *P Id)
+    (ex_output E P *Col))
+
+  (INIT &size_rank2 Order
+    (member ((:t N))
+      (&size2.size *N))
+    (score ((:t N) (:S N))
+      (&size2.size *N)))
+
+  (INIT &piece_box2 BoundingBox
+    (key ((&piece_cell *P ^Id))
+      (cell (P)
+        (&piece_cell *P Id))))
+
+  (RULE &piece_shape2
+    (&piece_box2.cell (:key (:Id *Ip)) *P)
+    (&piece_box2.box (:key (:Id Ip)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &free_match Inclusion
+    (pattern ((:pattern (:Id S) D) (:m P))
+      (&shape.member (:key (:Id *S)) (:Pose *D) *P))
+    (observed ((:observed K) (:m P))
+      (&piece_shape2 (:Ip *K) (:P_inner *P))))
+
+  ;; pieces whose shapes agree up to translation share an entry
+  (INIT &same_shape Inclusion
+    (pattern ((:pattern (:E K_e) (:Id K_id)) (:m P))
+      (&piece_shape (:E *K_e) (:Id *K_id) (:P_inner *P)))
+    (observed ((:observed (:E K_e) (:Id K_id)) (:m P))
+      (&piece_shape (:E *K_e) (:Id *K_id) (:P_inner *P))))
+
+  (INIT &entry Quotient
+    (equivalent ((:a (:E K_e) (:Id K_id)) (:b (:E K2_e) (:Id K2_id)))
+      (&same_shape.equal (:observed (:E *K_e) (:Id *K_id)) (:pattern (:E *K2_e) (:Id *K2_id)))))
+
+  (DET &fixed_shape_member
+    (&entry.class (:a (:E *K_e) (:Id *K_id)) *Id)
+    (&piece_shape (:E K_e) (:Id K_id) (:P_inner *P)))
+
+  (INIT &fixed_match Inclusion
+    (pattern ((:pattern S) (:m P))
+      (&fixed_shape_member (:Id *S) *P))
+    (observed ((:observed K) (:m P))
+      (&piece_shape2 (:Ip *K) (:P_inner *P)))))
+
+(ALTS $k "what keys a piece's color" $SizeKey
+  (ALT $RankBySize
+    (OUTPUT color-by-size "the dense rank of the piece's size among the sizes of the input's pieces keys the color, undefined where the input has more distinct piece sizes than the rank table has keys."
+      (INIT &size_rank Order
+        (key ((&piece_color ^E *N))
+          (member ((:t N))
+            (&piece_color E *N))
+          (score ((:t N) (:S N))
+            (&piece_color E *N))))
+
+      (DET &rank_color
+        (&size_rank.rank (:key *E) (:t *N) *R)
+        (&piece_color E N *Col)))
+    (RULE &output
+      (OR ((&piece_cell *P *Id)
+           (&size2.size (:key Id) *N)
+           (&size_rank2.rank (:t N) *R)
+           (&rank_color R *Col))
+          ((input P Col)
+           (NOT (&ink P)))))
+    (ALTS $dir "which end of the size order is rank 0" $RankAsc
+      (ALT $RankDesc
+        (OUTPUT color-by-size "the largest present size is rank 0, and `rank_color_desc` gives the color."
+          (DET &rank_color_desc
+            (&size_rank.dual_rank (:key *E) (:t *N) *R)
+            (&piece_color E N *Col)))
+        (RULE &output
+          (OR ((&piece_cell *P *Id)
+               (&size2.size (:key Id) *N)
+               (&size_rank2.dual_rank (:t N) *R)
+               (&rank_color_desc R *Col))
+              ((input P Col)
+               (NOT (&ink P))))))))
+  (ALT $ShapeKey
+    (OUTPUT color-by-size "the piece's free shape, its cell set up to D4 and translation, keys `shape_color`, undefined on a piece whose shape has no entry."
+      (DET &shape_color
+        (&free_entry.class (:a (:K_E *E) (:K_Id *Id2) (:K2_E E) (:K2_Id Id2)) *Id)
+        (&piece.component (:key E) *P (:Id Id2))
+        (ex_output E P *Col)))
+    (RULE &output
+      (OR ((&piece_cell *P *Id)
+           (&free_match.equal (:observed Id) (:pattern (:Id *S)))
+           (&shape_color (:Id S) *Col))
+          ((input P Col)
+           (NOT (&ink P))))))
+  (ALT $FixedShapeKey
+    (OUTPUT color-by-size "the piece's shape up to translation alone keys `fixed_shape_color`, undefined on a piece whose shape has no entry."
+      (DET &fixed_shape_color
+        (&entry.class (:a *E (:Id *Id2)) *Id)
+        (&piece.component (:key E) *P (:Id Id2))
+        (ex_output E P *Col)))
+    (RULE &output
+      (OR ((&piece_cell *P *Id)
+           (&fixed_match.equal (:observed Id) (:pattern *S))
+           (&fixed_shape_color (:Id S) *Col))
+          ((input P Col)
+           (NOT (&ink P)))))))
+
+(ALTS $i "which cells are ink" $HoleInk
+  (ALT $NonFieldInk
+    (INPUT field-and-holes "the ink is every cell not of `field_color`, whatever its color.")
+    (OUTPUT color-by-size "ink cells join into 4-connected pieces whatever their colors."
+      (DET &kept
+        (ex_input *E *P *Col)
+        (ex_output E P Col))
+
+      (DET &unkept
+        (&kept *Col)
+        (ex_output *E)
+        (NOT (&kept E Col)))
+
+      (DET_OR_RULE &field_color DominantColor
+        (&kept (:Col *C))
+        (NOT (&unkept (:Col C))))
+
+      (RULE &ink
+        (input *P *Col)
+        (NOT (&field_color (:C Col)))))
+    (ALTS $join "which ink cells join into one piece" $MixedPieces
+      (ALT $SameColorPieces
+        (OUTPUT color-by-size "an ink cell joins only the 4-connected ink cells of its own color."
+          (INIT &color_piece Connectivity
+            (key ((&ink *P)
+                  (input P ^Col))
+              (node (P)
+                (&ink *P)
+                (input P Col))))
+          (RULE &piece_cell
+            (&color_piece.component *P *Id)))))))
+
+(DET &size_color
+  (&piece_color *N *Col))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&ink P)))
+      ((&piece_cell P *Id)
+       (&size2.size (:key Id) *N)
+       (&size_color N Col))))
+
+(OUT (&output ^P ^Col))

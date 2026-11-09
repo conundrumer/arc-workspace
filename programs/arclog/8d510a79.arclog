@@ -1,0 +1,141 @@
+;; inputs 912e420834623a75614a98e5e43c52d192e19513a0d30e3d85e554fcb35bac55 programs/solvers/8d510a79.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8d510a79
+
+(DET &bg DominantColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+;; Divider: a line of one non-bg color.
+(RULE &frame_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D (:K *K2)))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K2))
+      (input *P)
+      (margin (:B P) D (:K *K2)))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&frame_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &away UnchangedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame_on_divider P)))
+
+(RULE &side
+  (&frame_part_idx *P *D *N)
+  (!= N 0))
+
+(DET &toward RarestColor)
+
+(RULE &casts
+  (&mark *P *Col)
+  (&side P (:D *D_side))
+  (OR ((&away (:C Col))
+       (opposite (:D D_side) (:Opp *D)))
+      ((&toward (:C Col))
+       (= D D_side))))
+
+(ALTS $choice "how a mark's cast direction is found" $Relative
+  (ALT $Table
+    (DET &cast_dir
+      (&mark *E *P *Col)
+      (&side E P (:D *Side))
+      (ex_output E (:P *Q) Col)
+      (relative (:Base P) (:X Q) (:X_rel *V))
+      (dir_elem *D)
+      (step_offset D V))
+
+    (RULE &casts
+      (&mark *P *Col)
+      (&side P (:D *D_side))
+      (&cast_dir Col (:Side D_side) *D))))
+
+(INIT &cast_frame Frame
+  (key ((&casts *P ^D)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&casts *P D)
+      (frame_extent P *A *N))))
+
+(RULE &cast_blocked
+  (&casts (:D *Key))
+  (&frame_on_divider *P))
+
+;; Each mark casts through bg; the divider blocks.
+(INIT &cast Ray
+  (key ((OR ((&casts ^D))
+            ((&cast_frame.cell (:key D) *P)
+             (NOT (&cast_blocked (:Key D) P)))))
+    (source (P)
+      (&casts *P D))
+    (node (P)
+      (&cast_frame.cell (:key D) *P)
+      (NOT (&cast_blocked (:Key D) P)))
+    (dir (D)
+      (&casts D))))
+
+(RULE &cast_cell
+  (&casts)
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &painted
+  (&cast.ray *P (:Origin *Src))
+  (&cast_cell P)
+  (&mark (:P Src) *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

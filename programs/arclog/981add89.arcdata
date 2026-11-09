@@ -1,0 +1,6 @@
+;; inputs 0b2f3a8dcc0e12e6ab4635f8518e73976ed7a9a27af1d1fbdd93758f4c8cdbf7 programs/solvers/981add89.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 981add89
+
+(param &mark_dir Dir (DIR_T))
+(param &axis Axis (AXIS_V))

@@ -1,0 +1,120 @@
+;; inputs cb3d328b61a787ff62fd529f14f449f16e379c241f2f79d2170ec945ba14352c programs/solvers/d2abd087.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d2abd087
+
+(INPUT shapes-on-background "a background of color 0 with several shapes of shape_color on it; a shape is a 4-connected component of the shape_color cells"
+
+  (DET &shape_color_stored ChangedColor)
+
+  (DET_OR_RULE &shape_color RarestColor
+    (&shape_color_stored *C))
+
+  (RULE &ink
+    (input *P (:Col *Ki))
+    (&shape_color (:C Ki)))
+
+  (DET &ink2
+    (ex_input (:E *K) *P *Col)
+    (&shape_color (:C Col)))
+
+  (INIT &comps8 Connectivity
+    (key ((&ink (:Ki ^Col) *P))
+      (node (P)
+        (&ink (:Ki Col) *P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &comps82 Connectivity
+    (key ((&ink2 ^K ^Col *P))
+      (node (P)
+        (&ink2 K Col *P)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT size-match-recolor "each cell of a shape whose cell count equals target_size takes match_color"
+
+  (INIT &comps4 Connectivity
+    (key ((&ink (:Ki ^Col) *P))
+      (node (P)
+        (&ink (:Ki Col) *P))))
+
+  (RULE &shape
+    (&comps4.component *P (:Id *S)))
+
+  (INIT &size Cardinality
+    (key ((&shape (:S ^O) *P))
+      (member ((:m P))
+        (&shape (:S O) *P))))
+
+  (INIT &comps42 Connectivity
+    (key ((&ink2 ^K ^Col *P))
+      (node (P)
+        (&ink2 K Col *P))))
+
+  (INIT &size2 Cardinality
+    (key ((&comps42.component (:key ^K) (:Id ^O) *P))
+      (member ((:m P))
+        (&comps42.component (:key K) (:Id O) *P)))))
+
+(OUTPUT size-miss-recolor "each cell of a shape whose cell count differs from target_size takes other_color")
+
+(OUTPUT rest-kept "every cell outside the shapes keeps its color")
+
+(ALTS $adj "which cells join one shape" $Comp4
+  (ALT $Diag8
+    (INPUT shapes-on-background "a shape is an 8-connected component of the shape_color cells"
+      (RULE &shape
+        (&comps8.component *P (:Id *S))))))
+
+(ALTS $ink "which cells the shapes are made of" $ShapeInk
+  (ALT $AnyInk
+    (INPUT shapes-on-background "a shape is a same-color component of the cells of any color other than background"
+      (DET_OR_RULE &background DominantColor
+        (ex_input *E *P (:Col *C))
+        (ex_output E P (:Col C)))
+
+      (RULE &ink
+        (input *P (:Col *Ki))
+        (NOT (&background (:C Ki)))))))
+
+(DET &size_color
+  (&comps42.component (:key (:K *E)) (:Id *O) *P)
+  (&size2.size (:key (:K E) O) *N)
+  (ex_output E P *Col))
+
+(DET &size_color_elsewhere
+  (&size_color *N *Col)
+  (&size_color (:N *N2) Col)
+  (!= N2 N))
+
+(DET &match_color
+  (&size_color *N (:Col *C))
+  (NOT (&size_color_elsewhere N (:Col C))))
+
+(DET &target_size
+  (&size_color *N *Col)
+  (&match_color (:C Col)))
+
+(DET &other_color
+  (&size_color *N (:Col *C))
+  (NOT (&target_size N)))
+
+(RULE &recolored
+  (&shape (:S *O) *P)
+  (&size.size (:key O) *N)
+  (IF ((&target_size N))
+      ((&match_color (:C *Col)))
+      ((&other_color (:C Col)))))
+
+(RULE &output
+  (OR ((&recolored *P *Col))
+      ((input P Col)
+       (NOT (&recolored P)))))
+
+(OUT (&output ^P ^Col))

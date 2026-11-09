@@ -1,0 +1,114 @@
+;; inputs 38b9cf68be924822b890857dc0a096c22aaf0ad28ca8d547961c5d8b685a2376 programs/solvers/ff28f65a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ff28f65a
+
+(DET &out_dim ConstOutDim)
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&out_dim *N)))
+
+(RULE &diag_diagonal
+  (&out_pos_frame.cell *P)
+  (diag_dist P (:Diag *D) (:K1 *Ring) (:K2 Ring)))
+
+(DET &block_color ChangedColor)
+
+(DET &block_dim TileCount)
+
+(INIT &block_shape_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&block_dim *N)))
+
+(DET &mark AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+(DET &lex_corner DiagDirDomain)
+
+(DET &lex_axis AxisDomain)
+
+(RULE &on
+  (input *P (:Col *C))
+  (&block_color C))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&on *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(INIT &same Inclusion
+  (pattern ((:m P))
+    (&block_shape_frame.cell *P))
+  (observed ((:observed O) (:m P_inner))
+    (&bbox.cell (:key (:Id *O)) *P)
+    (&bbox.box (:key (:Id O)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(INIT &blocks Cardinality
+  (member ((:m Id))
+    (&same.equal (:observed *Id))))
+
+(RULE &total
+  (&blocks.size *N))
+
+(INIT &lex Order
+  (member ((:t P))
+    (&diag_diagonal *P))
+  (score ((:t P) (:S K1))
+    (&diag_diagonal *P)
+    (&lex_corner *D)
+    (&lex_axis *A)
+    (diag_dist P (:Diag D) A *K1 *K2))
+  (secondary_score ((:t P) (:S K2))
+    (&diag_diagonal *P)
+    (&lex_corner *D)
+    (&lex_axis *A)
+    (diag_dist P (:Diag D) A *K1 *K2)))
+
+(ALTS $detect "two models detect the blocks" $Object
+  (ALT $Placement
+    (INIT &occ Occurrences
+      (cell (P)
+        (&on *P))
+      (shape (P)
+        (&block_shape_frame.cell *P)))
+
+    (INIT &placements Cardinality
+      (member ((:m P))
+        (&occ.occurrence *P)))
+
+    (RULE &total
+      (&placements.size *N))))
+
+(ALTS $render "the count renders two ways" $Fill
+  (ALT $Lookup
+    (DET &lookup_grid
+      (&blocks.size *E *N)
+      (ex_output E *P *Col))
+
+    (RULE &output
+      (&total *N)
+      (&lookup_grid N *P *Col))))
+
+;; Mark along that order, as far as the count reaches.
+(RULE &marked
+  (&lex.rank (:t *P) (:R *K))
+  (&total *N)
+  (< K N))
+
+(RULE &output
+  (&out_pos_frame.cell *P)
+  (&total)
+  (IF ((&marked P))
+      ((&mark (:C *Col)))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,93 @@
+;; inputs d681a0fb33c3a54d9bf2eebf71f05a7dd735e65d93cfc832274a0f9c3346eb25 programs/solvers/6a980be1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6a980be1
+
+(DET &line UnchangedColor)
+
+(RULE &line_axis
+  (input *P (:Col *C))
+  (&line C)
+  (neighbor P *D *Q)
+  (input (:P Q) (:Col C))
+  (axis_of D *A))
+
+(RULE &line_cell
+  (input *P)
+  (input (:P *Q) (:Col *C))
+  (&line C)
+  (&line_axis *A)
+  (same_line A P Q))
+
+;; The strip: between the lines, across them.
+(INIT &strip_span Ray
+  (source (P)
+    (&line_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&line_axis *A)
+    (perp A *A2)
+    (axis4_of *D (:A A2))))
+
+(RULE &strip_span_between
+  (input *P)
+  (&line_axis *A)
+  (perp A *A2)
+  (axis4_of *D (:A A2))
+  (dir8_opposite D (:D2 *O))
+  (&strip_span.ray P D)
+  (&strip_span.ray P (:D O)))
+
+(DET &bg DominantColor)
+
+(DET &pattern UnchangedColor)
+
+(RULE &frame_color
+  (input *P (:Col *C))
+  (margin (:B P) *D (:K 0)))
+
+(RULE &strip_span_axis
+  (&line_axis (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+(RULE &strip_in
+  (&strip_span_between *P)
+  (NOT (&line_cell P))
+  (interior (:A P) (:B 0))
+  (input P (:Col *C)))
+
+;; The shortest shift along the lines under which the strip agrees with itself.
+(INIT &strip_shift Periods
+  (cell (P (:v C))
+    (&strip_in *P *C)))
+
+(RULE &strip_out
+  (&strip_in (:P *Q) *C)
+  (input *P)
+  (&line_axis *A)
+  (same_line A (:P Q) (:Q P))
+  (&strip_shift.fundamental_period A *K)
+  (axis_of *D A)
+  (margin (:B Q) D (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder *R))
+  (margin (:B P) D (:K *T2))
+  (divide (:T T2) (:Side K) (:Gap 0) (:Remainder R)))
+
+(RULE &on_pattern_line
+  (input *P)
+  (&strip_out (:P *Q) *C)
+  (&pattern C)
+  (&strip_span_axis (:A *A2))
+  (same_line (:A A2) P Q))
+
+(RULE &output
+  (OR ((&line_cell *P)
+       (&line (:C *Col)))
+      ((&strip_out P (:C Col)))
+      ((input P)
+       (NOT (&strip_span_between P))
+       (IF ((&on_pattern_line P))
+           ((&frame_color (:C Col)))
+           ((&bg (:C Col)))))))
+
+(OUT (&output ^P ^Col))

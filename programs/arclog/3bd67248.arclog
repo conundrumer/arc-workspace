@@ -1,0 +1,174 @@
+;; inputs aca9ee11b477847973caa8cc88760bed454abc1d2696b32f8268bcabe14d167c programs/solvers/3bd67248.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3bd67248
+
+(DET &bg DominantColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(DET &painted
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *C0))
+  (!= C0 Col))
+
+(DET &floor_pair
+  (&painted *E *P *Col)
+  (&painted E (:P *Q) Col)
+  (!= P Q)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(DET &floor_color
+  (&floor_pair (:Col *C)))
+
+(DET &diag_color
+  (&painted (:Col *C))
+  (NOT (&floor_color C)))
+
+(DET &diag_line
+  (&painted *E *P *Col)
+  (&painted E (:P *Q) Col)
+  (&diag_color (:C Col))
+  (!= P Q)
+  (diag_dist P *Diag (:K1 *K) (:K2 K))
+  (diag_dist (:P Q) Diag (:K1 *K2) K2))
+
+(DET &floor_dir
+  (&floor_pair *P *Q)
+  (dist_pair P *D (:K 0))
+  (dist_pair (:P Q) D (:K 0)))
+
+(DET &corner
+  (&diag_line (:Diag *D))
+  (&floor_dir (:D *D2))
+  (corner_dir (:C D) (:D D2)))
+
+(RULE &diag_corner
+  (&corner *D))
+
+(RULE &wall_cell2
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &floor_paint
+  (&bg_cell *P)
+  (&floor_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(ALTS $choice "where the diagonal anchors" $Anchored
+  (ALT $Foot
+    (RULE &foot
+      (&wall_cell2 *P)
+      (&floor_dir *D)
+      (margin (:B P) D (:K 0)))
+
+    (RULE &wall_dir
+      (&foot *P)
+      (margin (:B P) *D (:K 0))
+      (&floor_dir (:D *Df))
+      (perp_dir (:D Df) (:D2 D)))
+
+    (RULE &foot_corner
+      (&floor_dir (:D *Df))
+      (&wall_dir (:D *Dw))
+      (diag_dirs (:D *Diag) (:D1 Df) (:D2 Dw)))
+
+    (RULE &diag_corner
+      (&foot_corner (:Diag *D)))
+
+    (RULE &paint_foot
+      (OR ((&diag_diagonal *P)
+           (&diag_color (:C *Col)))
+          ((&floor_paint P)
+           (&floor_color (:C Col)))))
+
+    (RULE &output
+      (OR ((&paint_foot *P *Col))
+          ((input P Col)
+           (NOT (&paint_foot P)))))
+
+    (RULE &paint_anch
+      (&floor_paint *P)
+      (&floor_color (:C *Col))))
+  (ALT $WallEnd
+    (RULE &off_edge2
+      (&wall_cell2 *P)
+      (dir_elem *D)
+      (NOT (margin (:B P) D (:K 0))))
+
+    (RULE &wall_side2
+      (dir_elem *D)
+      (NOT (&off_edge2 D)))
+
+    (DET &wall_cell
+      (ex_input *E *P *Col)
+      (NOT (&bg (:C Col)))
+      (ex_output E))
+
+    (DET &off_edge
+      (&wall_cell *P)
+      (dir_elem *D)
+      (NOT (margin (:B P) D (:K 0))))
+
+    (DET &wall_side
+      (dir_elem *D)
+      (NOT (&off_edge D)))
+
+    (DET &sense
+      (&wall_side (:D *Dw))
+      (opposite (:D Dw) (:Opp *Dn))
+      (&floor_dir (:D *Df))
+      (turn *S (:D Dn) (:D2 Df)))
+
+    (RULE &floor_end
+      (&wall_side2 (:D *Dw))
+      (opposite (:D Dw) (:Opp *Dn))
+      (&sense *S)
+      (turn S (:D Dn) (:D2 *D)))
+
+    (RULE &we_corner
+      (&floor_end (:D *Df))
+      (&wall_side2 (:D *Dw))
+      (diag_dirs (:D *Diag) (:D1 Df) (:D2 Dw)))
+
+    (RULE &diag_corner
+      (&we_corner (:Diag *D)))
+
+    (RULE &paint_we
+      (OR ((&diag_diagonal *P)
+           (&diag_color (:C *Col)))
+          ((&bg_cell P)
+           (&floor_end *D)
+           (margin (:B P) D (:K 0))
+           (&floor_color (:C Col)))))
+
+    (RULE &output
+      (OR ((&paint_we *P *Col))
+          ((input P Col)
+           (NOT (&paint_we P)))))
+
+    (RULE &paint_anch
+      (&floor_paint *P)
+      (&floor_color (:C *Col)))))
+
+(RULE &diag_diagonal
+  (&bg_cell *P)
+  (&diag_corner *D)
+  (diag_dist P (:Diag D) (:K1 *Ring) (:K2 Ring)))
+
+(RULE &paint_anch
+  (OR ((&floor_paint *P)
+       (&floor_color (:C *Col)))
+      ((&diag_diagonal P)
+       (&diag_color (:C Col))
+       (&floor_dir *D)
+       (NOT (margin (:B P) D (:K 0))))))
+
+(RULE &output
+  (OR ((&paint_anch *P *Col))
+      ((input P Col)
+       (NOT (&paint_anch P)))))
+
+(OUT (&output ^P ^Col))

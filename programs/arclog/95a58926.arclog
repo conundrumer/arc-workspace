@@ -1,0 +1,103 @@
+;; inputs a11f0bc75e1b9eee18d817d9c09eb68a1b119668f2ec98fb3e38f906bba92eda programs/solvers/95a58926.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 95a58926
+
+(DET &bg DominantColor)
+
+;; The color the mesh is drawn in.
+(DET &mesh SharedColor)
+
+(RULE &cell_split
+  (input *P *Col)
+  (split P *A (:Across *P_across)))
+
+(RULE &accent
+  (input (:Col *C))
+  (NOT (&bg C))
+  (NOT (&mesh C)))
+
+(RULE &gapped
+  (&cell_split *A *Col *P_across)
+  (&bg (:C Col)))
+
+(RULE &located
+  (&cell_split *A *P_across)
+  (NOT (&gapped A P_across)))
+
+(ALTS $l "what marks a line as carrying mesh" $Whole
+  (ALT $Predominant
+    (INIT &line_mode_count Cardinality
+      (key ((&cell_split ^A *P ^Col ^P_across))
+        (member ((:m P))
+          (&cell_split A *P Col P_across))))
+
+    (INIT &line_mode Order
+      (key ((&line_mode_count.size (:key ^A ^P_across *Col)))
+        (member ((:t Col))
+          (&line_mode_count.size (:key A P_across *Col)))
+        (score ((:t Col) (:S N))
+          (&line_mode_count.size (:key A P_across *Col) *N))))
+
+    (RULE &located
+      (&line_mode.maximal (:key *A *P_across) (:t *Col))
+      (&mesh (:C Col)))))
+
+(ALTS $d "which lines the mesh holds" $AsFound
+  (ALT $Periodic
+    ;; The corner the periodic mesh runs from.
+    (DET &anchor DiagDirDomain)
+
+    ;; How many lines separate two tiles of the periodic mesh.
+    (DET &sep_width DivisorRatio)
+
+    (RULE &anchor_dist
+      (&cell_split *A *P_across)
+      (&anchor (:D *Diag))
+      (diag_dirs (:D Diag) A (:D2 *D))
+      (margin (:B P_across) D *K))
+
+    ;; The periodic mesh's tile size is the anchor's distance to the nearest located
+    ;; line.
+    (INIT &lead Order
+      (key ((&located ^A *P_across)
+            (&anchor_dist A P_across *K))
+        (member ((:t K))
+          (&located A *P_across)
+          (&anchor_dist A P_across *K))
+        (score ((:t K) (:S K))
+          (&located A *P_across)
+          (&anchor_dist A P_across *K))))
+
+    (RULE &in_tile
+      (&anchor_dist *A *P_across *K)
+      (&lead.minimal (:key A) (:t *K_tile))
+      (&sep_width (:K *G))
+      (divide (:T K) (:Side K_tile) (:Gap G)))
+
+    (RULE &mesh_line
+      (&cell_split *A *P_across)
+      (NOT (&in_tile A P_across)))))
+
+(RULE &mesh_line
+  (&located *A *P_across))
+
+(RULE &on_mesh
+  (&cell_split *A *P *P_across)
+  (&mesh_line A P_across))
+
+(RULE &crossing
+  (&on_mesh *P *A)
+  (&on_mesh P (:A *A2))
+  (perp A A2))
+
+(RULE &output
+  (input *P)
+  (OR ((&crossing P)
+       (&accent (:C *Col)))
+      ((&on_mesh P)
+       (NOT (&crossing P))
+       (&mesh (:C Col)))
+      ((NOT (&on_mesh P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

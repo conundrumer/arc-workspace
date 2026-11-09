@@ -54,7 +54,7 @@ impl Caps {
     /// The binding cap and the row cap are each the least power of two at or
     /// above twice the largest count of one query, finished or in progress, at
     /// an assignment that solves the train pairs, over the concept cases of
-    /// `work/arclog/gen/`. Past the train tasks, a
+    /// `programs/arclog/`. Past the train tasks, a
     /// finished query of `a395ee82` reaches 13 832 382 bindings tried, which
     /// sets the binding cap. Over the train tasks, a finished query reaches
     /// 851 286 bindings tried, of `50846271`, and 360 576 rows held, of
@@ -64,7 +64,7 @@ impl Caps {
     ///
     /// The model cap is about twice 256, the largest count of the models of
     /// one case on one input that `arclog-cli row-counts` gave over the 18
-    /// solvers of `work/arclog/gen/` with a `CHOOSE` form, on 2026-10-23, in
+    /// solvers of `programs/arclog/` with a `CHOOSE` form, on 2026-10-23, in
     /// runs under a model cap of `1 << 24`: 256 models of `&pruning`, of
     /// `b7cb93ac` on `train/2`. The `1 << 7` of 2026-10-19 was about twice 64,
     /// the bound of the models per case per input that
@@ -81,7 +81,7 @@ impl Caps {
     ///
     /// The assignment cap is the least power of two above twice the largest
     /// count that `arclog-cli determine` gave over the base cases of
-    /// `work/arclog/gen/` on 2026-10-19, in a run under an assignment cap of
+    /// `programs/arclog/` on 2026-10-19, in a run under an assignment cap of
     /// `1 << 16`: 81 joint assignments of one case, of `d511f180`. Those
     /// counts are of the 939 solvers of 953 whose determination ran to its
     /// end before the run's bound of 30 minutes; the next largest are 72, of

@@ -1,0 +1,81 @@
+;; inputs 2cadc124da81f79da314388b618433214d99a14d5d1afb3bd184159354c245cb programs/solvers/5b526a93.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5b526a93
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(INIT &square Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; A square's placement — its box, as margins from the four edges — and the
+;; square's cells in that box's own frame.
+(INIT &bbox2 BoundingBox
+  (key ((&square.component *P ^Id))
+    (cell (P)
+      (&square.component *P Id))))
+
+(RULE &site
+  (&bbox2.box (:B *B3))
+  (&bbox2.box (:B *B2))
+  (split (:P B3) *A (:Along *L))
+  (split (:P B2) A (:Across *L2))
+  (compose (:A L) (:B L2) (:C *B)))
+
+(DET &painted
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(INIT &obj Connectivity
+  (key ((&painted ^E *P))
+    (node (P)
+      (&painted E *P))))
+
+(INIT &bbox BoundingBox
+  (key ((&obj.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&obj.component (:key E) *P Id))))
+
+(DET &footprint
+  (&bbox.cell (:key *E *Id) (:P *P2))
+  (&bbox.box (:key E Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(RULE &covered
+  (&site (:B *S))
+  (&footprint (:P *P_inner))
+  (compose (:A S) (:B P_inner) (:C *P)))
+
+(ALTS $choice "what a crossing carries" $Lookup
+  (ALT $Copy
+    (RULE &covered
+      (&site (:B *S))
+      (&bbox2.cell (:key *Id) (:P *Q))
+      (&bbox2.box (:key Id) *B)
+      (inside (:A Q) B)
+      (relative (:Base B) (:X Q) (:X_rel *P_inner))
+      (compose (:A S) (:B P_inner) (:C *P))))
+  (ALT $Outline
+    (RULE &covered
+      (&site (:B *S))
+      (input *P)
+      (inside (:A P) (:B S))
+      (same_dist (:P1 P) (:P2 S)))))
+
+(RULE &stamp
+  (&covered *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&stamp *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&stamp P)))))
+
+(OUT (&output ^P ^Col))

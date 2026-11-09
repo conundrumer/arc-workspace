@@ -1,0 +1,6 @@
+;; inputs 58999b4c4d3b051566bc4bc98d697af0a649e4e56e650ad9889b9271367d5d6f programs/solvers/11852cab.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 11852cab
+
+(param &bg Color (0))
+(param &sym Sym (SYM_D4))

@@ -1,0 +1,54 @@
+;; inputs e84504cac7e1691a757daa01b863e00f0c50e077445ecda2e70fe6131a733e8d programs/solvers/8731374e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8731374e
+
+(INIT &drect Outlines
+  (key ((input *P ^Col))
+    (node (P)
+      (input *P Col))))
+
+(RULE &covered
+  (&drect.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+(INIT &biggest_count Cardinality
+  (key ((&covered ^B *P))
+    (member ((:m P))
+      (&covered B *P))))
+
+;; The block: the rectangle covering the most cells.
+(INIT &biggest Order
+  (member ((:t B))
+    (&biggest_count.size (:key *B)))
+  (score ((:t B) (:S N))
+    (&biggest_count.size (:key *B) *N)))
+
+(RULE &block
+  (&biggest.maximal (:t *B))
+  (&drect.box (:key *Col) B))
+
+(RULE &view
+  (&block *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &flaw
+  (&view (:P *P2) (:P_inner *P))
+  (input (:P P2) *Col)
+  (NOT (&block Col)))
+
+(RULE &flaw_line
+  (&view (:P_inner *P))
+  (&flaw (:P *Q) *Col)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(RULE &output
+  (&view (:P_inner *P))
+  (OR ((&flaw_line P *Col))
+      ((NOT (&flaw_line P))
+       (&block Col))))
+
+(OUT (&output ^P ^Col))

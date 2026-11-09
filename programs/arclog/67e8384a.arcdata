@@ -1,0 +1,10 @@
+;; inputs 5ad2a7d8986ef5933dd2bf2b530aefb6168ca8e21ca6e1b2e8f778b7004f0ffb programs/solvers/67e8384a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67e8384a
+
+(param &arr_dim number (2))
+(param &anchor DiagDir (DIAG_TL))
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_ID D4_LR)
+    (D4_TB D4_HT)))

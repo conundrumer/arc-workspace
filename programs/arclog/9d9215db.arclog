@@ -1,0 +1,168 @@
+;; inputs 018d9398a3f610318f622518f5dc5bedf27b918b0a624b333fb44226287c6f65 programs/solvers/9d9215db.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9d9215db
+
+(INPUT sites "the ink sits on sites, every other cell on both axes, held one blank cell in from the grid's border")
+
+(INPUT rings "the sites peel into square rings, one per distance from the nearest edge of the sites, and each inked cell sits on one of them")
+
+(INPUT nesting "the inked rings run consecutively from the outermost")
+
+(INPUT corner-ink "every inked ring holds ink at one of its four corners")
+
+(INPUT patch "a ring's ink away from its corners sits one step along the ring from a corner")
+
+(OUTPUT draw "the output draws one ring per ring that holds ink")
+
+(OUTPUT seat "each drawn ring sits on the ring it came from"
+
+  ;; The blank border the sites sit inside.
+  (DET &margin DivisorRatio)
+
+  (DET &site_gap DivisorRatio)
+
+  ;; A site is one grid cell, with one blank cell to the next.
+  (DET &site_size DivisorRatio)
+
+  (INIT &site_division Division
+    (cell ((:P P_rel))
+      (input (:P *P_grid))
+      (&margin (:K *M))
+      (uniform_inset (:K M) *B)
+      (inside (:A P_grid) B)
+      (relative (:Base B) (:X P_grid) (:X_rel *P_rel)))
+    (side (A K)
+      (axis_elem *A)
+      (&site_size *K))
+    (gap (A G)
+      (axis_elem *A)
+      (&site_gap (:K *G))))
+
+  (RULE &site
+    (input (:P *P_grid))
+    (&margin (:K *M))
+    (uniform_inset (:K M) *B)
+    (inside (:A P_grid) B)
+    (relative (:Base B) (:X P_grid) (:X_rel *P_rel))
+    (&site_division.tile (:P P_rel) (:P_outer *P_site)))
+
+  (INIT &peel Boundary
+    (cell ((:P P_site))
+      (&site *P_site)))
+
+  (INIT &peel_depth CellDistance
+    (node ((:P P_site))
+      (&site *P_site))
+    (source (P)
+      (&peel.boundary *P)))
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (&site *P_grid *P_site)
+    (input (:P P_grid) *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; Distances from a site to the four corners of its own ring; the
+  ;; lowest of them runs along that ring.
+  (INIT &reach Order
+    (key ((&peel_depth.distance (:P ^P_site) *K)
+          (uniform_inset K *B)
+          (relative (:Base B) (:X P_site) (:X_rel *P_rel))
+          (corner_dist (:P P_rel) *Diag (:K *J)))
+      (member ((:t J))
+        (&peel_depth.distance (:P P_site) *K)
+        (uniform_inset K *B)
+        (relative (:Base B) (:X P_site) (:X_rel *P_rel))
+        (corner_dist (:P P_rel) *Diag (:K *J)))
+      (score ((:t J) (:S J))
+        (&peel_depth.distance (:P P_site) *K)
+        (uniform_inset K *B)
+        (relative (:Base B) (:X P_site) (:X_rel *P_rel))
+        (corner_dist (:P P_rel) *Diag (:K *J)))))
+
+  (RULE &place
+    (&peel_depth.distance (:P *P_site) *K)
+    (&reach.minimal (:key P_site) (:t *J)))
+
+  (RULE &source
+    (&ink *P_site)
+    (&place P_site *K))
+
+  (INIT &order Order
+    (member ((:t K))
+      (&source *K))
+    (score ((:t K) (:S K))
+      (&source *K))))
+
+(OUTPUT corners "a drawn ring's four corner cells take the color of the ink at a corner of the ring it came from")
+
+(OUTPUT sides "the rest of a drawn ring takes the color of the ink away from the corners of the ring it came from")
+
+(OUTPUT blank "every other cell takes the background"
+
+  (RULE &corner
+    (&peel_depth.distance (:P *P_site) *K)
+    (uniform_inset K *B)
+    (inside (:A P_site) B)
+    (same_corner (:D *Diag) (:P1 P_site) (:P2 B)))
+
+  (RULE &side_place
+    (&place *P_site *J)
+    (NOT (&corner P_site)))
+
+  ;; The side ink reaches every place of the ring but its corners.
+  (RULE &copy
+    (&side_place (:J *J_out))
+    (&side_place (:J *J_src))))
+
+(ALTS $seat "which ring a drawn ring sits on" $Own
+  (ALT $Nest
+    (OUTPUT seat "the drawn rings take the outermost rings, in the order of the rings they came from")
+    (RULE &draw
+      (&order.rank (:t *K) (:R *K_out))
+      (&place *P_site (:K K_out) (:J *J_out))
+      (&ink (:P_site *Q_site) *Col)
+      (&place (:P_site Q_site) K (:J *J_src))
+      (OR ((&corner P_site)
+           (&corner (:P_site Q_site)))
+          ((&copy J_out J_src))))))
+
+(ALTS $src "what makes a ring one the output draws" $AnyInk
+  (ALT $CornerInk
+    (OUTPUT draw "the output draws one ring per ring that holds ink at one of its corners"
+      (RULE &source
+        (&ink *P_site)
+        (&corner P_site)
+        (&place P_site *K)))))
+
+(ALTS $sp "how far the side ink reaches along the ring it draws" $Full
+  (ALT $Span
+    (OUTPUT sides "a drawn ring's cells no nearer a corner than the side ink is to a corner of the ring it came from take that ink's color"
+      ;; The side ink reaches the places no nearer a corner than the ink itself.
+      (RULE &copy
+        (&side_place (:J *J_out))
+        (&side_place (:J *J_src))
+        (>= J_out J_src)))))
+
+(RULE &draw
+  (&source *K)
+  (&place *P_site K (:J *J_out))
+  (&ink (:P_site *Q_site) *Col)
+  (&place (:P_site Q_site) K (:J *J_src))
+  (OR ((&corner P_site)
+       (&corner (:P_site Q_site)))
+      ((&copy J_out J_src))))
+
+(RULE &drawn
+  (&site *P_grid *P_site)
+  (&draw P_site))
+
+(RULE &output
+  (OR ((&site (:P_grid *P) *P_site)
+       (&draw P_site *Col))
+      ((input P)
+       (NOT (&drawn (:P_grid P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

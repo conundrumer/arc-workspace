@@ -1,0 +1,173 @@
+;; inputs d94ff7638f797882cb1f8f103a10342e1db337d69721425cd770b4315cd13869 programs/solvers/9b4c17c4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9b4c17c4
+
+(INPUT field "the grid is two rectangular fields, each one connected region of one background color")
+
+(INPUT shape "the ink shapes are rectangles, each surrounded by one field")
+
+(INPUT lane "no two shapes on one field share a line along that field's slide direction")
+
+(OUTPUT direction "each field color picks the direction its shapes slide")
+
+(OUTPUT flush "each shape slides in its field's direction until it touches the field's edge"
+
+  ;; The shapes' color.
+  (DET &ink RarestColor)
+
+  (INIT &field Connectivity
+    (key ((input *P ^Col)
+          (NOT (&ink (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&ink (:C Col))))))
+
+  (INIT &shape Connectivity
+    (node (P)
+      (input *P *Col)
+      (&ink (:C Col))))
+
+  (RULE &on_field
+    (&shape.component *P (:Id *X))
+    (neighbor P *Q)
+    (&field.component (:P Q) (:Id *F)))
+
+  (RULE &region
+    (OR ((&field.component *P (:Id *F)))
+        ((&shape.component P (:Id *X))
+         (&on_field X F))))
+
+  (RULE &outside
+    (&field.component (:Id *F))
+    (input *P)
+    (NOT (&region F P)))
+
+  (DET &inked
+    (ex_input *E *P *Col)
+    (NOT (&ink (:C Col)))
+    (ex_output E P (:Col *Col_ink))
+    (&ink (:C Col_ink)))
+
+  (DET &vacated
+    (ex_input *E *P (:Col *Col_ink))
+    (&ink (:C Col_ink))
+    (ex_output E P *Col)
+    (NOT (&ink (:C Col))))
+
+  (DET &led
+    (&vacated *E *P *Col)
+    (&inked E (:P *Q) Col)
+    (axis_of *D *A)
+    (same_line A P Q)
+    (nearer D (:P Q) (:Q P)))
+
+  (DET &cand
+    (&vacated *E *P (:Col *C))
+    (&led E P *D))
+
+  (DET &stranded
+    (&cand *C *D)
+    (&vacated *E *P (:Col C))
+    (NOT (&led E P D)))
+
+  (DET &slide
+    (&cand *C *D)
+    (NOT (&stranded C D)))
+
+  (RULE &field_dir
+    (&field.component (:Id *F) (:key *Col))
+    (&slide (:C Col) *D))
+
+  (RULE &slide_dir
+    (&on_field (:X *Key) *F)
+    (&field_dir F *D))
+
+  ;; Each shape slides as one body toward its field's slide edge.
+  (INIT &slide2 Distance
+    (key ((OR ((&shape.component *P (:Id ^X))
+               (&slide_dir (:Key X) *D)
+               (margin (:B P) D *K))
+              ((&shape.component P (:Id X))
+               (&slide_dir (:Key X) D)
+               (&on_field X *F)
+               (&outside F (:P *P2))
+               (gap D P (:Q P2) K))))
+      (source_distance (K)
+        (OR ((&shape.component *P (:Id X))
+             (&slide_dir (:Key X) *D)
+             (margin (:B P) D *K))
+            ((&shape.component (:P *P3) (:Id X))
+             (&slide_dir (:Key X) (:D *D2))
+             (&on_field X *F)
+             (&outside F (:P *P2))
+             (gap (:D D2) (:P P3) (:Q P2) K))))))
+
+  ;; Each ink cell falls toward its field's slide edge and stacks on the ink
+  ;; ahead of it.
+  (INIT &pack Distance
+    (key ((OR ((&shape.component *P (:Id *X))
+               (&on_field X ^F)
+               (&field_dir F *D)
+               (margin (:B P) D *K))
+              ((&shape.component P (:Id X))
+               (&on_field X F)
+               (&field_dir F D)
+               (&outside F (:P *P2))
+               (gap D P (:Q P2) K))
+              ((&shape.component P (:Id X))
+               (&on_field X F)
+               (&field_dir F D)
+               (&shape.component (:P *P22) (:Id *X2))
+               (&on_field (:X X2) F)
+               (!= P P22)
+               (gap D P (:Q P22) K))))
+      (weight ((:a P2) (:b P) (:W K))
+        (&shape.component *P (:Id *X))
+        (&on_field X F)
+        (&field_dir F *D)
+        (&shape.component (:P *P2) (:Id *X2))
+        (&on_field (:X X2) F)
+        (!= P P2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n P) K)
+        (OR ((&shape.component *P (:Id *X))
+             (&on_field X F)
+             (&field_dir F *D)
+             (margin (:B P) D *K))
+            ((&shape.component P (:Id *X2))
+             (&on_field (:X X2) F)
+             (&field_dir F (:D *D2))
+             (&outside F (:P *P2))
+             (gap (:D D2) P (:Q P2) K)))))))
+
+(OUTPUT ground "every other cell takes its field's color")
+
+(ALTS $choice "what slides: the shape as one body, or each line's ink on its own" $Flush
+  (ALT $Pack
+    (OUTPUT flush "in each line along a field's slide direction, the ink packs against the field's edge"
+      (RULE &pack_travel_full
+        (&pack.distance (:key (:F *V0)) (:n *V1) *K)
+        (&field_dir (:F V0) *D)
+        (jump_offset D K (:V *V2))))
+    (RULE &moved
+      (&pack_travel_full (:V1 *P2) (:V2 *V))
+      (compose (:A P2) (:B V) (:C *P)))))
+
+(RULE &slide_travel_full
+  (&slide2.distance (:key (:X *V0)) *K)
+  (&slide_dir (:Key V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &moved
+  (&shape.component (:P *P2) (:Id *X))
+  (&slide_travel_full (:V0 X) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&moved *P)
+       (&ink (:C *Col)))
+      ((&region *F P)
+       (NOT (&moved P))
+       (&field.component (:Id F) (:key Col)))))
+
+(OUT (&output ^P ^Col))

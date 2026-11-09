@@ -1,0 +1,106 @@
+;; inputs 856d0a3a45031dad4d0f7f119e468f80f83ff8c5b14c68c265563565e74244b8 programs/solvers/29c11459.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 29c11459
+
+(DET &bg DominantColor)
+
+(DET &clash AnyOutNewColor)
+
+(DET &axis AxisDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &pair
+  (&mark (:P *M1) (:Col *C1))
+  (&mark (:P *M2) (:Col *C2))
+  (&axis *A)
+  (same_line A (:P M1) (:Q M2))
+  (axis_of *D A)
+  (nearer D (:P M1) (:Q M2)))
+
+(RULE &between
+  (&pair *D *M1 *C1 *M2)
+  (&axis *A)
+  (opposite D (:Opp *O))
+  (input *P)
+  (same_line A (:P M1) (:Q P))
+  (relative (:Base M1) (:X P) (:X_rel *V1))
+  (margin (:B V1) D (:K *K1))
+  (>= K1 0)
+  (relative (:Base M2) (:X P) (:X_rel *V2))
+  (margin (:B V2) (:D O) (:K *K2))
+  (>= K2 0))
+
+(RULE &front
+  (&between *P (:C1 *Col) *K1 *K2)
+  (< K1 K2))
+
+(RULE &clash_cell
+  (&between *P (:K1 *K) (:K2 K)))
+
+(ALTS $choice "which fill prior colors the row; every mark sits on its edge, so the three coincide on this data" $Meet
+  (ALT $Near
+    (INIT &rays Ray
+      (key ((OR ((&mark *P ^Col))
+                ((&pair *D (:C1 Col)))))
+        (source (P)
+          (&mark *P Col))
+        (node (P)
+          (&pair *D (:C1 Col))
+          (input *P))
+        (dir (D)
+          (&pair *D (:C1 Col)))))
+
+    (RULE &rays_cell
+      (&mark (:Col *Key))
+      (input))
+
+    (RULE &territory
+      (OR ((&front *P *Col))
+          ((&rays.ray (:key Col) P)
+           (&rays_cell (:Key Col))
+           (input P))))
+
+    (RULE &output
+      (OR ((&territory *P *Col))
+          ((&clash_cell P)
+           (&clash (:C Col)))
+          ((input P)
+           (NOT (&territory P))
+           (NOT (&clash_cell P))
+           (&bg (:C Col))))))
+  (ALT $Half
+    (RULE &owner
+      (&mark (:P *M) *Col)
+      (&axis *A)
+      (split (:P M) A *Across)
+      (axis_of *D A)
+      (dist_pair (:P M) D (:K *K1) *K2)
+      (< K1 K2))
+
+    (RULE &output
+      (input *P)
+      (&axis *A)
+      (split P A (:Across *Ac))
+      (OR ((&owner (:Across Ac) *D *Col)
+           (dist_pair P D (:K *K1) *K2)
+           (< K1 K2))
+          ((&owner (:Across Ac))
+           (axis_of D A)
+           (dist_pair P D *K (:K2 K))
+           (&clash (:C Col)))
+          ((NOT (&owner (:Across Ac)))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&front *P *Col))
+      ((&clash_cell P)
+       (&clash (:C Col)))
+      ((input P)
+       (NOT (&front P))
+       (NOT (&clash_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

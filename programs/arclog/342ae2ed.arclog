@@ -1,0 +1,91 @@
+;; inputs 98356f7be3a1645563747ebe83b651b1dd55c70acf4b76764a81340a1c1d10a1 programs/solvers/342ae2ed.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 342ae2ed
+
+(DET &bg DominantColor)
+
+(INIT &blocks Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&blocks.component (:key ^Col) *P ^Id))
+    (cell (P)
+      (&blocks.component (:key Col) *P Id))))
+
+(INIT &shot_frame Frame
+  (extent (A N)
+    (&bbox.cell (:key (:Col *Blk_col) (:Id *Blk_id)) *P)
+    (&bbox.box (:key (:Col Blk_col) (:Id Blk_id)) *B)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B))
+    (frame_extent P *A *N)))
+
+(INIT &shot_full Ray
+  (source (P)
+    (&bbox.cell (:key (:Col *Blk_col) (:Id *Blk_id)) *P)
+    (&bbox.box (:key (:Col Blk_col) (:Id Blk_id)) *B)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B)))
+  (node (P)
+    (&shot_frame.cell *P))
+  (dir (D)
+    (diag_dir_elem *D)))
+
+(RULE &shot_blocked
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The corners shoot along the diagonals: the field carries a shot, a figure
+;; stops one.
+(INIT &shot Ray
+  (source (P)
+    (&bbox.cell (:key (:Col *Blk_col) (:Id *Blk_id)) *P)
+    (&bbox.box (:key (:Col Blk_col) (:Id Blk_id)) *B)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B)))
+  (node (P)
+    (&shot_frame.cell *P)
+    (NOT (&shot_blocked P)))
+  (dir (D)
+    (diag_dir_elem *D)))
+
+(RULE &shot_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &link
+  (diag_opposite *D (:Opp *D_opp))
+  (&bbox.cell (:key *Col (:Id *Id1)) (:P *P_from))
+  (&bbox.box (:key Col (:Id Id1)) (:B *B1))
+  (inside (:A P_from) (:B B1))
+  (same_corner D (:P1 P_from) (:P2 B1))
+  (&bbox.cell (:key Col (:Id *Id2)) (:P *P2))
+  (&bbox.box (:key Col (:Id Id2)) (:B *B2))
+  (inside (:A P2) (:B B2))
+  (same_corner (:D D_opp) (:P1 P2) (:P2 B2))
+  (!= Id1 Id2)
+  (&shot_full.ray (:P P2) D *K (:Origin P_from)))
+
+(RULE &paint
+  (&link *Col *D (:P_from *P1))
+  (&shot.ray *P D (:Origin P1))
+  (&shot_cell P))
+
+(ALTS $choice "how far the paint reaches between a pair's facing corners" $Cast
+  (ALT $Span
+    (RULE &paint
+      (&link *Col *D (:P_from *P1) (:K *K_end))
+      (&shot_full.ray *P D *K (:Origin P1))
+      (&shot_cell P)
+      (< K K_end))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

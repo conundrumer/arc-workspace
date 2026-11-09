@@ -1,0 +1,140 @@
+;; inputs e2c3f8f90361b8d22dbc1a78d78b94567406bcb0e3438c869a76403341e13745 programs/solvers/81c0276b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 81c0276b
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &tiling_rank Order
+  (key ((OR ((&line_color.value (:key *A *L))
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&line_color.value (:key *A *L))
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &bg DominantColor)
+
+;; The chart's layout: rows counted from rank_dir, bars growing from the edge a quarter turn away.
+(DET &rank_dir DirDomain)
+
+(DET &bar_sense SenseDomain)
+
+(RULE &bar_dir
+  (&rank_dir (:D *D3))
+  (&bar_sense *S)
+  (turn S (:D D3) (:D2 *D)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line_color.value (:v Col))))
+
+(INIT &slots Cardinality
+  (key ((&tiling_tile_of *P (:P_tile *T))
+        (&ink P ^Col))
+    (member ((:m T))
+      (&tiling_tile_of *P (:P_tile *T))
+      (&ink P Col))))
+
+(RULE &bar
+  (&slots.size (:key *Col) *N))
+
+(ALTS $choice "what is counted for each color's bar, diverging when a slot holds several pieces of one color" $Tiles
+  (ALT $Objects
+    (INIT &blob Connectivity
+      (key ((&ink *P ^Col))
+        (node (P)
+          (&ink *P Col))))
+
+    (INIT &blobs Cardinality
+      (key ((&blob.component (:key ^Col) *Id))
+        (member ((:m Id))
+          (&blob.component (:key Col) *Id))))
+
+    (RULE &bar
+      (&blobs.size (:key *Col) *N))))
+
+;; Rows ascend by count: the shortest bar lies against the rank edge.
+(INIT &order Order
+  (member ((:t Col))
+    (&bar *Col))
+  (score ((:t Col) (:S N))
+    (&bar *Col *N)))
+
+(INIT &colors Cardinality
+  (member ((:m Col))
+    (&bar *Col)))
+
+(INIT &widest Order
+  (member ((:t N))
+    (&bar *N))
+  (score ((:t N) (:S N))
+    (&bar *N)))
+
+(INIT &chart Frame
+  (extent (A N)
+    (OR ((&rank_dir *D)
+         (axis_of D *A)
+         (&colors.size *N))
+        ((&bar_dir (:D *D2))
+         (axis_of (:D D2) A)
+         (&widest.maximal (:t N))))))
+
+(RULE &output
+  (&chart.cell *P)
+  (&rank_dir *D)
+  (margin (:B P) D (:K *R))
+  (&order.rank (:t *Col0) R)
+  (&bar (:Col Col0) *N)
+  (&bar_dir (:D *Db))
+  (margin (:B P) (:D Db) *K)
+  (OR ((>= K N)
+       (&bg (:C *Col)))
+      ((< K N)
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,61 @@
+;; inputs 368baa94b8197617b5c5a2a13c80db8df92bbc7ccc391475658d91cd8c723456 programs/solvers/31adaf00.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 31adaf00
+
+(DET &bg DominantColor)
+
+(DET &mark AnyOutNewColor)
+
+;; The smallest square drawn.
+(DET &min_side TileCount)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &span BoundingBox
+  (key ((&bg_cell ^P)
+        (&bg_cell (:P ^Q)))
+    (cell ((:P R))
+      (OR ((= *R P))
+          ((= R Q))))))
+
+(RULE &square
+  (&span.box (:key *P) *B)
+  (perp *A *A2)
+  (box_extent B P A *N)
+  (box_extent B P (:A A2) N)
+  (&min_side (:N *M))
+  (>= N M))
+
+(RULE &spoiled
+  (&square *B)
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (inside (:A P) B))
+
+(RULE &bg_square
+  (&square *B *N)
+  (NOT (&spoiled B)))
+
+(RULE &displaced
+  (&bg_square *B *N)
+  (&bg_square (:B *B2) (:N *N2))
+  (> N2 N)
+  (input *P)
+  (inside (:A P) B)
+  (inside (:A P) (:B B2)))
+
+(RULE &painted
+  (&bg_square *B)
+  (NOT (&displaced B))
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,210 @@
+;; inputs d957bbd95905c5e0b7c03e474c394b4bab25e600e7221034db138395ad3f540f programs/solvers/7d419a02.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7d419a02
+
+(DET &bg UnchangedColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &frame_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (&bg (:C Col)))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; Bg lines cut the bands.
+(INIT &frame_rank Order
+  (key ((OR ((&frame_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&frame_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&frame_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D *K)
+  (&frame_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &band_axis
+  (&frame_divider *A *L)
+  (axis_of *D A)
+  (dist_pair (:P L) D (:K *K1) *K2)
+  (!= K1 0)
+  (!= K2 0))
+
+(RULE &across_axis
+  (&band_axis (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+(RULE &line
+  (input *P)
+  (&across_axis *A)
+  (split P A (:Along *X)))
+
+(INIT &near_frame Frame
+  (extent (A N)
+    (&line *X)
+    (frame_extent (:P X) *A *N)))
+
+(DET &mark RarestColor)
+
+;; What ink outside the cone turns into.
+(DET &fill AnyOutNewColor)
+
+(DET &step TileCount)
+
+(DET &ink SharedColor)
+
+(RULE &band_of
+  (&band_axis *A)
+  (&frame_part_of *P A (:P_part *T)))
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &mark_band
+  (&mark_cell *P)
+  (&band_of P *T))
+
+(RULE &ink2
+  (&ink (:C *Col)))
+
+(RULE &step2
+  (&step (:N *K)))
+
+;; The distance between two lines.
+(INIT &near Ray
+  (source ((:P X))
+    (&line *X))
+  (node (P)
+    (&near_frame.cell *P))
+  (dir (D)
+    (&across_axis *A)
+    (axis_of *D A)))
+
+(ALTS $s "the step, one band out" $Fixed
+  (ALT $Marker
+    ;; The step as an extent: the block's across the bands, or its band's
+    ;; along them.
+    (INIT &unit BoundingBox
+      (cell (P)
+        (&mark_cell *P)))
+
+    (RULE &step2
+      (&across_axis *A)
+      (&unit.cell *P)
+      (&unit.box *B)
+      (box_extent B P A (:N *K))))
+  (ALT $Band
+    ;; The step as an extent: the block's across the bands, or its band's
+    ;; along them.
+    (INIT &unit BoundingBox
+      (cell (P)
+        (&mark_band *T)
+        (&band_of *P T)))
+
+    (RULE &step2
+      (&band_axis *A)
+      (&unit.cell *P)
+      (&unit.box *B)
+      (box_extent B P A (:N *K)))))
+
+(ALTS $i "the ink" $Stored
+  (ALT $Derived
+    (RULE &ink2
+      (input *Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&mark (:C Col))))))
+
+(INIT &cone Propagation
+  (key ((OR ((&mark_band *T)
+             (&band_axis *A)
+             (axis_of ^D A)
+             (neighbor (:P T) D (:Q *T2))
+             (&band_of (:T T2))
+             (&mark_cell (:P *M))
+             (&line (:P M) *X))
+            ((&band_axis A)
+             (axis_of D A)
+             (&band_of T)
+             (neighbor (:P T) D (:Q T2))
+             (&band_of (:T T2))
+             (&line (:X *X0))
+             (&near.ray (:P X) *K (:Origin X0))
+             (&line X)
+             (&step2 (:K *W))
+             (<= K W))))
+    (source ((:n (:T T2) X))
+      (&mark_band *T)
+      (&band_axis *A)
+      (axis_of D A)
+      (neighbor (:P T) D (:Q *T2))
+      (&band_of (:T T2))
+      (&mark_cell (:P *M))
+      (&line (:P M) *X))
+    (edge ((:a T (:X X0)) (:b (:T T2) X))
+      (&band_axis *A)
+      (axis_of D A)
+      (&band_of *T)
+      (neighbor (:P T) D (:Q *T2))
+      (&band_of (:T T2))
+      (&line (:X *X0))
+      (&near.ray (:P *X) *K (:Origin X0))
+      (&line X)
+      (&step2 (:K *W))
+      (<= K W))))
+
+(RULE &faded
+  (input *P *Col)
+  (&ink2 Col)
+  (&band_of P *T)
+  (NOT (&mark_band T))
+  (&line P *X)
+  (NOT (&cone.reached (:n T X))))
+
+(RULE &output
+  (OR ((&faded *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&faded P)))))
+
+(OUT (&output ^P ^Col))

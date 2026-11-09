@@ -1,0 +1,137 @@
+;; inputs fb9ff983f5f8dbdc67377173feb1517cb30803228f5b4432efa2cbef10466f8b programs/solvers/363442ee.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 363442ee
+
+(DET &divider SharedColor)
+
+(DET &key_side DirDomain)
+
+(RULE &panels_divider
+  (input *P *Col)
+  (&divider (:C Col))
+  (&key_side *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&panels_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The panels the divider cuts.
+(INIT &panels_rank Order
+  (key ((OR ((&panels_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panels_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panels_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &bg DominantColor)
+
+(DET &mark ChangedColor)
+
+(RULE &key_ink
+  (&key_side *D)
+  (&panels_part_idx *P D (:N 0))
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &canvas
+  (&key_side *D)
+  (opposite D (:Opp *S))
+  (&panels_part_idx *P (:D S) (:N 0)))
+
+(INIT &key BoundingBox
+  (cell (P)
+    (&key_ink *P)))
+
+(RULE &key_cell
+  (&key.box *B)
+  (&key_ink *P *Col)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &mark2
+  (&canvas *P)
+  (input P *Col)
+  (&mark (:C Col)))
+
+(RULE &paint
+  (&mark2 (:P *M))
+  (&key_cell (:P_intile *Ctr))
+  (centered (:P Ctr))
+  (&key_cell *P_intile *Col)
+  (relative (:Base Ctr) (:X P_intile) (:X_rel *V))
+  (compose (:A M) (:B V) (:C *P)))
+
+(ALTS $choice "where a copy of the key lands over a mark" $Center
+  (ALT $Tile
+    (INIT &canvas_box BoundingBox
+      (cell (P)
+        (&canvas *P)))
+
+    (RULE &canvas_cell
+      (&canvas_box.box *B)
+      (&canvas (:P *P_grid))
+      (inside (:A P_grid) B)
+      (relative (:Base B) (:X P_grid) (:X_rel *P_canvas)))
+
+    ;; The canvas cut into tiles the size of the key's box.
+    (INIT &tiles Division
+      (cell ((:P P_canvas))
+        (&canvas_cell *P_canvas))
+      (side (A (:K N))
+        (&key.box *B)
+        (&key.cell *P)
+        (box_extent B P *A *N)))
+
+    (RULE &tile_of
+      (&canvas_cell *P_grid *P_canvas)
+      (&tiles.tile (:P P_canvas) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+    (RULE &paint
+      (&mark2 (:P *M))
+      (&tile_of (:P_grid M) *P_tile)
+      (&key_cell *P_intile *Col)
+      (&tile_of (:P_grid *P) P_tile P_intile))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

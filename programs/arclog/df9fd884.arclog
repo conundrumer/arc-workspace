@@ -1,0 +1,313 @@
+;; inputs d53cf71dc0c1171d945c4c624e64272c6d0e6409f9a0f0c5e8937651089f4a1b programs/solvers/df9fd884.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; df9fd884
+
+(INPUT background "every cell that is not a cup or the object has the color &background"
+
+  (INIT &bg_mode_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &bg_mode Order
+    (key ((&bg_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&bg_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&bg_mode_count.size (:key E *Col) *N))))
+
+  (DET &off_mode
+    (&bg_mode.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&bg_mode.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&bg_mode.maximal (:t *C))
+    (NOT (&off_mode C))))
+
+(INPUT two-cups "the input holds two cups of &cup_color; a cup is a solid line along one edge of the grid with a leg of 1 cell at each end, standing away from that edge, so the cup's mouth faces into the grid"
+
+  (DET &background_determined
+    (&bg_mode.maximal (:t *C))
+    (NOT (&off_mode C)))
+
+  (DET &missing
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET &cup_color
+    (ex_input (:Col *C))
+    (NOT (&background_determined C))
+    (NOT (&missing C)))
+
+  (INIT &shapes Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shapes.component *P ^Id))
+      (cell (P)
+        (&shapes.component *P Id)))))
+
+(INPUT opposite-cups "the two cups lie in opposite corners, their mouths face each other along one axis, and the two mouths have one width")
+
+(INPUT one-object "the input holds one connected object of one color that is neither &background nor &cup_color"
+
+  (RULE &cup_cell
+    (input *P *Col)
+    (&cup_color (:C Col)))
+
+  (RULE &object_cell
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&cup_cell P)))
+
+  (INIT &pieces Connectivity
+    (node (P)
+      (&object_cell *P)))
+
+  (INIT &piece_box BoundingBox
+    (key ((&pieces.component *P ^Id))
+      (cell (P)
+        (&pieces.component *P Id)))))
+
+(INPUT object-at-mouth "the object is as wide as the mouths, lies in line with the mouth of one cup, the entry cup, and sits between the two cups, apart from both")
+
+(INPUT clear-path "no cell other than &background lies in the object's way from the mouth of the exit cup to the grid edge that mouth faces")
+
+(OUTPUT remove-object "the object's cells take &background")
+
+(OUTPUT exit-other-cup "the object, unchanged in shape and color, moves across the axis of the mouths until it lies in line with the mouth of the other cup, the exit cup")
+
+(OUTPUT slide-to-edge "along that axis, the object then moves in the direction the exit cup's mouth faces, until it touches the grid edge"
+
+  (INIT &cups Connectivity
+    (node (P)
+      (&cup_cell *P)))
+
+  (INIT &cup_box BoundingBox
+    (key ((&cups.component *P ^Id))
+      (cell (P)
+        (&cups.component *P Id))))
+
+  (RULE &mouth
+    (&cup_box.box (:key (:Id *C)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&cup_cell P)))
+
+  (RULE &facing
+    (&mouth *C *P)
+    (&cup_box.box (:key (:Id C)) *B)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B)))
+
+  (RULE &mouth_line
+    (&mouth *C *P)
+    (&facing C *D)
+    (axis_of D *A)
+    (split P A (:Across *L)))
+
+  (INIT &mouth_box BoundingBox
+    (key ((&mouth (:C ^Id) *P))
+      (cell (P)
+        (&mouth (:C Id) *P))))
+
+  (INIT &whole BoundingBox
+    (cell (P)
+      (&object_cell *P)))
+
+  (RULE &unit
+    (&object_cell *P)
+    (&whole.box *B))
+
+  (RULE &object_line
+    (&unit *B *P)
+    (split P *A (:Across *L)))
+
+  (RULE &overhang
+    (&object_line *B *A *L)
+    (&facing (:C *Id) *D)
+    (axis_of D A)
+    (NOT (&mouth_line (:C Id) A L)))
+
+  (RULE &underhang
+    (&unit *B)
+    (&mouth_line (:C *Id) *A *L)
+    (NOT (&object_line B A L)))
+
+  (RULE &entry
+    (&unit *B)
+    (&cup_box.box (:key *Id))
+    (NOT (&overhang B Id))
+    (NOT (&underhang B Id)))
+
+  (RULE &trip
+    (&entry *B *Id)
+    (&facing (:C Id) (:D *D_in))
+    (axis_of (:D D_in) *A)
+    (&facing (:C *Id2) *D)
+    (!= Id2 Id)
+    (&mouth_box.box (:key Id) (:B *M_in))
+    (&mouth_box.box (:key (:Id Id2)) (:B *M_out))
+    (relative (:Base M_in) (:X M_out) (:X_rel *V_mouth))
+    (split (:P V_mouth) A (:Across *V)))
+
+  (RULE &carried
+    (&trip *B *V)
+    (&unit B *P)
+    (input P *Col)
+    (compose (:A P) (:B V) (:C *Q)))
+
+  (RULE &heading
+    (&trip *B *D))
+
+  (INIT &fall Distance
+    (key ((OR ((&carried ^B *Q)
+               (&heading B *D)
+               (margin (:B Q) D (:K *K2)))
+              ((&carried B Q)
+               (&heading B D)
+               (input *P *Col)
+               (NOT (&background (:C Col)))
+               (NOT (&unit B P))
+               (gap D (:P Q) (:Q P) (:K K2)))))
+      (source_distance ((:K K2))
+        (OR ((&carried B *Q)
+             (&heading B *D)
+             (margin (:B Q) D (:K *K2)))
+            ((&carried B (:Q *Q2))
+             (&heading B (:D *D2))
+             (input *P *Col)
+             (NOT (&background (:C Col)))
+             (NOT (&unit B P))
+             (gap (:D D2) (:P Q2) (:Q P) (:K K2))))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $shape "how the object's shape lands" $KeepShape
+  (ALT $FlipShape
+    (OUTPUT exit-other-cup "the object lands reflected along the axis of the mouths"
+      (RULE_OR_DET &flip_axis "The axis of the mouths, which the flip reflects along."
+        (&trip *A))
+
+      (RULE &carried
+        (&trip *B *V)
+        (&flip_axis *A)
+        (&unit B *P)
+        (input P *Col)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (axis_inversion A (:T *F))
+        (apply (:D F) (:P P_rel) (:P_out *P_rel2))
+        (compose (:A B) (:B P_rel2) (:C *P2))
+        (compose (:A P2) (:B V) (:C *Q))))))
+
+(ALTS $stop "where the slide stops" $ToEdge
+  (ALT $StopAtObstacle
+    (OUTPUT slide-to-edge "the object slides until the next step would leave the grid or meet a cell other than &background"
+
+      (RULE &fall_travel_full
+        (&fall.distance (:key (:B *V0)) *K)
+        (&heading (:B V0) *D)
+        (jump_offset D K (:V *V2))))
+    (INPUT clear-path "dropped")
+    (RULE &slide
+      (&fall_travel_full (:V0 *B) (:V2 *W)))))
+
+(ALTS $heading "which way the slide goes" $MouthFacing
+  (ALT $StoredDirection
+    (OUTPUT slide-to-edge "the object slides toward &fall_dir"
+      (DET &object_edge
+        (ex_output *E *P *Col)
+        (NOT (&background_determined (:C Col)))
+        (NOT (&cup_color (:C Col)))
+        (margin (:B P) *D (:K 0)))
+
+      (DET &missed
+        (&object_edge *D)
+        (ex_output *E)
+        (NOT (&object_edge E D)))
+
+      (DET &fall_dir
+        (&object_edge *D)
+        (NOT (&missed D)))
+
+      (RULE &heading
+        (&trip *B)
+        (&fall_dir *D)))))
+
+(ALTS $place "which cup the object enters, and where it comes out" $MatchMouth
+  (ALT $KeepOffsetInMouth
+    (INPUT object-at-mouth "the entry cup is the cup whose mouth spans every line the object spans")
+    (OUTPUT exit-other-cup "the object moves by the shift that takes the entry mouth onto the exit mouth; undefined where no mouth spans the object's lines"
+      (RULE &entry
+        (&unit *B)
+        (&cup_box.box (:key *Id))
+        (NOT (&overhang B Id))))))
+
+(ALTS $objects "what goes through the cups as one piece" $OneObject
+  (ALT $EachObject
+    (INPUT one-object "each connected piece of cells that are neither &background nor a cup goes through the cups on its own; undefined where some piece lines up with no mouth"
+      (RULE &unit
+        (&pieces.component *P *Id)
+        (&piece_box.box (:key Id) *B)))))
+
+(ALTS $cups "how the cups are found" $ColorCups
+  (ALT $CupByShape
+    (INPUT two-cups "a cup is a one-color connected piece of any color whose bounding box holds other cells only along one side, away from its corners, and whose opposite side lies on the grid edge"
+      (RULE &gap
+        (&shape_box.box (:key *Id) *B)
+        (input *P)
+        (inside (:A P) B)
+        (NOT (&shapes.component P Id)))
+
+      (RULE &stray_gap
+        (&gap *Id *P)
+        (&shape_box.box (:key Id) *B)
+        (dir_elem *D)
+        (OR ((OR ((NOT (inside (:A P) B)))
+                 ((NOT (same_dist D (:P1 P) (:P2 B))))))
+            ((inside (:A P) B)
+             (same_corner (:P1 P) (:P2 B)))))
+
+      (RULE &cup_shape
+        (&gap *Id *P)
+        (&shape_box.box (:key Id) *B)
+        (inside (:A P) B)
+        (same_dist *D (:P1 P) (:P2 B))
+        (NOT (&stray_gap Id D))
+        (opposite D (:Opp *D_base))
+        (margin B (:D D_base) (:K 0)))
+
+      (RULE &cup_cell
+        (&cup_shape *Id)
+        (&shapes.component *P Id)))))
+
+(RULE &slide
+  (&heading *B *D)
+  (&trip B *V)
+  (compose (:A B) (:B V) (:C *B_across))
+  (margin (:B B_across) D (:K *Steps))
+  (jump_offset D (:K Steps) (:V *W)))
+
+(RULE &landed
+  (&slide *B *W)
+  (&carried B *Q *Col)
+  (compose (:A Q) (:B W) (:C *P)))
+
+(RULE &output
+  (OR ((&landed *P *Col))
+      ((&trip *B)
+       (&unit B P)
+       (NOT (&landed P))
+       (&background (:C Col)))
+      ((input P Col)
+       (NOT (&object_cell P))
+       (NOT (&landed P)))))
+
+(OUT (&output ^P ^Col))

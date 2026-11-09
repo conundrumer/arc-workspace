@@ -1,0 +1,66 @@
+;; inputs 0b2f3a8dcc0e12e6ab4635f8518e73976ed7a9a27af1d1fbdd93758f4c8cdbf7 programs/solvers/981add89.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 981add89
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The edge the marks sit on.
+(DET &mark_dir DirDomain)
+
+;; The field is the commonest color, and the ink is what it does not fill.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &mark
+  (&ink *P *Col)
+  (&mark_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &line_axis
+  (&mark_dir *D)
+  (axis_of D *A))
+
+(ALTS $choice "which ink cells are marks, and which way their lines run" $Header
+  (ALT $Isolated
+    ;; The axis the marks' lines run along.
+    (DET &axis AxisDomain)
+
+    (RULE &block_cell
+      (&ink *P *Col)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&ink (:P Q) Col))
+
+    (RULE &mark
+      (&ink *P *Col)
+      (NOT (&block_cell P)))
+
+    (RULE &line_axis
+      (&axis *A))))
+
+(RULE &painted
+  (&mark (:P *Q) (:Col *Col_mark))
+  (&line_axis *A)
+  (input *P)
+  (same_line A P Q)
+  (NOT (&mark P)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&painted P)))
+      ((&painted P *Col_mark)
+       (IF ((input P (:Col Col_mark)))
+           ((&field.maximal (:t Col)))
+           ((= Col Col_mark))))))
+
+(OUT (&output ^P ^Col))

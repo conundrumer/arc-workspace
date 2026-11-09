@@ -1,0 +1,138 @@
+;; inputs a99a7d358c61b786faf8f1193e4aa4184ba27995f23ae9f15fa0ac33a13db298 programs/solvers/bf45cf4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bf45cf4b
+
+(INPUT background "the commonest color fills most of the grid, and it surrounds two objects that do not touch each other")
+
+(INPUT mask-shape "one object is in a single color, and its cells are connected through sides or corners"
+
+  (INIT &field_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&field_count.size (:key *Col) *N)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&field.maximal (:t Col))))
+
+  (INIT &objs Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &object
+    (&objs.component *P *Id)
+    (input P *Col))
+
+  ;; An object's colors: one color for the mask, a clash for the tile.
+  (INIT &hue Singleton
+    (key ((&object ^Id *Col))
+      (member ((:v Col))
+        (&object Id *Col))))
+
+  (RULE &tile
+    (&hue.plural (:key *Id))
+    (ALL ((&hue.plural (:key (:Id *Id2))))
+         ((= Id Id2))))
+
+  ;; The colors of the non-background cells outside the tile.
+  (INIT &rest_hue Singleton
+    (member ((:v Col))
+      (&object *Id *Col)
+      (NOT (&tile Id)))))
+
+(INPUT pattern-tile "the other object is a rectangle that holds two or more colors, and the background color can occur in its interior"
+
+  (INIT &tile_box BoundingBox
+    (cell (P)
+      (&tile *Id)
+      (&object Id *P))))
+
+(OUTPUT block-per-mask-cell "the output is the mask shape's bounding box, with each cell scaled up to a block the size of the tile")
+
+(OUTPUT tile-on-mask-cell "a block whose cell belongs to the mask shape is a copy of the tile")
+
+(OUTPUT background-elsewhere "a block whose cell does not belong to the mask shape is all background color"
+
+  (RULE &mask
+    (&hue.value (:key *Id))
+    (ALL ((&hue.value (:key (:Id *Id2))))
+         ((= Id Id2)))
+    (&object Id *P))
+
+  (INIT &mask_box BoundingBox
+    (cell (P)
+      (&mask *P)))
+
+  (RULE &mask_frame
+    (&mask_box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(ALTS $o "what the mask is" $Connected
+  (ALT $MaskByColor
+    (INPUT mask-shape "every non-background cell outside the tile is in one color, and those cells are the mask, connected or not; undefined unless they share one color"
+      (RULE &mask
+        (&object *Id *P)
+        (NOT (&tile Id))
+        (&rest_hue.value)))))
+
+(ALTS $s "which blocks get the tile" $MaskCells
+  (ALT $MaskBoxNonBg
+    (OUTPUT tile-on-mask-cell "a block whose cell is any non-background cell of the mask's bounding box is a copy of the tile")
+    (OUTPUT background-elsewhere "a block whose cell is background is all background color")
+    (RULE &stamped
+      (&mask_frame *P *P_inner)
+      (&ink P))))
+
+(ALTS $t "what the tile holds" $TileCells
+  (ALT $TileBoxCrop
+    (OUTPUT tile-on-mask-cell "the tile is the input cropped to the tile's bounding box, any mask cell inside that box included")
+    (RULE &tile_cell
+      (&tile_box.box *B)
+      (input *P *Col)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+(RULE &tile_cell
+  (&tile_box.box *B)
+  (input *P (:Col *C0))
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile))
+  (&tile *Id)
+  (OR ((NOT (&object Id P))
+       (&field.maximal (:t *Col)))
+      ((&object Id P)
+       (= Col C0))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_inner))
+    (&mask_frame *P_inner))
+  (inner ((:P P_intile))
+    (&tile_cell *P_intile)))
+
+(RULE &stamped
+  (&mask_frame *P *P_inner)
+  (&mask P))
+
+(RULE &output
+  (&mask_frame (:P *P2) *P_inner)
+  (&tile_cell *P_intile (:Col *Col_tile))
+  (&output_tiling.cell (:P_outer P_inner) (:P_inner P_intile) *P)
+  (OR ((NOT (&stamped P_inner))
+       (&field.maximal (:t *Col)))
+      ((&stamped P_inner)
+       (= Col Col_tile))))
+
+(OUT (&output ^P ^Col))

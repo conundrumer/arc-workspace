@@ -1,0 +1,306 @@
+;; inputs b024ff29b4f78e097170be4c95a5b12b2cbf502508e666db9026aa9e1068dbda programs/solvers/e12f9a14.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e12f9a14
+
+(INPUT background "the commonest color fills the field.")
+
+(INPUT boxes "each box is a `core-side` × `core-side` core (2) of one color, inside a ring one cell wide of the wall color; every box in a grid has the same wall color, and no core has it.")
+
+(INPUT gaps "some cells of a box's ring, on a side or at a corner, are background, and a box may run past the grid edge.")
+
+(INPUT clear-paths "no ray's path enters another box."
+
+  (INIT &bg_mode_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  (INIT &wall_mode_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&bg_mode.maximal (:t Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&bg_mode.maximal (:t Col))))))
+
+  ;; The wall color: the commonest color besides the background.
+  (INIT &wall_mode Order
+    (member ((:t Col))
+      (&wall_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&wall_mode_count.size (:key *Col) *N)))
+
+  (RULE &core_cell
+    (input *P *Col)
+    (NOT (&bg_mode.maximal (:t Col)))
+    (NOT (&wall_mode.maximal (:t Col))))
+
+  ;; A core is a one-color piece of core cells.
+  (INIT &cores2 Connectivity
+    (key ((&core_cell *P ^Col))
+      (node (P)
+        (&core_cell *P Col))))
+
+  (INIT &core_box2 BoundingBox
+    (key ((&cores2.component *P ^Id))
+      (cell (P)
+        (&cores2.component *P Id))))
+
+  (INIT &cores Connectivity
+    (key ((&core_cell ^E *P))
+      (node (P)
+        (&core_cell E *P))))
+
+  (INIT &core_box BoundingBox
+    (key ((&cores.component (:key ^E) *P ^Id))
+      (cell (P)
+        (&cores.component (:key E) *P Id))))
+
+  (DET_OR_RULE &core_side TileCount
+    (&core_box.box (:key *E *Id) *B)
+    (&cores.component (:key E) *P Id)
+    (box_extent B P *N))
+
+  (RULE &side_defect
+    (&core_box2.box (:key *Id) *B)
+    (&cores2.component *P Id)
+    (box_extent B P (:N *M))
+    (NOT (&core_side (:N M))))
+
+  (RULE &core
+    (&core_box2.box (:key *Id))
+    (NOT (&side_defect Id)))
+
+  (RULE &side_cell
+    (&cores2.component (:P *Q) *Id)
+    (dir_elem *D)
+    (neighbor (:P Q) D (:Q *P)))
+
+  (RULE &gap
+    (&core *Id)
+    (&cores2.component (:key *Col) (:P *Q) Id)
+    (neighbor (:P Q) *D (:Q *G))
+    (input (:P G) (:Col *C0))
+    (&bg_mode.maximal (:t C0))
+    (OR ((dir_elem D))
+        ((diag_dir_elem D)
+         (NOT (&side_cell Id (:P G))))))
+
+  (RULE &rays_blocked
+    (&gap)
+    (input *P *Col)
+    (NOT (&bg_mode.maximal (:t Col))))
+
+  (INIT &rays Ray
+    (key ((&gap ^D))
+      (source ((:P G))
+        (&gap *G D))
+      (node (P)
+        (&gap D)
+        (input *P)
+        (NOT (&rays_blocked P)))
+      (dir (D)
+        (&gap D)))))
+
+(INPUT single-meetings "each ray meets at most one other ray, and a pair that a meeting makes meets no other ray.")
+
+(OUTPUT rays "each gap paints a ray of its box's core color, from the gap cell out to the grid edge: a gap on a side goes straight out, at a right angle to that side, and a gap at a corner goes out diagonally from that corner.")
+
+(OUTPUT meeting "where the straight paths of two rays would cross, at a cell or between two diagonal steps, and neither ray has bent before that crossing, each ray stops at its last cell before the crossing, and from there both go on in the sum of their two directions, side by side. Two cardinal directions sum to a diagonal, two diagonals sum to a cardinal, and a cardinal and a diagonal sum to a line of two cardinal steps for each step across, drawn as cardinal and diagonal steps in turn, the cardinal step first.")
+
+(OUTPUT keep "every other cell keeps its input color."
+
+  (INIT &rays_full Ray
+    (key ((&gap ^D))
+      (source ((:P G))
+        (&gap *G D))
+      (node (P)
+        (&gap D)
+        (input *P))
+      (dir (D)
+        (&gap D))))
+
+  (RULE &transverse
+    (dir8_elem (:D *D1))
+    (dir8_elem (:D *D2))
+    (!= D1 D2)
+    (NOT (dir8_opposite (:D D1) D2)))
+
+  (RULE &steps_cross
+    (input (:P *A1))
+    (neighbor (:P A1) (:D *D1) (:Q *X))
+    (&transverse D1 *D2)
+    (OR ((dir8_opposite (:D D2) (:D2 *O2))
+         (neighbor (:P X) (:D O2) (:Q *A2)))
+        ((opposite (:D *C) (:Opp *C_opp))
+         (neighbor (:P A1) (:D C) (:Q A2))
+         (neighbor (:P X) (:D C_opp) (:Q *B2))
+         (neighbor (:P A2) (:D D2) (:Q B2)))))
+
+  (RULE &path
+    (&gap *G *D)
+    (&rays_full.ray (:key D) *P D *K (:Origin G)))
+
+  (RULE &seg_step
+    (&path *G *D (:P *A) *K)
+    (neighbor (:P A) D (:Q *B))
+    (&path G D (:P B)))
+
+  (RULE &cross
+    (&seg_step (:G *G1) (:D *D1) (:A *A1) (:K *K1))
+    (&steps_cross A1 D1 *A2 *D2)
+    (&seg_step (:G *G2) (:D D2) (:A A2))
+    (!= G1 G2))
+
+  (RULE &along_score
+    (OR ((&cross (:G1 *G) (:D1 *D) (:A1 *A) (:K1 *K)))
+        ((&path G D (:P A) K)
+         (NOT (&seg_step G D A K)))))
+
+  ;; The stops of each path, in order along it: its crossings and its last cell.
+  (INIT &along Order
+    (key ((&along_score ^G ^D *A))
+      (member ((:t A))
+        (&along_score G D *A))
+      (score ((:t A) (:S K))
+        (&along_score G D *A *K))))
+
+  ;; Each ray walks the stops of its path from the gap in order. At a crossing it meets the other ray
+  ;; when the other ray's walk reaches that crossing too. It walks on past a crossing whose other ray
+  ;; met a ray before it on its path.
+  (INIT &walk Unfold
+    (key ((&gap ^G *D)
+          (&along.minimal (:key G D) (:t *A)))
+      (start ((:t D (:At A)))
+        (&gap G *D)
+        (&along.minimal (:key G D) (:t *A)))
+      (initial_taken ((:item D (:At A)))
+        (&gap G *D)
+        (&along.minimal (:key G D) (:t *A)))
+      (skip ((:t (:D D1) (:At A1)) (:t2 (:D D1) (:At A)))
+        (&along.successor (:key G (:D *D1)) (:a *A1) (:b *A))
+        (&walk.taken (:t (:D D1) (:At A1)))
+        (&cross (:G1 G) D1 A1 (:G2 *G12) (:D2 *D12))
+        (&cross (:G1 G12) (:D1 D12) (:A1 *A2) (:K1 *K2) (:G2 G) (:D2 D1))
+        (&cross (:G1 G12) (:D1 D12) (:A1 *A12) (:G2 *G22) (:D2 *D22))
+        (&cross (:G1 G22) (:D1 D22) (:A1 *A22) (:G2 G12) (:D2 D12))
+        (&walk.taken (:key (:G G12)) (:t (:D D12) (:At A12)))
+        (&walk.taken (:key (:G G22)) (:t (:D D22) (:At A22)))
+        (&cross (:G1 G12) (:D1 D12) (:A1 A12) (:K1 *K3))
+        (< K3 K2))
+      (take ((:t (:D D1) (:At A1)) (:item (:D D1) (:At A1)))
+        (&cross (:G1 G) *D1 *A1 *G2 *D2)
+        (&cross (:G1 G2) (:D1 D2) (:A1 *A2) (:G2 G) (:D2 D1))
+        (&walk.taken (:t (:D D1) (:At A1)))
+        (&walk.taken (:key (:G G2)) (:t (:D D2) (:At A2))))))
+
+  (RULE &meeting
+    (&walk.take (:key *G) (:t *D (:At *A1)))
+    (&cross (:G1 G) (:D1 D) A1 *K1 *D2))
+
+  (RULE &dir_sum
+    (OR ((diag_dirs (:D *E1) *D1 *D2))
+        ((corner_dir (:C D1) *A (:D E1))
+         (corner_dir (:C D2) A (:D E1))
+         (!= D1 D2))
+        ((opposite (:D *C) (:Opp *C_opp))
+         (diag_dirs (:D *G) (:D1 C_opp) (:D2 E1))
+         (OR ((= D1 C)
+              (= D2 G))
+             ((= D1 G)
+              (= D2 C))))))
+
+  (RULE &bend_dir
+    (&meeting *G (:D *D1) (:A1 *S1) *D2)
+    (&dir_sum D1 D2 *E1))
+
+  (RULE &bend_slope
+    (&meeting *G (:D *D1) (:A1 *S1) *D2)
+    (corner_dir (:C *Gd) (:D *C))
+    (OR ((= D1 C)
+         (= D2 Gd))
+        ((= D1 Gd)
+         (= D2 C))))
+
+  (RULE &bent_dir
+    (OR ((&bend_dir (:E1 *Key)))
+        ((&bend_slope (:Gd Key)))))
+
+  (RULE &bent_mark
+    (OR ((&bend_dir (:S1 *P) (:E1 *Key)))
+        ((&bend_slope (:S1 P) (:Gd Key)))))
+
+  (INIT &bent Ray
+    (key ((OR ((&bent_mark (:Key ^Ky) *P))
+              ((&bent_dir (:Key Ky)))))
+      (source (P)
+        (&bent_mark (:Key Ky) *P))
+      (node (P)
+        (&bent_dir (:Key Ky))
+        (input *P))
+      (dir ((:D Ky))
+        (&bent_dir (:Key Ky)))))
+
+  (RULE &paint
+    (OR ((&walk.taken (:key *G) (:t *D))
+         (&path G D *P *K)
+         (&gap G *Col)
+         (OR ((NOT (&meeting G D)))
+             ((&meeting G D *K1)
+              (<= K K1))))
+        ((&bend_dir (:G *G2) (:S1 *A1) (:E1 *E))
+         (&gap (:G G2) Col)
+         (&bent.ray (:key (:Ky E)) P (:D E) (:Origin A1)))
+        ((&bend_slope (:G *G3) (:S1 *A12) *C *Gd)
+         (&gap (:G G3) Col)
+         (&bent.ray (:key (:Ky Gd)) (:P *Q) (:D Gd) (:K *K2) (:Origin A12))
+         (jump (:P Q) (:D C) (:K K2) (:Q *L))
+         (OR ((neighbor (:P L) (:D C) (:Q P)))
+             ((= P L)))
+         (input P)))))
+
+(ALTS $b "What a ray does at a box in its path" $OverBox
+  (ALT $StopAtBox
+    (OUTPUT rays "a ray stops at its last cell before a non-background cell of another box."
+      (RULE &path
+        (&gap *G *D)
+        (&rays.ray (:key D) *P D *K (:Origin G)))))
+  (ALT $PassUnderBox
+    (OUTPUT rays "a ray paints only the background cells of its path, and runs on past a box to the grid edge.")
+    (RULE &shown
+      (&paint *P *Col)
+      (input P (:Col *C0))
+      (&bg_mode.maximal (:t C0)))))
+
+(ALTS $s "The side of a box's core" $StoredSide
+  (ALT $CoreSizePerBox
+    (INPUT boxes "each box's core is a square of one color, of any side; it reads no `core-side`."
+      (RULE &core
+        (&core_box2.box (:key *Id) *B)
+        (&cores2.component *P Id)
+        (box_extent B P *A *N)
+        (perp A *A2)
+        (box_extent B P (:A A2) N)))))
+
+(RULE &stuck
+  (&walk.taken (:key *G) (:t *D (:At *A)))
+  (&cross (:G1 G) (:D1 D) (:A1 A))
+  (NOT (&walk.take (:key G) (:t D (:At A))))
+  (NOT (&walk.skip (:key G) (:t D (:At A)))))
+
+(RULE &shown
+  (&paint *P *Col))
+
+(RULE &output
+  (OR ((&shown *P *Col)
+       (NOT (&stuck)))
+      ((input P Col)
+       (NOT (&shown P))
+       (NOT (&stuck)))))
+
+(OUT (&output ^P ^Col))

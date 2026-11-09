@@ -1,0 +1,106 @@
+;; inputs 76c6e6450eab5bc7b14eb7404b51504511f69eab1064e52b2c77e1df760bc5c8 programs/solvers/992798f6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 992798f6
+
+(DET &bg DominantColor)
+
+;; The mark the diagonal leg leaves.
+(DET &diag_mark RarestColor)
+
+;; The mark the straight leg runs up to.
+(DET &straight_mark RarestColor)
+
+(RULE &leg_blocked
+  (input *P)
+  (&straight_mark (:C *Col))
+  (input (:P *P_s) Col)
+  (axis_elem *A)
+  (same_line A P (:Q P_s)))
+
+(RULE &toward
+  (&straight_mark (:C *C_s))
+  (input (:P *P_s) (:Col C_s))
+  (&diag_mark (:C *C_d))
+  (input (:P *P_d) (:Col C_d))
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (nearer (:D D1) (:P P_d) (:Q P_s))
+  (nearer (:D D2) (:P P_d) (:Q P_s)))
+
+;; The diagonal leg, cast from the diag mark and halted by the straight mark's
+;; own lines, so it ends on the line beside that mark.
+(INIT &leg Ray
+  (source (P)
+    (&diag_mark (:C *Col))
+    (input *P Col))
+  (node (P)
+    (input *P)
+    (NOT (&leg_blocked P)))
+  (dir (D)
+    (&toward *Diag)
+    (diag_opposite (:D Diag) (:Opp *D))))
+
+(INIT &leg_full Ray
+  (source (P)
+    (&diag_mark (:C *Col))
+    (input *P Col))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&toward *Diag)
+    (diag_opposite (:D Diag) (:Opp *D))))
+
+(RULE &leg_stop_full
+  (&leg.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&leg_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &elbow
+  (&leg_stop_full (:V1 *P_stop) (:V2 *D))
+  (dir8_opposite D (:D2 *D_back))
+  (neighbor (:P P_stop) (:D D_back) (:Q *P)))
+
+(RULE &tip
+  (&straight_mark (:C *Col))
+  (input (:P *P_s) Col)
+  (&toward *Diag)
+  (neighbor (:P P_s) (:D Diag) (:Q *P)))
+
+(INIT &span_frame Frame
+  (extent (A N)
+    (OR ((&diag_mark (:C *Col))
+         (input *P Col))
+        ((&elbow P))
+        ((&tip P)))
+    (frame_extent P *A *N)))
+
+;; The path spans its three points: the diag mark to the elbow down the
+;; diagonal, the elbow to the tip along the line they share. The domain is
+;; background only, so the marks keep their own color.
+(INIT &span Ray
+  (source (P)
+    (OR ((&diag_mark (:C *Col))
+         (input *P Col))
+        ((&elbow P))
+        ((&tip P))))
+  (node (P)
+    (&span_frame.cell *P))
+  (dir (D)
+    (axis4_of *D *A)))
+
+(RULE &span_between
+  (input *P *Col)
+  (&bg (:C Col))
+  (axis4_of *D *A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray P D)
+  (&span.ray P (:D O)))
+
+(DET &path AnyOutNewColor)
+
+(RULE &output
+  (OR ((&span_between *P)
+       (&path (:C *Col)))
+      ((input P Col)
+       (NOT (&span_between P)))))
+
+(OUT (&output ^P ^Col))

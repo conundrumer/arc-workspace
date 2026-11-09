@@ -1,0 +1,6 @@
+;; inputs dff271af3cd60ed798cef9b083d3a67611256b5ce5f5c6f64c65e235d3ebccc4 programs/solvers/d4a91cb9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d4a91cb9
+
+(param &leg_mark (Axis Color) (AXIS_V 8) (AXIS_H 2))
+(param &path_color Color (4))

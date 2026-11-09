@@ -1,0 +1,46 @@
+;; inputs 265e7c1940152026431a7740f89e00bd4a2ef451394b82891e7995597b905d1d programs/solvers/dc433765.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc433765
+
+(DET &bg DominantColor)
+
+(DET &mover ChangedColor)
+
+(DET &target UnchangedColor)
+
+(RULE &mover_at
+  (input *P *Col)
+  (&mover (:C Col)))
+
+(RULE &target_at
+  (input *P *Col)
+  (&target (:C Col)))
+
+(RULE &axis_step
+  (&mover_at (:P *Pm))
+  (&target_at (:P *Pt))
+  (axis_of *D *A)
+  (OR ((nearer D (:P Pt) (:Q Pm))
+       (step_offset D (:V *S)))
+      ((same_dist D (:P1 Pm) (:P2 Pt))
+       (= S 0))))
+
+(RULE &moved
+  (&mover_at (:P *Pm))
+  (perp (:A *A1) *A2)
+  (&axis_step (:A A1) (:S *S1))
+  (&axis_step (:A A2) (:S *S2))
+  (compose (:A Pm) (:B S1) (:C *P1))
+  (compose (:A P1) (:B S2) (:C *P)))
+
+(RULE &output
+  (OR ((&target_at *P)
+       (&target (:C *Col)))
+      ((&moved P)
+       (&mover (:C Col)))
+      ((input P)
+       (NOT (&target_at P))
+       (NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

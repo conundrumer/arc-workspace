@@ -1,0 +1,7 @@
+;; inputs ef5d3b5cb8e237a653491d9a8de3eb475af54405b9e72d07e49ed589f2442558 programs/solvers/ce039d91.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ce039d91
+
+(param &mark Color (5))
+(param &fill Color (1))
+(param &sym D4 (D4_LR))

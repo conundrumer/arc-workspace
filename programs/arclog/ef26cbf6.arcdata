@@ -1,0 +1,212 @@
+;; inputs 413db2a9181ae6c97422c28a44e5fdbf4894556a9e9c577ef5721004cab7d600 programs/solvers/ef26cbf6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ef26cbf6
+
+(param &background Color (0))
+(param &pattern_color Color (1))
+(param &reading_corner DiagDir (DIAG_TL))
+(param &reading_axis Axis (AXIS_V))
+(param &divider_color Color (4))
+
+(exclude ($CommonestInk $PaintAllInk) "$PaintAllInk reads no pattern_color, so it takes no pattern source but the stored one.")
+
+(alts $pg
+  (alt $AdjacentKey
+    (witness shared-key-row borderline $AdjacentKey
+      (relaxed divider-lines)
+      (separates "one row of three tiles, a key between two pattern tiles, so no axis is two deep: the concept finds no pairs and is undefined; $AdjacentKey paints both pattern tiles in the one key color beside them")
+      (input (grid
+        (1 0 1 4 0 0 0 4 0 1 0)
+        (0 1 0 4 0 2 0 4 1 1 1)
+        (1 0 1 4 0 0 0 4 0 1 0)))
+      (output $Across $ReadingOrder undefined)
+      (output $AdjacentKey (grid
+        (2 0 2 4 0 0 0 4 0 2 0)
+        (0 2 0 4 0 2 0 4 2 2 2)
+        (2 0 2 4 0 0 0 4 0 2 0)))))
+  (alt $ReadingOrder
+    (witness key-across-sides borderline concept
+      (relaxed key-side)
+      (separates "the first pair has its key tile below its pattern tile, the other keys above theirs: the concept paints each pattern across its own divider; $ReadingOrder ranks the keys 2, 6, 3 and the patterns top-left, middle, right, so the top-left pattern takes 2")
+      (input (grid
+        (1 0 0 4 0 0 0 4 0 0 0)
+        (0 1 0 4 0 2 0 4 0 6 0)
+        (1 1 1 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (0 0 0 4 0 1 0 4 1 0 1)
+        (0 3 0 4 1 1 1 4 1 0 1)
+        (0 0 0 4 1 0 1 4 0 1 0)))
+      (output $Across (grid
+        (3 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 2 0 4 0 6 0)
+        (3 3 3 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (0 0 0 4 0 2 0 4 6 0 6)
+        (0 3 0 4 2 2 2 4 6 0 6)
+        (0 0 0 4 2 0 2 4 0 6 0)))
+      (output $AdjacentKey undefined)
+      (output $ReadingOrder (grid
+        (2 0 0 4 0 0 0 4 0 0 0)
+        (0 2 0 4 0 2 0 4 0 6 0)
+        (2 2 2 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (0 0 0 4 0 6 0 4 3 0 3)
+        (0 3 0 4 6 6 6 4 3 0 3)
+        (0 0 0 4 6 0 6 4 0 3 0))))))
+
+(alts $paint
+  (alt $PaintAllInk
+    (witness pattern-in-other-color variant $PaintAllInk
+      (relaxed pattern-tile)
+      (separates "the patterns are drawn in 5, not the pattern color: the concept sees two keys in every pair and is undefined; $DotKey and $AdjacentKey leave the 5 patterns unchanged; $PaintAllInk and $CommonestInk paint each in its key color")
+      (input (grid
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 2 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (5 0 0 4 0 5 0 4 5 0 5)
+        (0 5 0 4 5 5 5 4 5 0 5)
+        (5 5 5 4 5 0 5 4 0 5 0)))
+      (output ($Across $ExtraColor $StoredPattern) ($Across $CenterKey) ($AdjacentKey $CenterKey) undefined)
+      (output $CommonestInk $PaintAllInk (grid
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 2 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (3 0 0 4 0 2 0 4 6 0 6)
+        (0 3 0 4 2 2 2 4 6 0 6)
+        (3 3 3 4 2 0 2 4 0 6 0)))
+      (output $PatternCells ($AdjacentKey $ExtraColor $StoredPattern) ($ReadingOrder $StoredPattern) (grid
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 2 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (5 0 0 4 0 5 0 4 5 0 5)
+        (0 5 0 4 5 5 5 4 5 0 5)
+        (5 5 5 4 5 0 5 4 0 5 0))))))
+
+(alts $ky
+  (alt $DotKey
+    (witness key-dot-in-pattern-color borderline $DotKey
+      (relaxed key-tile)
+      (separates "the middle key dot is the pattern color: the concept finds no key in that pair and is undefined; $DotKey and $PaintAllInk take the lone cell as the key and repaint that pattern in its own color, the other pairs as in train0")
+      (input (grid
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 1 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (1 0 0 4 0 1 0 4 1 0 1)
+        (0 1 0 4 1 1 1 4 1 0 1)
+        (1 1 1 4 1 0 1 4 0 1 0)))
+      (output $ExtraColor $CenterKey undefined)
+      (output $DotKey (grid
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 1 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (3 0 0 4 0 1 0 4 6 0 6)
+        (0 3 0 4 1 1 1 4 6 0 6)
+        (3 3 3 4 1 0 1 4 0 6 0)))))
+  (alt $CenterKey
+    (witness extra-cell-in-key-tile borderline $CenterKey
+      (relaxed key-tile)
+      (separates "the first key tile holds a stray 5 in its corner beside its center 3: the concept sees two key colors in that tile and is undefined, $DotKey finds no lone cell in that pair and is undefined; $CenterKey reads the center 3 and paints as in train0, the 5 kept")
+      (input (grid
+        (5 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 2 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (1 0 0 4 0 1 0 4 1 0 1)
+        (0 1 0 4 1 1 1 4 1 0 1)
+        (1 1 1 4 1 0 1 4 0 1 0)))
+      (output $ExtraColor $DotKey undefined)
+      (output $CenterKey (grid
+        (5 0 0 4 0 0 0 4 0 0 0)
+        (0 3 0 4 0 2 0 4 0 6 0)
+        (0 0 0 4 0 0 0 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (3 0 0 4 0 2 0 4 6 0 6)
+        (0 3 0 4 2 2 2 4 6 0 6)
+        (3 3 3 4 2 0 2 4 0 6 0))))))
+
+(alts $ps
+  (alt $CommonestInk
+    (witness pattern-in-other-color variant $PaintAllInk)))
+
+(alts $dv
+  (alt $LineDivider
+    (witness divider-in-other-color variant $LineDivider
+      (relaxed divider-lines)
+      (separates "the divider lines are 5, not the divider color: the concept finds one tile and is undefined; $LineDivider reads 5 as the divider and paints each pattern in its key color")
+      (input (grid
+        (0 0 0 5 0 0 0 5 0 0 0)
+        (0 3 0 5 0 2 0 5 0 6 0)
+        (0 0 0 5 0 0 0 5 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (1 0 0 5 0 1 0 5 1 0 1)
+        (0 1 0 5 1 1 1 5 1 0 1)
+        (1 1 1 5 1 0 1 5 0 1 0)))
+      (output $CommonestInk ($Across $StoredDivider) ($ExtraColor $StoredDivider) undefined)
+      (output $LineDivider (grid
+        (0 0 0 5 0 0 0 5 0 0 0)
+        (0 3 0 5 0 2 0 5 0 6 0)
+        (0 0 0 5 0 0 0 5 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (3 0 0 5 0 2 0 5 6 0 6)
+        (0 3 0 5 2 2 2 5 6 0 6)
+        (3 3 3 5 2 0 2 5 0 6 0)))
+      (output ($AdjacentKey $CenterKey) ($ReadingOrder $CenterKey $StoredPattern) (grid
+        (0 0 0 5 0 0 0 5 0 0 0)
+        (0 3 0 5 0 2 0 5 0 6 0)
+        (0 0 0 5 0 0 0 5 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (1 0 0 5 0 1 0 5 1 0 1)
+        (0 1 0 5 1 1 1 5 1 0 1)
+        (1 1 1 5 1 0 1 5 0 1 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed key-tile)
+      (separates "the background is 5, not the stored background: the concept sees two key colors in every tile and is undefined; background=DominantColor reads 5 as the background and paints each pattern in its key color")
+      (input (grid
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (5 3 5 4 5 2 5 4 5 6 5)
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (1 5 5 4 5 1 5 4 1 5 1)
+        (5 1 5 4 1 1 1 4 1 5 1)
+        (1 1 1 4 1 5 1 4 5 1 5)))
+      (output ($Across &background=$Stored) ($ExtraColor $StoredPattern &background=$Stored) ($AdjacentKey $StoredPattern) undefined)
+      (output &background=$Derived (grid
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (5 3 5 4 5 2 5 4 5 6 5)
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (3 5 5 4 5 2 5 4 6 5 6)
+        (5 3 5 4 2 2 2 4 6 5 6)
+        (3 3 3 4 2 5 2 4 5 6 5)))
+      (output ($AdjacentKey $CommonestInk) ($ReadingOrder $ExtraColor $CommonestInk) (grid
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (5 3 5 4 5 2 5 4 5 6 5)
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (1 5 5 4 5 1 5 4 1 5 1)
+        (5 1 5 4 1 1 1 4 1 5 1)
+        (1 1 1 4 1 5 1 4 5 1 5)))
+      (output ($CenterKey $CommonestInk) (grid
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (5 3 5 4 5 2 5 4 5 6 5)
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (1 5 5 4 5 1 5 4 1 3 1)
+        (5 1 5 4 1 1 1 4 1 3 1)
+        (1 1 1 4 1 5 1 4 3 1 3)))
+      (output ($ReadingOrder $CenterKey $StoredPattern) (grid
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (5 3 5 4 5 2 5 4 5 6 5)
+        (5 5 5 4 5 5 5 4 5 5 5)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (3 5 5 4 5 2 5 4 1 5 1)
+        (5 3 5 4 2 2 2 4 1 5 1)
+        (3 3 3 4 2 5 2 4 5 1 5))))))

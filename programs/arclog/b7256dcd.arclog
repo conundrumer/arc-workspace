@@ -1,0 +1,215 @@
+;; inputs 3407eb04ad1096099f548a3de5a64183ba865f35689daf79376a2aa2490940b0 programs/solvers/b7256dcd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7256dcd
+
+(INPUT background "every cell that is not part of a shape or a marker has the color &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT shapes "the shapes are the 4-connected components of the cells of color &shape_color"
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &commonest_count Cardinality
+    (key ((&ink *P ^Col))
+      (member ((:m P))
+        (&ink *P Col))))
+
+  (DET &shape_color VanishedColor)
+
+  (RULE &shape_color2
+    (&shape_color (:C *Col)))
+
+  (RULE &shape_cell
+    (&shape_color2 *Col)
+    (input *P Col))
+
+  (INIT &shapes8 Connectivity
+    (node (P)
+      (&shape_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &commonest_one Singleton
+    (member ((:v Col))
+      (&commonest.maximal (:t *Col)))))
+
+(INPUT markers "each marker is a single cell whose color is neither &background nor &shape_color")
+
+(INPUT one-marker-per-shape "each shape has exactly one marker cell 4-adjacent to it"
+
+  (RULE &marker
+    (&shape_color2)
+    (&ink *P *Col)
+    (NOT (&shape_color2 Col)))
+
+  (INIT &shapes4 Connectivity
+    (node (P)
+      (&shape_cell *P)))
+
+  (RULE &shape
+    (&shapes4.component *P (:Id *Sh)))
+
+  (RULE &touch
+    (&shape *Sh *P)
+    (dir_elem *D)
+    (neighbor P D (:Q *M))
+    (&marker (:P M)))
+
+  (INIT &one_marker Singleton
+    (key ((&touch (:Sh ^Id) *M))
+      (member ((:v M))
+        (&touch (:Sh Id) *M))))
+
+  (INIT &one_color Singleton
+    (key ((&touch (:Sh ^Id) *M)
+          (&marker (:P M) *Col))
+      (member ((:v Col))
+        (&touch (:Sh Id) *M)
+        (&marker (:P M) *Col)))))
+
+(OUTPUT recolor-shape "each cell of a shape takes the color of the marker 4-adjacent to that shape")
+
+(OUTPUT erase-markers "each marker cell takes the color &background, whether or not it touches a shape")
+
+(OUTPUT keep-background "each other cell keeps its color"
+
+  (RULE &untouched
+    (&shape *Sh)
+    (NOT (&touch Sh))))
+
+(ALTS $c "how the cells of the shape color group into shapes" $Shapes4
+  (ALT $Shapes8
+    (INPUT shapes "the shapes are the 8-connected components of the cells of color &shape_color; undefined where shapes that touch at a corner have more than one marker cell between them"
+      (RULE &shape
+        (&shapes8.component *P (:Id *Sh))))))
+
+(ALTS $u "what a shape that no marker touches becomes" $MarkedOnly
+  (ALT $UnmarkedKeeps
+    (INPUT one-marker-per-shape "each shape has at most one marker cell 4-adjacent to it")
+    (OUTPUT keep-unmarked "a shape with no 4-adjacent marker keeps &shape_color"
+      (RULE &untouched_color
+        (&untouched *Sh)
+        (&shape_color2 *Col)))
+    (RULE &output
+      (OR ((&background (:C *Col))
+           (OR ((input *P Col)
+                (NOT (&shape_cell P)))
+               ((&marker P))))
+          ((&shape (:Sh *Id) P)
+           (OR ((&touched_color (:Sh Id) Col))
+               ((&untouched_color (:Sh Id) Col)))))))
+  (ALT $NearestMarker
+    (INPUT one-marker-per-shape "each shape has at most one marker cell 4-adjacent to it")
+    (OUTPUT nearest-marker "a shape with no 4-adjacent marker takes the color of the marker nearest it by 4-step distance; undefined where no marker exists, or where the nearest markers have different colors"
+
+      (INIT &near Distance
+        (key ((&untouched ^Sh))
+          (source ((:n P))
+            (dir_elem)
+            (&shape Sh *P)))
+        (edge ((:a P) (:b Q))
+          (dir_elem *D)
+          (input *P)
+          (neighbor P D *Q)
+          (input (:P Q))))
+
+      (INIT &nearest Order
+        (key ((&near.distance (:key (:Sh ^Id)) (:n *M) *K)
+              (&marker (:P M)))
+          (member ((:t (:V M) (:S K)))
+            (&near.distance (:key (:Sh Id)) (:n *M) *K)
+            (&marker (:P M)))
+          (score ((:t (:V M) (:S K)) (:S K))
+            (&near.distance (:key (:Sh Id)) (:n *M) *K)
+            (&marker (:P M)))))
+
+      (INIT &nearest_color Singleton
+        (key ((&nearest.minimal (:key ^Id) (:t (:V *M)))
+              (&marker (:P M) *Col))
+          (member ((:v Col))
+            (&nearest.minimal (:key Id) (:t (:V *M)))
+            (&marker (:P M) *Col)))))
+    (RULE &output
+      (OR ((&background (:C *Col))
+           (OR ((input *P Col)
+                (NOT (&shape_cell P)))
+               ((&marker P))))
+          ((&shape (:Sh *Id) P)
+           (OR ((&touched_color (:Sh Id) Col))
+               ((&nearest_color.value (:key Id) (:v Col))))))))
+  (ALT $NearestMarker8
+    (INPUT one-marker-per-shape "each shape has at most one marker cell 4-adjacent to it")
+    (OUTPUT nearest-marker "a shape with no 4-adjacent marker takes the color of the marker nearest it by 8-step distance; undefined where no marker exists, or where the nearest markers have different colors"
+
+      (INIT &near Distance
+        (key ((&untouched ^Sh))
+          (source ((:n P))
+            (dir8_elem)
+            (&shape Sh *P)))
+        (edge ((:a P) (:b Q))
+          (input *P)
+          (neighbor P *D *Q)
+          (input (:P Q))))
+
+      (INIT &nearest Order
+        (key ((&near.distance (:key (:Sh ^Id)) (:n *M) *K)
+              (&marker (:P M)))
+          (member ((:t (:V M) (:S K)))
+            (&near.distance (:key (:Sh Id)) (:n *M) *K)
+            (&marker (:P M)))
+          (score ((:t (:V M) (:S K)) (:S K))
+            (&near.distance (:key (:Sh Id)) (:n *M) *K)
+            (&marker (:P M)))))
+
+      (INIT &nearest_color Singleton
+        (key ((&nearest.minimal (:key ^Id) (:t (:V *M)))
+              (&marker (:P M) *Col))
+          (member ((:v Col))
+            (&nearest.minimal (:key Id) (:t (:V *M)))
+            (&marker (:P M) *Col)))))
+    (RULE &output
+      (OR ((&background (:C *Col))
+           (OR ((input *P Col)
+                (NOT (&shape_cell P)))
+               ((&marker P))))
+          ((&shape (:Sh *Id) P)
+           (OR ((&touched_color (:Sh Id) Col))
+               ((&nearest_color.value (:key Id) (:v Col)))))))))
+
+(ALTS $n "what a shape that touches more than one marker cell becomes" $OneMarkerCell
+  (ALT $MarkerUnanimous
+    (INPUT one-marker-per-shape "the marker cells 4-adjacent to a shape all have one color, which the shape takes; undefined where those colors differ")
+    (RULE &touched_color
+      (&one_color.value (:key (:Id *Sh)) (:v *Col)))))
+
+(ALTS $s "where the shape color comes from" $StoredShapeColor
+  (ALT $ShapeColorCommonest
+    (INPUT shapes "the shapes are the 4-connected components of the commonest color other than &background; undefined where that color is tied"
+      (RULE &shape_color2
+        (&commonest_one.value (:v *Col))))))
+
+(RULE &touched_color
+  (&one_marker.value (:key (:Id *Sh)) (:v *M))
+  (&marker (:P M) *Col))
+
+(RULE &output
+  (OR ((&background (:C *Col))
+       (OR ((input *P Col)
+            (NOT (&shape_cell P)))
+           ((&marker P))))
+      ((&shape (:Sh *Id) P)
+       (&touched_color (:Sh Id) Col))))
+
+(OUT (&output ^P ^Col))

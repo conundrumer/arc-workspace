@@ -1,0 +1,118 @@
+;; inputs c57c2b8ef680f3f28cbd9b059e42620dd8d7b718487490e403e6e15a6292b550 programs/solvers/b7fb29bc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7fb29bc
+
+(INPUT box-outline "a one-cell-wide rectangle outline of &frame_color (3) on a field of &background (0), closed on all four sides"
+
+  (DET_OR_RULE &frame_color RarestColor)
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT one-dot "exactly one cell of &frame_color (3) inside the box, apart from the outline; it can touch the outline"
+
+  ;; The box: the bounding box of the frame-color cells.
+  (INIT &frame BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (RULE_OR_DET &frame.box "The box: the bounding box of the frame-color cells.")
+
+  (RULE &in_box
+    (&frame.box *B)
+    (input *P)
+    (interior (:A P) B))
+
+  (RULE &dot
+    (&in_box (:P *O))
+    (input (:P O) *Col)
+    (&frame_color (:C Col)))
+
+  (INIT &the_dot Singleton
+    (member ((:v O))
+      (&dot *O))))
+
+(OUTPUT square-rings "each background cell inside the box takes a color from its Chebyshev distance to the dot: &ring_colors at odd distance first, then at even distance, so the rings alternate outward from the dot"
+
+  ;; the ring color at odd and at even distance from the dot
+  (DET &ring_colors ColorColorDomain)
+
+  (RULE &dot_dist
+    (&dot *O)
+    (input *P)
+    (relative (:Base O) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K)
+    (uniform_outset K (:B *B_out))
+    (compose (:A O) (:B B_out) (:C *B))
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (INIT &nearest Order
+    (key ((&dot_dist ^P *K))
+      (member ((:t K))
+        (&dot_dist P *K))
+      (score ((:t K) (:S K))
+        (&dot_dist P *K))))
+
+  ;; The two ring colors alternate, one advance per ring.
+  (INIT &colors Walk
+    (successor ((:p A) (:p_next B))
+      (&ring_colors (:C_from *Odd) (:C_to *Even))
+      (OR ((= *A Even)
+           (= *B Odd))
+          ((= A Odd)
+           (= B Even))))
+    (steps ((:N K))
+      (&dot_dist *K))))
+
+(OUTPUT clip-to-box "rings cover only the cells inside the outline, and they stop at the outline"
+
+  ;; The cells the frame-color cells close off from the grid edge.
+  (INIT &enclosed Enclosure
+    (cell (P)
+      (input *P *Col)
+      (NOT (&frame_color (:C Col))))))
+
+(OUTPUT keep-rest "the outline, the dot, and every cell outside the box keep their input colors")
+
+(ALTS $dot_find "how the dot is found" $FrameDot
+  (ALT $AnyInkDot
+    (INPUT one-dot "the dot is the one non-background cell inside the box, of any color"
+      (RULE &dot
+        (&in_box (:P *O))
+        (input (:P O) *Col)
+        (NOT (&background (:C Col)))))))
+
+(ALTS $dot_count "how many dots the rings grow from" $OneDot
+  (ALT $NearestDot
+    (INPUT one-dot "the box holds one or more dots; undefined where it holds none")
+    (OUTPUT square-rings "a cell's distance is its Chebyshev distance to the nearest dot")
+    (RULE &cell_dist
+      (&nearest.minimal (:key *P) (:t *K)))))
+
+(ALTS $region "which cells the rings fill" $BoxInside
+  (ALT $EnclosedRegion
+    (OUTPUT clip-to-box "rings fill the background cells that the frame-color cells close off from the grid edge; the input is unchanged where the outline is broken")
+    (RULE &ring_cell
+      (&enclosed.enclosed *P)
+      (input P (:Col *Bg))
+      (&background (:C Bg)))))
+
+(RULE &ring_cell
+  (&in_box *P)
+  (input P (:Col *Bg))
+  (&background (:C Bg)))
+
+(RULE &cell_dist
+  (&the_dot.value (:v *O))
+  (&dot_dist O *P *K))
+
+(RULE &output
+  (OR ((&ring_cell *P)
+       (&cell_dist P *K)
+       (&ring_colors (:C_to *Even))
+       (&colors.walk (:p0 Even) (:N K) (:p *Col)))
+      ((input P Col)
+       (NOT (&ring_cell P)))))
+
+(OUT (&output ^P ^Col))

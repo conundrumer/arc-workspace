@@ -1,0 +1,117 @@
+;; inputs df6aff551a0380881b2717f2ca225901765fed228d66d0f9ed0c3b12f5c1f9e7 programs/solvers/0a1d4ef5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0a1d4ef5
+
+;; Touching cells of one color.
+(INIT &region Connectivity
+  (key ((input *P ^Col))
+    (node (P)
+      (input *P Col))))
+
+(RULE &region_line
+  (&region.component *Id *P)
+  (split P *A (:Along *P_line)))
+
+(RULE &hole
+  (&region_line *Id *A *P_line)
+  (&region_line Id (:A *A2) (:P_line *P_line2))
+  (perp A A2)
+  (compose (:A P_line) (:B P_line2) (:C *P))
+  (NOT (&region.component Id P)))
+
+(DET &rect
+  (&region.component *E (:key *Col) *Id)
+  (ex_output E Col)
+  (NOT (&hole E Id)))
+
+;; Side length on each axis: how many lines it spans.
+(INIT &side Cardinality
+  (key ((&region_line ^Id ^A *P_line))
+    (member ((:m P_line))
+      (&region_line Id A *P_line))))
+
+;; The least side of a rectangle.
+(INIT &sides Order
+  (member ((:t N))
+    (&rect *E *Id)
+    (&side.size E (:key Id) *N))
+  (score ((:t N) (:S N))
+    (&rect *E *Id)
+    (&side.size E (:key Id) *N)))
+
+(DET &min_side
+  (&sides.minimal (:t *K)))
+
+(RULE &short
+  (&side.size (:key *Id) *N)
+  (&min_side *K)
+  (< N K))
+
+(RULE &block
+  (&side.size (:key *Id))
+  (NOT (&hole Id))
+  (NOT (&short Id)))
+
+;; A band is a run of adjacent occupied lines.
+(INIT &runs Connectivity
+  (key ((&block *Id)
+        (&region_line Id ^A *P_line))
+    (node ((:P P_line))
+      (&block *Id)
+      (&region_line Id A *P_line))))
+
+(RULE &block_band
+  (&block *Id)
+  (&region_line Id *A *P_line)
+  (&runs.component (:key A) (:P P_line) (:Id *B)))
+
+(ALTS $choice "what makes a band" $Runs
+  (ALT $Overlap
+    (RULE &overlap
+      (&block *Id)
+      (&block (:Id *Id2))
+      (&region_line Id *A *P_line)
+      (&region_line (:Id Id2) A P_line))
+
+    ;; The classes a chain of alignments connects.
+    (INIT &cls Quotient
+      (edge ((:a Id A) (:b (:Id Id2) A))
+        (&overlap *A *Id *Id2)))
+
+    (RULE &block_band
+      (&cls.class (:a *Id *A) (:Id *B)))))
+
+;; One output line per band: the frame the bands induce on each axis. A
+;; band's line set is the union of its rectangles' spans; band line sets
+;; are disjoint intervals, as OrderFrame assumes.
+(INIT &layout Order
+  (key ((&block_band ^A)
+        (axis_of ^D A))
+    (member ((:t B))
+      (&block_band A *Id *B)
+      (&region_line Id A *P_line))
+    (before ((:a B) (:b B2))
+      (&block_band A *Id *B)
+      (&region_line Id A *P_line)
+      (&block_band A (:Id *Id2) (:B *B2))
+      (&region_line (:Id Id2) A (:P_line *P_line2))
+      (!= B B2)
+      (margin (:B P_line) D (:K *K1))
+      (margin (:B P_line2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &output
+  (&region.component (:key *Col) *Id)
+  (&block_band *A Id *B)
+  (&block_band (:A *A2) Id (:B *B2))
+  (perp A A2)
+  (&layout_pos (:Key A) (:M B) (:P_pos *P_line))
+  (&layout_pos (:Key A2) (:M B2) (:P_pos *P_line2))
+  (compose (:A P_line) (:B P_line2) (:C *P)))
+
+(OUT (&output ^P ^Col))

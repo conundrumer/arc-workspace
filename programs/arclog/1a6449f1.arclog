@@ -1,0 +1,71 @@
+;; inputs 4164b8b346592889cae04ede9167ab83612068dd38ed9f60ed9f6494f4749c40 programs/solvers/1a6449f1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1a6449f1
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &drect Outlines
+  (key ((&ink ^Col))
+    (node (P)
+      (input *P Col))))
+
+(RULE &hole
+  (&drect.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(INIT &biggest_hole_count Cardinality
+  (key ((&hole ^B *P))
+    (member ((:m P))
+      (&hole B *P))))
+
+(INIT &biggest_hole Order
+  (member ((:t B))
+    (&biggest_hole_count.size (:key *B)))
+  (score ((:t B) (:S N))
+    (&biggest_hole_count.size (:key *B) *N)))
+
+(RULE &window
+  (&biggest_hole.maximal (:t *B))
+  (&hole B *P))
+
+(ALTS $choice "what a ring is, and what counts as its inside" $Rect
+  (ALT $Enclose
+    ;; Each ink color walls the rest of the grid off; a region it closes is a ring's
+    ;; inside.
+    (INIT &closed Enclosure
+      (key ((&ink ^Col))
+        (cell (P)
+          (input *P (:Col *C))
+          (!= C Col))))
+
+    (INIT &biggest_region_count Cardinality
+      (key ((&closed.enclosed (:key ^Col) *P ^Id))
+        (member ((:m P))
+          (&closed.enclosed (:key Col) *P Id))))
+
+    (INIT &biggest_region Order
+      (member ((:t (:Col M_col) (:Id M_id)))
+        (&biggest_region_count.size (:key (:Col *M_col) (:Id *M_id))))
+      (score ((:t (:Col M_col) (:Id M_id)) (:S N))
+        (&biggest_region_count.size (:key (:Col *M_col) (:Id *M_id)) *N)))
+
+    (RULE &window
+      (&biggest_region.maximal (:t *Col *Id))
+      (&closed.enclosed (:key Col) *P Id))))
+
+(INIT &window_bbox BoundingBox
+  (cell (P)
+    (&window *P)))
+
+(RULE &output
+  (&window_bbox.box *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

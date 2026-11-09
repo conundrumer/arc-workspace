@@ -1,0 +1,218 @@
+;; inputs 148867ae9f0d5ad409600fc7cb5ec3d5484a9d03089f5055e41e4e43172f0107 programs/solvers/e9c9d9a1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9c9d9a1
+
+(INPUT full-lines "lines of line_color 3, each one cell wide, run across the full width or the full height of the grid on a field of background 0.")
+
+(INPUT two-lines-per-axis "on each axis there are at least two lines, so there are at least three rooms across each axis and at least one inner room.")
+
+(INPUT no-edge-line "no line is on the grid edge, and no two lines are adjacent, so each room is a nonempty rectangle.")
+
+(OUTPUT corner-rooms "each of the four corner rooms is filled with the color corner_color gives for its corner."
+
+  (RULE &cell
+    (input *P *Col))
+
+  (RULE &line
+    (&cell *P)
+    (split P *A (:Along *L)))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P *Col)
+    (NOT (ex_input E P Col)))
+
+  (RULE &open_line
+    (&cell *P (:Col *B))
+    (&background (:C B))
+    (split P *A (:Along *L)))
+
+  (RULE &clear_line
+    (&line *A *L)
+    (NOT (&open_line A L)))
+
+  (RULE &table_divider
+    (&clear_line *A *L))
+
+  ;; The table of rooms that the dividers cut.
+  (INIT &table_rank Order
+    (key ((OR ((&table_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&cell *P)
+               (margin (:B P) D (:K *K2)))))
+      (member ((:t K))
+        (&table_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&table_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&cell *P)
+             (margin (:B P) D K))))
+      (probe ((:t K2))
+        (&cell *P)
+        (margin (:B P) D (:K *K2)))))
+
+  ;; The rooms as connected parts of the background.
+  (INIT &room Connectivity
+    (node (P)
+      (input *P (:Col *B))
+      (&background (:C B)))))
+
+(OUTPUT inner-rooms "each room that touches no grid edge is filled with inner_color."
+
+  ;; The rooms no walk through the background reaches from the grid edge.
+  (INIT &closed Enclosure
+    (cell (P)
+      (input *P (:Col *B))
+      (&background (:C B)))))
+
+(OUTPUT rest-unchanged "the lines and the edge rooms that are not corner rooms keep their input cells."
+
+  (DET &table_on_divider2
+    (&cell *E *P)
+    (&clear_line E *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  ;; The table of rooms that the dividers cut.
+  (INIT &table_rank2 Order
+    (key ((OR ((&clear_line (:E ^Ky) *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&cell (:E Ky) *P)
+               (margin (:B P) D (:K *K2)))))
+      (member ((:t K))
+        (&clear_line (:E Ky) *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&clear_line (:E Ky) *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&cell (:E Ky) *P)
+             (margin (:B P) D K))))
+      (probe ((:t K2))
+        (&cell (:E Ky) *P)
+        (margin (:B P) D (:K *K2)))))
+
+  (DET &table_part_idx2
+    (&cell *E *P)
+    (axis_of *D *A)
+    (NOT (&table_on_divider2 E P A))
+    (margin (:B P) D (:K *K2))
+    (&table_rank2.rank (:key (:Ky E) D) (:t K2) (:R *N)))
+
+  (DET &table_part_of2
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&table_part_idx2 *E *P D (:N *N1))
+    (&table_part_idx2 E P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (DET &table_tile_of2
+    (&table_part_of2 *E *P *A (:P_part *P1))
+    (perp A *A2)
+    (&table_part_of2 E P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET &room_cell2
+    (&table_tile_of2 *E *P)
+    (&cell E P (:Col *B))
+    (&background (:C B)))
+
+  (DET &inner_cell2
+    (&room_cell2 *E *P)
+    (NOT (&table_part_idx2 E P (:N 0))))
+
+  (DET &corner_color
+    (ex_output *P (:Col *C))
+    (diag_dirs *D *D1 *D2)
+    (margin (:B P) (:D D1) (:K 0))
+    (margin (:B P) (:D D2) (:K 0)))
+
+  (DET &inner_color
+    (&inner_cell2 *E *P)
+    (ex_output E P (:Col *C))))
+
+(ALTS $choice "how the rooms are found" $TableRooms
+  (ALT $TableRooms
+    (ALTS $test "which full lines are dividers" $NoBackgroundLines
+      (ALT $LineColorLines
+        (INPUT full-lines "a divider is a full row or column whose cells are all line_color. Undefined where an axis has no full line of line_color."
+          (DET_OR_RULE &line_color RarestColor
+            (&clear_line *E *A *L)
+            (&cell E *P (:Col *C))
+            (split P A (:Along L)))
+          (RULE &broken_line
+            (input *P *Col)
+            (NOT (&line_color (:C Col)))
+            (split P *A (:Along *L)))
+          (RULE &table_divider
+            (&line *A *L)
+            (NOT (&broken_line A L)))))))
+  (ALT $EnclosedRooms
+    (OUTPUT corner-rooms "the rooms are the 4-connected components of background cells, and a corner room is the component that holds the grid's corner cell. Undefined where one component holds two grid corners.")
+    (OUTPUT inner-rooms "an inner room is a component of background cells that no walk through background cells reaches from the grid edge.")
+    (RULE &fill
+      (OR ((&room.component *P *Id)
+           (&room.component (:P *Q) Id)
+           (diag_dirs (:D *Dg) *D1 *D2)
+           (margin (:B Q) (:D D1) (:K 0))
+           (margin (:B Q) (:D D2) (:K 0))
+           (&corner_color (:D Dg) (:C *Col)))
+          ((&closed.enclosed P)
+           (&inner_color (:C Col)))))))
+
+(RULE &table_on_divider
+  (&cell *P)
+  (&table_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(RULE &table_part_idx
+  (&cell *P)
+  (axis_of *D *A)
+  (NOT (&table_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&table_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &table_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&table_part_idx *P D (:N *N1))
+  (&table_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &table_tile_of
+  (&table_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&table_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &room_cell
+  (&table_tile_of *P)
+  (&cell P (:Col *B))
+  (&background (:C B)))
+
+(RULE &inner_cell
+  (&room_cell *P)
+  (NOT (&table_part_idx P (:N 0))))
+
+(RULE &fill
+  (OR ((&room_cell *P)
+       (diag_dirs (:D *Dg) *D1 *D2)
+       (&table_part_idx P (:D D1) (:N 0))
+       (&table_part_idx P (:D D2) (:N 0))
+       (&corner_color (:D Dg) (:C *Col)))
+      ((&inner_cell P)
+       (&inner_color (:C Col)))))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

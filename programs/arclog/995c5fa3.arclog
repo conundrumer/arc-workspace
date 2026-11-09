@@ -1,0 +1,158 @@
+;; inputs ac62b3e8f97eb555ef8b3600cde19bac93502e82e58d5a2e1f912e0bc13c05b4 programs/solvers/995c5fa3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 995c5fa3
+
+(INPUT tiles "the input is &tile_count equal tiles side by side along &tile_axis, separated by lines &tile_gap wide"
+
+  (DET &tile_axis AxisDomain)
+
+  ;; The output square's side, and the divisor of the Count split.
+  (DET &tile_count ConstOutDim)
+
+  (DET_OR_RULE &tile_gap SepThickness))
+
+(INPUT catalog "each tile is one of the catalog's patterns"
+
+  (INIT &tile_cell_division Division
+    (cell (P)
+      (input *P))
+    (parts (A N)
+      (&tile_axis *A)
+      (&tile_count *N))
+    (gap (A G)
+      (&tile_axis *A)
+      (&tile_gap *G)))
+
+  (DET_OR_RULE &bg RarestColor)
+
+  (DET &tile_cell2
+    (ex_input *E *P *Col)
+    (&tile_cell_division.tile P (:P_outer *P_tile) (:P_inner *P_intile)))
+
+  (RULE &tile_cell
+    (input *P *Col)
+    (&tile_cell_division.tile P (:P_outer *P_tile) (:P_inner *P_intile)))
+
+  ;; Tiles with equal content share an entry.
+  (INIT &same Inclusion
+    (pattern ((:pattern (:E T_e) (:P_tile T_p_tile)) (:m (:P P_intile) (:Col C)))
+      (&tile_cell2 (:E *T_e) (:P_tile *T_p_tile) *P_intile (:Col *C)))
+    (observed ((:observed (:E T_e) (:P_tile T_p_tile)) (:m (:P P_intile) (:Col C)))
+      (&tile_cell2 (:E *T_e) (:P_tile *T_p_tile) *P_intile (:Col *C))))
+
+  (INIT &entry Quotient
+    (equivalent ((:a (:E T_e) (:P_tile T_p_tile)) (:b (:E T2_e) (:P_tile T2_p_tile)))
+      (&same.equal (:observed (:E *T_e) (:P_tile *T_p_tile)) (:pattern (:E *T2_e) (:P_tile *T2_p_tile)))))
+
+  (DET &mapping_member
+    (&entry.class (:a (:E *T_e) (:P_tile *T_p_tile)) *Id)
+    (&tile_cell2 (:E T_e) (:P_tile T_p_tile) *P_intile (:Col *C)))
+
+  (INIT &tile_match Inclusion
+    (pattern ((:pattern Id) (:m (:P P_intile) (:Col C)))
+      (&mapping_member *Id *P_intile *C))
+    (observed ((:observed P_tile) (:m (:P P_intile) (:Col C)))
+      (&tile_cell *P_tile *P_intile (:Col *C))))
+
+  (INIT &hole_box BoundingBox
+    (key ((&tile_cell ^P_tile *P_intile (:Col *C))
+          (&bg C))
+      (cell ((:P P_intile))
+        (&tile_cell P_tile *P_intile (:Col *C))
+        (&bg C)))))
+
+(OUTPUT class-color "a tile's class color is the color its catalog pattern maps to")
+
+(OUTPUT rows "the output is a &tile_count-sided square; the row at a tile's index fills with that tile's class color, the tile counted from &tile_dir and the row from &row_dir"
+
+  ;; Tile index (from tile_dir) maps to output row index (from row_dir).
+  (DET &tile_dir DirDomain)
+
+  (DET &row_dir DirDomain)
+
+  ;; Output frame: tile_count-sided square.
+  (INIT &frame Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&tile_count *N)))
+
+  (RULE_OR_DET &row_tile "Output cell ↔ the tile whose index matches its row index."
+    (&frame.cell (:P *P_out))
+    (&row_dir (:D *D_row))
+    (margin (:B P_out) (:D D_row) *K)
+    (&tile_cell *P_tile)
+    (&tile_dir (:D *D_tile))
+    (margin (:B P_tile) (:D D_tile) K))
+
+  (DET &tile_color
+    (&tile_cell2 *E *P_tile)
+    (&tile_dir (:D *D_tile))
+    (margin (:B P_tile) (:D D_tile) *K)
+    (ex_output E (:P *P_out) *Col)
+    (&row_dir (:D *D_row))
+    (margin (:B P_out) (:D D_row) K)))
+
+(ALTS $cl "how a tile's class color is read" $Lookup
+  (ALT $HoleBox
+    (INPUT catalog "each tile's &bg cells have a box that &box_color keys, or the tile has no &bg cell")
+    (OUTPUT class-color "a tile's class color is &box_color at the box of its &bg cells, and &full_color where it has none; undefined where that box has no entry"
+      (DET &full_color OutNewColor)
+
+      ;; The box of a tile's bg cells keys its class color.
+      (INIT &fhole BoundingBox
+        (key ((&tile_cell2 ^E ^P_tile *P_intile (:Col *C))
+              (&bg C))
+          (cell ((:P P_intile))
+            (&tile_cell2 E P_tile *P_intile (:Col *C))
+            (&bg C))))
+
+      (DET &box_color
+        (&fhole.box (:key (:E *T_e) (:P_tile *T_p_tile)) *B)
+        (&tile_color (:E T_e) (:P_tile T_p_tile) *Col)))
+    (RULE &output
+      (&row_tile (:P_out *P) *P_tile)
+      (OR ((&hole_box.box (:key P_tile) *B)
+           (&box_color B *Col))
+          ((NOT (&hole_box.box (:key P_tile)))
+           (&full_color (:C Col)))))))
+
+(ALTS $d "how the input splits into tiles" $Count
+  (ALT $Size
+    (INPUT tiles "the input is equal tiles &tile_size wide side by side along &tile_axis, separated by lines &tile_gap wide; the tiles past the first &tile_count are not read"
+      (INIT &tile_size_division Division
+        (key ((&tile_axis ^A))
+          (parts (A N)
+            (&tile_count *N))
+          (gap (A G)
+            (&tile_gap *G)))
+        (cell (P)
+          (ex_input *P)))
+
+      (DET_OR_RULE &tile_size ConstInDim SepTileDim TileCount TileDim
+        (&tile_size_division.tile (:key *A) (:P_inner *P_intile))
+        (frame_extent (:P P_intile) A *N))
+
+      (INIT &tile_cell_division2 Division
+        (cell (P)
+          (input *P))
+        (side (A (:K S))
+          (&tile_axis *A)
+          (&tile_size (:N *S)))
+        (gap (A G)
+          (&tile_axis *A)
+          (&tile_gap *G)))
+
+      (RULE &tile_cell
+        (input *P *Col)
+        (&tile_cell_division2.tile P (:P_outer *P_tile) (:P_inner *P_intile))))))
+
+(DET &mapping_out
+  (&entry.class (:a (:E *T_e) (:P_tile *T_p_tile)) *Id)
+  (&tile_color (:E T_e) (:P_tile T_p_tile) (:Col *C_out)))
+
+(RULE &output
+  (&row_tile (:P_out *P) *P_tile)
+  (&mapping_out *Id (:C_out *Col))
+  (&tile_match.equal (:observed P_tile) (:pattern Id)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,153 @@
+;; inputs e88932ea7486b11704bb3bcf6ae7c382b0e616d5d78416cd30342964a8bd12c4 programs/solvers/ac6f9922.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac6f9922
+
+(alts $bg
+  (alt $CommonestBackground
+    (witness edge-bars variant $CommonestBackground
+      (relaxed framed-bars)
+      (separates "bars around 2×2 windows, whose outer bars lie on the grid edge, with windows that outnumber the bars: the concept takes the edge color, the bar color, as background, reads the background cells as the bars, finds the mark as the one region they close off, and gives one cell; $CommonestBackground takes the windows' color as background and gives the 2×2 window picture")
+      (input (grid
+        (1 1 1 1 1 1 1 1 1 1 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 4 2 4 4 1 4 4 4 4 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 1 1 1 1 1 1 1 1 1 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 4 4 4 4 1 4 4 4 4 1)
+        (1 1 1 1 1 1 1 1 1 1 1)))
+      (output ($EdgeColor $ClosedRegion) ($DividerTiles $BackgroundEmpty) (grid
+        (2)))
+      (output $BgRegionWindows ($DividerTiles $WindowFill) undefined)
+      (output $CommonestBackground (grid
+        (2 4)
+        (4 4))))))
+
+(alts $region
+  (alt $BgRegionWindows
+    (witness split-window borderline concept
+      (relaxed one-mark)
+      (separates "marks that span the full width of the two top windows: the concept reads each window as the region the bars close off and gives the marks' colors; $BgRegionWindows reads each background strip above and below a mark as a window of its own and gives a 3×2 picture of empty windows")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 2 2 2 2 1 6 6 6 1 4)
+        (4 1 1 2 2 2 2 1 6 6 6 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output ($ClosedRegion $BackgroundEmpty) ($DividerTiles $BackgroundEmpty) (grid
+        (2 6)
+        (4 4)))
+      (output $WindowFill undefined)
+      (output $BgRegionWindows (grid
+        (4 4)
+        (4 4)
+        (4 4))))))
+
+(alts $grouping
+  (alt $WindowBands
+    (witness staggered-window borderline $WindowBands
+      (relaxed window-grid)
+      (separates "one window a row shorter than the window beside it: the concept and the readings that group windows by their exact rows find overlapping rows and are undefined; $WindowBands merges the overlapping rows into one band and $DividerTiles cuts at the full bar lines, both giving the 2×2 picture")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 1 1 1 1 4)
+        (4 1 1 4 2 2 4 1 4 4 4 1 4)
+        (4 1 1 4 2 2 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output $SameExtent $WindowFill undefined)
+      (output $WindowBands ($DividerTiles $BackgroundEmpty) (grid
+        (2 4)
+        (4 4))))
+    (witness uneven-bars borderline $WindowBands
+      (relaxed window-grid)
+      (separates "the bar between the two rows of windows sits one row lower in the right column than in the left, so no bar row runs the full width: $WindowBands merges the overlapping window rows into two bands and gives the 2×2 picture; $DividerTiles finds no full bar row and cuts one tile per column, giving 2 3; the exact-row reading finds rows that share lines and is undefined")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 2 2 4 1 4 4 4 1 4)
+        (4 1 1 4 2 2 4 1 4 3 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output $SameExtent $WindowFill undefined)
+      (output $WindowBands (grid
+        (2 3)
+        (4 4)))
+      (output ($DividerTiles $BackgroundEmpty) (grid
+        (2 3))))))
+
+(alts $unit
+  (alt $DividerTiles
+    (witness missing-window borderline $DividerTiles
+      (relaxed window-grid)
+      (separates "one window of the 2×2 tiling filled in with the bar color: the window readings find three windows and leave a cell of the picture empty, so they are undefined; $DividerTiles cuts the bars at their full lines into four tiles and gives the filled tile the background color")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 4 2 2 4 1 4 4 4 1 4)
+        (4 1 1 4 2 2 4 1 4 4 4 1 4)
+        (4 1 1 4 4 4 4 1 4 4 4 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 1 1 1 1 4)
+        (4 1 1 4 4 4 4 1 1 1 1 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output $Window undefined)
+      (output ($DividerTiles $BackgroundEmpty) (grid
+        (2 4)
+        (4 4)))
+      (output ($DividerTiles $WindowFill) (grid
+        (2 4)
+        (4 1))))))
+
+(alts $empty
+  (alt $WindowFill
+    (witness window-fill borderline $WindowFill
+      (relaxed window-grid)
+      (separates "windows filled with a color other than the field outside the bars: the concept and the other readings count that fill as a second mark beside the mark 2 and are undefined; $WindowFill takes each window's own fill as its empty color and gives the fill for the empty windows")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 6 6 6 6 1 6 6 6 1 4)
+        (4 1 1 6 2 2 6 1 6 6 6 1 4)
+        (4 1 1 6 2 2 6 1 6 6 6 1 4)
+        (4 1 1 6 6 6 6 1 6 6 6 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 1 1 6 6 6 6 1 6 6 6 1 4)
+        (4 1 1 6 6 6 6 1 6 6 6 1 4)
+        (4 1 1 6 6 6 6 1 6 6 6 1 4)
+        (4 1 1 1 1 1 1 1 1 1 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output $BackgroundEmpty undefined)
+      (output $WindowFill (grid
+        (2 6)
+        (6 6))))))

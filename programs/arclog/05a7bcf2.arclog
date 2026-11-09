@@ -1,0 +1,126 @@
+;; inputs c7dfbe0cacff59b8f605a72db47ad319e6838c20b79fdb13a329e55cd5ac19e0 programs/solvers/05a7bcf2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 05a7bcf2
+
+(DET &push SharedColor)
+
+(RULE &push_cell
+  (input *P *Col)
+  (&push (:C Col)))
+
+(DET &wall UnchangedColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+;; From the wall toward the push structure, and on to the far edge.
+(INIT &wall_cast Ray
+  (source (P)
+    (&wall_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &wall_cast_ray
+  (&wall_cast.ray *P *D *K (:Origin *Src))
+  (&push_cell P))
+
+(RULE &dir
+  (dir_elem *D)
+  (&wall_cast_ray D))
+
+;; It travels until it rests against the far edge.
+(INIT &slide Distance
+  (source_distance (K)
+    (&push_cell *P)
+    (&dir *D)
+    (margin (:B P) D *K)))
+
+(RULE &slide_travel_full
+  (&slide.distance *K)
+  (&dir *D)
+  (jump_offset D K (:V *V2)))
+
+(DET &shape ChangedColor)
+
+(DET &mark AnyOutNewColor)
+
+(RULE &shape_cell
+  (input *P *Col)
+  (&shape (:C Col)))
+
+;; The shape casts toward the wall; the wall's fill reaches on past it.
+(INIT &cast Ray
+  (source (P)
+    (&shape_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&dir *D)))
+
+(INIT &reach Ray
+  (source (P)
+    (&wall_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&dir *D)))
+
+(RULE &short
+  (input *P)
+  (&dir *D)
+  (NOT (&cast.ray P D)))
+
+(RULE &gap
+  (&cast.ray *P *D)
+  (NOT (&reach.ray P D))
+  (NOT (&shape_cell P)))
+
+(RULE &through
+  (&reach.ray *P *D)
+  (&cast.ray P D))
+
+(RULE &placed
+  (&slide_travel_full (:V2 *V))
+  (&push_cell (:P *P3))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(ALTS $choice "Two models of how it gets there" $Slide
+  (ALT $Pack
+    ;; Each push cell falls toward the far edge and stacks on those ahead of it.
+    (INIT &fall Distance
+      (weight ((:a P2) (:b P) (:W K))
+        (&push_cell *P)
+        (&dir *D)
+        (&push_cell (:P *P2))
+        (!= P P2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n P) K)
+        (&push_cell *P)
+        (&dir *D)
+        (margin (:B P) D *K)))
+
+    (RULE &fall_travel_full
+      (&fall.distance (:n *V1) *K)
+      (&dir *D)
+      (jump_offset D K (:V *V2)))
+
+    (RULE &placed
+      (&fall_travel_full (:V1 *P3) (:V2 *V))
+      (compose (:A P3) (:B V) (:C *P)))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&short P))
+      ((&shape_cell P)
+       (&mark (:C Col)))
+      ((&gap P)
+       (&shape (:C Col)))
+      ((&through P)
+       (IF ((&placed P))
+           ((&push (:C Col)))
+           ((&wall (:C Col)))))))
+
+(OUT (&output ^P ^Col))

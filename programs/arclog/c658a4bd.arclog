@@ -1,0 +1,174 @@
+;; inputs b66e22700ed82180ccd75e029a5172d4bb00e661ec0c1aec52ecbca62a2ba91d programs/solvers/c658a4bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c658a4bd
+
+(INPUT square-per-color "each non-&bg color draws one square: the outline of a square, or a solid square when its side is 1 or 2"
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output E (:Col C)))))
+
+(INPUT distinct-sizes "the squares have distinct side lengths")
+
+(INPUT sizes-step "sorted by side, the sides fall by 2 from the largest to the smallest, and the smallest side is 1 or 2")
+
+(INPUT partly-hidden "a square may cross another square, which then covers some of its cells, and a square may run past the grid edge; each square keeps enough cells to show its side")
+
+(OUTPUT output-size "the output is a square whose side is the largest square's side"
+
+  ;; The bounding box of each square.
+  (INIT &square BoundingBox
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (cell (P)
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (INIT &area Cardinality
+    (key ((&square.box (:key ^Col) *B)
+          (input *P)
+          (inside (:A P) B))
+      (member ((:m P))
+        (&square.box (:key Col) *B)
+        (input *P)
+        (inside (:A P) B)))))
+
+(OUTPUT concentric-rings "the output's ring at depth k from its edge takes the color of the square of the k-th largest side, the largest at depth 0"
+
+  (RULE &extent
+    (&square.box (:key *Col) *B)
+    (&square.cell (:key Col) *P)
+    (box_extent B P *A *N))
+
+  (INIT &larger Order
+    (key ((&extent ^Col *N))
+      (member ((:t N))
+        (&extent Col *N))
+      (score ((:t N) (:S N))
+        (&extent Col *N))))
+
+  (RULE &side
+    (&larger.maximal (:key *Col) (:t *N)))
+
+  (RULE &score
+    (&side *Col (:N *S)))
+
+  (RULE &tie
+    (&score (:Col *Col1) (:S *N))
+    (&score (:Col *Col2) (:S N))
+    (!= Col1 Col2))
+
+  ;; The squares by score, the lowest first: a square's depth is the count of
+  ;; squares with a higher score, its rank_desc.
+  (INIT &order Order
+    (member ((:t Col))
+      (&score *Col)
+      (NOT (&tie)))
+    (score ((:t Col) (:S N))
+      (&score *Col (:S *N))))
+
+  (RULE &top_side
+    (&order.maximal (:t *Col))
+    (&side Col *N))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (&top_side *N)
+      (axis_elem *A)))
+
+  (INIT &ring Boundary
+    (cell (P)
+      (&frame.cell *P)))
+
+  (INIT &ring_depth CellDistance
+    (node (P)
+      (&frame.cell *P))
+    (source (P)
+      (&ring.boundary *P)))
+
+  (RULE &ranked_ring
+    (&ring_depth.distance *P *K)
+    (&order.dual_rank (:t *Col) (:R K)))
+
+  (RULE &ring_side
+    (&ring_depth.distance *P *K)
+    (uniform_inset K *B)
+    (box_extent B P *A (:N *S)))
+
+  (RULE &unplaced
+    (&ring_side)
+    (&side (:N *S))
+    (NOT (&ring_side S))))
+
+(ALTS $nesting "how the ordered squares make the output" $RankRings
+  (ALT $OutlineAtSide
+    (OUTPUT concentric-rings "each square is drawn as a 1-wide outline at its own side, centered in the frame, and &bg fills the rest; undefined where a square's side is the side of no ring of the frame")
+    (RULE &output
+      (&ring_side *P *S)
+      (NOT (&unplaced))
+      (OR ((&side *Col (:N S)))
+          ((NOT (&side (:N S)))
+           (&bg (:C Col)))))
+    (OUT (&output ^P ^Col)))
+  (ALT $SolidAtSide
+    (OUTPUT concentric-rings "each square is drawn solid at its own side, centered, the larger ones first; undefined where a square's side is the side of no ring of the frame"
+      ;; The squares that cover each cell, and the smallest of them, which lies on
+      ;; top.
+      (INIT &cover Order
+        (key ((&ring_side ^P (:S *T))
+              (&side *Col (:N *S))
+              (>= S T))
+          (member ((:t (:V Col) S))
+            (&ring_side P (:S *T))
+            (&side *Col (:N *S))
+            (>= S T))
+          (score ((:t (:V Col) S) S)
+            (&ring_side P (:S *T))
+            (&side *Col (:N *S))
+            (>= S T)))))
+    (RULE &output
+      (&cover.minimal (:key *P) (:t (:V *Col)))
+      (NOT (&unplaced)))
+    (OUT (&output ^P ^Col)))
+  (ALT $SideFromCount
+    (OUTPUT output-size "the output's side is the smallest square's side with one ring added around it for each other square"
+      ;; The smallest square's side as a frame.
+      (INIT &core Frame
+        (extent (A (:N S))
+          (&order.minimal (:t *Col))
+          (&side Col (:N *S))
+          (axis_elem *A)))
+
+      (INIT &frame Frame
+        (extent (A N)
+          (&order.minimal (:t *Col))
+          (&order.dual_rank (:t Col) (:R *K))
+          (uniform_outset K *B)
+          (&core.cell *P)
+          (box_extent B P *A *N)))))
+  (ALT $InnermostFills
+    (OUTPUT concentric-rings "the smallest square's color fills each ring deeper than the squares reach")
+    (RULE &output
+      (&ring_depth.distance *P *K)
+      (OR ((&order.dual_rank (:t *Col) (:R K)))
+          ((&order.minimal (:t Col))
+           (NOT (&order.dual_rank (:R K))))))
+    (OUT (&output ^P ^Col))))
+
+(ALTS $rank "what orders the squares and picks the largest" $BySide
+  (ALT $RankByBboxArea
+    (OUTPUT concentric-rings "the squares are ordered by the cell count of their visible bounding box, and the output's side is the side of the first; undefined where two counts tie"
+      (RULE &score
+        (&area.size (:key *Col) (:N *S))))))
+
+(ALTS $side "how a square's side is read from its visible cells" $LargerExtent
+  (ALT $SideOnAxis
+    (OUTPUT concentric-rings "a square's side is its bounding box's extent along &side_axis"
+      (DET &side_axis AxisDomain)
+
+      (RULE &side
+        (&extent *Col *A *N)
+        (&side_axis A)))))
+
+(OUT (&ranked_ring ^P ^Col))

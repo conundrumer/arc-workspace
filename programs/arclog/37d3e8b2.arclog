@@ -1,0 +1,104 @@
+;; inputs 4522f660f35ab3ed2ab885da9c15b283a26009e7a2fbab1e153d6da49b67753a programs/solvers/37d3e8b2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 37d3e8b2
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+;; The background, with all ink solid.
+(INIT &off_ink Enclosure
+  (cell (P)
+    (&bg_cell *P)))
+
+;; A closed region counts for every object it touches.
+(INIT &joint_holes Cardinality
+  (key ((&off_ink.enclosed *P *Id)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&objs.component (:P Q) (:Id ^O)))
+    (member ((:m Id))
+      (&off_ink.enclosed *P *Id)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&objs.component (:P Q) (:Id O)))))
+
+(DET &joint_count_color
+  (&objs.component *E *P (:Id *O))
+  (&joint_holes.size E (:key O) *N)
+  (ex_output E P *Col))
+
+(ALTS $choice "what a hole is" $Joint
+  (ALT $Own
+    ;; The cells left when only O is solid — other objects among them.
+    (INIT &off_obj Enclosure
+      (key ((&objs.component (:Id ^O)))
+        (cell (P)
+          (input *P)
+          (NOT (&objs.component P (:Id O))))))
+
+    (INIT &own_holes Cardinality
+      (key ((&off_obj.enclosed (:key ^O) *Id))
+        (member ((:m Id))
+          (&off_obj.enclosed (:key O) *Id))))
+
+    (DET &own_count_color
+      (&objs.component *E *P (:Id *O))
+      (&own_holes.size E (:key O) *N)
+      (ex_output E P *Col))
+
+    (RULE &output
+      (OR ((&objs.component *P (:Id *O))
+           (&own_holes.size (:key O) *N)
+           (&own_count_color N *Col))
+          ((input P Col)
+           (&bg (:C Col))))))
+  (ALT $Box
+    ;; Each object's own extent.
+    (INIT &bbox BoundingBox
+      (key ((&objs.component *P (:Id ^O)))
+        (cell (P)
+          (&objs.component *P (:Id O)))))
+
+    ;; The background inside that extent.
+    (INIT &box_regions Connectivity
+      (key ((&bbox.box (:key ^O) *B)
+            (&bg_cell *P)
+            (inside (:A P) B))
+        (node (P)
+          (&bbox.box (:key O) *B)
+          (&bg_cell *P)
+          (inside (:A P) B))))
+
+    (INIT &box_holes Cardinality
+      (key ((&box_regions.component (:key ^O) *Id))
+        (member ((:m Id))
+          (&box_regions.component (:key O) *Id))))
+
+    (DET &box_count_color
+      (&objs.component *E *P (:Id *O))
+      (&box_holes.size E (:key O) *N)
+      (ex_output E P *Col))
+
+    (RULE &output
+      (OR ((&objs.component *P (:Id *O))
+           (&box_holes.size (:key O) *N)
+           (&box_count_color N *Col))
+          ((input P Col)
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&objs.component P (:Id *O))
+       (&joint_holes.size (:key O) *N)
+       (&joint_count_color N Col))))
+
+(OUT (&output ^P ^Col))

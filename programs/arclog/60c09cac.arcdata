@@ -1,0 +1,5 @@
+;; inputs fcaf4d00ae25b58b4916341c4bae9f0ee4ae25a4300d7ce81a2df1c439250d03 programs/solvers/60c09cac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 60c09cac
+
+(param &scale number (2))

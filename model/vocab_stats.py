@@ -17,7 +17,7 @@ def cls(n):
 
 model, engine, used = collections.Counter(), collections.Counter(), collections.Counter()
 for tid in ids:
-    r = subprocess.run(["engine/target/tool/arclog-cli", "stream", f"work/arclog/gen/{tid}.arclog"], capture_output=True, text=True)
+    r = subprocess.run(["engine/target/tool/arclog-cli", "stream", f"programs/arclog/{tid}.arclog"], capture_output=True, text=True)
     if r.returncode: continue
     for t in json.loads(r.stdout):
         n = names[t["id"]]

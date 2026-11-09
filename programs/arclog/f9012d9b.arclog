@@ -1,0 +1,145 @@
+;; inputs 9c324ac87a11776d11c97c5bdcd736805a5753bcdad457fa235e2211007b6159 programs/solvers/f9012d9b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f9012d9b
+
+(INPUT periodic-pattern "every cell outside the patch belongs to a pattern that repeats with one period along the rows and one along the columns, each period shorter than the grid on its axis.")
+
+(INPUT one-rectangular-hole "the cells of `hole_color` (0) form one solid rectangle, and no other cell has that color."
+
+  ;; Each color's bounding box.
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (RULE &gapped
+    (&color_box.box (:key *Col) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (input P Col)))
+
+  (RULE &solid
+    (&color_box.box (:key *Col))
+    (NOT (&gapped Col)))
+
+  ;; The one color that fills its bounding box.
+  (INIT &solid2 Singleton
+    (member ((:v Col))
+      (&solid *Col))))
+
+(OUTPUT least-period "the periods are the least pair, the row period first, at which every two non-hole cells whose row distance is a multiple of the row period and whose column distance is a multiple of the column period hold one color.")
+
+(OUTPUT fill-from-period "each hole cell takes the color of a non-hole cell at a distance from it that is a multiple of the period on each axis."
+
+  (DET &not_solid
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (&solid E (:Col C))))
+
+  (DET_OR_RULE &hole_color "the color that marks the blanked-out cells" RarestColor
+    (ex_input (:Col *C))
+    (NOT (&not_solid C)))
+
+  (RULE &hole
+    (input *P *Col)
+    (&hole_color (:C Col)))
+
+  (RULE &intact
+    (input *P *Col)
+    (NOT (&hole P)))
+
+  ;; The pattern's least period on each axis.
+  (INIT &si Periods
+    (cell (P (:v Col))
+      (&intact *P *Col)))
+
+  ;; The pattern's symmetries, each with its period translations.
+  (INIT &wp Wallpaper
+    (transform (D)
+      (d4_elem *D))
+    (cell (P (:v Col))
+      (&intact *P *Col))
+    (grid (P)
+      (input *P))
+    (period (A K)
+      (&si.fundamental_period *A *K))))
+
+(OUTPUT crop-to-hole "the output is the hole's rectangle, filled, cut out of the grid."
+
+  (INIT &hole_box BoundingBox
+    (cell (P)
+      (&hole *P))))
+
+(ALTS $h "which cells are the hole" $ColorHole
+  (ALT $HoleByShape
+    (INPUT one-rectangular-hole "the hole is the one color whose cells form a single solid rectangle; undefined where no color does, or more than one."
+      (RULE &hole
+        (&solid2.value (:v *Col))
+        (input *P Col)))))
+
+(ALTS $r "which cells a hole cell reads its color from" $Lattice
+  (ALT $PeriodAndSymmetry
+    (OUTPUT fill-from-period "a hole cell also reads its images under the grid's symmetries that the visible cells witness and none contradicts, closed under the periods; undefined where a cell stays unreached or two sources disagree."
+      ;; The orbits of the frame positions under the symmetries.
+      (INIT &orbit Quotient
+        (edge ((:a P) (:b Q))
+          (&wp.action *P *Q)))
+
+      (RULE &orbit_color
+        (&orbit.class (:a *Q) *Id)
+        (&intact (:P Q) *Col)))
+    (RULE &fill
+      (&hole *P)
+      (&orbit.class (:a P) *Id)
+      (&orbit_color Id *Col)))
+  (ALT $CopyNeighborTile
+    (OUTPUT fill-from-period "a hole cell takes the color of a visible cell exactly one period away on one axis or both; undefined where all eight such cells are hidden or off the grid.")
+    ;; A visible cell one period away on one axis, or on both.
+    (RULE &fill
+      (&hole *P)
+      (axis_of *D *A)
+      (&si.fundamental_period A *K)
+      (jump P D K (:Q *Q1))
+      (OR ((perp A *A2)
+           (axis_of (:D *D2) (:A A2))
+           (&si.fundamental_period (:A A2) (:K *K2))
+           (jump (:P Q1) (:D D2) (:K K2) *Q))
+          ((= Q Q1)))
+      (&intact (:P Q) *Col))))
+
+(RULE &residue_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (input (:P *Key))
+  (axis_of D (:A *A4))
+  (&si.fundamental_period (:A A4) *K)
+  (margin (:B Key) D (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder *R))
+  (axis_of (:D D2) (:A *A2))
+  (&si.fundamental_period (:A A2) (:K *K2))
+  (margin (:B Key) (:D D2) (:K *T2))
+  (divide (:T T2) (:Side K2) (:Gap 0) (:Remainder *R2))
+  (axis_inset D (:K1 R) (:K2 R2) *B))
+
+(RULE &residue
+  (&residue_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&residue_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &residue_color
+  (&residue (:Key *Q) *B)
+  (&intact (:P Q) *Col))
+
+(RULE &fill
+  (&hole *P)
+  (&residue (:Key P) *B)
+  (&residue_color B *Col))
+
+(RULE &output
+  (&fill (:P *P2) *Col)
+  (&hole_box.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

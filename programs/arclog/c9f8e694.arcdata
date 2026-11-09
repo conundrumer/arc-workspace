@@ -1,0 +1,10 @@
+;; inputs 819c404b33bd29b6eb13ab0ad205644aa2b2d1f1465acd5d273265ad9a4dd058 programs/solvers/c9f8e694.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c9f8e694
+
+(representative c7d4e6ad)
+
+(param &targets Color (5))
+(param &axis Axis (AXIS_H))
+(param &anchor Dir (DIR_L))
+(param &bg Color (0))

@@ -1,0 +1,6 @@
+;; inputs b3ef4c8b0b52462531513e298ef38c4fe0c0fb850166bc56528a5a3b07d35185 programs/solvers/2dee498d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2dee498d
+
+(param &tile_axis Axis (AXIS_H))
+(param &tile_count number (3))

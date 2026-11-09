@@ -1,0 +1,171 @@
+;; inputs 6fbac6167b237ea31b83d730594ba499f2cc4b6201962c12f5c7e19a509a6ff8 programs/solvers/1e5d6875.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e5d6875
+
+(DET &bg DominantColor)
+
+(DET &painted
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *Col2))
+  (!= Col Col2))
+
+(INIT &parts Connectivity
+  (key ((ex_input ^E *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (ex_input E *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; The piece's shape among the repainted cells: its copy. A copy cell past
+;; the frame drops, so each cell just past the frame counts as a copy cell.
+(INIT &copy Occurrences
+  (key ((&parts.component (:key ^E ^Col) ^Id *P))
+    (cell ((:P Q))
+      (&parts.component (:key E Col) Id *P)
+      (OR ((&painted E (:P *Q)))
+          ((diag_dir_elem *D)
+           (neighbor P D Q)
+           (NOT (ex_input E (:P Q))))))
+    (shape (P)
+      (&parts.component (:key E Col) Id *P))))
+
+(INIT &bbox2 BoundingBox
+  (key ((&parts.component (:key ^E ^Col) ^Id *P))
+    (cell (P)
+      (&parts.component (:key E Col) Id *P))))
+
+(DET &corner_cell2
+  (&parts.component (:key *E *Col) *Id *P)
+  (&bbox2.box (:key E Col Id) *B)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B)))
+
+(DET &open_diag2
+  (&parts.component (:key *E *Col) *Id)
+  (diag_dir_elem (:D *Diag))
+  (NOT (&corner_cell2 E Col Id Diag)))
+
+(DET &shown_step
+  (&open_diag2 *E (:Col *Src) *Id (:Diag *Open))
+  (&copy.occurrence (:key E (:Col Src) Id) (:P *V))
+  (diag_dir_elem (:D *Dir))
+  (step_offset (:D Dir) V))
+
+(INIT &color_id Quotient
+  (equivalent ((:a Col) (:b Col))
+    (&shown_step (:Src *Col))))
+
+(DET &step
+  (&open_diag2 *E (:Col *Src) (:Id *O) (:Diag *Open))
+  (&copy.occurrence (:key E (:Col Src) (:Id O)) (:P *V))
+  (diag_dir_elem (:D *Dir))
+  (step_offset (:D Dir) V)
+  (&color_id.class (:a Src) *Id))
+
+;; Each piece color's step, one chart per color: a corner a piece leaves
+;; open and the diagonal a piece with that corner steps along. Each
+;; orientation of the piece is a pose of the chart.
+(RIGID_DET &piece
+  (key ((&step ^Id))
+    (instance ((&step ^E ^O Id))
+      (&step E O Id *Src *Open *Dir))))
+
+(INIT &parts2 Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&parts2.component (:key ^Col) ^Id *P))
+    (cell (P)
+      (&parts2.component (:key Col) Id *P))))
+
+(RULE &corner_cell
+  (&parts2.component (:key *Col) *Id *P)
+  (&bbox.box (:key Col Id) *B)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B)))
+
+(RULE &open_diag
+  (&parts2.component (:key *Col) *Id)
+  (diag_dir_elem (:D *Diag))
+  (NOT (&corner_cell Col Id Diag)))
+
+(DET &copy_land
+  (&parts.component (:key *E *Col) *Id (:P *P2))
+  (diag_dir_elem (:D *Dir))
+  (neighbor (:P P2) (:D Dir) (:Q *P))
+  (ex_input E P))
+
+(DET &copy_cell
+  (&copy_land *E *Col *Id (:Dir *D) *P)
+  (&open_diag2 E Col Id *Diag)
+  (&shown_step (:Src Col) (:Open Diag) (:Dir D)))
+
+(DET &copy_color
+  (&copy_cell *E (:Col *O_col) *Id (:P *Q))
+  (&painted E (:P Q) *Col))
+
+(DET &mark_missing
+  (&copy_color (:O_col *Src) *Col)
+  (&copy_color (:E *E2) (:O_col Src) (:Id *Id2))
+  (NOT (&copy_color (:E E2) (:O_col Src) (:Id Id2) Col)))
+
+(DET &mark
+  (&copy_color (:O_col *Src) *Col)
+  (NOT (&mark_missing Src Col)))
+
+(RULE &mark_cell
+  (&parts2.component (:key (:Col *Col2)) *Id (:P *P2))
+  (&open_diag (:Col Col2) Id *Diag)
+  (&piece.step (:Src Col2) (:Open Diag) (:Dir *D))
+  (&mark (:Src Col2) *Col)
+  (neighbor (:P P2) D (:Q *P))
+  (input P))
+
+(DET &copy_at
+  (&copy_cell *E (:Col *Col2) *P)
+  (&mark (:Src Col2) *Col))
+
+(INIT &prec Order
+  (member ((:t M))
+    (&mark (:Col *M)))
+  (before ((:a M) (:b M2))
+    (&copy_at *E *P (:Col *M))
+    (&copy_at E P (:Col *M2))
+    (!= M M2)
+    (ex_output E P (:Col M))))
+
+(DET &mark_rank
+  (&prec.rank (:t *Col) *R))
+
+(INIT &win Order
+  (key ((&mark_cell ^P (:Col *M))
+        (&mark_rank (:Col M) *R))
+    (member ((:t (:V M) (:S R)))
+      (&mark_cell P (:Col *M))
+      (&mark_rank (:Col M) *R))
+    (score ((:t (:V M) (:S R)) (:S R))
+      (&mark_cell P (:Col *M))
+      (&mark_rank (:Col M) *R))))
+
+(ALTS $choice "a copy landing on a piece cell" $Keep
+  (ALT $Cover
+    (RULE &output
+      (input *P (:Col *Col_in))
+      (OR ((&win.minimal (:key P) (:t (:V *Col))))
+          ((NOT (&mark_cell P))
+           (= Col Col_in))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&bg (:C Col))))
+      ((input P (:Col *Bg))
+       (&bg (:C Bg))
+       (OR ((&win.minimal (:key P) (:t (:V Col))))
+           ((NOT (&mark_cell P))
+            (= Col Bg))))))
+
+(OUT (&output ^P ^Col))

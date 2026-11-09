@@ -1,0 +1,42 @@
+;; inputs 466de17afecd8fabda29dde6e55eaef6f9c846266523da129d88443ede180576 programs/solvers/1e0a9b12.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e0a9b12
+
+(DET &grav DirDomain)
+
+(DET &bg DominantColor)
+
+;; Each ink cell travels toward the gravity edge and stops against the ink
+;; already packed ahead of it.
+(INIT &pack Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (&grav *D)
+    (input (:P *P2) (:Col *Col2))
+    (NOT (&bg (:C Col2)))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (&grav *D)
+    (margin (:B P) D *K)))
+
+(RULE &pack_travel_full
+  (&pack.distance (:n *V1) *K)
+  (&grav *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &fallen
+  (input (:P *P2) *Col)
+  (&pack_travel_full (:V1 P2) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&fallen *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&fallen P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,162 @@
+;; inputs 85c0f77cc6e1c8070d86e083d115ef10e9a8a2e4b242524a8f65c53e4678754f programs/solvers/c074846d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c074846d
+
+(INPUT pivot "the input holds one cell of color &pivot_color"
+
+  (DET &recolored
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET &arm_color
+    (&recolored *E (:C_in *C))
+    (&recolored E (:C_out C)))
+
+  (DET_OR_RULE &pivot_color RarestColor
+    (ex_input *E *P (:Col *C))
+    (&arm_color (:C *C_arm))
+    (dir_elem *D)
+    (neighbor P D (:Q *A))
+    (&recolored E (:P A) (:C_in C_arm))
+    (dir_elem (:D *D2))
+    (neighbor P (:D D2) *Q)
+    (&recolored E (:P Q) (:C_in *C_covered) (:C_out C_arm))
+    (!= C C_covered))
+
+  (DET_OR_RULE &background DominantColor
+    (&recolored (:C_in *C) (:C_out *A))
+    (&arm_color (:C A)))
+
+  (INIT &stick4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (INIT &stick8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT arm "the input holds a straight run of &arm_color cells, one cell wide, that starts at a neighbor of the pivot and goes away from it in one cardinal direction, of length one or more")
+
+(INPUT blank-field "every other cell is background (0)")
+
+(INPUT room-to-turn "the grid holds the arm's full length past the pivot in the direction the turn takes it to")
+
+(OUTPUT swing "the output paints the arm at the pivot again, turned a quarter turn in sense &sense around the pivot: each arm cell at distance k from the pivot in direction d goes to distance k in the direction &sense turns d to, in &arm_color"
+
+  (RULE &pivot
+    (input *P *Col)
+    (&pivot_color (:C Col)))
+
+  (DET &pivot_color_determined
+    (ex_input *E *P (:Col *C))
+    (&arm_color (:C *C_arm))
+    (dir_elem *D)
+    (neighbor P D (:Q *A))
+    (&recolored E (:P A) (:C_in C_arm))
+    (dir_elem (:D *D2))
+    (neighbor P (:D D2) *Q)
+    (&recolored E (:P Q) (:C_in *C_covered) (:C_out C_arm))
+    (!= C C_covered))
+
+  (DET &sense
+    (ex_input *E *P (:Col *C_pivot))
+    (&pivot_color_determined (:C C_pivot))
+    (&arm_color (:C *C_arm))
+    (neighbor P *D (:Q *A))
+    (&recolored E (:P A) (:C_in C_arm))
+    (neighbor P (:D *D2) *Q)
+    (&recolored E (:P Q) (:C_out C_arm))
+    (turn *S D D2))
+
+  (INIT &sight Ray
+    (source (P)
+      (&pivot *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D))))
+
+(OUTPUT trail "each cell the arm held in the input takes &trail_color"
+
+  (DET &trail_color
+    (&recolored (:C_in *A) (:C_out *C))
+    (&arm_color (:C A))))
+
+(OUTPUT keep "every other cell, the pivot included, keeps its input color"
+
+  (RULE &arm
+    (input *P *Col)
+    (&arm_color (:C Col))))
+
+(ALTS $turn "how an arm cell's place turns about a pivot" $DirTurn
+  (ALT $RotateOffsets
+    (OUTPUT swing "each arm cell's offset from the pivot turns a quarter turn in &sense, wherever the cell lies")
+    (RULE &turned
+      (&pivot *P)
+      (&arm (:P *A))
+      (relative (:Base P) (:X A) (:X_rel *V))
+      (&sense *S)
+      (c4_turn S (:T *R))
+      (apply (:D R) (:P V) (:P_out *V2))
+      (compose (:A P) (:B V2) (:C *Q)))))
+
+(ALTS $scope "which pivots an arm cell turns about" $OnePivotSet
+  (ALT $PerStick
+    (INPUT pivot "each 4-connected component of cells other than &background is a stick, with its own pivot cells")
+    (OUTPUT swing "an arm cell turns only about the pivot cells of its own stick")
+    (RULE &linked
+      (&pivot *P)
+      (&arm (:P *A))
+      (!= P A)
+      (&stick4.component P *Id)
+      (&stick4.component (:P A) Id))
+    (ALTS $adj "which cells join into one stick" $Join4
+      (ALT $CornerJoin
+        (INPUT pivot "8-adjacency joins the cells of a stick, so sticks that touch only at a corner are one stick")
+        (RULE &linked
+          (&pivot *P)
+          (&arm (:P *A))
+          (!= P A)
+          (&stick8.component P *Id)
+          (&stick8.component (:P A) Id))))))
+
+(RULE &linked
+  (&pivot *P)
+  (&arm (:P *A))
+  (!= P A))
+
+(RULE &turned
+  (&sight.ray (:P *A) *D *K (:Origin *P))
+  (&arm (:P A))
+  (&sense *S)
+  (turn S D *D2)
+  (jump P (:D D2) K *Q))
+
+(RULE &painted
+  (&linked *P *A)
+  (&turned P A *Q))
+
+(RULE &moved
+  (&linked *P *A)
+  (&turned P A))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&painted (:Q P))
+       (&arm_color (:C *Col)))
+      ((&moved (:A P))
+       (NOT (&painted (:Q P)))
+       (&trail_color (:C Col)))
+      ((NOT (&painted (:Q P)))
+       (NOT (&moved (:A P)))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

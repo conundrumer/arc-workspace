@@ -1,0 +1,181 @@
+;; inputs 7be84e004de191df647e34207a6d8cdaad8111e24d3d7604f7a74d04a4a262c4 programs/solvers/7491f3cf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7491f3cf
+
+;; A separator is a grid line of one color.
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &frame_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &frame_rank Order
+  (key ((OR ((&line_color.value (:key *A *L))
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D (:K *K2)))))
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&line_color.value (:key *A *L))
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K2))
+      (input *P)
+      (margin (:B P) D (:K *K2)))))
+
+(RULE &frame_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&frame_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&frame_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &frame_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&frame_part_idx *P D (:N *N1))
+  (&frame_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &frame_tile_of
+  (&frame_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&frame_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; Each panel's box.
+(INIT &panel BoundingBox
+  (key ((&frame_tile_of *P ^P_tile))
+    (cell (P)
+      (&frame_tile_of *P P_tile))))
+
+(RULE &panel_view
+  (&panel.cell (:key *P_tile) *P)
+  (&panel.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &panel_cell
+  (&panel_view *P_tile *P *P_intile)
+  (input P *Col))
+
+;; The blank panel is one color.
+(INIT &panel_color Singleton
+  (key ((&panel_cell ^E (:P_tile ^T) *Col))
+    (member ((:v Col))
+      (&panel_cell E (:P_tile T) *Col))))
+
+(DET &inked
+  (&frame_tile_of *E *P_tile)
+  (NOT (&panel_color.value (:key E (:T P_tile)))))
+
+(DET &out_tile
+  (&frame_tile_of *P_tile)
+  (NOT (&inked P_tile)))
+
+;; The blank panel's color is the ground.
+(RULE &ground
+  (&out_tile (:P_tile *T))
+  (&panel_cell (:P_tile T) *Col))
+
+(RULE &ink
+  (&panel_cell *P_tile *P_intile *Col)
+  (NOT (&ground Col)))
+
+(RULE &line
+  (&ink *P_tile *P_intile)
+  (neighbor (:P P_intile) *D *Q)
+  (&ink P_tile (:P_intile Q)))
+
+(RULE &marker
+  (&ink *P_tile *P_intile)
+  (NOT (&line P_tile P_intile)))
+
+(DET &unmarked
+  (&frame_tile_of *E *P_tile)
+  (NOT (&marker E P_tile)))
+
+(DET &mask_tile
+  (&marker *P_tile)
+  (NOT (&unmarked P_tile)))
+
+;; The side of the mask's line that the marker sits on.
+(INIT &side Flood
+  (node (P)
+    (&mask_tile (:P_tile *T))
+    (&panel_cell (:P_tile T) (:P_intile *P))
+    (NOT (&line (:P_tile T) (:P_intile P))))
+  (source (P)
+    (&mask_tile (:P_tile *T))
+    (&marker (:P_tile T) (:P_intile *P))))
+
+(DET &pattern
+  (&frame_tile_of *P_tile)
+  (NOT (&mask_tile P_tile))
+  (NOT (&out_tile P_tile)))
+
+(DET &not_top
+  (&pattern *P_tile)
+  (&panel_cell *E P_tile *P_intile *Col)
+  (&side.reached E (:P P_intile))
+  (&out_tile (:P_tile *T_out))
+  (&panel_view E (:P_tile T_out) *P P_intile)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(DET &top_tile
+  (&pattern *P_tile)
+  (NOT (&not_top P_tile)))
+
+(DET &under_tile
+  (&pattern *P_tile)
+  (NOT (&top_tile P_tile)))
+
+(RULE &under
+  (&under_tile (:P_tile *T))
+  (&panel_cell (:P_tile T) *P_intile *Col)
+  (NOT (&side.reached (:P P_intile))))
+
+(RULE &top_ink
+  (&top_tile (:P_tile *T))
+  (&panel_cell (:P_tile T) *P_intile *Col)
+  (NOT (&ground Col))
+  (OR ((&side.reached (:P P_intile)))
+      ((&mask_tile (:P_tile *T_mask))
+       (&line (:P_tile T_mask) P_intile))))
+
+(RULE &out_cell
+  (&out_tile (:P_tile *T))
+  (&panel_view (:P_tile T) *P *P_intile))
+
+(RULE &render
+  (&out_cell *P_intile)
+  (OR ((&top_ink P_intile *Col))
+      ((NOT (&top_ink P_intile))
+       (&under P_intile Col))
+      ((NOT (&top_ink P_intile))
+       (NOT (&under P_intile))
+       (&ground Col))))
+
+(RULE &output
+  (input *P)
+  (OR ((&out_cell P *P_intile)
+       (&render P_intile *Col))
+      ((NOT (&out_cell P))
+       (input P Col))))
+
+(OUT (&output ^P ^Col))

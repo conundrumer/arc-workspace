@@ -1,0 +1,65 @@
+;; inputs d90efd0ba14531de565f026e581ad8257fe2a5f77763320cd7cf4bd7fea1cf75 programs/solvers/c7f57c3e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c7f57c3e
+
+(param &frame_color Color (1))
+
+(alts $choice
+  (alt $FrameColorsByShape
+    (witness body-color-5 variant $FrameColorsByShape
+      (relaxed scaled-copies-of-one-body)
+      (separates "the body is color 5 and no cell is 1: $FrameColorsByShape finds 5 as the body color and swaps the patterns, and the concept, at frame color 1, is undefined")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 5 4 4 4 4 4 5 4 4)
+        (4 5 2 5 4 4 4 5 2 5 4)
+        (4 4 8 4 4 4 4 4 8 4 4)
+        (4 8 8 8 4 4 4 8 8 8 4)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 5 4 4 4 4 4)
+        (4 4 4 4 5 2 5 4 4 4 4)
+        (4 4 4 4 4 2 4 4 4 4 4)
+        (4 4 4 4 3 3 3 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4)))
+      (output concept undefined)
+      (output $FrameColorsByShape (grid
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 5 4 4 4 4 4 5 4 4)
+        (4 5 2 5 4 4 4 5 2 5 4)
+        (4 4 2 4 4 4 4 4 2 4 4)
+        (4 3 3 3 4 4 4 3 3 3 4)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 5 4 4 4 4 4)
+        (4 4 4 4 5 2 5 4 4 4 4)
+        (4 4 4 4 4 8 4 4 4 4 4)
+        (4 4 4 4 8 8 8 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4))))
+    (witness pattern-colors-shared ordinary concept
+      (separates "both patterns are one 2 cell, above the body on two figures and below it on the third, so color 2 has one shape on every figure: the concept moves each 2 to the other side, and $FrameColorsByShape takes 2 and 6 into the body, finds two bodies, and is undefined")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 2 4 4 4 4 4 2 4 4)
+        (4 1 4 1 4 4 4 1 4 1 4)
+        (4 4 6 4 4 4 4 4 6 4 4)
+        (4 1 4 1 4 4 4 1 4 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 1 4 1 4 4 4 4)
+        (4 4 4 4 4 6 4 4 4 4 4)
+        (4 4 4 4 1 4 1 4 4 4 4)
+        (4 4 4 4 4 2 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4)))
+      (output concept (grid
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 4 1 4 4 4 1 4 1 4)
+        (4 4 6 4 4 4 4 4 6 4 4)
+        (4 1 4 1 4 4 4 1 4 1 4)
+        (4 4 2 4 4 4 4 4 2 4 4)
+        (4 4 4 4 4 2 4 4 4 4 4)
+        (4 4 4 4 1 4 1 4 4 4 4)
+        (4 4 4 4 4 6 4 4 4 4 4)
+        (4 4 4 4 1 4 1 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4)))
+      (output $FrameColorsByShape undefined))))

@@ -1,0 +1,118 @@
+;; inputs d836a6afd21ec5e5f500541d9fbd938b4e15d8cd659f03f958f50b5f23ca2443 programs/solvers/f21745ec.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f21745ec
+
+(INPUT rectangles-on-background "on a field of `bg` 0, a few single-color rectangles stand apart, each of its own color, none touching another.")
+
+(INPUT one-patterned-rectangle "exactly one rectangle has cells of its color inside its border, the pattern; each other rectangle is an empty one-cell-wide outline."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &rect_cell
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &rect_size Cardinality
+    (key ((&rect_cell ^Col *P))
+      (member ((:m P))
+        (&rect_cell Col *P))))
+
+  (INIT &most Order
+    (member ((:t (:V Col) (:S N)))
+      (&rect_size.size (:key *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&rect_size.size (:key *Col) *N))))
+
+(OUTPUT same-size-gets-pattern "an empty outline whose height and width both equal the patterned rectangle's takes, at each cell of its box, the patterned rectangle's cell at the same place in its box, recolored to the outline's color.")
+
+(OUTPUT other-size-erased "an empty outline whose height or width differs from the patterned rectangle's becomes `bg`.")
+
+(OUTPUT pattern-kept "the patterned rectangle stays as it is."
+
+  (INIT &rect_box BoundingBox
+    (key ((&rect_cell ^Col *P))
+      (cell (P)
+        (&rect_cell Col *P))))
+
+  (RULE &source
+    (&rect_box.box (:key *Col) *B)
+    (&rect_cell Col *P)
+    (interior (:A P) B))
+
+  (RULE &pattern_cell
+    (&source (:Col *Col_src))
+    (&rect_box.box (:key (:Col Col_src)) *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))))
+
+(ALTS $s "Which rectangle supplies the pattern" $PatternedSource
+  (ALT $SourceMostCells
+    (INPUT one-patterned-rectangle "the pattern is the rectangle with the most cells; undefined where two rectangles tie for the most."
+      (RULE &source
+        (&most.maximal (:t (:V *Col)))))))
+
+(ALTS $c "The transform the copy applies to the pattern" $CopyInPlace
+  (ALT $CopyTransformed
+    (OUTPUT same-size-gets-pattern "the copy applies the stored D4 element `copy_d4` to the pattern, and an outline matches when its extents equal the transformed pattern's."
+      (DET &copy_d4 D4Domain))
+    (RULE &copy_cell
+      (&pattern_cell (:P_rel *Q_rel) *Col)
+      (&copy_d4 (:D *T))
+      (apply (:D T) (:P Q_rel) (:P_out *P_rel)))))
+
+(RULE &extra_source
+  (&source *Col)
+  (&source (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &outline
+  (&rect_box.box (:key *Col) *B)
+  (NOT (&source Col)))
+
+(RULE &copy_cell
+  (&pattern_cell *P_rel *Col))
+
+(RULE &copy_dim
+  (&copy_cell *P_rel)
+  (frame_extent (:P P_rel) *A *N))
+
+(RULE &differs
+  (&outline *Col *B)
+  (&rect_cell Col *P)
+  (&copy_dim *A (:N *N2))
+  (box_extent B P A *N)
+  (!= N N2))
+
+(RULE &matched
+  (&outline *Col)
+  (NOT (&differs Col)))
+
+(RULE &painted
+  ;; Every other outline is erased.
+  (OR ((&outline (:Col *Col_o))
+       (NOT (&matched (:Col Col_o)))
+       (&rect_cell (:Col Col_o) *P)
+       (&bg (:C *Col)))
+      ;; A matched outline's box takes the copy, the source's color turned to the
+      ;; outline's.
+      ((&matched (:Col *Col_o2))
+       (&outline (:Col Col_o2) *B)
+       (input P)
+       (inside (:A P) B)
+       (relative (:Base B) (:X P) (:X_rel *P_rel))
+       (&copy_cell P_rel (:Col *Col_c))
+       (&source (:Col *Col_src))
+       (OR ((= Col_c Col_src)
+            (= Col Col_o2))
+           ((!= Col_c Col_src)
+            (= Col Col_c))))))
+
+;; Every cell outside the outlines keeps its color.
+(RULE &output
+  (NOT (&extra_source))
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

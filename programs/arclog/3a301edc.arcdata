@@ -1,0 +1,7 @@
+;; inputs 4bfee9acfa62bb87d5c278f266b2cfd952daae18d4ea73cdb419e22c4cecf40b programs/solvers/3a301edc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3a301edc
+
+(param &bg Color (0))
+
+(exclude ($Cells $Nest) "$Nest redraws the figure's box, so it leaves no notch for a ring to enter, and the two wraps stand as one model under it.")

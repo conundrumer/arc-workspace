@@ -1,0 +1,752 @@
+;; inputs bb89abdf4342a5d90c5899c4791b9f609f9e4535fae415b55050fa3f71f58a86 programs/solvers/20a9e565.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20a9e565
+
+(INPUT growing-sequence "on a field of &background, figures stand one after another along one direction, each separated from the next by &background; each term grows from the one before it by the same step, and the term colors repeat a cycle."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT corner-marks "two 3-cell L marks of &marker_color, one at each of the top-left and bottom-right corners of a rectangle, the window; each mark's corner cell is the window's corner cell, and the marks touch no figure."
+
+  (DET_OR_RULE &marker_color "The color of the corner marks that frame the window." RarestColor)
+
+  (RULE &mark
+    (input *P *Col)
+    (&marker_color (:C Col)))
+
+  (INIT &mark_box BoundingBox
+    (cell (P)
+      (&mark *P)))
+
+  (RULE &elbow
+    (&mark *P)
+    (neighbor P *D *Q)
+    (&mark (:P Q))
+    (perp_dir D *D2)
+    (neighbor P (:D D2) (:Q *Q2))
+    (&mark (:P Q2)))
+
+  (INIT &elbow_box BoundingBox
+    (cell (P)
+      (&elbow *P))))
+
+(INPUT window-ahead "the window lies past the last shown term, across the place where a later term of the continued sequence stands.")
+
+(OUTPUT continue-sequence "the sequence goes on past its last shown term; each new term takes the growth, the spacing and the alignment that the shown terms follow from one term to the next, and the next color of the cycle. The growth is one of a catalog of five, the one every pair of consecutive shown terms confirms."
+
+  (RULE &figure
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&marker_color (:C Col))))
+
+  ;; The terms: the figures, each a connected group of figure cells.
+  (INIT &term Connectivity
+    (node (P)
+      (&figure *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &term_cell
+    (&term.component *P (:Id *T))
+    (&figure P *Col))
+
+  (RULE &term_line
+    (&term_cell *T *P)
+    (split P *A (:Along *L)))
+
+  (RULE &overlap
+    (&term_line *A *T *L)
+    (&term_line A (:T *T2) L)
+    (!= T T2))
+
+  (RULE &order_member
+    (&term_line (:A *Key) (:T *M) (:L *P))
+    (NOT (&overlap (:A Key))))
+
+  ;; The terms in order along an axis on which no two of them share a line.
+  (INIT &order Order
+    (key ((axis_elem ^A)
+          (axis_of ^D A))
+      (member ((:t T))
+        (&order_member (:Key A) (:M *T))
+        (NOT (&overlap A)))
+      (before ((:a T) (:b M_b))
+        (&order_member (:Key A) (:M *T) (:P *L))
+        (&order_member (:Key A) (:M *M_b) (:P *Q))
+        (!= T M_b)
+        (NOT (&overlap A))
+        (margin (:B L) D (:K *K1))
+        (margin (:B Q) D (:K *K2))
+        (< K1 K2))))
+
+  (RULE &order_pos
+    (&order.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+    (&order.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+    (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+  (INIT &term_box BoundingBox
+    (key ((&term_cell ^T *P))
+      (cell (P)
+        (&term_cell T *P))))
+
+  (RULE &edge_cell
+    (&term_box.box (:key *T) *B)
+    (&term_cell T *P)
+    (inside (:A P) B)
+    (same_dist (:D *E1) (:P1 P) (:P2 B)))
+
+  (RULE &term_edge
+    (&edge_cell *T *E1 *P)
+    (axis_of (:D E1) *A)
+    (split P A (:Along *L)))
+
+  (RULE &term_at
+    (&order_pos (:Key *A) (:M *T) (:P_pos *I))
+    (axis_of *D A))
+
+  (RULE &cell_at
+    (&term_at *D *I *T)
+    (&term_cell T *P *Col))
+
+  (RULE &consecutive
+    (&term_at *D *I)
+    (neighbor (:P I) D (:Q *I2))
+    (&term_at D (:I I2)))
+
+  (RULE &last
+    (&term_at *D *I)
+    (margin (:B I) D (:K 0)))
+
+  (RULE &new_index
+    (&last *D (:I *I0))
+    (input *P)
+    (margin (:B P) D (:K *M))
+    (> M 0)
+    (jump (:P I0) D (:K M) (:Q *I)))
+
+  (RULE &grid_line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  (RULE &gap_domain
+    (&consecutive *D *I *I2)
+    (&term_at D I *T)
+    (&term_at D (:I I2) (:T *T2)))
+
+  ;; The lines between two consecutive terms.
+  (INIT &gap Cardinality
+    (key ((&gap_domain ^T ^T2))
+      (member ((:m L))
+        (&term_box.box (:key T) *B)
+        (&term_box.box (:key (:T T2)) (:B *B2))
+        (opposite *D (:Opp *Db))
+        (axis_of D *A)
+        (&grid_line A *L)
+        (nearer D (:P L) (:Q B))
+        (nearer (:D Db) (:P L) (:Q B2)))))
+
+  (INIT &gap_size Singleton
+    (member ((:v N))
+      (&gap.size *N)))
+
+  (RULE_OR_DET &term_gap "The count of lines between consecutive terms."
+    (&gap_size.value (:v *G)))
+
+  (RULE &target
+    (OR ((&consecutive *D (:I *I0) (:I2 *I)))
+        ((&consecutive D (:I2 I0))
+         (&last D (:I I0))
+         (&new_index D I))))
+
+  (RULE &step
+    (&target *D *I0 (:I *I2))
+    (OR ((&target D I0 (:I *I1)))
+        ((= I1 I0)))
+    (neighbor (:P I1) D (:Q I2)))
+
+  (RULE &moves
+    (&target *D *I0 *I)
+    (OR ((&target D I0 (:I *I1)))
+        ((= I1 I0)))
+    (relative (:Base I1) (:X I) (:X_rel *V))
+    (opposite D (:Opp *Db))
+    (margin (:B V) (:D Db) (:K *N))
+    (>= N 0))
+
+  (RULE &steps
+    (&target *D *I0 *I)
+    (&moves D (:I1 I0) I (:N *M)))
+
+  (RULE &span
+    (input *P)
+    (margin (:B P) *D *K)
+    (> K 0))
+
+  (RULE &back_line
+    (&term_at *D (:I *I0) *T)
+    (opposite D (:Opp *Db))
+    (&term_edge T (:E1 Db) *L))
+
+  ;; The one color of the cells on a term's back edge.
+  (INIT &back_color Singleton
+    (key ((opposite ^D (:Opp *Db))
+          (&edge_cell ^T (:E1 Db) *P)
+          (&term_cell T P *Col))
+      (member ((:v Col))
+        (opposite D (:Opp *Db))
+        (&edge_cell T (:E1 Db) *P)
+        (&term_cell T P *Col))))
+
+  ;; The color of a term: the one color of its back edge, and where that edge
+  ;; holds several, the one color of its two edges across the sequence.
+  (INIT &term_color Singleton
+    (key ((OR ((&back_color.value (:key ^D ^T) (:v *Col)))
+              ((&back_color.plural (:key D T))
+               (perp_dir D (:D2 *E))
+               (&edge_cell T (:E1 E) *P)
+               (&term_cell T P Col))))
+      (member ((:v Col))
+        (OR ((&back_color.value (:key D T) (:v *Col)))
+            ((&back_color.plural (:key D T))
+             (perp_dir D (:D2 *E))
+             (&edge_cell T (:E1 E) *P)
+             (&term_cell T P Col))))))
+
+  (RULE &shown_color
+    (&term_at *D *I *T)
+    (&term_color.value (:key D T) (:v *Col)))
+
+  (RULE &period_cand
+    (&term_at *D (:I *I0))
+    (opposite D (:Opp *Db))
+    (margin (:B I0) (:D Db) (:K 0))
+    (OR ((&term_at D *I))
+        ((&last D (:I *I1))
+         (neighbor (:P I1) D (:Q I))))
+    (relative (:Base I0) (:X I) (:X_rel *V))
+    (margin (:B V) (:D Db) *K)
+    (> K 0))
+
+  (RULE &period_defect
+    (&period_cand *D *K)
+    (&shown_color D *I *Col)
+    (jump (:P I) D K (:Q *I2))
+    (&shown_color D (:I I2) (:Col *Col2))
+    (!= Col Col2))
+
+  (RULE &uncolored
+    (&term_color.member (:key *D *T))
+    (NOT (&term_color.value (:key D T))))
+
+  (INIT &least_period Order
+    (key ((&shown_color ^D))
+      (member ((:t K))
+        (&period_cand D *K)
+        (NOT (&uncolored D))
+        (NOT (&period_defect D K)))
+      (score ((:t K) (:S K))
+        (&period_cand D *K)
+        (NOT (&uncolored D))
+        (NOT (&period_defect D K)))))
+
+  (RULE &index_color
+    (OR ((&shown_color *D *I *Col))
+        ((&new_index D I)
+         (&least_period.minimal (:key D) (:t *K))
+         (&shown_color D (:I *I3) Col)
+         (opposite D (:Opp *Db))
+         (margin (:B I3) (:D Db) (:K *X))
+         (divide (:T X) (:Side K) (:Gap 0) (:Remainder *R))
+         (margin (:B I) (:D Db) (:K *X2))
+         (divide (:T X2) (:Side K) (:Gap 0) (:Remainder R)))))
+
+  (RULE &grown_frame
+    (&target *D *I0 *I)
+    (&back_line D I0 *L)
+    (&index_color D I *Col))
+
+  (INIT &term_period Periods
+    (key ((&term_box.box (:key ^T) *B)
+          (input *P)
+          (inside (:A P) B)
+          (OR ((&term_cell T P *Col))
+              ((NOT (&term_cell T P))
+               (&background (:C Col)))))
+      (cell (P (:v Col))
+        (&term_box.box (:key T) *B)
+        (input *P)
+        (inside (:A P) B)
+        (OR ((&term_cell T P *Col))
+            ((NOT (&term_cell T P))
+             (&background (:C Col)))))))
+
+  (RULE &cross_period
+    (&term_at *D (:I *I0) *T)
+    (axis_of D *A)
+    (perp A (:A2 *C))
+    (&term_period.fundamental_period (:key T) (:A C) *K))
+
+  ;; The part of term t in one color that holds its e edge.
+  (INIT &edge_part Flood
+    (key ((OR ((&edge_cell ^T (:E1 ^E) *P))
+              ((&edge_cell T (:E1 E) (:P *Q))
+               (&term_cell T (:P Q) *Col)
+               (&term_cell T P Col))))
+      (node (P)
+        (&edge_cell T (:E1 E) (:P *Q))
+        (&term_cell T (:P Q) *Col)
+        (&term_cell T *P Col))
+      (source (P)
+        (&edge_cell T (:E1 E) *P))))
+
+  (INIT &part_box BoundingBox
+    (key ((&edge_part.reached (:key ^T ^E) *P))
+      (cell (P)
+        (&edge_part.reached (:key T E) *P))))
+
+  (RULE &term_band
+    (&term_at *D (:I *I0) *T)
+    (&term_box.box (:key T) (:B *B2))
+    (split (:P B2) *A (:Along *B)))
+
+  (RULE &repeat
+    (OR ((&cross_period *D *I0)
+         (&cell_at D (:I I0) *P))
+        ((&cross_period D I0 *K)
+         (&cell_at D (:I I0) (:P *P2))
+         (perp_dir D (:D2 *E))
+         (&span (:K *S))
+         (divide (:T S) (:Side K) (:Gap 0) (:Remainder 0))
+         (jump (:P P2) (:D E) (:K S) (:Q P))
+         (uniform_outset K *B)
+         (inside (:A P) B))))
+
+  (RULE &axis_cand
+    (&repeat *D *I0 *P)
+    (perp_dir D (:D2 *E1))
+    (axis_of (:D E1) (:A *C))
+    (split P (:A C) (:Along *L))
+    (OR ((neighbor (:P L) (:D E1) (:Q *L2)))
+        ((= L2 L))))
+
+  (RULE &mirror_defect
+    (&axis_cand *D *I0 *E1 *L *L2)
+    (axis_of (:D E1) (:A *C))
+    (&repeat D I0 *P)
+    (split P (:A C) (:Along *L3) (:Across *P_across))
+    (relative (:Base L3) (:X L) (:X_rel *V))
+    (compose (:A L2) (:B V) (:C *L4))
+    (compose (:A L4) (:B P_across) (:C *Q))
+    (&cross_period D I0 *K)
+    (uniform_outset K *B)
+    (inside (:A Q) B)
+    (NOT (&repeat D I0 (:P Q))))
+
+  (RULE &first_end
+    (&repeat *D *I0)
+    (&term_at D (:I I0) *T)
+    (perp_dir D (:D2 *E1))
+    (&term_edge T E1 *L))
+
+  (RULE &ends_elem
+    (OR ((&first_end *D *I0 *E1 *L))
+        ((&axis_cand D I0 E1 L *L2)
+         (NOT (&mirror_defect D I0 E1 L L2))
+         (&first_end D I0 E1 (:L *L0))
+         (nearer (:D E1) (:P L) (:Q L0)))))
+
+  ;; The lines on side e from which the repeat reaches out, in order from the
+  ;; term's own edge: that edge, and each line past it at which a mirror axis
+  ;; of the repeat ends it.
+  (INIT &ends Order
+    (key ((&ends_elem ^D ^I0 (:E1 ^E) *L))
+      (member ((:t L))
+        (&ends_elem D I0 (:E1 E) *L))
+      (score ((:t L) (:S K))
+        (&ends_elem D I0 (:E1 E) *L)
+        (opposite (:D E) (:Opp *E2))
+        (margin (:B L) (:D E2) *K))))
+
+  (RULE &piece_shift
+    (&term_at *D (:I *I0) *T)
+    (perp_dir D (:D2 *E1))
+    (opposite (:D E1) (:Opp *E2))
+    (axis_of (:D E1) (:A *C))
+    (&part_box.box (:key T (:E E1)) *B)
+    (&edge_part.reached (:key T (:E E1)) *P)
+    (inside (:A P) B)
+    (same_dist (:D E2) (:P1 P) (:P2 B))
+    (split P (:A C) (:Along *L))
+    (&edge_part.reached (:key T (:E E1)) (:P *Q))
+    (inside (:A Q) B)
+    (same_dist (:D E1) (:P1 Q) (:P2 B))
+    (split (:P Q) (:A C) (:Along *L2))
+    (relative (:Base L) (:X L2) (:X_rel *V)))
+
+  ;; The piece the term at i0 gains on side e at each index: its end piece
+  ;; there, flipped along the sequence within the term's band and moved out
+  ;; past itself, once per step.
+  (INIT &end_piece Propagation
+    (key ((OR ((&term_at ^D (:I ^I0) *T)
+               (perp_dir D (:D2 ^E))
+               (&edge_part.reached (:key T E) *P))
+              ((&step D I0 *I1 *I2)
+               (&piece_shift D I0 (:E1 E) *V)
+               (axis_of D *A)
+               (&term_band D I0 A (:B *B_al))
+               (input P)
+               (inside (:A P) (:B B_al))
+               (axis_inversion A (:T *F))
+               (relative (:Base B_al) (:X P) (:X_rel *P_rel))
+               (apply (:D F) (:P P_rel) (:P_out *P_rel2))
+               (compose (:A B_al) (:B P_rel2) (:C *P2))
+               (compose (:A P2) (:B V) (:C *Q)))))
+      (source ((:n (:I I0) P))
+        (&term_at D (:I I0) *T)
+        (perp_dir D (:D2 E))
+        (&edge_part.reached (:key T E) *P))
+      (edge ((:a (:I I1) P) (:b (:I I2) (:P Q)))
+        (&step D I0 *I1 *I2)
+        (&piece_shift D I0 (:E1 E) *V)
+        (axis_of D *A)
+        (&term_band D I0 A (:B *B_al))
+        (input *P)
+        (inside (:A P) (:B B_al))
+        (axis_inversion A (:T *F))
+        (relative (:Base B_al) (:X P) (:X_rel *P_rel))
+        (apply (:D F) (:P P_rel) (:P_out *P_rel2))
+        (compose (:A B_al) (:B P_rel2) (:C *P2))
+        (compose (:A P2) (:B V) (:C *Q)))))
+
+  (RULE &hook
+    (&term_at *D (:I *I0) *T)
+    (opposite D (:Opp *Db))
+    (&edge_part.reached (:key T (:E Db)) *P))
+
+  (RULE &hook_depth
+    (&term_at *D (:I *I0) *T)
+    (opposite D (:Opp *Db))
+    (&part_box.box (:key T (:E Db)) *B)
+    (axis_of D *A)
+    (input *P)
+    (box_extent B P A (:N *K)))
+
+  (RULE &on_half
+    (&term_at *D (:I *I0))
+    (axis_of D *A)
+    (perp A (:A2 *C))
+    (&term_band D I0 (:A C) (:B *Bc))
+    (perp_dir D (:D2 *E1))
+    (opposite (:D E1) (:Opp *E2))
+    (input *P)
+    (relative (:Base Bc) (:X P) (:X_rel *X))
+    (margin (:B X) (:D E1) (:K *K1))
+    (margin (:B X) (:D E2) (:K *K2))
+    (<= K1 K2))
+
+  (INIT &half_box BoundingBox
+    (key ((&hook ^D *I0 ^T *P)
+          (&on_half D I0 (:E1 ^E) P))
+      (cell (P)
+        (&hook D *I0 T *P)
+        (&on_half D I0 (:E1 E) P))))
+
+  (RULE &tent_seed
+    (OR ((&target *D *I0 (:I *I_o))
+         (&hook D I0 *T (:P *P_o))
+         (OR ((opposite D (:Opp *Db))
+              (&part_box.box (:key T (:E Db)) *B)
+              (inside (:A P_o) B)
+              (same_dist D (:P1 P_o) (:P2 B))
+              (&hook_depth D I0 *K)
+              (jump (:P P_o) D K (:Q *P)))
+             ((= P P_o))))
+        ((&cell_at D (:I I0) P)
+         (&hook D I0)
+         (= I_o I0)
+         (= P_o P))))
+
+  ;; Each term is read with its lines along the sequence measured from its own
+  ;; back edge line and its lines across the sequence from the grid, so that a
+  ;; growth carries the alignment across the sequence and the gap does not
+  ;; enter. A shown term is the term at its own index grown to that index, and
+  ;; each rule predicts the term at i0 grown to each index it grows to, from the
+  ;; back edge line of the term at i0.
+  (DEMONSTRATED &catalog
+    (key ((OR ((&cell_at ^D *I *P *Col)
+               (&back_line D (:I0 I) *L)
+               (relative (:Base L) (:X P) (:X_rel *P_h)))
+              ((&consecutive D I *I2))))
+      (value ((:o (:I0 I) I) (:i P_h) (:v Col))
+        (&cell_at D *I *P *Col)
+        (&back_line D (:I0 I) *L)
+        (relative (:Base L) (:X P) (:X_rel *P_h)))
+      (demonstration ((:o (:I0 I) (:I I2)) (:o2 (:I0 I2) (:I I2)))
+        (&consecutive D *I *I2)))
+    (DEMO_RULE ($Stretch *E) "Each cell of the term at i0 stretches toward d and toward e: by none, and, where it lies on the term's edge on that side, by each count `stretch_by` gives. Each cell of the stretched term takes the color of the term at index i."
+      (RULE &stretch_by
+        (&steps *D *I0 *I *M)
+        (&span *K)
+        (<= K M))
+
+      (RULE &prediction
+        (&target *D *I0 *I)
+        (&term_at D (:I I0) *T)
+        (&term_cell T *P)
+        (perp_dir D (:D2 E))
+        (OR ((&edge_cell T (:E1 D) P)
+             (&stretch_by D I0 I *K))
+            ((= K 0)))
+        (OR ((&edge_cell T (:E1 E) P)
+             (&stretch_by D I0 I (:K *K2)))
+            ((= K2 0)))
+        (jump P D K (:Q *Q1))
+        (jump (:P Q1) (:D E) (:K K2) *Q)
+        (&grown_frame D I0 I *L *Col)
+        (relative (:Base L) (:X Q) (:X_rel *P_h))))
+    (DEMO_RULE ($PeriodEnd *E) "The term's own cells and its period blocks take the color of the term at index i."
+      (RULE &period_block
+        (&steps *D *I0 *I *M)
+        (&cross_period D I0 *K)
+        (perp_dir D (:D2 *E1))
+        (&term_at D (:I I0) *T)
+        (&term_box.box (:key T) *B)
+        (&term_cell T (:P *P2))
+        (relative (:Base B) (:X P2) (:X_rel *X))
+        (margin (:B X) (:D E1) (:K *J))
+        (< J K)
+        (&span (:K *S))
+        (divide (:T S) (:Side K) (:Gap 0) (:Part *N) (:Remainder 0))
+        (<= N M)
+        (jump (:P P2) (:D E1) (:K S) (:Q *P)))
+
+      (RULE &prediction
+        (OR ((&target *D *I0 *I)
+             (&cross_period D I0)
+             (perp_dir D (:D2 E))
+             (&cell_at D (:I I0) *P))
+            ((&period_block D (:E1 E) I0 I P)))
+        (&grown_frame D I0 I *L *Col)
+        (relative (:Base L) (:X P) (:X_rel *P_h))))
+    (DEMO_RULE $MirrorEnds "The repeat between the two ends takes the color of the term at index i."
+      (RULE &mirror_reach
+        (&steps *D *I0 *I *M)
+        (&ends.rank (:key D I0 (:E *E1)) (:t *L) (:R M)))
+
+      (RULE &prediction
+        (&mirror_reach *D *I0 (:E1 *E) *I *L)
+        (opposite (:D E) (:Opp *E2))
+        (&mirror_reach D I0 (:E1 E2) I (:L *L2))
+        (&repeat D I0 *P)
+        (axis_of (:D E) (:A *C))
+        (split P (:A C) (:Along *L3))
+        (NOT (nearer (:D E) (:P L3) (:Q L)))
+        (NOT (nearer (:D E2) (:P L3) (:Q L2)))
+        (&grown_frame D I0 I (:L *L_b) *Col)
+        (relative (:Base L_b) (:X P) (:X_rel *P_h))))
+    (DEMO_RULE $FlippedEnds "The term's own cells keep their colors, and each piece gained at index i_c takes the color of the term there."
+      (RULE &prediction
+        (&target *D *I0 *I)
+        (OR ((&cell_at D (:I I0) *P *Col))
+            ((&end_piece.reached (:key D I0) (:n (:I *I_c) P))
+             (&target D I0 (:I I_c))
+             (&moves D (:I1 I_c) I)
+             (&index_color D (:I I_c) Col)))
+        (&back_line D I0 *L)
+        (relative (:Base L) (:X P) (:X_rel *P_h))))
+    (DEMO_RULE $SplitStep "A cell from the term's own cells keeps its color, and a cell from a hook added at index i_c takes the color of the term there."
+      (RULE &half_out
+        (&term_at *D (:I *I0) *T)
+        (perp_dir D (:D2 *E1))
+        (opposite (:D E1) (:Opp *E2))
+        (&half_box.box (:key D T (:E E1)) *B)
+        (&half_box.cell (:key D T (:E E1)) *P)
+        (inside (:A P) B)
+        (same_dist (:D E2) (:P1 P) (:P2 B))
+        (&half_box.cell (:key D T (:E E1)) (:P *Q))
+        (inside (:A Q) B)
+        (same_dist (:D E1) (:P1 Q) (:P2 B))
+        (relative (:Base P) (:X Q) (:X_rel *V))
+        (margin (:B V) (:D E2) (:K *W)))
+
+      (RULE &tent
+        (&tent_seed *D *I0 *I_o (:P *P2) *P_o)
+        (&moves D (:I1 I_o) *I *N)
+        (&target D I0 I)
+        (OR ((> N 0)
+             (&on_half D I0 (:E1 *E) (:P P2))
+             (&half_out D I0 (:E1 E) *W)
+             (&hook_depth D I0 *K)
+             (&span (:K *S2))
+             (divide (:T S2) (:Side K) (:Gap 0) (:Part N) (:Remainder 0))
+             (OR ((= W 0)
+                  (jump (:P P2) D (:K S2) (:Q *P)))
+                 ((&span (:K *S1))
+                  (divide (:T S1) (:Side W) (:Gap 0) (:Part N) (:Remainder 0))
+                  (jump (:P P2) (:D E) (:K S1) (:Q *Q1))
+                  (jump (:P Q1) D (:K S2) (:Q P)))))
+            ((= N 0)
+             (= P P2))))
+
+      (RULE &prediction
+        (&tent *D *I0 *I *P (:I_o *I_c) *P_o)
+        (OR ((= I_c I0)
+             (&cell_at D (:I I0) (:P P_o) *Col))
+            ((!= I_c I0)
+             (&index_color D (:I I_c) Col)))
+        (&back_line D I0 *L)
+        (relative (:Base L) (:X P) (:X_rel *P_h)))))
+
+  (RULE &grown
+    (&catalog (:key *D) (:o *I0 *I) (:i *P_h) (:v *Col))
+    (&last D (:I I0))
+    (&new_index D I)
+    (&least_period.minimal (:key D)))
+
+  (RULE &behind
+    (&grown *D *I *P_h)
+    (&grown D I (:P_h *Q_h))
+    (nearer D (:P Q_h) (:Q P_h)))
+
+  (RULE &grown_front
+    (&grown *D *I *P_h)
+    (NOT (&behind I P_h))
+    (opposite D (:Opp *Db))
+    (margin (:B P_h) (:D Db) *K))
+
+  (RULE &advance
+    (OR ((&last *D (:I *I1)))
+        ((&new_index D (:I I1))))
+    (neighbor (:P I1) D (:Q *I2))
+    (&new_index D (:I I2))
+    (axis_of D *A)
+    (&grid_line A (:L *L1))
+    (&term_gap *G)
+    (jump (:P L1) D (:K G) (:Q *L22))
+    (neighbor (:P L22) D (:Q *L2)))
+
+  ;; The line of each term's front edge where it stands, from the last shown
+  ;; term on.
+  (INIT &front Propagation
+    (source ((:n I (:P L)))
+      (&grown *D)
+      (&last D *I)
+      (&term_at D I *T)
+      (&term_edge T (:E1 D) *L))
+    (edge ((:a (:I I1) (:P L1)) (:b (:I I2) (:P L)))
+      (&grown *D (:I *I2))
+      (&advance D *I1 *L1 I2 (:L2 *L3))
+      (&grown_front (:I I2) *K)
+      (jump (:P L3) D K (:Q *L)))))
+
+(OUTPUT crop-window "the output is the window, marks included in its extent; each cell takes the color the continued sequence draws there, and &background where it draws nothing.")
+
+(ALTS $drawn "which terms the output draws" $EveryTerm
+  (ALT $NewTermsOnly
+    (OUTPUT crop-window "only the terms past the last shown one are drawn")
+    (RULE &drawn
+      (&grown *D *I *P_h *Col)
+      (&front.reached (:n (:I *I1) (:P *L1)))
+      (&advance D I1 L1 (:I2 I) (:L2 *L_b))
+      (opposite D (:Opp *Db))
+      (margin (:B P_h) (:D Db) *K)
+      (jump (:P L_b) D K (:Q *L))
+      (axis_of D *A)
+      (split (:P P_h) A (:Across *P_across))
+      (compose (:A L) (:B P_across) (:C *P)))
+    (ALT $ElbowBox
+      (OUTPUT crop-window "the window is the box of the marks' corner cells, the cells with a mark neighbor on both axes"
+        (RULE &stretch_by
+          (&steps *D *I0 *I *M)
+          (&span *K)
+          (<= K M))
+
+        (RULE &period_block
+          (&steps *D *I0 *I *M)
+          (&cross_period D I0 *K)
+          (perp_dir D (:D2 *E1))
+          (&term_at D (:I I0) *T)
+          (&term_box.box (:key T) *B)
+          (&term_cell T (:P *P2))
+          (relative (:Base B) (:X P2) (:X_rel *X))
+          (margin (:B X) (:D E1) (:K *J))
+          (< J K)
+          (&span (:K *S))
+          (divide (:T S) (:Side K) (:Gap 0) (:Part *N) (:Remainder 0))
+          (<= N M)
+          (jump (:P P2) (:D E1) (:K S) (:Q *P)))
+
+        (RULE &mirror_reach
+          (&steps *D *I0 *I *M)
+          (&ends.rank (:key D I0 (:E *E1)) (:t *L) (:R M)))
+
+        (RULE &half_out
+          (&term_at *D (:I *I0) *T)
+          (perp_dir D (:D2 *E1))
+          (opposite (:D E1) (:Opp *E2))
+          (&half_box.box (:key D T (:E E1)) *B)
+          (&half_box.cell (:key D T (:E E1)) *P)
+          (inside (:A P) B)
+          (same_dist (:D E2) (:P1 P) (:P2 B))
+          (&half_box.cell (:key D T (:E E1)) (:P *Q))
+          (inside (:A Q) B)
+          (same_dist (:D E1) (:P1 Q) (:P2 B))
+          (relative (:Base P) (:X Q) (:X_rel *V))
+          (margin (:B V) (:D E2) (:K *W)))
+
+        (RULE &tent
+          (&tent_seed *D *I0 *I_o (:P *P2) *P_o)
+          (&moves D (:I1 I_o) *I *N)
+          (&target D I0 I)
+          (OR ((> N 0)
+               (&on_half D I0 (:E1 *E) (:P P2))
+               (&half_out D I0 (:E1 E) *W)
+               (&hook_depth D I0 *K)
+               (&span (:K *S2))
+               (divide (:T S2) (:Side K) (:Gap 0) (:Part N) (:Remainder 0))
+               (OR ((= W 0)
+                    (jump (:P P2) D (:K S2) (:Q *P)))
+                   ((&span (:K *S1))
+                    (divide (:T S1) (:Side W) (:Gap 0) (:Part N) (:Remainder 0))
+                    (jump (:P P2) (:D E) (:K S1) (:Q *Q1))
+                    (jump (:P Q1) D (:K S2) (:Q P)))))
+              ((= N 0)
+               (= P P2))))))))
+
+(ALTS $extent "how far the window reaches" $MarkBox
+  (ALT $ElbowBox
+    (OUTPUT crop-window "the window is the box of the marks' corner cells, the cells with a mark neighbor on both axes")
+    (RULE &window
+      (&elbow_box.box *B))))
+
+(RULE &drawn
+  (OR ((&grown *D *I *P_h *Col)
+       (&front.reached (:n (:I *I1) (:P *L1)))
+       (&advance D I1 L1 (:I2 I) (:L2 *L_b))
+       (opposite D (:Opp *Db))
+       (margin (:B P_h) (:D Db) *K)
+       (jump (:P L_b) D K (:Q *L))
+       (axis_of D *A)
+       (split (:P P_h) A (:Across *P_across))
+       (compose (:A L) (:B P_across) (:C *P)))
+      ((&term_cell P Col))))
+
+(RULE &window
+  (&mark_box.box *B))
+
+(RULE &output
+  (&window *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&drawn (:P P2) *Col)
+       (&grown))
+      ((&grown)
+       (NOT (&drawn (:P P2)))
+       (NOT (&drawn (:P P2)))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

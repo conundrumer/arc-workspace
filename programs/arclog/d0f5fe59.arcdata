@@ -1,0 +1,162 @@
+;; inputs fde0c5538106f250291958c9abd99558891f5523b0bb7caf3f86ccc13a6631b3 programs/solvers/d0f5fe59.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d0f5fe59
+
+(param &background Color (0))
+(param &diagonal DiagAxis (DAXIS_DG))
+(param &shape_color Color (8))
+
+(alts $adj
+  (alt $SideAdjacency
+    (witness corner-link borderline concept
+      (separates "a cell at (6,9) meets the right shape only at a corner: the concept joins it to that shape and counts 2, side adjacency counts 3")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 8 0 0 0 0 0 0 0 0)
+        (0 0 8 8 8 0 0 0 8 0 0 0)
+        (0 0 0 8 8 0 0 0 8 8 0 0)
+        (0 0 0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $CornerAdjacency (grid
+        (8 0)
+        (0 8)))
+      (output $SideAdjacency (grid
+        (8 0 0)
+        (0 8 0)
+        (0 0 8))))))
+
+(alts $mark
+  (alt $CommonestShapeColor
+    (witness mixed-shape-colors borderline $CommonestShapeColor
+      (relaxed one-shape-color)
+      (separates "two shapes of 8 and one of 3: the concept finds no one shape color; the stored and the commonest mark color count all three shapes in 8; the stored shape color counts the two shapes of 8; the rarest color counts the one shape of 3")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0 0)
+        (0 8 8 8 0 0 0 0 0 0 0 0)
+        (0 8 8 0 0 0 0 8 0 0 0 0)
+        (0 0 0 0 0 8 8 8 8 0 0 0)
+        (0 0 0 0 0 8 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 3 0 0 0 0 0 0 0)
+        (0 0 0 3 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($ShapeColor &mark_color.value=$Derived) undefined)
+      (output $CommonestShapeColor &mark_color.value=$Stored (grid
+        (8 0 0)
+        (0 8 0)
+        (0 0 8)))
+      (output ($ShapesOfOneColor &shape_color=$Stored) (grid
+        (8 0)
+        (0 8)))
+      (output &shape_color=$Derived (grid
+        (3))))))
+
+(alts $cells
+  (alt $ShapesOfOneColor
+    (witness mixed-shape-colors borderline $CommonestShapeColor)))
+
+(alts $counted
+  (alt $DistinctForms
+    (witness repeated-form ordinary concept
+      (separates "a second copy of the right shape at rows 5-7, cols 0-1: the concept counts 3 shapes, counting distinct forms counts 2")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 8 0 0 0 0 0 0 0 0)
+        (0 0 8 8 8 0 0 0 8 0 0 0)
+        (0 0 0 8 8 0 0 0 8 8 0 0)
+        (8 0 0 0 0 0 0 0 8 0 0 0)
+        (8 8 0 0 0 0 0 0 0 0 0 0)
+        (8 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $EveryShape (grid
+        (8 0 0)
+        (0 8 0)
+        (0 0 8)))
+      (output $DistinctForms (grid
+        (8 0)
+        (0 8))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed shapes-on-background)
+      (separates "the field is 5 in place of 0: the stored background 0 makes the field and the shapes one shape of two colors, the derived background 5 counts the two shapes and fills the square with 5")
+      (input (grid
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 8 8 5 5 5 5 5 5 5 5)
+        (5 5 8 8 8 5 5 5 8 5 5 5)
+        (5 5 5 8 8 5 5 5 8 8 5 5)
+        (5 5 5 5 5 5 5 5 8 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5 5)))
+      (output ($ShapeColor &background=$Stored &mark_color.value=$Derived) undefined)
+      (output $CommonestShapeColor (grid
+        (5)))
+      (output &mark_color.value=$Stored (grid
+        (8)))
+      (output &background=$Derived (grid
+        (8 5)
+        (5 8)))
+      (output $ShapesOfOneColor (grid
+        (8 0)
+        (0 8))))))
+
+(alts &shape_color
+  (alt &shape_color=$Derived
+    (witness shape_color=RarestColor variant &shape_color=$Derived
+      (separates "train0 input with its shapes in 1 in place of 8: the stored shape color finds no shape, the rarest color counts the four shapes of 1 and marks them in 1, and the stored mark color marks them in 8")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 1 0 0 0 0 0 0)
+        (0 0 1 1 0 0 0 0 0 0)
+        (0 1 1 1 0 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 1 0 0 0)
+        (0 0 0 0 1 1 1 0 0 0)
+        (0 0 0 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 1 1 0 0 0 0 0)
+        (0 1 1 1 0 0 0 0 0 0)
+        (0 0 0 1 0 0 0 1 1 0)
+        (0 0 0 0 0 0 0 1 1 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($AllInk &mark_color.value=$Derived) &shape_color=$Derived (grid
+        (1 0 0 0)
+        (0 1 0 0)
+        (0 0 1 0)
+        (0 0 0 1)))
+      (output &mark_color.value=$Stored (grid
+        (8 0 0 0)
+        (0 8 0 0)
+        (0 0 8 0)
+        (0 0 0 8)))
+      (output ($ShapesOfOneColor &shape_color=$Stored) undefined))))
+
+(alts &mark_color.value
+  (alt &mark_color.value=$Stored
+    (witness mark_color.value=stored variant concept
+      (separates "every shape is 3 in place of 8: the concept marks the diagonal in 3, the stored mark color marks it in 8, and the stored shape color finds no shape")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 0 0 0 3 0 0 0)
+        (0 0 0 3 3 0 0 0 3 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($AllInk &mark_color.value=$Derived) &shape_color=$Derived (grid
+        (3 0)
+        (0 3)))
+      (output &mark_color.value=$Stored (grid
+        (8 0)
+        (0 8)))
+      (output ($ShapesOfOneColor &shape_color=$Stored) undefined))))

@@ -1,0 +1,217 @@
+;; inputs a7adf2a538e541c4ff3043990a85446fd747a9d2184073a7aea2ecbc38430526 programs/solvers/f8be4b64.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8be4b64
+
+(INPUT background "every cell outside the pluses holds background (0).")
+
+(INPUT pluses "the input holds pluses, each four ring_color cells orthogonally around one center cell, whose color is not ring_color; the center of a hollow plus is background.")
+
+(INPUT distinct-lines "no two plus centers share a row or a column.")
+
+(OUTPUT cast-cross "each plus paints its center's row and column in its center color, from its center outward toward each of the four directions, a hollow plus painting background.")
+
+(OUTPUT rings-kept "every ring_color cell keeps its color.")
+
+(OUTPUT blocked-at-ring "a beam stops before the first ring_color cell it meets past its own plus's ring.")
+
+(OUTPUT column-on-top "where a beam along top_axis crosses a beam along the other axis, the top_axis beam's color shows."
+
+  (DET &toward
+    (ex_input *E *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) *Col))
+
+  (DET &gap
+    (&toward *E *P *Col)
+    (dir_elem *D)
+    (NOT (&toward E P D Col)))
+
+  (DET &plus
+    (ex_input *E (:P *P_center) (:Col *Cc))
+    (&toward E (:P P_center) (:Col *C_ring))
+    (!= C_ring Cc)
+    (NOT (&gap E (:P P_center) (:Col C_ring))))
+
+  (DET &missing
+    (&plus (:C_ring *Col))
+    (ex_input *E)
+    (NOT (&plus E (:C_ring Col))))
+
+  (DET &ring_color
+    (&plus (:C_ring *C))
+    (NOT (&missing (:Col C))))
+
+  (DET &plus_cell
+    (&plus *E (:P_center *P2) (:C_ring *C))
+    (&ring_color C)
+    (OR ((dir_elem *D)
+         (neighbor (:P P2) D (:Q *P)))
+        ((= P P2))))
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E *P (:Col *C))
+    (NOT (&plus_cell E P)))
+
+  (RULE &ring
+    (input *P *Col)
+    (&ring_color (:C Col)))
+
+  (RULE &arm_toward
+    (input *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&ring (:P Q)))
+
+  (RULE &center
+    (input *P *Col)
+    (NOT (&ring P))
+    (ALL ((dir_elem *D))
+         ((&arm_toward P D))))
+
+  (RULE &arm
+    (&center (:P *P_center))
+    (dir_elem *D)
+    (neighbor (:P P_center) D *Q))
+
+  (RULE &base_block
+    (&center (:P *P_center))
+    (&ring (:P *Q))
+    (NOT (&arm P_center Q)))
+
+  (RULE &hollow
+    (&center (:P *P_center) *Col)
+    (&bg (:C Col)))
+
+  (RULE &beam_blocked
+    (&base_block (:P_center *Key) (:Q *P)))
+
+  ;; The four beams of each center, under each blocking rule.
+  (INIT &beam Ray
+    (key ((&center (:P ^Pc)))
+      (source ((:P Pc)))
+      (node (P)
+        (dir_elem *D)
+        (input *P)
+        (NOT (&beam_blocked (:Key Pc) P))))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &casts
+    (&center (:P *P_center))
+    (axis_elem *A))
+
+  (RULE &lit
+    (&beam.ray (:key *Pc) *P *D *K)
+    (axis_of D *A)
+    (&casts (:P_center Pc) A)
+    (&center (:P Pc) *Col)
+    (NOT (&ring P)))
+
+  (DET &top_axis
+    (&ring_color (:C *R))
+    (&plus *E (:P_center *Pa) (:C_ring R))
+    (ex_input E (:P Pa) (:Col *Ca))
+    (NOT (&bg (:C Ca)))
+    (&plus E (:P_center *Pb) (:C_ring R))
+    (ex_input E (:P Pb) (:Col *Cb))
+    (NOT (&bg (:C Cb)))
+    (!= Ca Cb)
+    (ex_output E *P (:Col Ca))
+    (perp *A *A2)
+    (same_line A (:P Pa) (:Q P))
+    (same_line (:A A2) (:P Pb) (:Q P))))
+
+(ALTS $o "the color of a cell that two beams along one axis cover" $SameAxisClash
+  (ALT $NearerBeamShows
+    (OUTPUT nearer-beam "where two beams along one axis cover one cell, the beam from the nearer center shows; undefined where two such centers are equally near and differ in color."
+      ;; The beams along axis a at p, by distance from their centers.
+      (INIT &nearest Order
+        (key ((&lit ^P ^A *Col *K))
+          (member ((:t (:V Col) (:S K)))
+            (&lit P A *Col *K))
+          (score ((:t (:V Col) (:S K)) (:S K))
+            (&lit P A *Col *K)))))
+    (RULE &shown
+      (&nearest.minimal (:key *P *A) (:t (:V *Col))))))
+
+(ALTS $ha "where a hollow plus casts" $HollowBothAxes
+  (ALT $HollowTopAxisOnly
+    (OUTPUT cast-cross "a hollow plus casts background along top_axis only."
+      (RULE &casts
+        (&center (:P *P_center))
+        (axis_elem *A)
+        (OR ((NOT (&hollow P_center)))
+            ((&top_axis A)))))))
+
+(ALTS $hr "whether a hollow plus's arms stop a beam" $HollowRingsBlock
+  (ALT $HollowRingsPassable
+    (OUTPUT blocked-at-ring "the arms of a hollow plus stop no beam; a beam passes them, keeps them, and goes on."
+      (RULE &passed
+        (&base_block (:P_center *K) *Q)
+        (&hollow (:P_center *Pc2))
+        (&arm (:P_center Pc2) Q))
+
+      (RULE &beam_blocked
+        (&base_block (:P_center *Key) (:Q *P))
+        (NOT (&passed (:K Key) (:Q P)))))
+    (ALT $BackgroundBeamUnblocked
+      (OUTPUT blocked-at-ring "the beams of a hollow plus pass every ring_color cell and go on."
+        (RULE &passed
+          (OR ((&base_block (:P_center *K) *Q)
+               (&hollow (:P_center *Pc2))
+               (&arm (:P_center Pc2) Q))
+              ((&base_block (:P_center K) Q)
+               (&hollow (:P_center K))
+               (&ring (:P Q)))))))))
+
+(ALTS $bb "whether a hollow plus's beam stops at another plus's arm" $BackgroundBeamBlocked
+  (ALT $BackgroundBeamUnblocked
+    (OUTPUT blocked-at-ring "the beams of a hollow plus pass every ring_color cell and go on."
+      (RULE &passed
+        (&base_block (:P_center *K) *Q)
+        (&hollow (:P_center K))
+        (&ring (:P Q)))
+
+      (RULE &beam_blocked
+        (&base_block (:P_center *Key) (:Q *P))
+        (NOT (&passed (:K Key) (:Q P)))))))
+
+(ALTS $bl "what stops a beam" $StopAtRingColor
+  (ALT $StopAtPlusRing
+    (OUTPUT blocked-at-ring "only an arm of another plus stops a beam; a lone ring_color cell is passed and kept."
+      (RULE &base_block
+        (&center (:P *P_center))
+        (&arm (:P_center *Pc2) *Q)
+        (!= Pc2 P_center))))
+  (ALT $StopAtAnyMark
+    (OUTPUT blocked-at-ring "the first non-background cell past the beam's own arms stops it and is kept."
+      (RULE &base_block
+        (&center (:P *P_center))
+        (input (:P *Q) *Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&arm P_center Q))
+        (!= Q P_center)))))
+
+(RULE &shown
+  (&lit *P *A *Col))
+
+(RULE &top_covered
+  (&shown *P *A)
+  (&top_axis A))
+
+(RULE &paint
+  (&shown *P *A *Col)
+  (OR ((&top_axis A))
+      ((NOT (&top_covered P)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(DET &bg_determined
+  (ex_input *E *P (:Col *C))
+  (NOT (&plus_cell E P)))
+
+(OUT (&output ^P ^Col))

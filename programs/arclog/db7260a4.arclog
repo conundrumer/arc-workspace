@@ -1,0 +1,328 @@
+;; inputs 182840cbd2f435aa54d1fcc4b62158e84908ad16cea2de08ce60c81dbf226a71 programs/solvers/db7260a4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db7260a4
+
+(INPUT drop "one cell of color &water on the edge opposite &fall; every other cell is &background or &wall."
+
+  (DET &shared
+    (ex_input *E *P (:Col *C))
+    (ex_input E (:P *P2) (:Col C))
+    (!= P P2))
+
+  (DET &lone
+    (ex_input *E *P (:Col *C))
+    (NOT (&shared E P)))
+
+  (DET &not_lone
+    (&lone *C)
+    (ex_output *E)
+    (NOT (&lone E C)))
+
+  (DET &water_determined
+    (&lone *C)
+    (NOT (&not_lone C)))
+
+  (DET &off_edge
+    (opposite *D (:Opp *U))
+    (&water_determined (:C *W))
+    (ex_output *E)
+    (ex_input E *P (:Col W))
+    (NOT (margin (:B P) (:D U) (:K 0))))
+
+  (DET &fall
+    (dir_elem *D)
+    (NOT (&off_edge D)))
+
+  (DET_OR_RULE &background DominantColor
+    (&water_determined (:C *W))
+    (ex_input *E *P (:Col W))
+    (ex_output E P (:Col *C)))
+
+  (DET &wall
+    (ex_output *E)
+    (ex_input E (:Col *C))
+    (NOT (&water_determined C))
+    (NOT (&background C)))
+
+  (DET_OR_RULE &water RarestColor
+    (&lone *C)
+    (NOT (&not_lone C))))
+
+(INPUT cups "the &wall cells draw cups open toward the drop's edge: two walls along &fall, joined by a floor across their far ends. Some floors have a one-cell hole, and some walls stand alone.")
+
+(OUTPUT fall "water falls from the drop toward &fall until the next cell is &wall or the grid edge.")
+
+(OUTPUT spread "when the next cell is &wall, the water spreads sideways along its line in both directions until it meets a &wall cell on each side. When a cell it reaches has no &wall cell beyond it toward &fall, the water falls from that cell as in fall.")
+
+(OUTPUT fill "when the water spreads to a wall on each side and finds no hole, it fills the cup: every cell between the two walls, from the floor back up to the end of the shorter wall."
+
+  (RULE &fall_dir
+    (&fall *D))
+
+  (RULE &wall2
+    (input *P *Col)
+    (&wall (:C Col)))
+
+  (RULE &open
+    (input *P)
+    (NOT (&wall2 P)))
+
+  (RULE &next_cell
+    (&open *P)
+    (&fall_dir *D)
+    (neighbor P D *Q))
+
+  (RULE &floored
+    (&next_cell *P *Q)
+    (&wall2 (:P Q)))
+
+  (RULE &spread_dir
+    (&fall_dir (:D *D3))
+    (perp_dir (:D D3) (:D2 *D)))
+
+  (INIT &spread Ray
+    (source (P)
+      (&floored *P))
+    (node (P)
+      (input *P)
+      (NOT (&wall2 P)))
+    (dir (D)
+      (&spread_dir *D)))
+
+  (INIT &spread_full Ray
+    (source (P)
+      (&floored *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&spread_dir *D)))
+
+  (RULE &spread_stop_full
+    (&spread.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&spread_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &drop
+    (input *P *Col)
+    (&water (:C Col)))
+
+  (INIT &water2 Propagation
+    (source ((:n P))
+      (&fall_dir)
+      (&drop *P))
+    (edge ((:a P) (:b Q))
+      (OR ((&next_cell *P *Q)
+           (&open (:P Q)))
+          ((&spread.ray (:P Q) (:Origin P))
+           (&open (:P Q))))))
+
+  (RULE &unbounded
+    (&floored (:P *L))
+    (&fall_dir *D)
+    (perp_dir D *D2)
+    (NOT (&spread_stop_full (:V2 D2) (:V4 L))))
+
+  (RULE &leaky
+    (&spread.ray (:P *Q) (:Origin *L))
+    (&open (:P Q))
+    (NOT (&floored (:P Q))))
+
+  (RULE &held
+    (&water2.reached (:n *L))
+    (&floored (:P L))
+    (NOT (&unbounded L))
+    (NOT (&leaky L)))
+
+  (RULE &basin_node
+    (&held *L)
+    (&fall_dir *D)
+    (axis_of D *A)
+    (opposite D (:Opp *U))
+    (input (:P *Lv))
+    (same_line A (:P Lv) (:Q L))
+    (NOT (nearer D (:P Lv) (:Q L)))
+    (&open *P)
+    (NOT (nearer (:D U) P (:Q Lv))))
+
+  (INIT &basin Flood
+    (key ((OR ((&basin_node ^L ^Lv *P))
+              ((&basin_node L Lv (:P L)))))
+      (node (P)
+        (&basin_node L Lv *P))
+      (source ((:P L))
+        (&basin_node L Lv (:P L))))))
+
+(OUTPUT pool "when the water reaches the grid edge toward &fall, every cell that is not &wall in the &pool_depth lines at that edge takes &water."
+
+  (RULE &edge_landing
+    (&water2.reached (:n *P))
+    (&fall_dir *D)
+    (margin (:B P) D (:K 0)))
+
+  (INIT &edge_spread_frame Frame
+    (extent (A N)
+      (&edge_landing *P)
+      (frame_extent P *A *N)))
+
+  (DET &gap
+    (&fall *D)
+    (ex_output *E *P *Col)
+    (margin (:B P) D *K)
+    (NOT (&wall (:C Col)))
+    (NOT (&water_determined (:C Col))))
+
+  (DET &full
+    (&fall *D)
+    (ex_output *E *P)
+    (margin (:B P) D *K)
+    (NOT (&gap E K)))
+
+  (INIT &lines Cardinality
+    (key ((&full ^E))
+      (member ((:m K))
+        (&full E *K))
+      (domain ()
+        (&full E))))
+
+  (DET &disagree
+    (&lines.size *N)
+    (&lines.size (:N *N2))
+    (!= N N2))
+
+  (DET &pool_depth
+    (&lines.size *N)
+    (NOT (&disagree N)))
+
+  (INIT &edge_spread Ray
+    (source (P)
+      (&edge_landing *P))
+    (node (P)
+      (&edge_spread_frame.cell *P)
+      (NOT (&wall2 P)))
+    (dir ((:D D2))
+      (&fall_dir *D)
+      (perp_dir D *D2))))
+
+(OUTPUT erase-drop "the drop cell becomes &background. The cells the water only passes through stay as they are, and a cup the water runs out of stays empty."
+
+  (INIT &rims Ray
+    (source (P)
+      (&wall2 *P))
+    (node (P)
+      (&wall2 *P))
+    (dir ((:D U))
+      (&fall_dir *D)
+      (opposite D (:Opp *U))))
+
+  (RULE &rim_top
+    (&held *L)
+    (&spread_stop_full (:V1 *W) (:V4 L))
+    (&rims.end (:P *T) (:Origin W)))
+
+  (RULE &rims_dir
+    (&fall_dir (:D *D2))
+    (opposite (:D D2) (:Opp *D)))
+
+  (RULE &span
+    (&held *L)
+    (&spread.ray (:P *Q) (:Origin L))
+    (&open (:P Q))
+    (&fall_dir *D)
+    (axis_of D *A)
+    (&open *P)
+    (same_line A P Q)
+    (NOT (nearer D P Q))))
+
+(ALTS $fill "which cells of a held cup the water fills" $WallSpan
+  (ALT $WallSpan
+    (ALTS $height "how high the water stands between the two walls of a held cup" $ShorterWall
+      (ALT $FillToTallerRim
+        (OUTPUT fill "the cup fills up to the end of the taller wall")
+        (RULE &filled
+          (&span *L *P)
+          (&rim_top L *T)
+          (&rims_dir (:D *U))
+          (NOT (nearer (:D U) P (:Q T)))))))
+  (ALT $FillBasinFlood
+    (OUTPUT fill "a held cup fills every non-wall cell that a 4-walk from the landing cell reaches, at the highest level line at which that set touches neither the side edges nor the edge toward &fall"
+      (RULE &spills
+        (&basin.reached (:key *L *Lv) *P)
+        (&fall_dir *D)
+        (OR ((perp_dir D (:D2 *E)))
+            ((= E D)))
+        (margin (:B P) (:D E) (:K 0)))
+
+      (RULE &level
+        (&basin.source (:key *L *Lv))
+        (NOT (&spills L Lv)))
+
+      (RULE &higher_level
+        (&level *L *Lv)
+        (&level L (:Lv *Lv2))
+        (&fall_dir *D)
+        (opposite D (:Opp *U))
+        (nearer (:D U) (:P Lv2) (:Q Lv))))
+    (RULE &filled
+      (&level *L *Lv)
+      (NOT (&higher_level L Lv))
+      (&basin.reached (:key L Lv) *P))))
+
+(ALTS $pool "where the water that reaches the edge toward &fall lies" $EdgeLines
+  (ALT $PoolSpreadsToWalls
+    (OUTPUT pool "the water spreads along the edge line from the cell where it lands, in both directions, until it meets a &wall cell")
+    (RULE &pooled
+      (&edge_spread.ray *P)
+      (&open P))))
+
+(ALTS $fall "the direction the water falls" $StoredFall
+  (ALT $FallFromDropEdge
+    (INPUT drop "the water falls away from the grid edge the drop lies on; undefined where the drop lies on a corner or on no edge"
+      (RULE &drop_edge
+        (&drop *P)
+        (margin (:B P) *D (:K 0)))
+
+      (RULE &fall_dir
+        (&drop_edge *P (:D *E))
+        (ALL ((&drop_edge P (:D *D1))
+              (&drop_edge P (:D *D2)))
+             ((= D1 D2)))
+        (opposite (:D E) (:Opp *D))))))
+
+(RULE &above_a_rim
+  (&span *L *P)
+  (&rim_top L *T)
+  (&rims_dir (:D *U))
+  (nearer (:D U) P (:Q T)))
+
+(RULE &filled
+  (&span *L *P)
+  (NOT (&above_a_rim L P)))
+
+(RULE &pooled
+  (&edge_landing)
+  (&fall_dir *D)
+  (&open *P)
+  (margin (:B P) D *K)
+  (&pool_depth *N)
+  (< K N))
+
+(RULE &wet
+  (OR ((&filled *P))
+      ((&pooled P))))
+
+(RULE &output
+  (OR ((&wet *P)
+       (&water (:C *Col)))
+      ((input P (:Col *Col0))
+       (&fall_dir)
+       (NOT (&wet P))
+       (IF ((&drop P))
+           ((&background (:C Col)))
+           ((= Col Col0))))))
+
+(DET &background_determined
+  (&water_determined (:C *W))
+  (ex_input *E *P (:Col W))
+  (ex_output E P (:Col *C)))
+
+(OUT (&output ^P ^Col))

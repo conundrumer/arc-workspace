@@ -1,0 +1,85 @@
+;; inputs 5f31eed37a507452ea743ad1e7df64df947405073b36c0028a3dac30b71dca33 programs/solvers/6cdd2623.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6cdd2623
+
+(DET &bg DominantColor)
+
+(RULE &interior_color
+  (input *P *Col)
+  (interior (:A P) (:B 0)))
+
+(RULE &line_color
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&interior_color Col)))
+
+(RULE &mark_cast_cell
+  (axis_elem (:A *Key))
+  (input))
+
+(ALTS $s "which color draws the lines" $Border
+  (ALT $Rarest
+    ;; $Rarest — the fewest cells.
+    (INIT &tally Cardinality
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (member ((:m P))
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &rarest Order
+      (member ((:t (:V Col) (:S N)))
+        (&tally.size (:key *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&tally.size (:key *Col) *N)))
+
+    (RULE &line_color
+      (&rarest.minimal (:t (:V *Col))))))
+
+(ALTS $d "what a mark draws" $Cast
+  (ALT $Span
+    (RULE &mark_cast_between
+      (axis_elem (:A *Key))
+      (input *P)
+      (axis4_of *D (:A Key))
+      (dir8_opposite D (:D2 *O))
+      (&mark_cast.ray (:key (:A Key)) P D)
+      (&mark_cast.ray (:key (:A Key)) P (:D O)))
+
+    (RULE &line
+      (&mark_cast_between *P))))
+
+(INIT &mark_cast Ray
+  (key ((OR ((input (:P *M) *Col)
+             (&line_color Col)
+             (margin (:B M) *D (:K 0))
+             (axis_of D ^A))
+            ((axis_elem A)
+             (axis4_of D A))
+            ((axis_elem A)
+             (input *P))))
+    (source ((:P M))
+      (input (:P *M) *Col)
+      (&line_color Col)
+      (margin (:B M) *D (:K 0))
+      (axis_of D A))
+    (node (P)
+      (axis_elem A)
+      (input *P))
+    (dir (D)
+      (axis_elem A)
+      (axis4_of *D A))))
+
+(RULE &line
+  (&mark_cast.ray *P)
+  (&mark_cast_cell)
+  (input P))
+
+(RULE &output
+  (OR ((&line *P)
+       (&line_color *Col))
+      ((input P)
+       (NOT (&line P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

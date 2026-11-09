@@ -1,0 +1,6 @@
+;; inputs 47ebc35f357b6cc3d7a27c9610f03a66b108219db7ecae9f9f89196729779155 programs/solvers/af22c60d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; af22c60d
+
+(param &mask Color (0))
+(param &mirror_band (Axis Dir number) (AXIS_V DIR_B 2) (AXIS_H DIR_R 2))

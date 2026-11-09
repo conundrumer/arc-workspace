@@ -1,0 +1,112 @@
+;; inputs e92a8e533d362b6139cde960978d5c367b2d2d325f133bc26ab3b992b5e96cb3 programs/solvers/98cf29f8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 98cf29f8
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &gap
+  (&bbox.box (:key *Col) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (input P Col)))
+
+(RULE &anchor
+  (&bbox.cell (:key *Col) *P)
+  (NOT (&gap Col)))
+
+(RULE &lever
+  (&bbox.cell (:key *Col) *P)
+  (&gap Col))
+
+(RULE &move_dir
+  (&lever *P)
+  (&anchor (:P *Q))
+  (axis_of *D *A)
+  (same_line A P Q)
+  (nearer D (:P Q) (:Q P)))
+
+(RULE &broken_slab
+  (&gap *P)
+  (&move_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *P_along)))
+
+(RULE &body
+  (&lever *P)
+  (&move_dir *D)
+  (axis_of D *A)
+  (split P A *Along)
+  (NOT (&broken_slab (:P_along Along))))
+
+(RULE &shift
+  (&move_dir *D)
+  (axis_of D *A)
+  (perp_dir D *D2)
+  (input *P)
+  (margin (:B P) D (:K 0))
+  (margin (:B P) (:D D2) (:K 0))
+  (sub_extent P A *K)
+  (jump_offset D K (:V *Delta)))
+
+(RULE &covering
+  (&shift *Delta)
+  (&body *P)
+  (compose (:A P) (:B Delta) (:C *P2))
+  (&anchor (:P P2)))
+
+(RULE &slide_node
+  (OR ((&shift (:Delta *P))
+       (NOT (&covering (:Delta P))))
+      ((= P 0))))
+
+;; The body stands where it is, and travels through the displacements that
+;; keep it clear of the anchor.
+(INIT &slide Ray
+  (source (P)
+    (&slide_node *P))
+  (node (P)
+    (&slide_node *P))
+  (dir (D)
+    (&move_dir *D)))
+
+(RULE &travel
+  (&slide.end (:P *Delta) (:Origin 0)))
+
+(ALTS $choice "how far the body travels" $Abut
+  (ALT $Arm
+    ;; The arm: the lever beyond its body.
+    (INIT &arm BoundingBox
+      (cell (P)
+        (&lever *P)
+        (NOT (&body P))))
+
+    (RULE &travel
+      (&move_dir *D)
+      (axis_of D *A)
+      (&arm.box *B)
+      (&arm.cell *P)
+      (box_extent B P A *N)
+      (jump_offset D (:K N) (:V *Delta)))))
+
+(RULE &placed
+  (&body (:P *P3))
+  (&lever (:P P3) *Col)
+  (&travel (:Delta *V))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&anchor *P *Col))
+      ((&placed P Col))
+      ((input P)
+       (NOT (&anchor P))
+       (NOT (&placed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

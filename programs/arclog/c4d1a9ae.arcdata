@@ -1,0 +1,140 @@
+;; inputs 38e7b697e7d90c3404919cd4cfc6251c1c06404e1fa1f5fdb06c0e3eb0914d3e programs/solvers/c4d1a9ae.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c4d1a9ae
+
+(param &source_dir Dir (DIR_R))
+
+(alts $region
+  (alt $ColorSpan
+    (witness two-color-panel borderline $ColorSpan
+      (relaxed one-color-panel)
+      (separates "Panel cols 0-1 holds two ink colors, 2 in col 0 and 3 in col 1, with no full background column between them. concept finds one column run with two inks and is undefined; $ColorSpan makes each color's column span its own panel, so col 0 fills with 3, col 1 with 6, cols 3-4 with 5 and cols 6-7 with 2.")
+      (input (grid
+        (4 3 4 4 6 4 5 5)
+        (2 4 4 4 6 4 4 5)
+        (4 3 4 4 6 4 5 5)
+        (2 4 4 6 4 4 4 5)
+        (4 3 4 6 4 4 5 5)
+        (2 4 4 6 4 4 4 5)
+        (4 3 4 6 4 4 5 5)
+        (2 4 4 4 6 4 4 5)
+        (4 3 4 4 6 4 5 5)
+        (2 4 4 4 6 4 4 5)))
+      (output $Runs undefined)
+      (output ($ColorSpan $WrapFirst) (grid
+        (3 3 4 5 6 4 5 5)
+        (2 6 4 5 6 4 2 5)
+        (3 3 4 5 6 4 5 5)
+        (2 6 4 6 5 4 2 5)
+        (3 3 4 6 5 4 5 5)
+        (2 6 4 6 5 4 2 5)
+        (3 3 4 6 5 4 5 5)
+        (2 6 4 5 6 4 2 5)
+        (3 3 4 5 6 4 5 5)
+        (2 6 4 5 6 4 2 5)))
+      (output ($ColorSpan $WrapTwoBack) (grid
+        (3 3 4 5 6 4 5 5)
+        (2 6 4 5 6 4 3 5)
+        (3 3 4 5 6 4 5 5)
+        (2 6 4 6 5 4 3 5)
+        (3 3 4 6 5 4 5 5)
+        (2 6 4 6 5 4 3 5)
+        (3 3 4 6 5 4 5 5)
+        (2 6 4 5 6 4 3 5)
+        (3 3 4 5 6 4 5 5)
+        (2 6 4 5 6 4 3 5))))
+    (witness shared-color borderline concept
+      (relaxed one-color-panel)
+      (separates "train0 with the third panel's ink 5 recolored 2, so the first and third panels share ink 2. $Runs fills cols 0-1 with 6 and cols 3-4 and 6-7 with 2; $ColorSpan spans color 2 over cols 0-7, across the span of 6, and is undefined.")
+      (input (grid
+        (4 2 4 4 6 4 2 2)
+        (2 4 4 4 6 4 4 2)
+        (4 2 4 4 6 4 2 2)
+        (2 4 4 6 4 4 4 2)
+        (4 2 4 6 4 4 2 2)
+        (2 4 4 6 4 4 4 2)
+        (4 2 4 6 4 4 2 2)
+        (2 4 4 4 6 4 4 2)
+        (4 2 4 4 6 4 2 2)
+        (2 4 4 4 6 4 4 2)))
+      (output $Runs (grid
+        (6 2 4 2 6 4 2 2)
+        (2 6 4 2 6 4 2 2)
+        (6 2 4 2 6 4 2 2)
+        (2 6 4 6 2 4 2 2)
+        (6 2 4 6 2 4 2 2)
+        (2 6 4 6 2 4 2 2)
+        (6 2 4 6 2 4 2 2)
+        (2 6 4 2 6 4 2 2)
+        (6 2 4 2 6 4 2 2)
+        (2 6 4 2 6 4 2 2)))
+      (output $ColorSpan undefined))))
+
+(alts $bg
+  (alt $BgSeparatorColor
+    (witness dense-panel borderline $BgSeparatorColor
+      (relaxed background)
+      (separates "Panel cols 0-3 is ink 4 but for four cells, so 4 (36 cells) outnumbers the separator color 0 (34 cells). concept takes 4 as background, finds no full background column and is undefined; $BgSeparatorColor takes 0, the color of the full columns 4 and 6, and fills the three panels from their right neighbors with wrap.")
+      (input (grid
+        (4 0 4 4 0 0 0 9)
+        (4 4 4 4 0 3 0 0)
+        (4 4 4 4 0 0 0 9)
+        (4 4 4 0 0 3 0 0)
+        (4 4 4 4 0 0 0 9)
+        (4 4 4 4 0 3 0 0)
+        (0 4 4 4 0 0 0 9)
+        (4 4 4 4 0 3 0 0)
+        (4 4 4 4 0 0 0 9)
+        (4 4 0 4 0 3 0 0)))
+      (output $Commonest undefined)
+      (output $BgSeparatorColor (grid
+        (4 3 4 4 0 9 0 9)
+        (4 4 4 4 0 3 0 4)
+        (4 4 4 4 0 9 0 9)
+        (4 4 4 3 0 3 0 4)
+        (4 4 4 4 0 9 0 9)
+        (4 4 4 4 0 3 0 4)
+        (3 4 4 4 0 9 0 9)
+        (4 4 4 4 0 3 0 4)
+        (4 4 4 4 0 9 0 9)
+        (4 4 3 4 0 3 0 4))))))
+
+(alts $wrap
+  (alt $WrapTwoBack
+    (witness four-panels variant concept
+      (relaxed separator-columns)
+      (separates "train0 with a fourth panel of ink 3 after a full background col 8. concept fills cols 6-7 with 3 and wraps cols 9-10 to 2, the first panel's ink; $WrapTwoBack wraps cols 9-10 to 6, the ink of the panel two before the last; $BgSeparatorColor reads the full col 7 of 5, now with other columns on both sides, as a second separator color and is undefined.")
+      (input (grid
+        (4 2 4 4 6 4 5 5 4 3 4)
+        (2 4 4 4 6 4 4 5 4 4 3)
+        (4 2 4 4 6 4 5 5 4 4 3)
+        (2 4 4 6 4 4 4 5 4 3 4)
+        (4 2 4 6 4 4 5 5 4 4 3)
+        (2 4 4 6 4 4 4 5 4 4 3)
+        (4 2 4 6 4 4 5 5 4 3 4)
+        (2 4 4 4 6 4 4 5 4 4 3)
+        (4 2 4 4 6 4 5 5 4 4 3)
+        (2 4 4 4 6 4 4 5 4 3 4)))
+      (output ($Commonest $WrapFirst) (grid
+        (6 2 4 5 6 4 5 5 4 3 2)
+        (2 6 4 5 6 4 3 5 4 2 3)
+        (6 2 4 5 6 4 5 5 4 2 3)
+        (2 6 4 6 5 4 3 5 4 3 2)
+        (6 2 4 6 5 4 5 5 4 2 3)
+        (2 6 4 6 5 4 3 5 4 2 3)
+        (6 2 4 6 5 4 5 5 4 3 2)
+        (2 6 4 5 6 4 3 5 4 2 3)
+        (6 2 4 5 6 4 5 5 4 2 3)
+        (2 6 4 5 6 4 3 5 4 3 2)))
+      (output $WrapTwoBack (grid
+        (6 2 4 5 6 4 5 5 4 3 6)
+        (2 6 4 5 6 4 3 5 4 6 3)
+        (6 2 4 5 6 4 5 5 4 6 3)
+        (2 6 4 6 5 4 3 5 4 3 6)
+        (6 2 4 6 5 4 5 5 4 6 3)
+        (2 6 4 6 5 4 3 5 4 6 3)
+        (6 2 4 6 5 4 5 5 4 3 6)
+        (2 6 4 5 6 4 3 5 4 6 3)
+        (6 2 4 5 6 4 5 5 4 6 3)
+        (2 6 4 5 6 4 3 5 4 3 6)))
+      (output $BgSeparatorColor undefined))))

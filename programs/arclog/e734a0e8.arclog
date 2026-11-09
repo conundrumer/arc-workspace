@@ -1,0 +1,311 @@
+;; inputs 4ffd64a2bcde8fb2f42ff5753d696cfb31cb526046a0bfec6edfc098b1059c5b programs/solvers/e734a0e8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e734a0e8
+
+(INPUT divider-tiling "full rows and full columns of &divider_color, each one cell wide, cut the grid into equal square tiles, with a tile at each end of each axis."
+
+  (RULE &line_color
+    (input *P *Col)
+    (split P *A (:Along *L)))
+
+  (RULE &full_line
+    (&line_color *A *L *Col)
+    (ALL ((&line_color A L (:Col *Colm))
+          (&line_color A L (:Col *Col2)))
+         ((= Colm Col2))))
+
+  (DET &full_line_train
+    (&full_line (:E *E_train) *Col)
+    (ex_output (:E E_train)))
+
+  (DET &lineless
+    (&full_line_train *Col)
+    (ex_output *E)
+    (NOT (&full_line E Col)))
+
+  (DET &divider_color
+    (&full_line_train (:Col *C))
+    (NOT (&lineless (:Col C))))
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; The commonest color of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &rare
+    (&commonest.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background_color DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&rare (:Col C))))
+
+  (INIT &line_hue Singleton
+    (member ((:v Col))
+      (&full_line *Col)
+      (NOT (&background_color (:C Col))))))
+
+(INPUT blank-tiles "each tile is filled with &background_color, apart from the cells the other scene claims name.")
+
+(INPUT one-source "exactly one tile, the source, holds cells of a color other than &background_color and &divider_color, and those cells all have one color, the drawing color.")
+
+(INPUT center-markers "each marked tile holds exactly one cell of &divider_color, at the tile's center, and no other cell that is not &background_color.")
+
+(INPUT source-unmarked "the source tile holds no cell of &divider_color.")
+
+(OUTPUT stamp-marked "each marked tile takes, at each cell, the color of the cell at the same place in the source tile.")
+
+(OUTPUT keep-rest "each other cell keeps its input color."
+
+  (RULE &divider
+    (&divider_color (:C *Col)))
+
+  (RULE &tiling_divider
+    (&divider *Col)
+    (&full_line *A *L Col))
+
+  (RULE &tiling_on_divider
+    (input *P)
+    (&tiling_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank Order
+    (key ((OR ((&tiling_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiling_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiling_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiling_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiling_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx *P D (:N *N1))
+    (&tiling_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &tiling_tile_of
+    (&tiling_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiling_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiling_tile_of *P ^P_tile))
+      (cell (P)
+        (&tiling_tile_of *P P_tile))))
+
+  (RULE &tile_cell
+    (&tiling_tile_of *P *P_tile)
+    (&tile_box.box (:key P_tile) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (RULE &tile_center
+    (&tile_cell *P_tile *P *P_intile)
+    (centered (:P P_intile)))
+
+  (RULE &marker
+    (&divider *Col))
+
+  (RULE &plain
+    (OR ((&marker)
+         (&background_color (:C *Col)))
+        ((&marker)
+         (&divider Col))
+        ((&marker Col))))
+
+  (RULE &drawn_cell
+    (&marker)
+    (&tiling_tile_of *P *P_tile)
+    (input P *Col)
+    (NOT (&plain Col)))
+
+  (RULE &source_cand
+    (&drawn_cell *P_tile))
+
+  (RULE &rival
+    (&source_cand *P_tile)
+    (&source_cand (:P_tile *P_tile2))
+    (!= P_tile P_tile2))
+
+  (RULE &source
+    (&source_cand *P_tile)
+    (NOT (&rival)))
+
+  (RULE &source_color
+    (&source *P_tile)
+    (&tiling_tile_of *P P_tile)
+    (input P *Col))
+
+  (RULE &marker_cell
+    (&marker *Col)
+    (&tiling_tile_of *P *P_tile)
+    (input P Col))
+
+  (RULE &mark
+    (&marker_cell *P_tile *P))
+
+  (RULE &marked
+    (&mark *P_tile)
+    (NOT (&drawn_cell P_tile)))
+
+  (RULE &in_marked
+    (&marked *P_tile)
+    (&tiling_tile_of *P P_tile))
+
+  (RULE &tile_copy
+    (&marked *P_tile)
+    (&tile_cell P_tile *P *P_intile)
+    (&tile_cell (:P *Q) P_intile)
+    (&source_color (:P Q) *Col))
+
+  (RULE &defined
+    (&source)))
+
+(ALTS $dv "where the divider color comes from" $StoredDivider
+  (ALT $DividerFromLines
+    (INPUT divider-tiling "the divider color is the one color, other than &background_color, that fills a full row or a full column; it is undefined where no such line exists or the lines have more than one color."
+      (RULE &divider
+        (&line_hue.value (:v *Col))))))
+
+(ALTS $mk "which color marks a tile" $DividerMarker
+  (ALT $MarkerColor
+    (INPUT center-markers "the marker cell has &marker_color."
+      (DET &changed
+        (ex_input *E *P *Col)
+        (ex_output E P (:Col *Col_out))
+        (!= Col Col_out))
+
+      (DET &unchanged
+        (&changed *Col)
+        (ex_output *E)
+        (NOT (&changed E Col)))
+
+      (DET &marker_color
+        (&changed (:Col *C))
+        (NOT (&background_color C))
+        (NOT (&unchanged (:Col C))))
+
+      (RULE &marker
+        (&divider)
+        (&marker_color (:C *Col))))
+    (INPUT one-source "the source holds a color other than &background_color, &divider_color and &marker_color.")))
+
+(ALTS $pl "which marker cells mark a tile, and where the copy lands" $AnyCell
+  (ALT $MarkerAtCenter
+    (OUTPUT stamp-marked "a tile is marked when its center cell has the marker color; undefined where a tile has an even side."
+      (RULE &centerless
+        (&tile_box.box (:key *P_tile))
+        (NOT (&tile_center P_tile)))
+
+      (RULE &mark
+        (&marker_cell *P_tile *P)
+        (&tile_center P_tile P))
+
+      (RULE &defined
+        (&source)
+        (NOT (&centerless)))))
+  (ALT $MarkerAnchors
+    (OUTPUT stamp-marked "the copy shifts so that the source tile's center lands on the marker cell, clipped to the marked tile; undefined where a marked tile holds more than one marker cell, or where the source tile has an even side."
+      (RULE &multi_marker
+        (&marked *P_tile)
+        (&mark P_tile *P)
+        (&mark P_tile (:P *P2))
+        (!= P P2))
+
+      (RULE &copy
+        (&marked *P_tile)
+        (&mark P_tile (:P *M))
+        (&source (:P_tile *P_src))
+        (&tile_center (:P_tile P_src) (:P *C))
+        (&source_color (:P *Q) *Col)
+        (relative (:Base C) (:X Q) (:X_rel *V))
+        (compose (:A M) (:B V) (:C *P))
+        (&tiling_tile_of P P_tile))
+
+      (RULE &defined
+        (&source (:P_tile *P_src))
+        (&tile_center (:P_tile P_src))
+        (NOT (&multi_marker))))
+    (RULE &output
+      (OR ((&defined)
+           (&in_marked *P)
+           (input P *Col)
+           (NOT (&copy P)))
+          ((&defined)
+           (&copy P Col))
+          ((&defined)
+           (input P Col)
+           (NOT (&in_marked P)))))))
+
+(ALTS $cp "what the copy takes from the source tile" $WholeTile
+  (ALT $OverlayDrawing
+    (OUTPUT stamp-marked "each marked tile takes the source's cells, and each divider-colored cell of the source arrives as &background_color."
+      (RULE &source_color
+        (&source *P_tile)
+        (&tiling_tile_of *P P_tile)
+        (input P (:Col *Col_in))
+        (OR ((&divider (:Col Col_in))
+             (&background_color (:C *Col)))
+            ((NOT (&divider (:Col Col_in)))
+             (= Col Col_in)))))))
+
+(ALTS $sr "which tile is the source" $OneDrawn
+  (ALT $SourceByCount
+    (INPUT one-source "of the tiles that hold a drawn color, the source is the one with the most drawn cells; undefined where two of those tiles tie."
+      (INIT &size Cardinality
+        (key ((&drawn_cell ^P_tile))
+          (member ((:m P))
+            (&drawn_cell P_tile *P))
+          (domain ()
+            (&drawn_cell P_tile))))
+
+      (INIT &most Order
+        (member ((:t (:V P_tile) (:S N)))
+          (&size.size (:key *P_tile) *N))
+        (score ((:t (:V P_tile) (:S N)) (:S N))
+          (&size.size (:key *P_tile) *N)))
+
+      (RULE &source_cand
+        (&most.maximal (:t (:V *P_tile)))))))
+
+(RULE &output
+  (OR ((&defined)
+       (&tile_copy *P *Col))
+      ((&defined)
+       (input P Col)
+       (NOT (&in_marked P)))))
+
+(OUT (&output ^P ^Col))

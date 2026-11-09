@@ -1,0 +1,90 @@
+;; inputs 1dace9e33c44655c7d18f6c26ec65064138456a4c69e0f5bd8504df07f8a3cf6 programs/solvers/e50d258f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e50d258f
+
+(param &bg Color (0))
+(param &count_color Color (2))
+(param &minus_color Color (1))
+
+(alts $s
+  (alt $ExcessOverMark
+    (witness mark-excess-differs ordinary concept
+      (separates "the patch with the most 2 cells also holds more 1 cells than 2 cells, while another patch holds fewer 2 cells and no 1 cell; the concept crops the first patch, $ExcessOverMark crops the second")
+      (input (grid
+        (2 1 2 8 0 0 0 0 0 0)
+        (1 8 1 8 0 0 0 0 0 0)
+        (2 1 8 1 0 0 0 0 0 0)
+        (8 8 8 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 8 2 8 8)
+        (0 0 0 0 0 8 8 8 8 8)
+        (0 0 0 0 0 8 2 8 8 8)
+        (0 0 0 0 0 8 8 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $MostMark (grid
+        (2 1 2 8)
+        (1 8 1 8)
+        (2 1 8 1)
+        (8 8 8 8)))
+      (output $ExcessOverMark (grid
+        (8 8 2 8 8)
+        (8 8 8 8 8)
+        (8 2 8 8 8)
+        (8 8 8 8 8))))))
+
+(alts $a
+  (alt $DiagJoined
+    (witness corner-touching-patches borderline concept
+      (relaxed rect-patches)
+      (separates "two patches touch at one corner; the concept keeps them apart and crops the patch with three 2 cells, $DiagJoined joins them into one patch and crops the box of both, background cells included")
+      (input (grid
+        (2 8 2 0 0 0 0 2 8 1)
+        (8 2 8 0 0 0 0 8 8 8)
+        (8 8 8 0 0 0 0 8 2 8)
+        (0 0 0 8 8 8 0 0 0 0)
+        (0 0 0 8 2 8 0 0 0 0)
+        (0 0 0 8 1 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (1 8 8 0 0 0 0 0 0 0)
+        (8 8 8 0 0 0 0 0 0 0)
+        (8 8 1 0 0 0 0 0 0 0)))
+      (output $Cardinal (grid
+        (2 8 2)
+        (8 2 8)
+        (8 8 8)))
+      (output $DiagJoined (grid
+        (2 8 2 0 0 0)
+        (8 2 8 0 0 0)
+        (8 8 8 0 0 0)
+        (0 0 0 8 8 8)
+        (0 0 0 8 2 8)
+        (0 0 0 8 1 8))))))
+
+(alts $c
+  (alt $CropOwnCells
+    (witness cell-in-patch-box foreign any
+      (relaxed rect-patches)
+      (separates "a separate 1 cell lies inside the box of a ring-shaped patch; the concept copies the whole box, the 1 cell included, $CropOwnCells paints only the ring's own cells and leaves that cell background")
+      (input (grid
+        (8 2 8 2 8 0 0 0 0 0)
+        (8 0 0 0 8 0 0 0 0 0)
+        (8 0 1 0 8 0 0 0 0 0)
+        (8 0 0 0 8 0 0 0 0 0)
+        (8 2 8 8 8 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 8 8 8 8)
+        (0 0 0 0 0 8 1 8 2 8)
+        (0 0 0 0 0 8 8 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $WholeBox (grid
+        (8 2 8 2 8)
+        (8 0 0 0 8)
+        (8 0 1 0 8)
+        (8 0 0 0 8)
+        (8 2 8 8 8)))
+      (output $CropOwnCells (grid
+        (8 2 8 2 8)
+        (8 0 0 0 8)
+        (8 0 0 0 8)
+        (8 0 0 0 8)
+        (8 2 8 8 8))))))

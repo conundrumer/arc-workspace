@@ -1,0 +1,470 @@
+;; inputs 8aa9ea5ae1cb7dbe38fe02695d19eec538228872008fb2944f764fa6dd53c247 programs/solvers/136b0064.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 136b0064
+
+(DET &bg DominantColor)
+
+(RULE &cell
+  (input *P *Col))
+
+(DET &glyph_gap DivisorRatio)
+
+(DET &glyph_size TileCount)
+
+;; The divider is the gap between the panels.
+(DET &divide_gap DivisorRatio)
+
+(DET &divisor SepTileCount)
+
+(INIT &far_cell_division Division
+  (key ((dir_elem ^D))
+    (parts (A N)
+      (axis_of D *A)
+      (&divisor *N))
+    (gap (A G)
+      (axis_of D *A)
+      (&divide_gap (:K *G))))
+  (cell (P)
+    (ex_input *P)))
+
+(DET &far_cell
+  (ex_input *E *P *Col)
+  (&far_cell_division.tile (:key *D) P *P_outer)
+  (opposite D (:Opp *D2))
+  (margin (:B P_outer) (:D D2) (:K 0)))
+
+(DET &marker RarestColor)
+
+(DET &side_defect
+  (dir_elem *D)
+  (ex_output *E)
+  (OR ((&marker (:C *M))
+       (NOT (&far_cell E D (:Col M))))
+      ((&far_cell E D *Col)
+       (NOT (&bg (:C Col)))
+       (NOT (&marker (:C Col))))))
+
+(DET &legend_dir
+  (dir_elem *D)
+  (NOT (&side_defect D)))
+
+(INIT &parse_division3 Division
+  (cell (P)
+    (ex_input *P))
+  (parts (A N)
+    (&legend_dir *D)
+    (axis_of D *A)
+    (&divisor *N))
+  (gap (A G)
+    (&legend_dir *D)
+    (axis_of D *A)
+    (&divide_gap (:K *G))))
+
+(DET &panel2
+  (ex_input *E (:P *P_grid))
+  (&parse_division3.tile (:P P_grid) *P_outer (:P_inner *P_panel)))
+
+(DET &legend2
+  (&panel2 *E *P_grid *P_outer *P_panel)
+  (&legend_dir *D)
+  (margin (:B P_outer) D (:K 0)))
+
+(INIT &glyph_cell_division2 Division
+  (cell ((:P P_panel))
+    (&legend2 *P_panel))
+  (side (A (:K Sz))
+    (axis_elem *A)
+    (&glyph_size (:N *Sz)))
+  (gap (A G)
+    (axis_elem *A)
+    (&glyph_gap (:K *G))))
+
+(DET &glyph_cell2
+  (&legend2 *E (:P_grid *P) *P_panel)
+  (&cell E P *Col)
+  (NOT (&bg (:C Col)))
+  (&glyph_cell_division2.tile (:P P_panel) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(DET &stroke_cell
+  (&glyph_cell2 *E (:P_tile *T) *Col)
+  (ex_output E *P Col))
+
+;; The move tables record the stroke's direction, so runs are taken in
+;; every direction.
+(INIT &run Ray
+  (key ((OR ((&stroke_cell ^E ^T *P))
+            ((&stroke_cell E T)
+             (dir_elem *D))))
+    (source (P)
+      (&stroke_cell E T *P))
+    (node (P)
+      (&stroke_cell E T *P))
+    (dir (D)
+      (&stroke_cell E T)
+      (dir_elem *D))))
+
+(DET &run_run_full
+  (&run.ray (:key *E *T) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+  (!= N 0))
+
+(INIT &parse_division Division
+  (cell (P)
+    (input *P))
+  (parts (A N)
+    (&legend_dir *D)
+    (axis_of D *A)
+    (&divisor *N))
+  (gap (A G)
+    (&legend_dir *D)
+    (axis_of D *A)
+    (&divide_gap (:K *G))))
+
+(RULE &panel
+  (&parse_division.tile (:P *P_grid) *P_outer (:P_inner *P_panel)))
+
+(DET &step_ok
+  (ex_output *E *P (:Col *M))
+  (&marker (:C M))
+  (dir_elem *D)
+  (neighbor P D (:Q *P2))
+  (ex_output E (:P P2) *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &step_defect
+  (dir_elem *D)
+  (ex_output *E)
+  (NOT (&step_ok E D)))
+
+(DET &advance
+  (dir_elem *D)
+  (NOT (&step_defect D)))
+
+(DET &order_axis AxisDomain)
+
+(DET &order_axis3
+  (&glyph_cell2)
+  (&order_axis *A))
+
+(DET &order_corner DiagDirDomain)
+
+(DET &order_corner3
+  (&glyph_cell2)
+  (&order_corner *D))
+
+(INIT &order2 Order
+  (key ((&glyph_cell2 ^E (:P_tile *T)))
+    (member ((:t T))
+      (&glyph_cell2 E (:P_tile *T)))
+    (score ((:t T) (:S K1))
+      (&glyph_cell2 E (:P_tile *T))
+      (&order_corner3 (:D *Diag))
+      (&order_axis3 *A)
+      (diag_dist (:P T) Diag A *K1 *K2))
+    (secondary_score ((:t T) (:S K2))
+      (&glyph_cell2 E (:P_tile *T))
+      (&order_corner3 (:D *Diag))
+      (&order_axis3 *A)
+      (diag_dist (:P T) Diag A *K1 *K2))))
+
+(DET &run_len
+  (&run_run_full *E *T (:V1 *P0) (:V2 *D) (:V3 *P))
+  (axis_of D *A)
+  (sub_extent (:P P0) A *K)
+  (jump (:P P0) D K (:Q P)))
+
+(INIT &run_rim Boundary
+  (key ((&stroke_cell ^E ^T *P))
+    (cell (P)
+      (&stroke_cell E T *P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(DET &fit
+  (&run_len *E *T *P0 *D *K *P)
+  (OR ((&order2.successor (:key E) (:a T) (:b *T2))
+       (&advance (:D *Da))
+       (neighbor P (:D Da) (:Q *P2))
+       (&stroke_cell E (:T T2) (:P P2)))
+      ((&order2.maximal (:key E) (:t T))
+       (&run_rim.exposed (:key E T) P D)
+       (&stroke_cell E T)
+       (dir_elem D))))
+
+(DET &canvas2
+  (&panel2 *E *P_grid *P_outer (:P_panel *P_canvas))
+  (&legend_dir *D)
+  (opposite D (:Opp *D_out))
+  (margin (:B P_outer) (:D D_out) (:K 0)))
+
+(DET &marker_cell2
+  (&canvas2 *E (:P_grid *P) *P_canvas)
+  (&cell E P *Col)
+  (&marker (:C Col)))
+
+;; The pen's walk: it stands on the marker before the first glyph, and
+;; after each glyph's stroke on the end of a run the stroke can take.
+(INIT &walk Propagation
+  (key ((OR ((ex_output ^E)
+             (&order2.minimal (:key E) (:t *T))
+             (&marker_cell2 E (:P_canvas *P)))
+            ((&order2.successor (:key E) (:a *T1) (:b *T2))
+             (&fit E (:T T1) *P0 (:P *P2))
+             (&advance (:D *Da))
+             (opposite (:D Da) (:Opp *Db))
+             (neighbor (:P P0) (:D Db) (:Q P)))))
+    (source ((:n T P))
+      (ex_output E)
+      (&order2.minimal (:key E) (:t *T))
+      (&marker_cell2 E (:P_canvas *P)))
+    (edge ((:a (:T T1) P) (:b (:T T2) (:P P2)))
+      (&order2.successor (:key E) (:a *T1) (:b *T2))
+      (&fit E (:T T1) *P0 (:P *P2))
+      (&advance (:D *Da))
+      (opposite (:D Da) (:Opp *Db))
+      (neighbor (:P P0) (:D Db) (:Q *P)))))
+
+(DET &drew
+  (&walk.reached (:key *E) (:n *T (:P *P0)))
+  (&advance (:D *Da))
+  (neighbor (:P P0) (:D Da) (:Q *P1))
+  (&fit E T (:P0 P1) *D *K *P))
+
+(INIT &tally2 Cardinality
+  (key ((&glyph_cell2 (:E ^K) (:P_tile ^T) *P_intile))
+    (member ((:m P_intile))
+      (&glyph_cell2 (:E K) (:P_tile T) *P_intile))))
+
+(DET &count_cand
+  (&tally2.size (:key (:K *E) *T) *N)
+  (&drew E T *D *K))
+
+(DET &occurrence
+  (ex_output *E)
+  (&glyph_cell2 E (:P_tile *T)))
+
+(DET &count_defect
+  (&count_cand *N *D *K)
+  (&occurrence *E *T)
+  (&tally2.size (:key (:K E) T) N)
+  (NOT (&drew E T D K)))
+
+(DET &count_move
+  (&count_cand *N *D *K)
+  (NOT (&count_defect N D K)))
+
+(ALTS $m "what identifies a glyph" $Count
+  (ALT $Glyph
+    (DET &footprint
+      (&occurrence *E *T)
+      (&glyph_cell2 E (:P_tile T) (:P_intile *P)))
+
+    (INIT &same Inclusion
+      (pattern ((:pattern (:E G_e) (:T G_t)) (:m P))
+        (&footprint (:E *G_e) (:T *G_t) *P))
+      (observed ((:observed (:E G_e) (:T G_t)) (:m P))
+        (&footprint (:E *G_e) (:T *G_t) *P)))
+
+    (INIT &shape Quotient
+      (equivalent ((:a (:E G_e) (:T G_t)) (:b (:E G2_e) (:T G2_t)))
+        (&same.equal (:observed (:E *G_e) (:T *G_t)) (:pattern (:E *G2_e) (:T *G2_t)))))
+
+    (DET &glyph_member
+      (&shape.class (:a (:E *G_e) (:T *G_t)) *Id)
+      (&footprint (:E G_e) (:T G_t) *P))
+
+    (INIT &glyph_match Inclusion
+      (pattern ((:pattern Id) (:m P_intile))
+        (&glyph_member *Id (:P *P_intile)))
+      (observed ((:observed T) (:m P_intile))
+        (&glyph_cell (:P_tile *T) *P_intile)))
+
+    (DET &glyph_cand
+      (&shape.class (:a *E *T) *Id)
+      (&drew E T *D *K))
+
+    (DET &glyph_defect
+      (&glyph_cand *Id *D *K)
+      (&shape.class (:a *E *T) Id)
+      (NOT (&drew E T D K)))
+
+    (DET &glyph_move
+      (&glyph_cand *Id *D *K)
+      (NOT (&glyph_defect Id D K)))
+
+    (RULE &move
+      (&glyph_match.equal (:observed *T) (:pattern *Id))
+      (&glyph_move Id *D *K)))
+  (ALT $Color
+    (DET &color_cand
+      (&glyph_cell2 *E (:P_tile *T) *Col)
+      (&drew E T *D *K))
+
+    (DET &color_defect
+      (&color_cand *Col *D *K)
+      (&occurrence *E *T)
+      (&glyph_cell2 E (:P_tile T) Col)
+      (NOT (&drew E T D K)))
+
+    (DET &color_move
+      (&color_cand *Col *D *K)
+      (NOT (&color_defect Col D K)))
+
+    (RULE &move
+      (&glyph_cell (:P_tile *T) *Col)
+      (&color_move Col *D *K))))
+
+(ALTS $d "decompose — how the divider cuts the grid into panels" $TileCount
+  (ALT $Size
+    (DET &panel_size ConstOutDim)
+
+    (INIT &parse_division2 Division
+      (cell (P)
+        (input *P))
+      (side (A K)
+        (&legend_dir *D)
+        (axis_of D *A)
+        (&panel_size (:N *K)))
+      (gap (A G)
+        (&legend_dir *D)
+        (axis_of D *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &panel
+      (&parse_division2.tile (:P *P_grid) *P_outer (:P_inner *P_panel)))))
+
+(RULE &canvas
+  (&panel *P_grid *P_outer (:P_panel *P_canvas))
+  (&legend_dir *D)
+  (opposite D (:Opp *D_out))
+  (margin (:B P_outer) (:D D_out) (:K 0)))
+
+(RULE &legend
+  (&panel *P_grid *P_outer *P_panel)
+  (&legend_dir *D)
+  (margin (:B P_outer) D (:K 0)))
+
+(INIT &glyph_cell_division Division
+  (cell ((:P P_panel))
+    (&legend *P_panel))
+  (side (A (:K Sz))
+    (axis_elem *A)
+    (&glyph_size (:N *Sz)))
+  (gap (A G)
+    (axis_elem *A)
+    (&glyph_gap (:K *G))))
+
+(RULE &glyph_cell
+  (&legend (:P_grid *P) *P_panel)
+  (&cell P *Col)
+  (NOT (&bg (:C Col)))
+  (&glyph_cell_division.tile (:P P_panel) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(INIT &tally Cardinality
+  (key ((&glyph_cell (:P_tile ^T) *P_intile))
+    (member ((:m P_intile))
+      (&glyph_cell (:P_tile T) *P_intile))))
+
+(RULE &move
+  (&tally.size (:key *T) *N)
+  (&count_move N *D *K))
+
+(RULE &marker_cell
+  (&canvas (:P_grid *P) *P_canvas)
+  (&cell P *Col)
+  (&marker (:C Col)))
+
+(RULE &order_axis2
+  (&glyph_cell)
+  (&order_axis *A))
+
+(RULE &order_corner2
+  (&glyph_cell)
+  (&order_corner *D))
+
+(INIT &order Order
+  (member ((:t T))
+    (&glyph_cell (:P_tile *T)))
+  (score ((:t T) (:S K1))
+    (&glyph_cell (:P_tile *T))
+    (&order_corner2 (:D *Diag))
+    (&order_axis2 *A)
+    (diag_dist (:P T) Diag A *K1 *K2))
+  (secondary_score ((:t T) (:S K2))
+    (&glyph_cell (:P_tile *T))
+    (&order_corner2 (:D *Diag))
+    (&order_axis2 *A)
+    (diag_dist (:P T) Diag A *K1 *K2)))
+
+;; The pen's walk: it stands on the marker before the first glyph, and after
+;; each glyph's stroke it stands where the stroke ends.
+(INIT &walk2 Propagation
+  (source ((:n T P))
+    (&order.minimal (:t *T))
+    (&marker_cell (:P_canvas *P)))
+  (edge ((:a (:T T1) P) (:b (:T T2) (:P P2)))
+    (&order.successor (:a *T1) (:b *T2))
+    (&canvas (:P_canvas *P))
+    (&advance (:D *Da))
+    (neighbor P (:D Da) (:Q *P1))
+    (&move (:T T1) *D *K)
+    (jump (:P P1) D K (:Q *P2))))
+
+(RULE &stroke_start
+  (&walk2.reached (:n *T (:P *P3)))
+  (&advance *D)
+  (neighbor (:P P3) D (:Q *P)))
+
+(RULE &stroke_end
+  (&stroke_start *T (:P *P3))
+  (&move T *D *K)
+  (jump (:P P3) D K (:Q *P)))
+
+(RULE &stroke_mark
+  (OR ((&stroke_start (:T *Key) *P))
+      ((&stroke_end (:T Key) P))))
+
+(INIT &stroke_frame Frame
+  (key ((&stroke_mark (:Key ^T) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&stroke_mark (:Key T) *P)
+      (frame_extent P *A *N))))
+
+(INIT &stroke Ray
+  (key ((OR ((&stroke_mark (:Key ^T) *P))
+            ((&move T *D)
+             (axis_of D *A)
+             (axis4_of (:D *D2) A))
+            ((&stroke_frame.cell (:key T) P))))
+    (source (P)
+      (&stroke_mark (:Key T) *P))
+    (node (P)
+      (&stroke_frame.cell (:key T) *P))
+    (dir ((:D D2))
+      (&move T *D)
+      (axis_of D *A)
+      (axis4_of (:D *D2) A))))
+
+(RULE &stroke_between
+  (&stroke_end (:T *Key))
+  (&canvas (:P_canvas *P))
+  (&move (:T Key) *D)
+  (axis_of D *A)
+  (axis4_of (:D *D2) A)
+  (dir8_opposite (:D D2) (:D2 *O))
+  (&stroke.ray (:key (:T Key)) P (:D D2))
+  (&stroke.ray (:key (:T Key)) P (:D O)))
+
+(RULE &ink
+  (OR ((&stroke_between (:Key *T) *P)
+       (&glyph_cell (:P_tile T) *Col))
+      ((&marker_cell (:P_canvas P))
+       (&marker (:C Col)))))
+
+(RULE &output
+  (&canvas (:P_canvas *P))
+  (OR ((&ink P *Col))
+      ((NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

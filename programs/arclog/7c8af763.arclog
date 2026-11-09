@@ -1,0 +1,125 @@
+;; inputs 8c60ba6f0a804e5f278c483903c9b1b6cc8ac16463ec0fdeca8a4ce5bc3026c9 programs/solvers/7c8af763.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7c8af763
+
+(DET &bg ChangedColor)
+
+(INIT &regions Connectivity
+  (node (P)
+    (input *P *Col)
+    (&bg (:C Col))))
+
+(DET &line UnchangedColor)
+
+(RULE &touch
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line (:C Col))))
+
+(INIT &region_vote_count Cardinality
+  (key ((&regions.component *P ^Id)
+        (&touch P *Q ^Col))
+    (member ((:m Q))
+      (&regions.component *P Id)
+      (&touch P *Q Col))))
+
+(INIT &region_vote Order
+  (key ((&region_vote_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&region_vote_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&region_vote_count.size (:key Id *Col) *N))))
+
+(ALTS $choice "how a region is parsed" $Region
+  (ALT $Tile
+    (RULE &bg_line
+      (input *P *Col)
+      (&bg (:C Col))
+      (split P *A (:Along *L)))
+
+    (RULE &tiles_divider
+      (input *P)
+      (split P *A (:Along *L))
+      (NOT (&bg_line L)))
+
+    (RULE &tiles_on_divider
+      (input *P *Col)
+      (&bg (:C Col))
+      (&tiles_divider *A *L)
+      (axis_of *D A)
+      (same_dist D (:P1 P) (:P2 L)))
+
+    (INIT &tiles_rank Order
+      (key ((OR ((&tiles_divider *A *L)
+                 (axis_of ^D A)
+                 (margin (:B L) D *K))
+                ((input *P *Col)
+                 (&bg (:C Col))
+                 (margin (:B P) D K))))
+        (member ((:t K))
+          (&tiles_divider *A *L)
+          (axis_of D A)
+          (margin (:B L) D *K))
+        (score ((:t K) (:S K))
+          (OR ((&tiles_divider *A *L)
+               (axis_of D A)
+               (margin (:B L) D *K))
+              ((input *P *Col)
+               (&bg (:C Col))
+               (margin (:B P) D K))))
+        (probe ((:t K))
+          (input *P *Col)
+          (&bg (:C Col))
+          (margin (:B P) D *K))))
+
+    (RULE &tiles_part_idx
+      (input *P *Col)
+      (&bg (:C Col))
+      (axis_of *D *A)
+      (NOT (&tiles_on_divider P A))
+      (margin (:B P) D *K)
+      (&tiles_rank.rank (:key D) (:t K) (:R *N)))
+
+    (RULE &tiles_part_of
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&tiles_part_idx *P D (:N *N1))
+      (&tiles_part_idx P (:D D2) (:N *N2))
+      (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+    (RULE &tiles_tile_of
+      (&tiles_part_of *P *A (:P_part *P1))
+      (perp A *A2)
+      (&tiles_part_of P (:A A2) (:P_part *P2))
+      (compose (:A P1) (:B P2) (:C *P_tile)))
+
+    (INIT &tile_vote_count Cardinality
+      (key ((&tiles_tile_of *P ^P_tile)
+            (&touch P *Q ^Col))
+        (member ((:m Q))
+          (&tiles_tile_of *P P_tile)
+          (&touch P *Q Col))))
+
+    (INIT &tile_vote Order
+      (key ((&tile_vote_count.size (:key ^P_tile *Col)))
+        (member ((:t Col))
+          (&tile_vote_count.size (:key P_tile *Col)))
+        (score ((:t Col) (:S N))
+          (&tile_vote_count.size (:key P_tile *Col) *N))))
+
+    (RULE &output
+      (OR ((&tiles_tile_of *P *P_tile)
+           (&tile_vote.maximal (:key P_tile) (:t *Col)))
+          ((input P Col)
+           (NOT (&bg (:C Col))))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&bg (:C Col))))
+      ((&regions.component P *Id)
+       (&region_vote.maximal (:key Id) (:t Col)))))
+
+(OUT (&output ^P ^Col))

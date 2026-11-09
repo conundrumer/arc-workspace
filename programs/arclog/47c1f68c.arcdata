@@ -1,0 +1,13 @@
+;; inputs 411fae387a83f09bcd7feb29a57b74b39ffcdf407f0981f2ca93af9901b0d30f programs/solvers/47c1f68c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 47c1f68c
+
+(param &bg Color (0))
+(param &divisor number (2))
+(param &gap number (1))
+(param &sym Sym (SYM_BOX))
+(param &anchor DiagDir (DIAG_TL))
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_ID D4_LR)
+    (D4_TB D4_HT)))

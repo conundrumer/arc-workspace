@@ -1,0 +1,137 @@
+;; inputs c9022f337cb39caf10f30e47b379a14205ad61cebbadc32e8abe4fabdf21a87f programs/solvers/917bccba.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 917bccba
+
+(DET &bg DominantColor)
+
+;; The rectangle corner the cross moves to.
+(DET &corner DiagDirDomain)
+
+(RULE &ink_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &outline Outlines
+  (key ((&ink_cell ^Col *P))
+    (node (P)
+      (&ink_cell Col *P))))
+
+(RULE &rect
+  (&outline.box (:key *Col) *B))
+
+(ALTS $rect "Which ink draws the rectangle." $Outline
+  (ALT $Contained
+    (INIT &contained BoundingBox
+      (key ((&ink_cell ^Col *P)
+            (ALL ((&ink_cell Col (:P *Pm)))
+                 ((interior (:A Pm) (:B 0)))))
+        (cell (P)
+          (&ink_cell Col *P)
+          (ALL ((&ink_cell Col (:P *Pm)))
+               ((interior (:A Pm) (:B 0)))))))
+
+    (RULE &rect
+      (&contained.box (:key *Col) *B))))
+
+(ALTS $landing "Where the cross's lines come to meet." $Corner
+  (ALT $Slide
+    (INIT &cross_rim Boundary
+      (key ((&ink_cell ^Col *P))
+        (cell (P)
+          (&ink_cell Col *P))))
+
+    (RULE &center
+      (&cross_col *Col)
+      (&ink_cell Col *P)
+      (NOT (&cross_rim.boundary (:key Col) P)))
+
+    (RULE &box_border
+      (input *P)
+      (&rect *B)
+      (inside (:A P) B)
+      (same_dist (:P1 P) (:P2 B)))
+
+    (RULE &slide_dir
+      (&rect)
+      (&corner (:D *Key)))
+
+    (RULE &slide_blocked
+      (&slide_dir *Key)
+      (&box_border *P))
+
+    (INIT &slide Ray
+      (key ((OR ((&slide_dir (:Key ^D))
+                 (&center *P))
+                ((&rect)
+                 (&corner D))))
+        (source (P)
+          (&slide_dir (:Key D))
+          (&center *P))
+        (node (P)
+          (&rect)
+          (&corner D)
+          (input *P)
+          (NOT (&slide_blocked (:Key D) P)))
+        (dir (D)
+          (&rect)
+          (&corner D))))
+
+    (INIT &slide_full Ray
+      (key ((OR ((&slide_dir (:Key ^D))
+                 (&center *P))
+                ((&rect)
+                 (&corner D))))
+        (source (P)
+          (&slide_dir (:Key D))
+          (&center *P))
+        (node (P)
+          (&rect)
+          (&corner D)
+          (input *P))
+        (dir (D)
+          (&rect)
+          (&corner D))))
+
+    (RULE &slide_stop_full
+      (&slide.end (:key (:D *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+      (neighbor (:P E1) (:D V2) (:Q *V1))
+      (&slide_full.ray (:key (:D V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+    (RULE &landing
+      (&corner *D)
+      (&slide_stop_full (:V0 D) (:V1 *P)))))
+
+(RULE &cross_col
+  (&ink_cell *Col)
+  (&rect)
+  (NOT (&rect Col)))
+
+(RULE &landing
+  (input *P)
+  (&rect *B)
+  (&corner *D)
+  (inside (:A P) B)
+  (same_corner D (:P1 P) (:P2 B)))
+
+(RULE &rect_cell
+  (input *P *Col)
+  (&rect Col))
+
+(RULE &cross
+  (&landing (:P *P_c))
+  (input *P)
+  (axis_elem *A)
+  (same_line A P (:Q P_c)))
+
+(RULE &output
+  (input *P (:Col *C))
+  (OR ((&cross P)
+       (NOT (&rect_cell P))
+       (&cross_col *Col))
+      ((&rect_cell P)
+       (= Col C))
+      ((NOT (&rect_cell P))
+       (NOT (&cross P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

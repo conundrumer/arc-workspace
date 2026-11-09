@@ -1,0 +1,512 @@
+;; inputs 84e4c53a7ec8aa94914af932b5a883617c1e44ea81f7518c9e7758994dedd935 programs/solvers/c803e39c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c803e39c
+
+(INPUT four-panels "the input is a row of four panels on &background, counted from the &panel_from edge and split by full lines of &divider_color across that axis, each panel in the role &panel_role gives its rank; each panel holds its content in an n×n square one cell in from the panel's top and its &near_side edge, where n is the side of the solid squares, and the grid is n+2 high"
+
+  (RULE &cell
+    (input *P *Col))
+
+  ;; the edge the panels are counted from
+  (DET &panel_from DirDomain)
+
+  (RULE &panel_axis
+    (&panel_from *D)
+    (axis_of D *A))
+
+  ;; Each line across the panel axis, as its place on that axis, with the
+  ;; color that fills it.
+  (INIT &line Singleton
+    (key ((&cell *P *Col)
+          (&panel_axis *A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (&cell *P *Col)
+        (&panel_axis *A)
+        (split P A (:Along L)))))
+
+  (DET &off_line
+    (ex_input *E *P *Col)
+    (&panel_axis *A)
+    (split P A (:Along *L))
+    (NOT (&line.value E (:key L) (:v Col))))
+
+  (DET &divider_color
+    (&line.value (:v *C))
+    (NOT (&off_line (:Col C))))
+
+  (DET &divider_color3
+    (ex_input)
+    (&divider_color (:C *Col)))
+
+  (DET &panels_divider2
+    (&line.value *E (:key *L) (:v *Col))
+    (&divider_color3 Col)
+    (ex_input E)
+    (&panel_axis *A))
+
+  (DET &panels_on_divider2
+    (&cell *E *P)
+    (&panels_divider2 E *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &panels_rank2 Order
+    (key ((OR ((&panels_divider2 (:E ^Ky) *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&cell (:E Ky) *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&panels_divider2 (:E Ky) *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&panels_divider2 (:E Ky) *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&cell (:E Ky) *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&cell (:E Ky) *P)
+        (margin (:B P) D *K))))
+
+  (DET &panels_part_idx2
+    (&cell *E *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider2 E P A))
+    (margin (:B P) D *K)
+    (&panels_rank2.rank (:key (:Ky E) D) (:t K) (:R *N)))
+
+  (RULE &divider_color2
+    (&divider_color (:C *Col)))
+
+  (RULE &panels_divider
+    (&line.value (:key *L) (:v *Col))
+    (&divider_color2 Col)
+    (&panel_axis *A))
+
+  (RULE &panels_on_divider
+    (&cell *P)
+    (&panels_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &panels_rank Order
+    (key ((OR ((&panels_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&cell *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&panels_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&panels_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&cell *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&cell *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (&cell *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (DET &panel_cell2
+    (&panel_from *D)
+    (&panels_part_idx2 *E *P D (:N *K)))
+
+  (DET_OR_RULE &background DominantColor
+    (&panel_cell2 *E *P)
+    (&panel_from *D)
+    (perp_dir D *D2)
+    (margin (:B P) (:D D2) (:K 0))
+    (ex_input E P (:Col *C)))
+
+  (DET &ink2
+    (&panel_cell2 *E *K *P)
+    (&cell E P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &ink_box2 BoundingBox
+    (key ((&ink2 (:E ^Ky) ^K *P))
+      (cell (P)
+        (&ink2 (:E Ky) K *P))))
+
+  (DET &hole2
+    (&ink_box2.box (:key (:Ky *E) *K) *B)
+    (&panel_cell2 E K *P)
+    (inside (:A P) B)
+    (NOT (&ink2 E K P)))
+
+  (INIT &panel_box2 BoundingBox
+    (key ((&panel_cell2 (:E ^Ky) ^K *P))
+      (cell (P)
+        (&panel_cell2 (:E Ky) K *P))))
+
+  (DET &panel_rel2
+    (&panel_cell2 *E *K *P)
+    (&panel_box2.box (:key (:Ky E) K) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (DET &solid_dist
+    (&ink_box2.box (:key (:Ky *E) (:K *K2)) *B)
+    (NOT (&hole2 E (:K K2)))
+    (&panel_axis *A)
+    (axis_of *D A)
+    (&panel_rel2 E (:K K2) *P *P_rel)
+    (inside (:A P) B)
+    (same_dist D (:P1 P) (:P2 B))
+    (margin (:B P_rel) D *K))
+
+  (DET &off_side
+    (&solid_dist *E *D (:K *J))
+    (&solid_dist E D (:K *J2))
+    (!= J J2))
+
+  (DET &near_side
+    (&panel_axis *A)
+    (axis_of *D A)
+    (NOT (&off_side D)))
+
+  (DET &square_cell2
+    (&panel_rel2 *E *K *P *P_rel)
+    (&ink2 E (:K *K2) (:P *Q))
+    (NOT (&hole2 E (:K K2)))
+    (&panel_rel2 E (:K K2) (:P Q) (:P_rel *Q_rel))
+    (&panel_axis *A)
+    (same_line A P Q)
+    (&near_side *D)
+    (same_dist D (:P1 P_rel) (:P2 Q_rel)))
+
+  (INIT &square_box2 BoundingBox
+    (key ((&square_cell2 (:E ^Ky) ^K *P))
+      (cell (P)
+        (&square_cell2 (:E Ky) K *P))))
+
+  (DET &frame_ink
+    (&square_box2.box (:key (:Ky *E) *K) *B)
+    (&ink2 E K *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (DET &frame_cell
+    (&square_box2.box (:key (:Ky *E) *K) *B)
+    (ex_input E *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &tiling_tiling Tiling
+    (key ((ex_output ^E))
+      (outer ((:P P_tile))
+        (&frame_cell E (:P_inner *P_tile)))
+      (inner ((:P P_intile))
+        (&frame_cell E (:P_inner *P_intile)))))
+
+  (DET &tiling
+    (ex_output *E *P)
+    (&tiling_tiling.cell (:key E) (:P_outer *P_tile) (:P_inner *P_intile) P))
+
+  (DET &fill_demand
+    (&tiling *E *P_tile *P_intile *P)
+    (&frame_ink E (:K *M) (:P_inner P_tile))
+    (&frame_ink E (:K *T) (:P_inner P_intile))
+    (ex_output E P *Col))
+
+  (DET &ground_demand
+    (&tiling *E *P_tile *P_intile *P)
+    (ex_output E P *Col)
+    (&frame_cell E (:K *M) (:P_inner P_tile))
+    (&frame_cell E (:K *T) (:P_inner P_intile))
+    (OR ((NOT (&frame_ink E (:K M) (:P_inner P_tile))))
+        ((NOT (&frame_ink E (:K T) (:P_inner P_intile))))))
+
+  (DET &frame_dims
+    (&frame_cell *E *K (:P_inner *P))
+    (&panel_axis *A)
+    (axis_extents P A *N1 *N2))
+
+  (DET &product_cell
+    (&tiling *E *P_tile *P_intile *P)
+    (&panel_axis *A)
+    (axis_extents (:P P_tile) A (:N1 *Nm1) (:N2 *Nm2))
+    (axis_extents (:P P_intile) A (:N1 *Nt1) (:N2 *Nt2)))
+
+  (DET &misfit
+    (&panel_cell2 (:K *T))
+    (&panel_cell2 (:K *M))
+    (ex_output *E *P)
+    (OR ((NOT (&frame_dims E (:K T))))
+        ((NOT (&frame_dims E (:K M))))
+        ((&frame_dims E (:K M) (:N1 *Nm1) (:N2 *Nm2))
+         (&frame_dims E (:K T) (:N1 *Nt1) (:N2 *Nt2))
+         (NOT (&product_cell E Nm1 Nm2 Nt1 Nt2 P)))))
+
+  (DET &roles
+    (&panel_cell2 (:K *T))
+    (&panel_cell2 (:K *M))
+    (&panel_cell2 (:K *F))
+    (&panel_cell2 (:K *G)))
+
+  ;; The one color of a panel's ink.
+  (INIT &shade2 Singleton
+    (key ((&ink2 (:E ^Ky) ^K *Col))
+      (member ((:v Col))
+        (&ink2 (:E Ky) K *Col))))
+
+  (DET &contradicted
+    (&roles *T *M *F *G)
+    (OR ((&misfit T M))
+        ((&fill_demand T M *E *Col)
+         (NOT (&shade2.value (:key (:Ky E) (:K F)) (:v Col))))
+        ((&ground_demand T M (:E *E2) (:Col *Col2))
+         (NOT (&shade2.value (:key (:Ky E2) (:K G)) (:v Col2))))))
+
+  (DET &panel_role
+    (&roles (:T *K_tile) (:M *K_map) (:F *K_fill) (:G *K_ground))
+    (NOT (&contradicted (:T K_tile) (:M K_map) (:F K_fill) (:G K_ground))))
+
+  (RULE &panel_cell
+    (&panel_from *D)
+    (&panels_part_idx *P D (:N *K)))
+
+  (RULE &ink
+    (&panel_cell *K *P)
+    (&cell P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &ink_box BoundingBox
+    (key ((&ink ^K *P))
+      (cell (P)
+        (&ink K *P))))
+
+  (RULE &hole
+    (&ink_box.box (:key *K) *B)
+    (&panel_cell K *P)
+    (inside (:A P) B)
+    (NOT (&ink K P)))
+
+  (INIT &panel_box BoundingBox
+    (key ((&panel_cell ^K *P))
+      (cell (P)
+        (&panel_cell K *P))))
+
+  (RULE &panel_rel
+    (&panel_cell *K *P)
+    (&panel_box.box (:key K) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (RULE &square_cell
+    (&panel_rel *K *P *P_rel)
+    (&ink (:K *K2) (:P *Q))
+    (NOT (&hole (:K K2)))
+    (&panel_rel (:K K2) (:P Q) (:P_rel *Q_rel))
+    (&panel_axis *A)
+    (same_line A P Q)
+    (&near_side *D)
+    (same_dist D (:P1 P_rel) (:P2 Q_rel)))
+
+  (INIT &square_box BoundingBox
+    (key ((&square_cell ^K *P))
+      (cell (P)
+        (&square_cell K *P))))
+
+  (RULE &cross_edge
+    (input *P)
+    (&panel_from *D)
+    (perp_dir D *D2)
+    (margin (:B P) (:D D2) (:K 0)))
+
+  ;; The lines along the panel axis that lie on neither edge: n of them.
+  (INIT &inner_lines Cardinality
+    (member ((:m L))
+      (input *P)
+      (NOT (&cross_edge P))
+      (&panel_axis *A)
+      (perp A *A2)
+      (split P (:A A2) (:Along *L)))
+    (domain ()))
+
+  ;; The square: those lines, and the first n cells in from the near side.
+  (INIT &height_square BoundingBox
+    (key ((&panel_rel ^K *P *P_rel)
+          (NOT (&cross_edge P))
+          (&near_side *D)
+          (margin (:B P_rel) D (:K *J))
+          (> J 0)
+          (&inner_lines.size *N)
+          (<= J N))
+      (cell (P)
+        (&panel_rel K *P *P_rel)
+        (NOT (&cross_edge P))
+        (&near_side *D)
+        (margin (:B P_rel) D (:K *J))
+        (> J 0)
+        (&inner_lines.size *N)
+        (<= J N)))))
+
+(INPUT tile-shape "the tile panel holds a shape of 1 in its n×n square"
+
+  (INIT &tile_shade_count Cardinality
+    (key ((&panel_role (:K_tile *K))
+          (&shade2.value (:key (:Ky *E) K) (:v ^Col)))
+      (member ((:m E))
+        (&panel_role (:K_tile *K))
+        (&shade2.value (:key (:Ky *E) K) (:v Col)))))
+
+  ;; The color the tile panel's shape holds in the most inputs.
+  (INIT &tile_shade Order
+    (member ((:t Col))
+      (&tile_shade_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&tile_shade_count.size (:key *Col) *N))))
+
+(INPUT map-shape "the map panel holds a shape of 2 in its n×n square"
+
+  (INIT &map_shade_count Cardinality
+    (key ((&panel_role (:K_map *K))
+          (&shade2.value (:key (:Ky *E) K) (:v ^Col)))
+      (member ((:m E))
+        (&panel_role (:K_map *K))
+        (&shade2.value (:key (:Ky *E) K) (:v Col)))))
+
+  ;; The color the map panel's shape holds in the most inputs.
+  (INIT &map_shade Order
+    (member ((:t Col))
+      (&map_shade_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&map_shade_count.size (:key *Col) *N))))
+
+(INPUT shapes-span-square "each of the two shapes touches all four sides of its n×n square")
+
+(INPUT solid-squares "the fill and ground panels each hold a solid n×n square, and the two squares differ in color"
+
+  ;; The one color of a panel's ink.
+  (INIT &shade Singleton
+    (key ((&ink ^K *Col))
+      (member ((:v Col))
+        (&ink K *Col)))))
+
+(OUTPUT tile-by-map "the output is n²×n², cut into n×n blocks of n×n cells; block (i, j) is the tile shape where map cell (i, j) is set, and ground color everywhere where it is not")
+
+(OUTPUT tile-colors "in a block that holds the tile, the tile's cells take the color of the fill panel's square and its other cells take the color of the ground panel's square")
+
+(ALTS $r "how the tile shape and the map shape are told apart" $PanelRank
+  (ALT $TileByColor
+    (INPUT tile-shape "the tile is the shape of &tile_color, in whichever of the tile and map panels it sits; undefined where neither holds that color alone"
+      (RULE &shape_panel
+        (OR ((&panel_role (:K_tile *K)))
+            ((&panel_role (:K_map K)))))
+
+      (DET &tile_color
+        (&tile_shade.maximal (:t *C)))
+
+      (DET &map_color
+        (&map_shade.maximal (:t *C))))
+    (INPUT map-shape "the map is the shape of &map_color, in whichever of the tile and map panels it sits; undefined where neither holds that color alone")
+    (RULE &tile_rank
+      (&shape_panel *K)
+      (&shade.value (:key K) (:v *Col))
+      (&tile_color (:C Col)))
+
+    (RULE &map_rank
+      (&shape_panel *K)
+      (&shade.value (:key K) (:v *Col))
+      (&map_color (:C Col)))))
+
+(ALTS $f "the frame each shape is read in" $Square
+  (ALT $ShapeBbox
+    (INPUT four-panels "each shape panel's frame is the bounding box of its shape, and the output is (map height × tile height) by (map width × tile width); undefined where a shape panel is empty")
+    (INPUT shapes-span-square "each shape spans its frame, its own bounding box")
+    (RULE &frame_box
+      (&ink_box.box (:key *K) *B)))
+  (ALT $HeightSide
+    (INPUT four-panels "n is the count of lines along the panel axis that lie on neither edge of the grid; each shape's square covers those lines and the n cells that follow the first cell from the panel's &near_side edge")
+    (RULE &frame_box
+      (&height_square.box (:key *K) *B))))
+
+(ALTS $dv "the divider color" $StoredDivider
+  (ALT $DividerByLines
+    (INPUT four-panels "the dividers are the lines across the panel axis filled by the one non-background color that fills such a line; undefined where no color or more than one does"
+      ;; The one non-background color that fills a line.
+      (INIT &line_ink Singleton
+        (member ((:v Col))
+          (&line.value (:v *Col))
+          (NOT (&background (:C Col)))))
+
+      (RULE &divider_color2
+        (&line_ink.value (:v *Col))))))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &frame_box
+  (&square_box.box (:key *K) *B))
+
+(RULE &frame_cell2
+  (&frame_box *K *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &map_rank
+  (&panel_role (:K_map *K)))
+
+(RULE &tile_rank
+  (&panel_role (:K_tile *K)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile_rank)
+    (&map_rank (:K *K_map))
+    (&frame_cell2 (:K K_map) (:P_inner *P_tile)))
+  (inner ((:P P_intile))
+    (&tile_rank (:K *K_tile))
+    (&map_rank)
+    (&frame_cell2 (:K K_tile) (:P_inner *P_intile))))
+
+(RULE &ground
+  (&panel_role (:K_ground *K))
+  (&shade.value (:key K) (:v *Col)))
+
+(RULE &frame_ink2
+  (&frame_box *K *B)
+  (&ink K *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &output
+  (&tile_rank (:K *K_tile))
+  (&map_rank (:K *K_map))
+  (&frame_cell2 (:K K_map) (:P_inner *P_tile))
+  (&frame_cell2 (:K K_tile) (:P_inner *P_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P)
+  (OR ((&frame_ink2 (:K K_map) (:P_inner P_tile))
+       (&frame_ink2 (:K K_tile) (:P_inner P_intile))
+       (&panel_role *K_fill)
+       (&shade.value (:key (:K K_fill)) (:v *Col)))
+      ((&ground Col)
+       (NOT (&frame_ink2 (:K K_map) (:P_inner P_tile))))
+      ((&ground Col)
+       (NOT (&frame_ink2 (:K K_tile) (:P_inner P_intile))))))
+
+(OUT (&output ^P ^Col))

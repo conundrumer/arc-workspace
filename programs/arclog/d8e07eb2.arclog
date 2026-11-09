@@ -1,0 +1,464 @@
+;; inputs 2e8088fc920a0ea862202c3d083851840a062f0bc1742bc95fbfbc8d5e20d230 programs/solvers/d8e07eb2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d8e07eb2
+
+(INPUT three-panels "two full lines of the divider color (6) cut the &background (8) grid into three panels across one axis: a key panel, a card panel, and an empty status panel, with the card panel between the other two"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P (:Col ^C)))
+      (member ((:m P))
+        (ex_input E *P (:Col C)))))
+
+  ;; The commonest color of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *C)))
+      (member ((:t C))
+        (&commonest_count.size (:key E *C)))
+      (score ((:t C) (:S N))
+        (&commonest_count.size (:key E *C) *N))))
+
+  (DET &outvoted
+    (&commonest.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&outvoted C))))
+
+(INPUT slot-tiling "the card's shapes sit in square slots of side 3, laid out on a tiling whose bands on each axis are the maximal runs of card-panel lines that hold a non-background cell")
+
+(INPUT card "the card panel holds 4 by 4 slots, each with one single-color shape, and no two slots of the card hold the same shape in the same color")
+
+(INPUT key "the key panel holds one band of slots: its rows are the key panel's run of lines that hold a non-background cell, and its columns are the card's column bands; each key slot holds one single-color shape or nothing")
+
+(INPUT key-on-card "each key shape occurs exactly once on the card, as a slot whose content equals the key slot's content: the same color at the same cells of the slot")
+
+(INPUT status-empty "the status panel holds only &background")
+
+(OUTPUT ring-called "for each card slot whose content equals a key slot's content, every &background cell of the slot's box grown by &halo_margin on each side becomes &halo_color"
+
+  (RULE &line_color
+    (input *P (:Col *C))
+    (split P *A (:Along *L)))
+
+  ;; The colors of the full lines of one non-background color.
+  (INIT &full_line_color Singleton
+    (member ((:v C))
+      (&line_color *A *L *C)
+      (ALL ((&line_color A L (:C *C1))
+            (&line_color A L (:C *C2)))
+           ((= C1 C2)))
+      (NOT (&background C))))
+
+  (RULE_OR_DET &divider_color "The one color of the full non-background lines."
+    (&full_line_color.value (:v *C)))
+
+  (RULE &divider
+    (&line_color *A *L *C)
+    (ALL ((&line_color A L (:C *C1))
+          (&line_color A L (:C *C2)))
+         ((= C1 C2)))
+    (&divider_color C))
+
+  (RULE &panels_on_divider
+    (input *P)
+    (&divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  ;; The panels the dividers cut.
+  (INIT &panels_rank Order
+    (key ((OR ((&divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *P D (:N *N1))
+    (&panels_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &panels_tile_of
+    (&panels_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET &halo_margin DivisorRatio)
+
+  (RULE &ink
+    (input *P (:Col *C))
+    (NOT (&background C)))
+
+  (RULE &outer
+    (&divider *A)
+    (axis_of *D A)
+    (&panels_part_idx *P D (:N 0)))
+
+  (RULE &inked_side
+    (&outer *P *D)
+    (&ink P))
+
+  (RULE_OR_DET &key_side "The key panel: the inked outer panel whose opposite panel holds no ink."
+    (&inked_side *D)
+    (opposite D (:Opp *O))
+    (NOT (&inked_side (:D O))))
+
+  (RULE &key_panel
+    (&key_side *D)
+    (&outer *P D))
+
+  (RULE &card_panel
+    (&panels_tile_of *P)
+    (NOT (&outer P)))
+
+  (RULE &cut_axis
+    (&key_side *D)
+    (axis_of D *A))
+
+  (RULE &ink_line
+    (&cut_axis (:A *A2))
+    (&ink *P)
+    (split P *A (:Along *L))
+    (OR ((&key_panel P)
+         (= A A2))
+        ((&card_panel P)
+         (= A A2))
+        ((&card_panel P)
+         (perp (:A A2) (:A2 A)))))
+
+  ;; The bands: the maximal runs of ink lines.
+  (INIT &runs Connectivity
+    (key ((&ink_line ^A *L))
+      (node ((:P L))
+        (&ink_line A *L))))
+
+  (INIT &run_box BoundingBox
+    (key ((&runs.component (:key ^A) (:P *L) ^Id))
+      (cell ((:P L))
+        (&runs.component (:key A) (:P *L) Id))))
+
+  (RULE_OR_DET &slot_bands
+    (&run_box.box (:key *A) *B))
+
+  (RULE &slot
+    (&cut_axis *A)
+    (perp A *A2)
+    (&slot_bands A (:B *B1))
+    (&slot_bands (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *S)))
+
+  (RULE_OR_DET &card_cell "The ink of each card slot, in the slot's frame."
+    (&slot *S)
+    (&card_panel (:P *P2))
+    (&ink (:P P2) *C)
+    (inside (:A P2) (:B S))
+    (relative (:Base S) (:X P2) (:X_rel *P)))
+
+  (RULE &key_cell
+    (&slot *S)
+    (&key_panel (:P *P2))
+    (&ink (:P P2) *C)
+    (inside (:A P2) (:B S))
+    (relative (:Base S) (:X P2) (:X_rel *P)))
+
+  ;; The box of each slot's shape, in the slot's frame.
+  (INIT &shape_box BoundingBox
+    (key ((OR ((&card_cell ^S *P))
+              ((&key_cell S P))))
+      (cell (P)
+        (OR ((&card_cell S *P))
+            ((&key_cell S P))))))
+
+  (RULE &framed
+    (OR ((&card_cell *S *P *C))
+        ((&key_cell S P C))))
+
+  ;; The identity alone: the element that composed with itself is itself.
+  (RULE &image_op
+    (d4_compose (:A *D) (:B D) (:C D)))
+
+  ;; Card slots and key slots whose contents agree in place.
+  (INIT &match_place Inclusion
+    (pattern ((:pattern S) (:m P))
+      (&framed *S *P)
+      (&card_cell S))
+    (observed ((:observed S D) (:m Q))
+      (&framed *S *P)
+      (&key_cell S)
+      (&image_op *D)
+      (apply D P (:P_out *Q))))
+
+  (RULE &in_band
+    (&card_cell *S)
+    (split (:P S) *A (:Along *B)))
+
+  (RULE &abut
+    (&in_band *A (:B *B1))
+    (axis_of *D A)
+    (&line_color A (:L *L1))
+    (inside (:A L1) (:B B1))
+    (same_dist D (:P1 L1) (:P2 B1))
+    (&in_band A (:B *B2))
+    (opposite D (:Opp *O))
+    (&line_color A (:L *L2))
+    (inside (:A L2) (:B B2))
+    (same_dist (:D O) (:P1 L2) (:P2 B2))
+    (sub_extent (:P L1) A *K)
+    (jump (:P L1) D K (:Q *M1))
+    (neighbor (:P M1) D (:Q *M2))
+    (jump (:P M2) D K (:Q L2)))
+
+  ;; The least growth at which two bands abut: half the gap between neighbors.
+  (INIT &tile_margin Order
+    (member ((:t K))
+      (&abut *K))
+    (score ((:t K) (:S K))
+      (&abut *K)))
+
+  (DET &new_color
+    (ex_output (:Col *C))
+    (NOT (ex_input (:Col C))))
+
+  (DET &halo_color
+    (&new_color *C)))
+
+(OUTPUT bingo "the card has a line when the called slots include every slot of one card row band or of one card column band"
+
+  (RULE &band_order_member
+    (&in_band (:A *Key) (:B *M))
+    (&line_color (:A Key) (:L *P))
+    (inside (:A P) (:B M)))
+
+  ;; The rank of each card band on its axis.
+  (INIT &band_order Order
+    (key ((axis_elem ^A)
+          (axis_of ^D A))
+      (member ((:t B))
+        (&band_order_member (:Key A) (:M *B)))
+      (before ((:a B) (:b M_b))
+        (&band_order_member (:Key A) (:M *B) (:P *L))
+        (&band_order_member (:Key A) (:M *M_b) (:P *Q))
+        (!= B M_b)
+        (margin (:B L) D (:K *K1))
+        (margin (:B Q) D (:K *K2))
+        (< K1 K2)))))
+
+(OUTPUT win-bars "when the card has a line, every &background cell of the key panel and of the status panel becomes &win_color"
+
+  (DET &win_color
+    (&new_color *C)))
+
+(OUTPUT lose-bar "when the card has no line, every &background cell of the status panel becomes &lose_color, and the key panel is unchanged"
+
+  (DET &background_determined
+    (&commonest.maximal (:t *C))
+    (NOT (&outvoted C)))
+
+  (DET &lose_color
+    (ex_output *E *P (:Col *C))
+    (ex_input E P (:Col *B))
+    (&background_determined (:C B))
+    (!= C B)
+    (ex_input (:Col C))))
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &status_panel
+    (&key_side *D)
+    (opposite D (:Opp *O))
+    (&outer *P (:D O)))
+
+  ;; Card slots and key slots whose contents agree in color and place.
+  (INIT &match_ink Inclusion
+    (pattern ((:pattern S) (:m P C))
+      (&framed *S *P *C)
+      (&card_cell S))
+    (observed ((:observed S D) (:m (:P Q) C))
+      (&framed *S *P *C)
+      (&key_cell S)
+      (&image_op *D)
+      (apply D P (:P_out *Q))))
+
+  (RULE &called
+    (&match_ink.equal (:pattern *S)))
+
+  (RULE &uncalled_in
+    (&in_band *A *B *S)
+    (NOT (&called S)))
+
+  (RULE &called_off
+    (&in_band *A *B)
+    (&called *S)
+    (NOT (&in_band A B S)))
+
+  (RULE &full_band
+    (&in_band *A *B)
+    (NOT (&uncalled_in A B))))
+
+(ALTS $mc "whether a match reads the shape's colors" $SameColor
+  (ALT $IgnoreColor
+    (OUTPUT ring-called "the slots match where their non-background cells sit at the same places, whatever the colors"
+      (RULE &called
+        (&match_place.equal (:pattern *S))))))
+
+(ALTS $mg "what geometry two slot contents share when they match" $Exact
+  (ALT $UpToTranslation
+    (OUTPUT ring-called "the slots match where their shapes, the non-background cells with their colors, are equal up to translation"
+      (RULE &framed
+        (&shape_box.box (:key *S) *B)
+        (OR ((&card_cell S (:P *P2) *C))
+            ((&key_cell S (:P P2) C)))
+        (inside (:A P2) B)
+        (relative (:Base B) (:X P2) (:X_rel *P)))))
+  (ALT $UpToD4
+    (OUTPUT ring-called "the shapes are equal up to translation and a D4 transform"
+      (RULE &framed
+        (&shape_box.box (:key *S) *B)
+        (OR ((&card_cell S (:P *P2) *C))
+            ((&key_cell S (:P P2) C)))
+        (inside (:A P2) B)
+        (relative (:Base B) (:X P2) (:X_rel *P)))
+
+      (RULE &image_op
+        (d4_elem *D)))))
+
+(ALTS $h "the box a called slot's halo fills" $SlotBox
+  (ALT $HaloTilingCell
+    (OUTPUT ring-called "the halo is the slot's tiling cell, the box grown by half the gap between neighboring card bands; undefined where no two grown bands abut")
+    (RULE &halo_ready
+      (&tile_margin.minimal))
+
+    (RULE &halo
+      (&card_cell *S)
+      (&tile_margin.minimal (:t *K))
+      (uniform_outset K (:B *O))
+      (compose (:A S) (:B O) (:C *B)))))
+
+(ALTS $l "what counts as a line of the card" $FullBand
+  (ALT $Collinear
+    (OUTPUT bingo "the card has a line when every called slot lies in one row band or one column band")
+    (RULE &win
+      (&called *S)
+      (&in_band *A *B S)
+      (NOT (&called_off A B))))
+  (ALT $WithDiagonals
+    (OUTPUT bingo "one of the two corner diagonals of the card also counts as a line"
+      (RULE &band_order_pos
+        (&band_order.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+        (&band_order.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+        (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+      (RULE &slot_place
+        (&cut_axis *A)
+        (perp A *A2)
+        (&in_band A (:B *B1) *S)
+        (&in_band (:A A2) (:B *B2) S)
+        (&band_order_pos (:Key A) (:M B1) (:P_pos *P1))
+        (&band_order_pos (:Key A2) (:M B2) (:P_pos *P2))
+        (compose (:A P1) (:B P2) (:C *P)))
+
+      (RULE &card_diagonal_diagonal
+        (&slot_place *P)
+        (diag_dist P (:Diag *Key) (:K1 *Ring) (:K2 Ring)))
+
+      (RULE &uncalled_diagonal
+        (&card_diagonal_diagonal (:Key *D) *P)
+        (&slot_place *S P)
+        (NOT (&called S))))
+    (RULE &win
+      (OR ((&full_band))
+          ((diag_dir_elem *D)
+           (NOT (&uncalled_diagonal D))))))
+  (ALT $AllOnLine
+    (OUTPUT bingo "the card has a line when the called slots are exactly the slots of one row band or one column band")
+    (RULE &win
+      (&full_band *A *B)
+      (NOT (&called_off A B)))))
+
+(ALTS $w "the color the winning bars take" $WinStored
+  (ALT $WinIsHalo
+    (OUTPUT win-bars "the winning bars take &halo_color")
+    (RULE &win_paint
+      (&halo_color *C))))
+
+(ALTS $s "which cells of the status panel the bars paint" $StatusBackground
+  (ALT $WholeStatus
+    (OUTPUT win-bars "the bars paint every cell of the status panel")
+    (OUTPUT lose-bar "the bar paints every cell of the status panel")
+    (RULE &status_cell
+      (&status_panel *P))))
+
+(RULE &win
+  (&full_band))
+
+(RULE &halo_ready
+  (&halo_margin))
+
+(RULE &halo
+  (&card_cell *S)
+  (&halo_margin *K)
+  (uniform_outset K (:B *O))
+  (compose (:A S) (:B O) (:C *B)))
+
+(RULE &halo_cell
+  (&called *S)
+  (&halo S *B)
+  (input *P (:Col *Bg))
+  (&background (:C Bg))
+  (inside (:A P) B))
+
+(RULE &status_cell
+  (&status_panel *P)
+  (input P (:Col *Bg))
+  (&background (:C Bg)))
+
+(RULE &win_paint
+  (&win_color *C))
+
+(RULE &bar
+  (OR ((&win)
+       (&win_paint *C)
+       (OR ((&key_panel *P)
+            (input P (:Col *Bg))
+            (&background (:C Bg)))
+           ((&status_cell P))))
+      ((NOT (&win))
+       (&status_cell P)
+       (&lose_color C))))
+
+(RULE &output
+  (&key_cell)
+  (&halo_ready)
+  (OR ((&halo_cell *P)
+       (&halo_color (:C *Col)))
+      ((&bar P (:C Col)))
+      ((input P Col)
+       (NOT (&halo_cell P))
+       (NOT (&bar P)))))
+
+(OUT (&output ^P ^Col))

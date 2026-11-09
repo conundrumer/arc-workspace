@@ -1,0 +1,47 @@
+;; inputs 2000038e4526fd45a6e877d5f16d63bdea93819321f97325fdd51bcad81fb426 programs/solvers/137f0df0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 137f0df0
+
+(DET &bg DominantColor)
+
+;; A block-free line where it crosses the field's box...
+(DET &inside_paint AnyOutNewColor)
+
+;; ...and where it runs beyond.
+(DET &outside_paint AnyOutNewColor)
+
+(RULE &block
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bx BoundingBox
+  (cell (P)
+    (&block *P)))
+
+(RULE &covered
+  (&bx.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &block_line
+  (input *P)
+  (axis_elem *A)
+  (&block (:P *Q))
+  (same_line A P Q))
+
+(RULE &gap_cell
+  (input *P)
+  (axis_elem *A)
+  (NOT (&block_line A P))
+  (&covered (:P *Q))
+  (same_line A P Q))
+
+(RULE &output
+  (OR ((&gap_cell *P)
+       (IF ((&covered P))
+           ((&inside_paint (:C *Col)))
+           ((&outside_paint (:C Col)))))
+      ((input P Col)
+       (NOT (&gap_cell P)))))
+
+(OUT (&output ^P ^Col))

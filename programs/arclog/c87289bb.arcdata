@@ -1,0 +1,202 @@
+;; inputs ce4fc43e84f61fb4eda4aaad0d5c2f5210d37940071f756bc819ab9f2d82b2f3 programs/solvers/c87289bb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c87289bb
+
+(param &stream_color Color (8))
+(param &bar_color Color (2))
+(param &fall_dir Dir (DIR_B))
+(param &tie_sense Sense (SENSE_CC))
+
+(alts $t
+  (alt $TieNearerEdge
+    (witness tie-left-of-center ordinary concept
+      (separates "a stream meets a bar at its middle cell, nearer the left grid edge: the concept goes right, $TieNearerEdge goes left")
+      (input (grid
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $TieDir (grid
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 8 8 0 0 8 0)
+        (0 0 2 2 2 8 0 0 8 0)
+        (0 0 0 0 0 8 0 0 8 0)
+        (0 0 0 0 0 8 0 0 8 0)
+        (0 0 0 0 0 8 0 0 8 0)
+        (0 0 0 0 0 8 0 0 8 0)))
+      (output $TieNearerEdge (grid
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 0 0 8 0 0 0 0 8 0)
+        (0 8 8 8 0 0 0 0 8 0)
+        (0 8 2 2 2 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0)
+        (0 8 0 0 0 0 0 0 8 0))))))
+
+(alts $e
+  (alt $EdgeOtherSide
+    (witness bar-at-side-edge borderline $EdgeOtherSide
+      (relaxed exits-in-grid)
+      (separates "a stream meets a bar that touches the left grid edge at the bar's end cell on that edge: the concept runs off the grid there, $EdgeOtherSide goes around the bar's other end")
+      (input (grid
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 2 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EdgeLeave (grid
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (2 2 2 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 8 0 0 0)))
+      (output $EdgeOtherSide (grid
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 0 0 0 0 0 8 0 0 0)
+        (8 8 8 8 0 0 8 0 0 0)
+        (2 2 2 8 0 0 8 0 0 0)
+        (0 0 0 8 0 0 8 0 0 0)
+        (0 0 0 8 0 0 8 0 0 0)
+        (0 0 0 8 0 0 8 0 0 0)
+        (0 0 0 8 0 0 8 0 0 0))))))
+
+(alts $l
+  (alt $OneDetour
+    (witness bars-at-two-depths variant concept
+      (relaxed bars-in-one-line)
+      (separates "a stream detours around one bar into a line that meets a second, deeper bar: the concept detours again, $OneDetour falls through the second bar")
+      (input (grid
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EveryDetour (grid
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 8 8 8 0)
+        (0 8 0 0 2 2 2 8 8 0)
+        (0 8 0 0 0 0 0 8 8 0)
+        (0 8 0 0 0 0 0 8 8 8)
+        (0 8 0 0 0 0 2 2 2 8)
+        (0 8 0 0 0 0 0 0 0 8)
+        (0 8 0 0 0 0 0 0 0 8)))
+      (output $OneDetour (grid
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 0 0 8 0)
+        (0 8 0 0 0 8 8 8 8 0)
+        (0 8 0 0 2 2 2 8 8 0)
+        (0 8 0 0 0 0 0 8 8 0)
+        (0 8 0 0 0 0 0 8 8 8)
+        (0 8 0 0 0 0 2 2 2 8)
+        (0 8 0 0 0 0 0 8 0 8)
+        (0 8 0 0 0 0 0 8 0 8))))))
+
+(alts $f
+  (alt $FallFromEdge
+    (witness streams-from-bottom variant $FallFromEdge
+      (relaxed streams-from-edge)
+      (separates "the streams hang from the bottom edge: the concept finds no stream and returns the input, $FallFromEdge flows them upward around the bar")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)))
+      (output $FallStored (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)))
+      (output ($TieDir $FallFromEdge) (grid
+        (0 8 0 8 0 0 0 0 0 8)
+        (0 8 0 8 0 0 0 0 0 8)
+        (0 8 0 8 0 0 0 0 0 8)
+        (0 8 0 8 0 0 0 0 0 8)
+        (0 8 0 8 2 2 2 0 0 8)
+        (0 8 0 8 8 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)))
+      (output ($TieNearerEdge $FallFromEdge) (grid
+        (0 8 0 0 0 0 0 8 0 8)
+        (0 8 0 0 0 0 0 8 0 8)
+        (0 8 0 0 0 0 0 8 0 8)
+        (0 8 0 0 0 0 0 8 0 8)
+        (0 8 0 0 2 2 2 8 0 8)
+        (0 8 0 0 0 8 8 8 0 8)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8)
+        (0 8 0 0 0 8 0 0 0 8))))))
+
+(alts &bar_color
+  (alt &bar_color=$Derived
+    (witness bar_color=RarestColor variant concept
+      (separates "the bar has more cells than the streams together: the concept detours around the bar, bar_color=RarestColor takes the stream color as the bar color and falls straight through the bar")
+      (input (grid
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output &bar_color=$Stored (grid
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 8 8 8 8 0 0 0 0 8)
+        (8 8 2 2 2 2 2 2 2 8)
+        (8 8 0 0 0 0 0 0 0 8)
+        (8 8 0 0 0 0 0 0 0 8)
+        (8 8 0 0 0 0 0 0 0 8)
+        (8 8 0 0 0 0 0 0 0 8)
+        (8 8 0 0 0 0 0 0 0 8)
+        (8 8 0 0 0 0 0 0 0 8)))
+      (output &bar_color=$Derived (grid
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 2 2 8 2 2 2 2 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8)
+        (8 0 0 0 8 0 0 0 0 8))))))

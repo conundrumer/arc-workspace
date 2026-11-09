@@ -1,0 +1,135 @@
+;; inputs 9929487d033b5d2f74e3dff8d14fbdfa1d13763810542f3d5e56162c6482a070 programs/solvers/221dfab4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 221dfab4
+
+;; The segment's color.
+(DET &marker_col RarestColor)
+
+(RULE &marker
+  (&marker_col (:C *Col))
+  (input *P Col))
+
+;; Each marker cell's distance from edge D.
+(INIT &marker_dist Singleton
+  (key ((dir_elem ^D))
+    (member ((:v K))
+      (&marker (:P *M))
+      (margin (:B M) D *K))))
+
+(RULE &step_dir
+  (dir_elem *D)
+  (&marker)
+  (NOT (&marker_dist.plural (:key D))))
+
+(RULE &marker_line
+  (input *P)
+  (&step_dir *D)
+  (&marker (:P *M))
+  (same_dist D (:P1 P) (:P2 M)))
+
+(INIT &ray_frame Frame
+  (extent (A N)
+    (&marker_line *P)
+    (frame_extent P *A *N)))
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The beam's color.
+(DET &beam_col AnyOutNewColor)
+
+(RULE &corridor
+  (input *P)
+  (&step_dir *D)
+  (axis_of D *A)
+  (&marker (:P *M))
+  (same_line A P (:Q M)))
+
+(INIT &ray Ray
+  (source (P)
+    (&marker_line *P))
+  (node (P)
+    (&ray_frame.cell *P))
+  (dir (D)
+    (&step_dir *D)))
+
+(RULE &offset
+  (&ray.ray *P *K)
+  (input P))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(DET &role
+  (&corridor *E *P)
+  (&offset E P *K)
+  (ex_output E P *Col))
+
+(DET &cand
+  (&role (:K *W))
+  (!= W 0))
+
+;; The colors carried at each phase of a candidate repeat. Keyed per
+;; example: the cleared phases hold the example's own background.
+(INIT &phase_color Singleton
+  (key ((&cand ^W)
+        (&role ^E (:K *T) *Col)
+        (divide T (:Side W) (:Gap 0) (:Remainder ^K)))
+    (member ((:v Col))
+      (&cand W)
+      (&role E (:K *T) *Col)
+      (divide T (:Side W) (:Gap 0) (:Remainder K)))))
+
+(INIT &least Order
+  (member ((:t W))
+    (&cand *W)
+    (NOT (&phase_color.plural (:key W))))
+  (score ((:t W) (:S W))
+    (&cand *W)
+    (NOT (&phase_color.plural (:key W)))))
+
+(DET &period
+  (&least.minimal (:t *W)))
+
+(RULE &phase
+  (&offset *P (:K *T))
+  (&period *W)
+  (divide T (:Side W) (:Gap 0) (:Remainder *K)))
+
+(DET &beam_phase
+  (&period *W)
+  (&phase_color.value (:key W *K) (:v *Col))
+  (&beam_col (:C Col)))
+
+(DET &copy_phase
+  (&period *W)
+  (&phase_color.value (:key W *K) (:v *Col))
+  (&marker_col (:C Col)))
+
+(RULE &paint
+  (OR ((&corridor *P)
+       (&phase P *K)
+       (OR ((&copy_phase K)
+            (&marker_col (:C *Col)))
+           ((&beam_phase K)
+            (&beam_col (:C Col)))
+           ((NOT (&copy_phase K))
+            (NOT (&beam_phase K))
+            (&bg_mode.maximal (:t Col)))))
+      ((input P (:Col *C_in))
+       (NOT (&bg_mode.maximal (:t C_in)))
+       (&phase P (:K *K2))
+       (&beam_phase (:K K2))
+       (&beam_col (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

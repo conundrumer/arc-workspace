@@ -1,0 +1,205 @@
+;; inputs d8bd8bda1c1ccd6dc239897139248a852f885fab776d368116046ab610038b5f programs/solvers/c8b7cc0f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c8b7cc0f
+
+(INPUT box-outline "a one-cell-wide rectangle outline of `frame_color` (1) on a `background` (0) field, with at least one row and one column of interior"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_field
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&not_field C)))
+
+  (INIT &ink_mode_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (INIT &ink_mode Order
+    (member ((:t Col))
+      (&ink_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ink_mode_count.size (:key *Col) *N)))
+
+  (INIT &commonest2 Singleton
+    (member ((:v Col))
+      (&ink_mode.maximal (:t *Col))))
+
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (RULE &outline_defect
+    (OR ((&color_box.box (:key *Col) *B)
+         (input *P Col)
+         (interior (:A P) B))
+        ((&color_box.box (:key Col) (:B *B2))
+         (input (:P *P2) (:Col *Col2))
+         (!= Col2 Col)
+         (inside (:A P2) (:B B2))
+         (same_dist (:P1 P2) (:P2 B2)))))
+
+  (INIT &outline Singleton
+    (member ((:v Col))
+      (&color_box.box (:key *Col) *B)
+      (NOT (&outline_defect Col))
+      (input *P)
+      (interior (:A P) B))))
+
+(INPUT scattered-dots "single cells of one other color, the dot color, inside and outside the outline; the dot color differs between pairs")
+
+(OUTPUT count-inside "the count is the number of dot cells strictly inside the outline"
+
+  (DET &lost
+    (ex_input *E *Col)
+    (ex_output E)
+    (NOT (ex_output E Col)))
+
+  (DET &kept
+    (&lost *Col)
+    (ex_output *E)
+    (NOT (&lost E Col)))
+
+  (DET &frame_color
+    (&lost (:Col *C))
+    (NOT (&kept (:Col C))))
+
+  (RULE &frame
+    (&frame_color (:C *Col)))
+
+  (RULE &spot
+    (&frame (:Col *F))
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (!= Col F))
+
+  (INIT &dots Singleton
+    (member ((:v Col))
+      (&spot *Col)))
+
+  (INIT &frame_box BoundingBox
+    (cell (P)
+      (&frame *Col)
+      (input *P Col)))
+
+  (RULE &interior_cell
+    (&frame_box.box *B)
+    (input *P)
+    (interior (:A P) B))
+
+  (RULE &dot
+    (&dots.value (:v *Col))
+    (&interior_cell *P)
+    (input P Col))
+
+  (INIT &cell_count Cardinality
+    (member ((:m P))
+      (&dot *P))
+    (domain ()
+      (&frame)))
+
+  (INIT &closed Enclosure
+    (cell (P)
+      (&frame (:Col *F))
+      (input *P *Col)
+      (!= Col F))))
+
+(OUTPUT fill-in-order "the output is an `out_size` (3×3) grid of `background`, where the first `count` cells, in the order that starts at `fill_corner` (top-left) and sorts by `fill_primary_axis` (V) first, take the dot color"
+
+  (DET &out_size
+    (ex_output *P)
+    (frame_extent P *A *N))
+
+  (INIT &out_pos_frame Frame
+    (extent (A N)
+      (&out_size *A *N)))
+
+  ;; The fill order: the corner it starts at, and the axis whose coordinate orders the cells first.
+  (DET &fill_corner DiagDirDomain)
+
+  (DET &fill_primary_axis AxisDomain)
+
+  (INIT &fill Order
+    (member ((:t P))
+      (&out_pos_frame.cell *P))
+    (score ((:t P) (:S K1))
+      (&out_pos_frame.cell *P)
+      (&fill_corner *D)
+      (&fill_primary_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&out_pos_frame.cell *P)
+      (&fill_corner *D)
+      (&fill_primary_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))))
+
+(ALTS $f "where the frame color comes from" $FrameStored
+  (ALT $FrameCommonest
+    (INPUT box-outline "the frame color is the commonest color other than `background`; undefined where two such colors tie"
+      (RULE &frame
+        (&commonest2.value (:v *Col)))))
+  (ALT $FrameOutline
+    (INPUT box-outline "the frame color is the one color whose cells are exactly the border of their bounding box, at least 3×3; undefined where no color or more than one color does so"
+      (RULE &frame
+        (&outline.value (:v *Col))))))
+
+(ALTS $d "where the dot color comes from" $DotGrid
+  (ALT $DotColorInside
+    (INPUT scattered-dots "the dot color is the one color other than `background` and `frame_color` among the cells inside the outline, and the output is all `background` where those cells hold no such color; undefined where they hold two or more"
+      (INIT &dots Singleton
+        (member ((:v Col))
+          (&spot *P *Col)
+          (&interior_cell P))))))
+
+(ALTS $i "which cells are inside the outline" $BoxInterior
+  (ALT $Enclosed
+    (OUTPUT count-inside "the count runs over the parts of the non-frame cells that no 4-adjacent walk through non-frame cells reaches from the grid edge"
+      (RULE &interior_cell
+        (&closed.enclosed *P)))))
+
+(ALTS $u "what the count counts" $CountCells
+  (ALT $CountObjects
+    (OUTPUT count-inside "the count is the number of 4-connected components of the dot cells inside the outline"
+      (INIT &dot_objects Connectivity
+        (node (P)
+          (&dot *P)))
+
+      (INIT &object_count Cardinality
+        (member ((:m Id))
+          (&dot_objects.component *Id))
+        (domain ()
+          (&frame))))
+    (RULE &total
+      (&object_count.size *N))))
+
+(RULE &total
+  (&cell_count.size *N))
+
+(RULE &output
+  (&total *N)
+  (NOT (&dots.plural))
+  (&fill.rank (:t *P) *R)
+  (OR ((< R N)
+       (&dots.value (:v *Col)))
+      ((>= R N)
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

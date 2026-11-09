@@ -1,0 +1,205 @@
+;; inputs ebe08b9fdce9d867d26726b8aa84134896d7f8d0437e36eeaa7110ca7524778c programs/solvers/b745798f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b745798f
+
+(param &background Color (8))
+
+(alts $adj
+  (alt $Pieces8Adjacent
+    (witness diagonal-same-color ordinary concept
+      (separates "two pieces of color 3 touch at a corner: the concept places both, and 8-adjacency joins them into one six-cell set that is no L, so their corners stay background")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 8 8 2 2 8)
+        (8 8 3 8 8 8 8 2 8)
+        (8 8 8 3 8 8 8 8 8)
+        (8 8 8 3 3 8 8 0 8)
+        (8 8 8 8 8 8 0 0 8)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8)))
+      (output $Adjacent4 (grid
+        (3 3 3 3 8 2 2 2 2)
+        (3 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 8)
+        (3 8 8 8 8 8 8 8 0)
+        (3 8 8 8 8 8 8 8 0)
+        (3 8 8 8 8 8 8 8 0)
+        (3 3 3 3 8 0 0 0 0)))
+      (output $Pieces8Adjacent (grid
+        (8 8 8 8 8 2 2 2 2)
+        (8 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 0)
+        (8 8 8 8 8 8 8 8 0)
+        (8 8 8 8 8 8 8 8 0)
+        (8 8 8 8 8 0 0 0 0))))))
+
+(alts $shape
+  (alt $PieceAnyL
+    (witness longer-arms variant $PieceAnyL
+      (relaxed four-l-pieces)
+      (separates "one L has arms of three cells: the concept places only three-cell Ls and leaves its corner background, and an L of any arm length places it")
+      (input (grid
+        (8 8 2 2 2 8 8 8 8 5 5)
+        (8 8 2 8 8 8 8 8 8 8 5)
+        (8 8 2 8 8 8 8 8 8 8 8)
+        (8 8 1 8 8 8 8 8 8 8 5)
+        (8 8 1 1 8 8 8 8 8 5 5)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)))
+      (output $Tromino (grid
+        (8 8 8 8 8 8 5 5 5 5 5)
+        (8 8 8 8 8 8 8 8 8 8 5)
+        (8 8 8 8 8 8 8 8 8 8 5)
+        (8 8 8 8 8 8 8 8 8 8 5)
+        (8 8 8 8 8 8 8 8 8 8 5)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 1 1 1 1 8 5 5 5 5 5)))
+      (output $PieceAnyL (grid
+        (2 2 2 2 2 8 5 5 5 5 5)
+        (2 8 8 8 8 8 8 8 8 8 5)
+        (2 8 8 8 8 8 8 8 8 8 5)
+        (2 8 8 8 8 8 8 8 8 8 5)
+        (2 8 8 8 8 8 8 8 8 8 5)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 8 8 8 8 8 8 8 8 8 5)
+        (1 1 1 1 1 8 5 5 5 5 5))))))
+
+(alts $arm
+  (alt $ArmKeepsGap
+    (witness even-side borderline concept
+      (relaxed square-odd-grid)
+      (separates "the side is 10: arms nearer their corner than the far end take 5 cells and meet, and arms of (side - 1) // 2 take 4 cells and leave a two-cell gap")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 8 8 2 2 8 8)
+        (8 8 3 8 8 8 8 2 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 7 8 8 8 8 0 8 8)
+        (8 8 7 7 8 8 0 0 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $ToMiddle (grid
+        (3 3 3 3 3 2 2 2 2 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 7 7 7 7 0 0 0 0 0)))
+      (output $ArmKeepsGap (grid
+        (3 3 3 3 8 8 2 2 2 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 8 0)
+        (7 7 7 7 8 8 0 0 0 0))))))
+
+(alts $side
+  (alt $ArmShortSide
+    (witness non-square borderline concept
+      (relaxed square-odd-grid)
+      (separates "the grid is 9 by 11: arms to each edge's own middle take 4 cells on the 9-cell edges and 5 on the 11-cell edges, arms of the shorter edge's length take 4 cells on every edge, and arms of the longer edge's length take 5 cells on every edge, so the left and right edges fill whole")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 3 3 8 8 8 2 2 8 8)
+        (8 8 3 8 8 8 8 8 2 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 3 8 8 8 8 8 2 8 8)
+        (8 8 3 3 8 8 8 2 2 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8)))
+      (output $PerEdge (grid
+        (3 3 3 3 3 8 2 2 2 2 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 3 3 3 3 8 2 2 2 2 2)))
+      (output $ArmLongSide (grid
+        (3 3 3 3 3 8 2 2 2 2 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 3 3 3 3 8 2 2 2 2 2)))
+      (output $ArmShortSide (grid
+        (3 3 3 3 8 8 8 2 2 2 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 8 8 2)
+        (3 3 3 3 8 8 8 2 2 2 2)))))
+  (alt $ArmLongSide
+    (witness non-square borderline concept)))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background-field)
+      (separates "the field is 1 where the stored background is 8: the concept keeps 8 as the field and reads the pieces on it, and the derived background makes the output field 1")
+      (input (grid
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 3 3 1 1 2 2 1)
+        (1 1 3 1 1 1 1 2 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 7 1 1 1 1 0 1)
+        (1 1 7 7 1 1 0 0 1)
+        (1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1)))
+      (output &background=$Stored (grid
+        (3 3 3 3 8 2 2 2 2)
+        (3 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 2)
+        (3 8 8 8 8 8 8 8 2)
+        (8 8 8 8 8 8 8 8 8)
+        (7 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 0)
+        (7 8 8 8 8 8 8 8 0)
+        (7 7 7 7 8 0 0 0 0)))
+      (output &background=$Derived (grid
+        (3 3 3 3 1 2 2 2 2)
+        (3 1 1 1 1 1 1 1 2)
+        (3 1 1 1 1 1 1 1 2)
+        (3 1 1 1 1 1 1 1 2)
+        (1 1 1 1 1 1 1 1 1)
+        (7 1 1 1 1 1 1 1 0)
+        (7 1 1 1 1 1 1 1 0)
+        (7 1 1 1 1 1 1 1 0)
+        (7 7 7 7 1 0 0 0 0))))))

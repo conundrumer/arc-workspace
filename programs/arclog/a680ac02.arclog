@@ -1,0 +1,246 @@
+;; inputs 64062ef599855dac9df254be92b1776229c7a0ff0e6f2a6ae2cb13349f4442eb programs/solvers/a680ac02.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a680ac02
+
+(INPUT squares "the input holds 4×4 squares on a field of &bg, each of one color, with no two squares of the same color and no two squares touching"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT two-kinds "each square is either hollow (a one-cell wall around a 2×2 hole of &bg) or solid; every input holds two or more hollow squares and one or more solid squares")
+
+(INPUT one-separating-axis "on exactly one axis, the extents of the hollow squares are pairwise disjoint; on the other axis, the extents of at least one pair of hollow squares overlap")
+
+(OUTPUT select-hollow "the output keeps the hollow squares and drops the solid squares"
+
+  (DET &square_side
+    (ex_output *P)
+    (axis_extents P *A (:N1 *N) (:N2 *K))
+    (< K N))
+
+  (INIT &template_wall_frame Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&square_side (:K *N))))
+
+  ;; The rim of the window, and the rest of it.
+  (DET &template_wall
+    (&template_wall_frame.cell *P)
+    (NOT (interior (:A P) (:B 0))))
+
+  (INIT &template_hole_frame Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&square_side (:K *N))))
+
+  (DET &template_hole
+    (&template_hole_frame.cell *P)
+    (interior (:A P) (:B 0)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &comp4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &obj_cell
+    (&comp4.component *P (:Id *O)))
+
+  (INIT &comp8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &obj_size Cardinality
+    (key ((&obj_cell (:O ^Id)))
+      (member ((:m P))
+        (&obj_cell (:O Id) *P))
+      (domain ()
+        (&obj_cell (:O Id)))))
+
+  (INIT &fewest Order
+    (member ((:t (:V Id) (:S N)))
+      (&obj_size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&obj_size.size (:key *Id) *N)))
+
+  ;; The windows that match the template, one key per wall color.
+  (INIT &window Occurrences
+    (key ((&ink ^Col))
+      (shape ((:P S) (:v V))
+        (OR ((&template_hole (:P *S))
+             (&bg (:C *V)))
+            ((&template_wall (:P S))
+             (= V Col)))))
+    (cell (P (:v V))
+      (input *P (:Col *V)))))
+
+(OUTPUT axis "the output lines the kept squares up along the axis on which no two kept squares share a line"
+
+  (INIT &obj_box BoundingBox
+    (key ((&obj_cell (:O ^Id) *P))
+      (cell (P)
+        (&obj_cell (:O Id) *P))))
+
+  ;; The cells each object closes off from the grid edge.
+  (INIT &hole Enclosure
+    (key ((&obj_box.box (:key ^Id)))
+      (cell (P)
+        (input *P)
+        (NOT (&obj_cell (:O Id) P)))))
+
+  (RULE &encloses
+    (&obj_box.box (:key *Id) *B)
+    (&hole.enclosed (:key Id) *P)
+    (input P *Col)
+    (&bg (:C Col)))
+
+  (RULE &kept
+    (&encloses *B))
+
+  ;; The joint box of the kept squares.
+  (INIT &joint BoundingBox
+    (cell ((:P B))
+      (&kept *B))))
+
+(OUTPUT order "along that axis, the kept squares keep the order they have in the input"
+
+  (DET &lex_diagonal DiagAxisDomain)
+
+  (DET &lex_axis AxisDomain)
+
+  (RULE &sq_cell
+    (&kept *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &lex_cell
+    (&sq_cell *B *P)
+    (&lex_diagonal *Da)
+    (diag_axis_of (:D *Corner) Da)
+    (inside (:A P) B)
+    (same_corner (:D Corner) (:P1 P) (:P2 B)))
+
+  (INIT &lex Order
+    (key ((&lex_cell (:Corner ^Dg) *P))
+      (member ((:t P))
+        (&lex_cell (:Corner Dg) *P))
+      (score ((:t P) (:S K1))
+        (&lex_cell (:Corner Dg) *P)
+        (&lex_axis *A)
+        (diag_dist P (:Diag Dg) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&lex_cell (:Corner Dg) *P)
+        (&lex_axis *A)
+        (diag_dist P (:Diag Dg) A *K1 *K2)))))
+
+(OUTPUT concatenate "the output is the kept squares, each copied unchanged, placed end to end along that axis with no gap; its size across that axis is one square"
+
+  (RULE &sq_line
+    (&sq_cell *B *P)
+    (split P *A (:Along *L)))
+
+  (RULE &overlap
+    (&sq_line (:B *B1) *A *L)
+    (&sq_line (:B *B2) A L)
+    (!= B1 B2))
+
+  (RULE &layout_axis
+    (&overlap (:A *A2))
+    (perp *A A2)
+    (NOT (&overlap A)))
+
+  (RULE &run
+    (&layout_axis *A)
+    (axis_of *D A))
+
+  (RULE &sequence_elem
+    (&run *D *A)
+    (&sq_line *B A *L))
+
+  ;; The squares go by their distance to edge d.
+  (RULE &sq_score
+    (&run (:D *Rn))
+    (&kept *B)
+    (margin B (:D Rn) (:K *S)))
+
+  (INIT &sequence Order
+    (key ((OR ((&sequence_elem ^D (:B *T_b) (:L *T_l)))
+              ((&sq_score (:Rn D) *B *S)
+               (&sequence_elem D B *L))
+              ((&sequence_elem D (:B *B3) (:L *L2))
+               (margin (:B L2) D *K))))
+      (member ((:t (:B T_b) (:L T_l)))
+        (&sequence_elem D (:B *T_b) (:L *T_l)))
+      (score ((:t B L) S)
+        (&sq_score (:Rn D) *B *S)
+        (&sequence_elem D B *L))
+      (secondary_score ((:t B L) (:S K))
+        (&sequence_elem D *B *L)
+        (margin (:B L) D *K))))
+
+  (RULE &laid
+    (&run *D *A)
+    (&sequence.rank (:key D) (:t *B *L) *R)
+    (&sequence.dual_rank (:key D) (:t B L) (:R *R2))
+    (axis_inset D (:K1 R) (:K2 R2) (:B *P_along))
+    (&sq_cell B (:P *P2) *P_inner)
+    (split (:P P2) A (:Along L))
+    (input (:P P2) *Col)
+    (split (:P P_inner) A (:Across *P_across))
+    (compose (:A P_along) (:B P_across) (:C *P))))
+
+(ALTS $squares "how the kept squares are found" $ColorObjects
+  (ALT $ColorObjects
+    (ALTS $conn "which cells join one object" $FourConnected
+      (ALT $EightConnected
+        (OUTPUT select-hollow "the objects are the 8-connected single-color components"
+          (RULE &obj_cell
+            (&comp8.component *P (:Id *O))))))
+    (ALTS $keep "which objects are kept" $EnclosesHole
+      (ALT $SelectNotFull
+        (OUTPUT select-hollow "an object is kept when it does not fill its bounding box"
+          (RULE &kept
+            (&obj_box.box (:key *Id) *B)
+            (input *P)
+            (inside (:A P) B)
+            (NOT (&obj_cell (:O Id) P)))))
+      (ALT $SelectFewestCells
+        (OUTPUT select-hollow "the objects with the fewest cells are kept"
+          (RULE &kept
+            (&fewest.minimal (:t (:V *Id)))
+            (&obj_box.box (:key Id) *B))))))
+  (ALT $StoredTemplate
+    (OUTPUT select-hollow "a window of &square_side is a kept square when its rim is one color other than &bg and the rest of it is &bg; undefined when no window matches"
+      (RULE &kept
+        (&window.occurrence (:P *B))))))
+
+(ALTS $axis "the axis the output lines the squares along" $SeparatingAxis
+  (ALT $AxisBbox
+    (OUTPUT axis "the longer axis of the kept squares' joint bounding box; undefined when the box is square"
+      (RULE &layout_axis
+        (&joint.box *B)
+        (input *P)
+        (perp *A *A2)
+        (box_extent B P A *N)
+        (box_extent B P (:A A2) (:N *N2))
+        (> N N2)))))
+
+(ALTS $order "the order of the squares along the axis" $AlongAxis
+  (ALT $OrderColumnMajor
+    (OUTPUT order "the squares go in the lexicographic order of their corners at an end of &lex_diagonal, &lex_axis first, from that corner's edge of the layout axis; both ends give one order"
+      (RULE &sq_score
+        (&run (:D *Rn) *A)
+        (&lex_cell (:Corner *Dg) *B *P)
+        (corner_dir (:C Dg) A (:D Rn))
+        (&lex.rank (:key Dg) (:t P) (:R *S))))))
+
+(OUT (&laid ^P ^Col))

@@ -1,0 +1,66 @@
+;; inputs f97a34b23e13683e4a46d4f1e125e0c8acf304d5d09c739417afde76e8e32ba4 programs/solvers/5adee1b2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5adee1b2
+
+(DET &bg DominantColor)
+
+;; The edge the legend stands on.
+(DET &legend_dir DirDomain)
+
+(RULE &legend_entry
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&legend_dir *D)
+  (margin (:B P) D (:K 0))
+  (opposite D (:Opp *D2))
+  (neighbor P (:D D2) (:Q *P_border))
+  (input (:P P_border) (:Col *Col_border)))
+
+(INIT &shapes Connectivity
+  (key ((&legend_entry ^Col))
+    (node (P)
+      (input *P Col)
+      (NOT (&legend_entry P))
+      (NOT (&legend_entry (:P_border P))))))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component (:Id ^S) *P))
+    (cell (P)
+      (&shapes.component (:Id S) *P))))
+
+(RULE &grown_box
+  (&bbox.box (:key *S) *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (OR ((neighbor (:P P2) *D (:Q *P))
+       (input P))
+      ((= P P2))))
+
+(RULE &outside_node
+  (&shapes.component (:Id *S))
+  (input *P)
+  (NOT (&shapes.component (:Id S) P)))
+
+;; What the shape leaves open to the grid edge.
+(INIT &outside Flood
+  (key ((&outside_node ^S *P))
+    (node (P)
+      (&outside_node S *P))
+    (source (P)
+      (&outside_node S *P)
+      (margin (:B P) *D (:K 0)))))
+
+(RULE &painted
+  (&grown_box *S *P)
+  (input P (:Col *Col_in))
+  (&bg (:C Col_in))
+  (&outside.reached (:key S) P)
+  (&shapes.component (:key (:Col *Col_s)) (:Id S))
+  (&legend_entry (:Col Col_s) (:Col_border *Col)))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,224 @@
+;; inputs d37c23d939ec4feea714d5d3460fc92ace77ee52ea48d66da0f590018e14b90d programs/solvers/ea32f347.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ea32f347
+
+(INPUT background "every cell that is not a bar cell is 0")
+
+(INPUT straight-bars "the input holds 3 bars of the color &bar_color, each a 4-connected straight run of cells, one cell wide, horizontal or vertical, and no two bars touch"
+
+  (DET_OR_RULE &bar_color RarestColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P)
+    (NOT (ex_output E P (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (&bar_color (:C Col)))
+
+  (INIT &bars8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT distinct-lengths "no two bars have the same length")
+
+(OUTPUT rank-by-length "a bar's length is its cell count, and its rank is the number of distinct lengths longer than its own, so bars of one length share a rank"
+
+  (INIT &bars2 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &member
+    (&bars2.component *P (:Id *B)))
+
+  (INIT &size2 Cardinality
+    (key ((&member (:B ^Id) *P))
+      (member ((:m P))
+        (&member (:B Id) *P))))
+
+  (RULE &length
+    (&size2.size (:key (:Id *B)) *N))
+
+  (INIT &competition Order
+    (member ((:t Id))
+      (&length (:B *Id)))
+    (score ((:t Id) (:S N))
+      (&length (:B *Id) *N)))
+
+  (INIT &ends Order
+    (member ((:t N))
+      (&length *N))
+    (score ((:t N) (:S N))
+      (&length *N))))
+
+(OUTPUT recolor-by-rank "each cell of a bar takes the color &rank_color gives to that bar's rank, and every other cell keeps its input color; undefined where a rank has no entry in &rank_color"
+
+  (INIT &dense Order
+    (member ((:t N))
+      (&length *N))
+    (score ((:t N) (:S N))
+      (&length *N)))
+
+  (RULE &rank
+    (&length *B *N)
+    (&dense.dual_rank (:t N) *R))
+
+  (DET &bar_color_determined
+    (ex_input *E *P *Col)
+    (ex_output E P)
+    (NOT (ex_output E P Col)))
+
+  (INIT &bars Connectivity
+    (key ((ex_input ^E *P *Col)
+          (&bar_color_determined Col))
+      (node (P)
+        (ex_input E *P *Col)
+        (&bar_color_determined Col))))
+
+  (INIT &size Cardinality
+    (key ((&bars.component (:key ^E) *P ^Id))
+      (member ((:m P))
+        (&bars.component (:key E) *P Id))))
+
+  (DET &bar_out
+    (&bars.component (:key *E) *P *Id)
+    (&size.size (:key E Id) *N)
+    (ex_output E P *Col))
+
+  (INIT &lengths Order
+    (key ((&size.size (:key ^E) *N))
+      (member ((:t N))
+        (&size.size (:key E) *N))
+      (score ((:t N) (:S N))
+        (&size.size (:key E) *N))))
+
+  (DET &rank_color
+    (&bar_out *E *N *Col)
+    (&lengths.dual_rank (:key E) (:t N) *R)))
+
+(ALTS $direction "how a bar's color follows from the length order" $RankFromLongest
+  (ALT $RankFromShortest
+    (OUTPUT rank-by-length "a bar's rank is the number of distinct lengths shorter than its own"
+      (DET &ascending_rank_color
+        (&bar_out *E *N *Col)
+        (&lengths.rank (:key E) (:t N) *R)))
+    (OUTPUT recolor-by-rank "each cell of a bar takes the color &ascending_rank_color gives to that bar's rank; undefined where a rank has no entry"
+      (RULE &rank
+        (&length *B *N)
+        (&dense.rank (:t N) *R)))
+    (RULE &paint
+      (&rank *B *R)
+      (&ascending_rank_color R *Col))
+    (ALT $CompetitionRank
+      (OUTPUT rank-by-length "a bar's rank is the number of bars longer than it"
+        (RULE &rank
+          (&competition.rank (:t *B) *R)))))
+  (ALT $ExtremesAndRest
+    (OUTPUT rank-by-length "the longest bars, the shortest bars, and every other bar form three roles; undefined where all bars have one length"
+      (DET &longest_color
+        (&bar_out *E *N *Col)
+        (&lengths.dual_rank (:key E) (:t N) (:R 0)))
+
+      (DET &shortest_color
+        (&bar_out *E *N *Col)
+        (&lengths.rank (:key E) (:t N) (:R 0)))
+
+      (DET &rest_color
+        (&bar_out *E *N *Col)
+        (NOT (&lengths.dual_rank (:key E) (:t N) (:R 0)))
+        (NOT (&lengths.rank (:key E) (:t N) (:R 0)))))
+    (OUTPUT recolor-by-rank "the longest bars take &longest_color, the shortest bars &shortest_color, and every other bar &rest_color")
+    ;; No bar takes a role where all bars have one length.
+    (RULE &paint
+      (&length *B *N)
+      (OR ((&ends.maximal (:t N))
+           (NOT (&ends.minimal (:t N)))
+           (&longest_color *Col))
+          ((&ends.minimal (:t N))
+           (NOT (&ends.maximal (:t N)))
+           (&shortest_color Col))
+          ((NOT (&ends.maximal (:t N)))
+           (NOT (&ends.minimal (:t N)))
+           (&rest_color Col))))))
+
+(ALTS $tie "the rank of bars that share a length" $DenseRank
+  (ALT $CompetitionRank
+    (OUTPUT rank-by-length "a bar's rank is the number of bars longer than it"
+      (RULE &rank
+        (&competition.dual_rank (:t *B) *R)))))
+
+(ALTS $measure "what a bar's length counts" $CellCount
+  (ALT $ExtentLength
+    (OUTPUT rank-by-length "a bar's length is its extent along its longer axis"
+      (INIT &span BoundingBox
+        (key ((&member (:B ^Id) *P))
+          (cell (P)
+            (&member (:B Id) *P))))
+
+      ;; The bar's extent along each axis.
+      (INIT &extent Order
+        (key ((&span.box (:key ^Id) *B)
+              (&member (:B Id) *P)
+              (box_extent B P *A *N))
+          (member ((:t N))
+            (&span.box (:key Id) *B)
+            (&member (:B Id) *P)
+            (box_extent B P *A *N))
+          (score ((:t N) (:S N))
+            (&span.box (:key Id) *B)
+            (&member (:B Id) *P)
+            (box_extent B P *A *N))))
+
+      (RULE &length
+        (&extent.maximal (:key (:Id *B)) (:t *N))))))
+
+(ALTS $adjacency "which bar cells join one bar" $FourConnected
+  (ALT $DiagonalJoin
+    (INPUT straight-bars "a bar is an 8-connected component of the bar cells"
+      (RULE &member
+        (&bars8.component *P (:Id *B))))))
+
+(ALTS $cells "which cells form bars" $BarColor
+  (ALT $NonBackground
+    (INPUT straight-bars "the bar cells are the cells that are not &background"
+      (INIT &commonest_count Cardinality
+        (key ((ex_input ^E *P ^Col))
+          (member ((:m P))
+            (ex_input E *P Col))))
+
+      ;; The colors that are the commonest of every input.
+      (INIT &commonest Order
+        (key ((&commonest_count.size (:key ^E *Col)))
+          (member ((:t Col))
+            (&commonest_count.size (:key E *Col)))
+          (score ((:t Col) (:S N))
+            (&commonest_count.size (:key E *Col) *N))))
+
+      (DET &uncommon
+        (&commonest.maximal (:t *Col))
+        (ex_input *E)
+        (NOT (&commonest.maximal (:key E) (:t Col))))
+
+      (DET_OR_RULE &background DominantColor
+        (&commonest.maximal (:t *C))
+        (NOT (&uncommon (:Col C))))
+
+      (RULE &ink
+        (input *P *Col)
+        (NOT (&background (:C Col)))))))
+
+(RULE &paint
+  (&rank *B *R)
+  (&rank_color R *Col))
+
+(RULE &output
+  (OR ((&member (:B *Id) *P)
+       (&paint (:B Id) *Col))
+      ((input P Col)
+       (NOT (&ink P)))))
+
+(OUT (&output ^P ^Col))

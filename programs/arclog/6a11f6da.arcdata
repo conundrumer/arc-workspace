@@ -1,0 +1,14 @@
+;; inputs 7b6dd5d0ca54a5fa66c03addfe18b057145e34fef4bff0e60b06f65fe26f32f1 programs/solvers/6a11f6da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6a11f6da
+
+(param &bg Color (0))
+(param &tile_axis Axis (AXIS_V))
+(param &tile_count number (3))
+(param &tile_size number (5))
+(param &ink_rank (Color number) (6 0) (1 1) (8 2))
+(param &slab_rank (Position number)
+  (grid
+    (1)
+    (2)
+    (0)))

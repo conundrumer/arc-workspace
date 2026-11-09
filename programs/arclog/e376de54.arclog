@@ -1,0 +1,178 @@
+;; inputs f4aa08dec8dab8e8c88fe8649aa47e364fffadd34d50e64284ad68975681526f programs/solvers/e376de54.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e376de54
+
+(INPUT field "the grid is a field of color &bg"
+
+  (INIT &field_count Cardinality
+    (key ((ex_input *E *P ^Col))
+      (member ((:m E P))
+        (ex_input *E *P Col))))
+
+  ;; The field: the commonest color over the input cells.
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S Count))
+      (&field_count.size (:key *Col) (:N *Count))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&field.maximal (:t *C))))
+
+(INPUT parallel-lines "the field holds an odd number of straight segments, each one cell wide and of one color, all on one line axis (row, column, or one of the two diagonals); no two segments touch, and two segments can share a color")
+
+(INPUT common-start "one end of each segment lies on one common line perpendicular to the segments' axis; that end is the segment's start, and the other end is its free end")
+
+(INPUT middle-line "ordered along the common line, one segment has as many segments on one side as on the other; that segment is the middle line"
+
+  ;; The segments: the pieces of the non-field cells.
+  (INIT &shape Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &line_axis
+    (&shape.component *P (:Id *I))
+    (neighbor P *D *Q)
+    (&shape.component (:P Q) (:Id I))
+    (axis4_of D *A))
+
+  (RULE &cross_axis
+    (&line_axis (:A *A3))
+    (OR ((perp (:A A3) (:A2 *A)))
+        ((diag_perp (:Da A3) (:Da2 A)))))
+
+  ;; The segments ordered along the common line, in each of its directions.
+  (INIT &across Order
+    (key ((&cross_axis *A)
+          (axis4_of (:D ^O) A)
+          (&shape.component (:Id *I)))
+      (member ((:t I))
+        (&cross_axis *A)
+        (axis4_of (:D O) A)
+        (&shape.component (:Id *I)))
+      (before ((:a I) (:b J))
+        (&cross_axis *A)
+        (axis4_of (:D O) A)
+        (&shape.component *P (:Id *I))
+        (&shape.component (:P *Q) (:Id *J))
+        (nearer (:D O) P Q)))))
+
+(OUTPUT match-middle "each segment keeps its color, its axis and its start, and runs from its start toward its free end for the length of the middle line: a longer segment loses the cells past that length, and a shorter one gains cells of its color up to that length"
+
+  (RULE &end
+    (&shape.component *P (:Id *I))
+    (&line_axis *A)
+    (axis4_of *D A)
+    (neighbor P D *Q)
+    (NOT (&shape.component (:P Q) (:Id I))))
+
+  (RULE &aligned
+    (&end *P)
+    (&end (:P *Q))
+    (&cross_axis *A)
+    (same_line A P Q))
+
+  (RULE &scattered
+    (&end *D *P)
+    (&end D (:P *Q))
+    (NOT (&aligned P Q)))
+
+  (RULE &start_dir
+    (&end (:D *S))
+    (NOT (&scattered (:D S))))
+
+  (RULE &cast_mark
+    (&start_dir (:S *Key))
+    (&end (:D Key) *P))
+
+  (INIT &cast_frame Frame
+    (key ((&cast_mark (:Key ^Ky) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&cast_mark (:Key Ky) *P)
+        (frame_extent P *A *N))))
+
+  ;; The cells from each start toward its free end.
+  (INIT &cast Ray
+    (key ((OR ((&cast_mark (:Key ^Ky) *P))
+              ((&start_dir (:S Ky))
+               (dir8_opposite (:D Ky) (:D2 *F)))
+              ((&cast_frame.cell (:key Ky) P))))
+      (source (P)
+        (&cast_mark (:Key Ky) *P))
+      (node (P)
+        (&cast_frame.cell (:key Ky) *P))
+      (dir ((:D F))
+        (&start_dir (:S Ky))
+        (dir8_opposite (:D Ky) (:D2 *F)))))
+
+  (RULE &cast_cell
+    (&start_dir (:S *Key))
+    (input))
+
+  (RULE &seg_reach
+    (&end *I (:D *S) (:P *Src))
+    (&cast.ray (:key (:Ky S)) *P (:D *F) *K (:Origin Src))
+    (&cast_cell (:Key S))
+    (input P)
+    (&end I (:D F) P))
+
+  (INIT &longest Order
+    (key ((&seg_reach ^S *K))
+      (member ((:t K))
+        (&seg_reach S *K))
+      (score ((:t K) (:S K))
+        (&seg_reach S *K))))
+
+  (INIT &second Order
+    (key ((&seg_reach ^S *K)
+          (&longest.maximal (:key S) (:t *H))
+          (< K H))
+      (member ((:t K))
+        (&seg_reach S *K)
+        (&longest.maximal (:key S) (:t *H))
+        (< K H))
+      (score ((:t K) (:S K))
+        (&seg_reach S *K)
+        (&longest.maximal (:key S) (:t *H))
+        (< K H)))))
+
+(OUTPUT keep-field "every other cell is &bg")
+
+(ALTS $choice "which length every line takes" $Middle
+  (ALT $SecondLongest
+    (INPUT middle-line "dropped")
+    (OUTPUT match-middle "every line takes the second-largest distinct length among the lines; undefined where the lines all have one length")
+    (RULE &reach
+      (&second.maximal (:key *S) (:t *K)))))
+
+;; the middle segment: as many segments before it as after it
+(RULE &reach
+  (&seg_reach *S *I *K)
+  (&across.rank (:key *O) (:t I) *R)
+  (&across.dual_rank (:key O) (:t I) R))
+
+(RULE &line_cell
+  (&reach *S (:K *K_ref))
+  (&end *I (:D S) (:P *Src))
+  (&shape.component (:P *Q) (:Id I))
+  (input (:P Q) *Col)
+  (&cast.ray (:key (:Ky S)) *P *K (:Origin Src))
+  (&cast_cell (:Key S))
+  (input P)
+  (<= K K_ref))
+
+(RULE &output
+  (&reach)
+  (input *P)
+  (OR ((&line_cell P *Col))
+      ((NOT (&line_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

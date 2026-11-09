@@ -1,0 +1,65 @@
+;; inputs 3a5ca73796eeb5f6b0657ede9989a97d85e1f1ece9ea72e97772973697953256 programs/solvers/27a77e38.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 27a77e38
+
+(DET &stamp
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(DET &field_dir
+  (&stamp *P)
+  (opposite *D (:Opp *D_far))
+  (margin (:B P) (:D D_far) (:K 0)))
+
+(INIT &tally_count Cardinality
+  (key ((input *P ^Col)
+        (&field_dir *D)
+        (dist_pair P D *K *K2)
+        (< K K2))
+    (member ((:m P))
+      (input *P Col)
+      (&field_dir *D)
+      (dist_pair P D *K *K2)
+      (< K K2))))
+
+(RULE &target
+  (input *P)
+  (&field_dir *D)
+  (opposite D (:Opp *D_far))
+  (margin (:B P) (:D D_far) (:K 0))
+  (perp_dir D *D2)
+  (dist_pair P (:D D2) *K (:K2 K)))
+
+(ALTS $choice "the domain the count runs over; no field cell carries a ground color, so the pairs do not separate the two" $Half
+  (ALT $Ink
+    (DET &field_cell
+      (ex_input *E *P)
+      (&field_dir *D)
+      (dist_pair P D *K *K2)
+      (< K K2))
+
+    (DET &ground
+      (ex_input *E *P *Col)
+      (NOT (&field_cell E P)))
+
+    (INIT &tally_count Cardinality
+      (key ((input *P ^Col)
+            (NOT (&ground Col)))
+        (member ((:m P))
+          (input *P Col)
+          (NOT (&ground Col)))))))
+
+(INIT &tally Order
+  (member ((:t Col))
+    (&tally_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&tally_count.size (:key *Col) *N)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&target P)))
+      ((&target P)
+       (&tally.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

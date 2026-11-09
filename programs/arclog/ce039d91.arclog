@@ -1,0 +1,24 @@
+;; inputs ef5d3b5cb8e237a653491d9a8de3eb475af54405b9e72d07e49ed589f2442558 programs/solvers/ce039d91.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ce039d91
+
+(DET &mark RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &sym D4Domain)
+
+(RULE &symmetric
+  (input *P (:Col *M))
+  (&mark (:C M))
+  (&sym *D)
+  (apply D P (:P_out *Q))
+  (input (:P Q) (:Col M)))
+
+(RULE &output
+  (OR ((&symmetric *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&symmetric P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,79 @@
+;; inputs 2aa56d5b9d4c5316d47b0b48fb920d4e836e7ff994d4d0b952d9a6f9c9d1e7c5 programs/solvers/2c608aff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2c608aff
+
+(INIT &bg_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color; the rest is ink.
+(INIT &bg Order
+  (member ((:t Col))
+    (&bg_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg.maximal (:t Col))))
+
+(RULE &block
+  (&ink *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&ink (:P Q)))
+
+(RULE &marker
+  (&ink *P *Col)
+  (NOT (&block P)))
+
+(RULE &span_mark
+  (&marker (:P *Key))
+  (OR ((&block *P))
+      ((= P Key))))
+
+(INIT &span_frame Frame
+  (key ((&span_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&span_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+;; The span the marker and the block delimit, folded along either cardinal
+;; axis; the block's own cells lie outside it.
+(INIT &span Ray
+  (key ((OR ((&span_mark (:Key ^Ky) *P))
+            ((&marker (:P Ky))
+             (axis_elem *A)
+             (axis4_of *D A))
+            ((&span_frame.cell (:key Ky) P))))
+    (source (P)
+      (&span_mark (:Key Ky) *P))
+    (node (P)
+      (&span_frame.cell (:key Ky) *P))
+    (dir (D)
+      (&marker (:P Ky))
+      (axis_elem *A)
+      (axis4_of *D A))))
+
+(RULE &span_between
+  (&marker (:P *Key))
+  (input *P)
+  (NOT (&block P))
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray (:key (:Ky Key)) P D)
+  (&span.ray (:key (:Ky Key)) P (:D O)))
+
+(RULE &paint
+  (&span_between (:Key *M) *P)
+  (&marker (:P M) *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,171 @@
+;; inputs 6e9f8c7a2ac1929da0f11368bec869d6d59db2019674e5800b55ef45fc2709b9 programs/solvers/d94c3b52.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d94c3b52
+
+(INPUT tiling "the grid is a tiling of `tile_size`×`tile_size` tiles, separated from each other and from the frame edge by lines of `gap` background cells, 4 tiles down and 6 across.")
+
+(INPUT shape-tiles "every tile but one holds a shape in 1 on background, and a shape may be as small as one cell.")
+
+(INPUT one-key-tile "one tile holds its shape in `key_color` and no 1 cell.")
+
+(OUTPUT match-takes-key-color "each tile whose shape equals the key tile's shape, cell for cell with no rotation or reflection, recolors its shape cells (its non-background cells) to `key_color`."
+
+  (INIT &ground_count Cardinality
+    (key ((ex_input *E *P ^Col))
+      (member ((:m E P))
+        (ex_input *E *P Col))))
+
+  ;; The commonest input color.
+  (INIT &ground Order
+    (member ((:t Col))
+      (&ground_count.size (:key *Col)))
+    (score ((:t Col) (:S Count))
+      (&ground_count.size (:key *Col) (:N *Count))))
+
+  (DET_OR_RULE &background DominantColor
+    (&ground.maximal (:t *C)))
+
+  ;; The margin between the frame edge and the nearest shape cell.
+  (INIT &margin Order
+    (member ((:t K))
+      (ex_input *P *Col)
+      (NOT (&ground.maximal (:t Col)))
+      (margin (:B P) *D *K))
+    (score ((:t K) (:S K))
+      (ex_input *P *Col)
+      (NOT (&ground.maximal (:t Col)))
+      (margin (:B P) *D *K)))
+
+  (DET_OR_RULE &gap "the width of the background lines between tiles and at the frame edge" SepThickness
+    (&margin.minimal (:t *G)))
+
+  (DET &tile_size NumberDomain)
+
+  (INIT &tile_division Division
+    (key ((input (:P ^P_grid))
+          (&gap ^G)
+          (&tile_size (:N ^K)))
+      (cell ((:P P_field))
+        (uniform_inset (:K G) *B)
+        (inside (:A P_grid) B)
+        (relative (:Base B) (:X P_grid) (:X_rel *P_field)))
+      (side (A K)
+        (axis_elem *A))
+      (gap (A G)
+        (axis_elem *A))))
+
+  (RULE &shape
+    (&tile_division.tile (:key *P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+    (input (:P P_grid) *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape ^P_tile *P_intile))
+      (cell ((:P P_intile))
+        (&shape P_tile *P_intile)))))
+
+(OUTPUT between-takes-link-color "each tile that lies strictly between two key-shape tiles (the key tile included) in one tiling row or one tiling column, and is not a key-shape tile itself, recolors its shape cells to `link_color`.")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color."
+
+  (RULE &form
+    (&shape *P_tile (:P_intile *M)))
+
+  (DET &painted
+    (ex_output *E *P *Col)
+    (ex_input E P (:Col *Col2))
+    (!= Col2 Col))
+
+  (DET_OR_RULE &key_color RarestColor
+    (&painted *E (:Col *C))
+    (ex_input E (:Col C)))
+
+  ;; The key tile.
+  (INIT &key Singleton
+    (member ((:v P_tile))
+      (&tile_division.tile (:key *P_grid) (:P_outer *P_tile))
+      (input (:P P_grid) *Col)
+      (&key_color (:C Col))))
+
+  (INIT &same Inclusion
+    (pattern ((:pattern P_tile) (:m M))
+      (&key.value (:v *P_tile))
+      (&form P_tile *M))
+    (observed ((:observed P_tile) (:m M))
+      (&form *P_tile *M)))
+
+  (INIT &link_frame Frame
+    (extent (A N)
+      (&same.equal (:observed *P_tile))
+      (frame_extent (:P P_tile) *A *N)))
+
+  (INIT &link Ray
+    (source ((:P P_tile))
+      (&same.equal (:observed *P_tile)))
+    (node (P)
+      (&link_frame.cell *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE_OR_DET &link_cell
+    (&tile_division.tile (:P_outer *P)))
+
+  (RULE &linked
+    (&link.ray (:P *P_tile) *D (:Origin *Q1))
+    (&link_cell (:P P_tile))
+    (!= Q1 P_tile)
+    (dir8_opposite D (:D2 *O))
+    (&link.ray (:P P_tile) (:D O) (:Origin *Q2))
+    (!= Q2 P_tile))
+
+  (DET &link_color
+    (&painted *E *Col)
+    (NOT (ex_input E Col))))
+
+(ALTS $i "What makes a tile's shape the key's" $Exact
+  (ALT $TranslateMatch
+    (OUTPUT match-takes-key-color "a tile matches when its shape is a translate of the key tile's within the tile"
+      ;; The shape's cells in its own bounding box, so a shift within the tile keeps them.
+      (RULE &form
+        (&shape *P_tile *P_intile)
+        (&shape_box.box (:key P_tile) *B)
+        (inside (:A P_intile) B)
+        (relative (:Base B) (:X P_intile) (:X_rel *M))))))
+
+(ALTS $p "Which color a key-shape tile takes when it lies between two others" $KeepKey
+  (ALT $LinkOverMatch
+    (OUTPUT between-takes-link-color "a key-shape tile that lies strictly between two others takes `link_color` in place of `key_color`")
+    (RULE &paint
+      (OR ((&same.equal (:observed *P_tile))
+           (&linked P_tile)
+           (&link_color *Col))
+          ((&same.equal (:observed P_tile))
+           (NOT (&linked P_tile))
+           (&key_color (:C Col)))
+          ((&linked P_tile)
+           (NOT (&same.equal (:observed P_tile)))
+           (&link_color Col))))))
+
+(RULE &paint
+  (OR ((&same.equal (:observed *P_tile))
+       (NOT (&linked P_tile))
+       (&key_color (:C *Col)))
+      ((&linked P_tile)
+       (NOT (&same.equal (:observed P_tile)))
+       (&link_color Col))
+      ((&same.equal (:observed P_tile))
+       (&linked P_tile)
+       (&key_color (:C Col)))))
+
+(RULE &recolor
+  (&paint *P_tile *Col)
+  (&tile_division.tile (:key *P_grid) (:P_outer P_tile) (:P_inner *P_intile))
+  (&shape P_tile P_intile))
+
+(RULE &output
+  (OR ((&recolor (:P_grid *P) *Col))
+      ((input P Col)
+       (&key.value)
+       (NOT (&recolor (:P_grid P))))))
+
+(OUT (&output ^P ^Col))

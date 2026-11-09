@@ -1,0 +1,69 @@
+;; inputs d06c8ab040836dce8924f1624acd3736cbdd53ff7c6fb023888f72b54136b921 programs/solvers/d90796e8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d90796e8
+
+(param &background Color (0))
+(param &merge_color Color (3))
+(param &absorbed_color Color (2))
+(param &result_color Color (8))
+
+(alts $choice
+  (alt $IsolatedPair
+    (witness pair-touching-other-color ordinary concept
+      (separates "a green-red pair that a gray cell touches: the concept merges the pair, and the reading by objects finds a three-cell object and changes nothing")
+      (input (grid
+        (0 0 0 0 0)
+        (0 3 2 5 0)
+        (0 0 0 0 0)
+        (0 5 0 3 0)))
+      (output concept $ExclusivePair (grid
+        (0 0 0 0 0)
+        (0 8 0 5 0)
+        (0 0 0 0 0)
+        (0 5 0 3 0)))
+      (output $IsolatedPair (grid
+        (0 0 0 0 0)
+        (0 3 2 5 0)
+        (0 0 0 0 0)
+        (0 5 0 3 0)))))
+  (alt $ExclusivePair
+    (witness red-between-two-greens borderline concept
+      (relaxed pairs-disjoint)
+      (separates "a red cell with a green cell on each side: the concept turns both greens purple and erases the red, and the readings that merge only a pair with one partner each change nothing")
+      (input (grid
+        (0 0 0 0 0)
+        (0 3 2 3 0)
+        (0 0 0 0 0)
+        (0 0 5 0 0)))
+      (output concept (grid
+        (0 0 0 0 0)
+        (0 8 0 8 0)
+        (0 0 0 0 0)
+        (0 0 5 0 0)))
+      (output $ExclusivePair $IsolatedPair (grid
+        (0 0 0 0 0)
+        (0 3 2 3 0)
+        (0 0 0 0 0)
+        (0 0 5 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor foreign &background=$Derived
+      (relaxed scattered-single-cells)
+      (separates "a green-red pair on a field of gray: the stored background erases the red cell to black, the derived background erases it to gray, and the reading by objects finds the pair joined to the gray field and changes nothing")
+      (input (grid
+        (5 5 5 5)
+        (5 3 2 5)
+        (5 5 5 5)))
+      (output ($AnyPartner &background=$Stored) $ExclusivePair (grid
+        (5 5 5 5)
+        (5 8 0 5)
+        (5 5 5 5)))
+      (output &background=$Derived (grid
+        (5 5 5 5)
+        (5 8 5 5)
+        (5 5 5 5)))
+      (output $IsolatedPair (grid
+        (5 5 5 5)
+        (5 3 2 5)
+        (5 5 5 5))))))

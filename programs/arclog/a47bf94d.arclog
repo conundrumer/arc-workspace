@@ -1,0 +1,395 @@
+;; inputs bbdadaf725bcebc837b455a7dc4c8b9add7447e05e9dfddd6bec0f7c292698e2 programs/solvers/a47bf94d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a47bf94d
+
+(INPUT slots "3×3 slots stand in two facing rows (top and bottom) or two facing columns (left and right). Each slot holds a solid block of one color, a diamond of one color, an X of one color, or nothing.")
+
+(INPUT wires "paths of wire cells join each slot to one slot in the facing row. A wire leaves the middle cell of the slot edge that faces the other row. Every slot is on exactly one wire.")
+
+(INPUT crossings "where two wires cross, both run straight through the crossing cell. The wire that goes under shows a mark cell on each side of the crossing cell.")
+
+(INPUT occluders "occluder blocks hide stretches of wires. The hidden stretch of a wire joins two of the visible wire ends that touch the block.")
+
+(INPUT one-filled-end "each wire has at least one filled end, and no wire has two solid ends.")
+
+(OUTPUT trace "follow each wire from its slot to the slot at its other end. The wire goes straight through crossings and turns at corners. Under an occluder, a visible end joins the end straight across from it on the same line. An end with no end straight across joins the one remaining end."
+
+  (DET &wire_color UnchangedColor)
+
+  (DET &mark_color UnchangedColor)
+
+  (DET &occluder_color UnchangedColor)
+
+  (RULE &wire
+    (input *P *Col)
+    (OR ((&wire_color (:C Col)))
+        ((&mark_color (:C Col)))))
+
+  (RULE &occluder
+    (input *P *Col)
+    (&occluder_color (:C Col)))
+
+  (RULE &beside
+    (&wire *P)
+    (dir_elem *D)
+    (neighbor P D *Q))
+
+  (RULE &wire_link
+    (&beside *P *D *Q)
+    (&wire (:P Q)))
+
+  (INIT &blocks Connectivity
+    (node (P)
+      (&occluder *P)))
+
+  (RULE &branching
+    (&wire_link *P (:D *D1))
+    (&wire_link P (:D *D2))
+    (!= D1 D2))
+
+  (RULE &occ_end
+    (&beside *P (:D *E1) *Q)
+    (&occluder (:P Q))
+    (NOT (&branching P)))
+
+  (INIT &under Ray
+    (source (P)
+      (&occluder *P))
+    (node (P)
+      (&occluder *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &across
+    (&occ_end *P *E1 *Q)
+    (&under.end (:P *Q2) (:D E1) (:Origin Q))
+    (neighbor (:P Q2) (:D E1) (:Q *P2))
+    (opposite (:D E1) (:Opp *E2))
+    (&occ_end (:P P2) (:E1 E2)))
+
+  (RULE &lone
+    (&occ_end *P *E1 *Q)
+    (&blocks.component (:P Q) *Id)
+    (NOT (&across P E1)))
+
+  ;; The fewest steps through the block from a lone end's block cell.
+  (INIT &under_len Distance
+    (key ((&lone ^P (:E1 ^E)))
+      (source ((:n Q))
+        (&occ_end P (:E1 E) *Q)))
+    (edge ((:a Q) (:b Q2))
+      (&occluder (:P *Q))
+      (dir_elem *D)
+      (neighbor (:P Q) D (:Q *Q2))
+      (&occluder (:P Q2))))
+
+  (INIT &nearest Order
+    (key ((&lone ^P (:E1 ^E) *Id)
+          (&lone (:P *P2) (:E1 *E2) Id)
+          (!= P P2)
+          (&occ_end (:P P2) (:E1 E2) (:Q *Q2))
+          (&under_len.distance (:key P E) (:n Q2) *K))
+      (member ((:t (:P P2) (:E E2) (:S K)))
+        (&lone P (:E1 E) *Id)
+        (&lone (:P *P2) (:E1 *E2) Id)
+        (!= P P2)
+        (&occ_end (:P P2) (:E1 E2) (:Q *Q2))
+        (&under_len.distance (:key P E) (:n Q2) *K))
+      (score ((:t (:P P2) (:E E2) (:S K)) (:S K))
+        (&lone P (:E1 E) *Id)
+        (&lone (:P *P2) (:E1 *E2) Id)
+        (!= P P2)
+        (&occ_end (:P P2) (:E1 E2) (:Q *Q2))
+        (&under_len.distance (:key P E) (:n Q2) *K)))))
+
+(OUTPUT complete "after the rule, each wire has a diamond of its color at one end and an X of that color at the other end. A solid block becomes the diamond. An empty end takes the shape that the other end lacks."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &slot_size TileCount)
+
+  (INIT &slot_cell_frame Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&slot_size *N)))
+
+  (RULE &side_contact
+    (&beside *P (:D *D2) (:Q *R))
+    (perp_dir *D D2)
+    (OR ((&wire (:P R)))
+        ((&occluder (:P R)))))
+
+  (RULE &port
+    (&beside *P *D *Q)
+    (NOT (&wire (:P Q)))
+    (NOT (&occluder (:P Q)))
+    (NOT (&side_contact P D)))
+
+  (RULE &attach
+    (&slot_cell_frame.cell (:P *A))
+    (opposite *D (:Opp *D_near))
+    (margin (:B A) (:D D_near) (:K 0))
+    (perp_dir D (:D2 *D1))
+    (dist_pair (:P A) (:D D1) (:K *N) (:K2 N)))
+
+  (RULE &slot
+    (&port *P *D)
+    (&attach D *A)
+    (neighbor P D *Q)
+    (&slot_cell_frame.cell (:P *P_inner))
+    (relative (:Base A) (:X P_inner) (:X_rel *V))
+    (compose (:A Q) (:B V) (:C *P_grid)))
+
+  (RULE &ink
+    (&slot *P *P_inner *P_grid)
+    (input (:P P_grid) *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &gap
+    (&slot *P *P_inner)
+    (NOT (&ink P P_inner)))
+
+  (RULE &solid
+    (&ink *P)
+    (NOT (&gap P)))
+
+  (DET &out_ink
+    (&slot *E *P *P_inner *P_grid)
+    (ex_output E (:P P_grid) *Col)
+    (NOT (&background (:C Col))))
+
+  (DET &diamond
+    (&solid *E (:P *P2))
+    (&out_ink E (:P P2) (:P_inner *P)))
+
+  ;; The slot at P holds the diamond.
+  (INIT &as_diamond Inclusion
+    (pattern ((:m P_inner))
+      (&diamond (:P *P_inner)))
+    (observed ((:observed P) (:m P_inner))
+      (&ink *P *P_inner)))
+
+  (DET &off_diamond
+    (&slot *E *P *P_inner)
+    (IF ((&diamond (:P P_inner)))
+        ((NOT (&out_ink E P P_inner)))
+        ((&out_ink E P P_inner))))
+
+  (DET &x
+    (&out_ink *E (:P *P2) (:P_inner *P))
+    (&off_diamond E (:P P2)))
+
+  (RULE &x_cell
+    (&x (:P *P_inner)))
+
+  ;; The slot at P holds the X.
+  (INIT &as_x Inclusion
+    (pattern ((:m P_inner))
+      (&x_cell *P_inner))
+    (observed ((:observed P) (:m P_inner))
+      (&ink *P *P_inner))))
+
+(OUTPUT keep "wires, marks, occluders, and the background are unchanged."
+
+  (RULE &empty
+    (&port *P)
+    (NOT (&ink P)))
+
+  (RULE &join
+    (OR ((&across *P *E1 *P2 *E2))
+        ((&lone P E1 *Id)
+         (&lone (:P P2) (:E1 E2) Id)
+         (!= P P2))))
+
+  ;; The wire from port P0, under join case J, reaches cell P heading D.
+  (INIT &walk Propagation
+    (key ((OR ((&port (:P ^P0) (:D *D0))
+               (opposite (:D D0) (:Opp *D)))
+              ((&port (:P P0))
+               (&wire *P)
+               (dir_elem D)
+               (OR ((NOT (&wire_link P D))
+                    (perp_dir D *D2)
+                    (&wire_link P (:D D2))
+                    (neighbor P (:D D2) *Q))
+                   ((&wire_link P D)
+                    (= D2 D)
+                    (neighbor P (:D D2) Q))
+                   ((&join P (:E1 *E) (:P2 Q) *E2)
+                    (NOT (opposite D (:Opp E)))
+                    (opposite (:D E2) (:Opp D2)))))))
+      (source ((:n (:P P0) D))
+        (&port (:P P0) (:D *D0))
+        (opposite (:D D0) (:Opp *D)))
+      (edge ((:a P D) (:b (:P Q) (:D D2)))
+        (&port (:P P0))
+        (&wire *P)
+        (dir_elem *D)
+        (OR ((NOT (&wire_link P D))
+             (perp_dir D *D2)
+             (&wire_link P (:D D2))
+             (neighbor P (:D D2) *Q))
+            ((&wire_link P D)
+             (= D2 D)
+             (neighbor P (:D D2) Q))
+            ((&join P (:E1 *E) (:P2 Q) *E2)
+             (NOT (opposite D (:Opp E)))
+             (opposite (:D E2) (:Opp D2)))))))
+
+  (RULE &partner
+    (&walk.reached (:key *P0) (:n (:P *P1) *D))
+    (&port (:P P1) D)
+    (!= P0 P1)))
+
+(ALTS $join "which lone end under a block an end joins" $OneRemaining
+  (ALT $Nearest
+    (OUTPUT trace "an end with no end straight across joins whichever other such end of the block is nearest it through the block"
+      (RULE &join
+        (OR ((&nearest.minimal (:key *P (:E *E1)) (:t (:P *P2) (:E *E2))))
+            ((&across P E1 P2 E2)))))))
+
+(ALTS $grouping "whether the grid changes when the wire ends spread over more than two lines" $Ungrouped
+  (ALT $PortGrouping
+    (OUTPUT keep "when the wire ends do not lie on exactly two rows or exactly two columns, the whole grid is unchanged"
+      (RULE &spread
+        (dir_elem *D)
+        (&port (:P *P1))
+        (&port (:P *P2))
+        (NOT (same_dist D P1 P2))
+        (&port (:P *P3))
+        (NOT (same_dist D (:P1 P3) (:P2 P1)))
+        (NOT (same_dist D (:P1 P3) P2)))
+
+      (RULE &grouped
+        (dir_elem *D)
+        (&port (:P *P1))
+        (&port (:P *P2))
+        (NOT (same_dist D P1 P2))
+        (NOT (&spread D)))
+
+      (RULE &unchanged
+        (NOT (&grouped))))
+    (RULE &draw
+      (OR ((&shape *P)
+           (NOT (&unchanged))
+           (&redrawn P)
+           (&slot P *P_inner)
+           (OR ((&shape P P_inner *Col))
+               ((NOT (&shape P P_inner))
+                (&background (:C Col)))))
+          ((&shape P P_inner Col)
+           (NOT (&unchanged))
+           (NOT (&redrawn P))
+           (NOT (&ink P P_inner)))))))
+
+(ALTS $roles "which end of a wire gets the diamond" $ByShape
+  (ALT $SideRoles
+    (OUTPUT complete "on every wire with a filled end, the end whose slot lies on the stored side of its axis takes the diamond and the other end the X, in the filled end's color"
+      (DET &diamond_side
+        (&port *E *P *D)
+        (NOT (&off_diamond E P)))
+
+      (RULE &sided
+        (&partner (:P0 *P) (:P1 *P2))
+        (&port P *D)
+        (&diamond_side D)
+        (OR ((&ink P *Col))
+            ((&ink (:P P2) Col)))))
+    (RULE &gets_diamond
+      (&sided *P *Col))
+
+    (RULE &gets_x
+      (&sided (:P2 *P) *Col))
+    (ALT $LoneDiamond
+      (OUTPUT complete "a wire whose ends are a diamond and an empty slot stays unchanged"
+        (RULE &sided
+          (&partner (:P0 *P) (:P1 *P2))
+          (NOT (&held P))
+          (&port P *D)
+          (&diamond_side D)
+          (OR ((&ink P *Col))
+              ((&ink (:P P2) Col)))))
+      (RULE &gets_x
+        (&sided (:P2 *P) *Col)))))
+
+(ALTS $lone "what a wire whose ends are a diamond and an empty slot does" $FillX
+  (ALT $LoneDiamond
+    (OUTPUT complete "a wire whose ends are a diamond and an empty slot stays unchanged"
+      ;; A wire with a diamond at one end and an empty slot at the other.
+      (RULE &held
+        (&partner (:P0 *P) (:P1 *P2))
+        (OR ((&as_diamond.equal (:observed P))
+             (&empty (:P P2)))
+            ((&empty P)
+             (&as_diamond.equal (:observed P2))))))
+    (RULE &gets_x
+      (&facing (:P *P3) (:P2 *P) *Col)
+      (OR ((&solid (:P P3)))
+          ((&as_diamond.equal (:observed P3))
+           (NOT (&held (:P P3))))))))
+
+(ALTS $x_shape "where the X footprint comes from" $StoredX
+  (ALT $XComplement
+    (OUTPUT complete "the X footprint is the slot cells that the diamond footprint leaves empty"
+      (RULE &x_cell
+        (&slot_cell_frame.cell (:P *P_inner))
+        (NOT (&diamond (:P P_inner)))))))
+
+(ALTS $paint "how a shape is drawn into a slot" $Replace
+  (ALT $Overlay
+    (OUTPUT complete "the end across from a solid or a diamond takes the X, and the end across from an X takes the diamond, whatever the end holds unless it is solid. A shape is drawn onto the slot's background cells only, except that a solid block becomes the diamond.")
+    (RULE &redrawn
+      (&solid *P))
+
+    (RULE &facing
+      (&partner (:P0 *P) (:P1 *P2))
+      (NOT (&solid (:P P2)))
+      (&ink P *Col))))
+
+(RULE &facing
+  (&partner (:P0 *P) (:P1 *P2))
+  (&empty (:P P2))
+  (&ink P *Col))
+
+(RULE &gets_diamond
+  (OR ((&solid *P)
+       (&ink P *Col))
+      ((&facing (:P *P3) (:P2 P) Col)
+       (&as_x.equal (:observed P3)))))
+
+(RULE &gets_x
+  (&facing (:P *P3) (:P2 *P) *Col)
+  (OR ((&solid (:P P3)))
+      ((&as_diamond.equal (:observed P3)))))
+
+(RULE &shape
+  (OR ((&gets_diamond *P *Col)
+       (&diamond (:P *P_inner)))
+      ((&gets_x P Col)
+       (&x_cell P_inner))))
+
+(RULE &redrawn
+  (&port *P))
+
+(RULE &draw
+  (OR ((&shape *P)
+       (&redrawn P)
+       (&slot P *P_inner)
+       (OR ((&shape P P_inner *Col))
+           ((NOT (&shape P P_inner))
+            (&background (:C Col)))))
+      ((&shape P P_inner Col)
+       (NOT (&redrawn P))
+       (NOT (&ink P P_inner)))))
+
+(RULE &painted
+  (&draw (:P *P2) *P_inner)
+  (&slot (:P P2) P_inner (:P_grid *P)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&painted P)))
+      ((&draw (:P *P2) *P_inner Col)
+       (&slot (:P P2) P_inner (:P_grid P)))))
+
+(OUT (&output ^P ^Col))

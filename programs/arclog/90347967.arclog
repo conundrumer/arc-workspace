@@ -1,0 +1,26 @@
+;; inputs f514d8f9e7028dc9254ee86b1fe1be04b648a33026d65e34d560f4857b942e72 programs/solvers/90347967.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 90347967
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(DET &transform D4Domain)
+
+(RULE &moved
+  (input (:P *M) (:Col *C))
+  (&marker C)
+  (input (:P *P2) *Col)
+  (relative (:Base M) (:X P2) (:X_rel *V))
+  (&transform *D)
+  (apply D (:P V) (:P_out *V2))
+  (compose (:A M) (:B V2) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

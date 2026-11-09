@@ -1,0 +1,156 @@
+;; inputs 4def4f07af3d0898a2eb5f57843766d842e4d9161ba98fa07749b53780fc07e3 programs/solvers/ca8de6ea.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ca8de6ea
+
+(DET &dp_cell
+  (OR ((ex_input *P))
+      ((ex_output P))))
+
+(DET &dp_nearer
+  (&dp_cell *P)
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(DET &cand
+  (ex_input *E (:P *P_in) *Col)
+  (ex_output E (:P *P_out) Col))
+
+(DET &crossing
+  (&cand *P_in *P_out)
+  (&dp_nearer (:P P_in) *D)
+  (opposite D (:Opp *O))
+  (&dp_nearer (:P P_out) (:D O)))
+
+(DET &pair
+  (&cand *P_in *P_out)
+  (NOT (&crossing P_in P_out)))
+
+(INIT &ident Quotient
+  (equivalent ((:a P_in) (:b P_in))
+    (&pair *P_in)))
+
+(DET &in_label
+  (&pair (:P_in *P))
+  (&ident.class (:a P) *Id))
+
+(DET &out_label
+  (&pair *P_in (:P_out *P))
+  (&ident.class (:a P_in) *Id))
+
+(RULE &map
+  (&in_label (:P *P_in) *Id)
+  (&out_label (:P *P_out) Id))
+
+(RULE &perm
+  (&map *P_in *P_out))
+
+(ALTS $choice "how the collapse is derived" $LabeledGrids
+  (ALT $Cycle
+    (DET &dp_quadrant
+      (diag_dirs (:D *Diag) *D1 *D2)
+      (&dp_nearer *P (:D D1))
+      (&dp_nearer P (:D D2)))
+
+    (DET &dp_diag_cell
+      (&dp_quadrant *P *Diag)
+      (diag_dist P Diag (:K1 *Ring) (:K2 Ring)))
+
+    (DET &ring_cell
+      (ex_output *P)
+      (margin (:B P) *D (:K 0)))
+
+    (DET &border_step
+      (&ring_cell *P)
+      (turn *S *D (:D2 *D_step))
+      (margin (:B P) D (:K 0))
+      (neighbor P (:D D_step) (:Q *P_next)))
+
+    (DET &ring_corner
+      (&ring_cell *P)
+      (same_corner (:D *Diag) (:P1 P) (:P2 0)))
+
+    (DET &sense
+      (&pair *P_in *P_out)
+      (&dp_diag_cell (:P P_in) *Diag)
+      (&ring_corner Diag (:P *P_corner))
+      (&border_step (:P P_corner) *S (:P_next P_out)))
+
+    (DET &ring_succ
+      (&sense *S)
+      (&border_step *P S *P_next)
+      (&ring_cell (:P P_next)))
+
+    (RULE &cell
+      (OR ((input *P))
+          ((&ring_succ P))))
+
+    (RULE &dp_nearer2
+      (&cell *P)
+      (dist_pair P *D *K *K2)
+      (< K K2))
+
+    (RULE &dp_quadrant2
+      (diag_dirs (:D *Diag) *D1 *D2)
+      (&dp_nearer2 *P (:D D1))
+      (&dp_nearer2 P (:D D2)))
+
+    (RULE &dp_diag_cell2
+      (&dp_quadrant2 *P *Diag)
+      (diag_dist P Diag (:K1 *Ring) (:K2 Ring)))
+
+    (INIT &ring_size Cardinality
+      (member ((:m P))
+        (&ring_cell *P)))
+
+    (INIT &ring2 Walk
+      (successor ((:p P) (:p_next P_next))
+        (&ring_succ *P *P_next))
+      (steps (N)
+        (&ring_size.size *N)))
+
+    ;; Steps around the ring from the arm's own corner to the arm's paired cell.
+    (INIT &advance Order
+      (key ((&pair *P_in *P_out)
+            (&dp_diag_cell (:P P_in) *Diag ^Ring)
+            (&ring_corner Diag (:P *P_corner))
+            (&ring2.walk (:p0 P_corner) *N (:p P_out)))
+        (member ((:t N))
+          (&pair *P_in *P_out)
+          (&dp_diag_cell (:P P_in) *Diag Ring)
+          (&ring_corner Diag (:P *P_corner))
+          (&ring2.walk (:p0 P_corner) *N (:p P_out)))
+        (score ((:t N) (:S N))
+          (&pair *P_in *P_out)
+          (&dp_diag_cell (:P P_in) *Diag Ring)
+          (&ring_corner Diag (:P *P_corner))
+          (&ring2.walk (:p0 P_corner) *N (:p P_out)))))
+
+    (DET &ring_shift
+      (&advance.minimal (:key *Ring) (:t *Shift)))
+
+    (INIT &ring Walk
+      (successor ((:p P) (:p_next P_next))
+        (&ring_succ *P *P_next))
+      (steps (N)
+        (&ring_shift (:Shift *N))))
+
+    (DET &out_center
+      (&pair *P_in (:P_out *P))
+      (centered (:P P_in)))
+
+    (RULE &perm
+      (OR ((input (:P *P_in))
+           (&dp_diag_cell2 (:P P_in) *Diag *Ring)
+           (&ring_shift Ring *Shift)
+           (&ring_succ (:P *P_corner))
+           (&dp_diag_cell2 (:P P_corner) Diag (:Ring 0))
+           (&ring.walk (:p0 P_corner) (:N Shift) (:p *P_out)))
+          ((input (:P P_in))
+           (centered (:P P_in))
+           (&out_center (:P P_out)))))))
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&perm (:P_in P_grid_in) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

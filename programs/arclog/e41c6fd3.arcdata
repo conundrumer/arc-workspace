@@ -1,0 +1,136 @@
+;; inputs c58386df3c30cff63b104c80b5bfbe6b707c6c2326eb4406757fadf83e4e14b7 programs/solvers/e41c6fd3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e41c6fd3
+
+(param &background Color (0))
+(param &anchor Color (8))
+(param &align_axis Axis (AXIS_V))
+
+(alts $r
+  (alt $ObjectComponents
+    (witness two-copies-one-color variant $ObjectComponents
+      (relaxed copies-of-one-shape)
+      (separates "color 2 forms two copies at different heights; read as one color class, its cells slide together, so its top copy meets the anchor on one edge and its lower copy stays below; read as components, each copy aligns with the anchor")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 2 0 0 0 0 0 0 0 0)
+        (0 8 0 0 2 0 2 0 0 0 0 0 0 0 0)
+        (8 8 8 0 0 0 0 0 0 2 0 0 0 0 0)
+        (8 0 8 0 0 0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 2 0 2 0 0 4 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 4 4 4)
+        (0 0 0 0 0 0 0 0 0 0 0 0 4 0 4)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ColorClass undefined)
+      (output $ObjectComponents (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 0 0 0 2 0 0 0 2 0 0 0 4 0)
+        (8 8 8 0 2 2 2 0 2 2 2 0 4 4 4)
+        (8 0 8 0 2 0 2 0 2 0 2 0 4 0 4)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $adjacency
+  (alt $Adjacency8
+    (witness diagonal-shape variant $Adjacency8
+      (separates "the shape joins at corners only; read by 4-adjacency, the anchor splits into three components and no one anchor exists, so the model is undefined; read as a color class or by 8-adjacency, every copy aligns with the anchor")
+      (input (grid
+        (0 0 0 0 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 2 2 0 0 0 0 0 0)
+        (8 8 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0 0 0 0 0 0)
+        (8 8 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 4 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0 4 0)
+        (0 0 0 0 0 0 0 0 4 4 0 0)))
+      (output ($ColorClass $StoredAxis) $Adjacency8 (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (8 8 0 0 2 2 0 0 4 4 0 0)
+        (0 0 8 0 0 0 2 0 0 0 4 0)
+        (8 8 0 0 2 2 0 0 4 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $AxisFromLayout $Adjacency4 undefined))))
+
+(alts $a
+  (alt $AlignCenter
+    (witness taller-copy borderline any
+      (relaxed copies-of-one-shape)
+      (separates "the 2 copy is two rows taller than the anchor; edge alignment gives the copy's top on the anchor's top or its bottom on the anchor's bottom, and the two differ, so the edge reading is undefined; center alignment puts it one row above and below the anchor's span")
+      (input (grid
+        (0 0 0 0 0 2 0 0 0 0 0 0)
+        (0 0 0 0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 2 2 2 0 0 0 0 0)
+        (0 8 0 0 2 2 2 0 0 0 0 0)
+        (8 8 8 0 2 0 2 0 0 0 0 0)
+        (8 0 8 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 0 4 4 4 0)
+        (0 0 0 0 0 0 0 0 4 0 4 0)))
+      (output $AlignEdges undefined)
+      (output $AlignCenter (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 0 0 0 0 0 0)
+        (0 8 0 0 2 2 2 0 0 4 0 0)
+        (8 8 8 0 2 2 2 0 4 4 4 0)
+        (8 0 8 0 2 2 2 0 4 0 4 0)
+        (0 0 0 0 2 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $s
+  (alt $AxisFromLayout
+    (witness stacked-copies variant $AxisFromLayout
+      (relaxed disjoint-columns)
+      (separates "the copies are stacked in disjoint rows and share columns; a vertical slide makes the copies collide and is undefined; the axis from the layout is horizontal, and every copy slides into the anchor's columns")
+      (input (grid
+        (0 0 8 0 8 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0)
+        (0 0 8 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0 0)
+        (2 0 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 4 0 4 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 4 0 4 0 0)))
+      (output $StoredAxis undefined)
+      (output $AxisFromLayout (grid
+        (0 0 8 0 8 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0)
+        (0 0 8 0 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 2 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0)
+        (0 0 2 0 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 4 0 4 0 0 0 0)
+        (0 0 0 4 0 0 0 0 0)
+        (0 0 4 0 4 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "colors 8 and 2 each outnumber color 0; the stored background aligns the 2 copy with the anchor; the dominant-color derivation gives two colors and is undefined")
+      (input (grid
+        (8 8 0 0)
+        (8 8 2 2)
+        (8 8 2 2)
+        (0 0 2 2)))
+      (output &background=$Stored (grid
+        (8 8 2 2)
+        (8 8 2 2)
+        (8 8 2 2)
+        (0 0 0 0)))
+      (output &background=$Derived undefined))))

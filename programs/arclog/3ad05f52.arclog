@@ -1,0 +1,101 @@
+;; inputs 4be6d26d7d356a0650090ae2f5de079b33c39e86629922cf19019a7091ef60ef programs/solvers/3ad05f52.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3ad05f52
+
+(DET &wall SharedColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(RULE &door
+  (input *P)
+  (NOT (&wall_cell P))
+  (opposite *D (:Opp *D_opp))
+  (neighbor P D *Q)
+  (&wall_cell (:P Q))
+  (neighbor P (:D D_opp) (:Q *Q_opp))
+  (&wall_cell (:P Q_opp)))
+
+;; The regions the walls close off. A doorway is cut out, so no region runs
+;; through one.
+(INIT &rooms Connectivity
+  (node (P)
+    (input *P)
+    (NOT (&wall_cell P))
+    (NOT (&door P))))
+
+(INIT &widest_count Cardinality
+  (key ((&rooms.component *P ^Id))
+    (member ((:m P))
+      (&rooms.component *P Id))))
+
+(DET &bg DominantColor)
+
+(RULE &paint
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall (:C Col))))
+
+;; The ground the buildings stand on: the region the most cells belong to.
+(INIT &widest Order
+  (member ((:t Id))
+    (&widest_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&widest_count.size (:key *Id) *N)))
+
+(RULE &outside
+  (&rooms.component *P *Id)
+  (&widest.maximal (:t Id)))
+
+(RULE &outward_door
+  (&door *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&outside (:P Q)))
+
+(INIT &span_box BoundingBox
+  (cell (P)
+    (&outward_door *P)))
+
+(RULE &crossing
+  (&span_box.box *B)
+  (&outside *P)
+  (inside (:A P) B))
+
+(ALTS $choice "the ground the outward doorways carry paint over" $Span
+  (ALT $Duct
+    (RULE &opposed
+      (&outward_door *P *D)
+      (&outward_door (:P *P2) (:D *D_opp))
+      (opposite D (:Opp D_opp))
+      (nearer D (:P P2) (:Q P)))
+
+    (INIT &duct_box BoundingBox
+      (key ((&opposed ^P ^P2))
+        (cell ((:P P3))
+          (OR ((= *P3 P))
+              ((= P3 P2))))))
+
+    (RULE &crossing
+      (&duct_box.box *B)
+      (&outside *P)
+      (inside (:A P) B))))
+
+(INIT &flood Flood
+  (node (P)
+    (OR ((input *P)
+         (NOT (&wall_cell P))
+         (NOT (&outside P)))
+        ((&crossing P))))
+  (source (P)
+    (input *P *Col)
+    (&paint Col)))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (IF ((&flood.reached P))
+      ((&paint *Col))
+      ((= Col Col2))))
+
+(OUT (&output ^P ^Col))

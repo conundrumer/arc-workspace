@@ -1,0 +1,113 @@
+;; inputs af2116c3d8ba34beb23805093efccda6cd1b671e234b29f26144a2f28083a9d6 programs/solvers/31f7f899.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 31f7f899
+
+(DET &bg DominantColor)
+
+(DET &spine UnchangedColor)
+
+;; A bar is a connected region of one color, spine and background aside.
+(INIT &bars Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&spine (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&spine (:C Col))))))
+
+;; The end of the spine the shortest bar stands at. The bars are ordered along its axis and reach across it.
+(DET &short_dir DirDomain)
+
+(RULE &order_axis
+  (&short_dir *D)
+  (axis_of D *A))
+
+(RULE &cell_split
+  (input *P)
+  (&order_axis *A)
+  (split P A *Along *Across))
+
+(RULE &foot
+  (&bars.component *P *Id)
+  (&cell_split P *Along))
+
+;; The bars in order along the spine, counted from each end.
+(INIT &order Order
+  (key ((&order_axis ^A)
+        (axis_of ^D A))
+    (before ((:a Id) (:b Id2))
+      (&foot *Id *Along)
+      (&foot (:Id *Id2) (:Along *Along2))
+      (!= Id Id2)
+      (margin (:B Along) D (:K *K1))
+      (margin (:B Along2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Id))
+    (&foot *Id *Along)))
+
+(RULE &order_pos
+  (&order.rank (:key *A *D) (:t *M) (:R *R1))
+  (&order.dual_rank (:key A D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &reach
+  (&bars.component *P *Id)
+  (&cell_split P *Across))
+
+(RULE &rank
+  (&order_pos (:M *Id) *P_pos)
+  (&short_dir *D)
+  (dist_pair (:P P_pos) D (:K *Near) (:K2 *Far)))
+
+(INIT &size Cardinality
+  (key ((&reach ^Id *Across))
+    (member ((:m Across))
+      (&reach Id *Across))))
+
+(INIT &by_reach Order
+  (member ((:t Id))
+    (&bars.component *Id))
+  (score ((:t Id) (:S N))
+    (&size.size (:key *Id) *N)))
+
+;; A bar and its reach stand at the same place in their orders: no more
+;; smaller reaches than bars behind it, no more bigger ones than bars ahead.
+(RULE &paint
+  (&bars.component *Id (:key *Col))
+  (&foot Id *Along)
+  (&rank Id (:Near *N) (:Far *F))
+  (&by_reach.rank (:t *Id2) (:R *N2))
+  (<= N2 N)
+  (&by_reach.dual_rank (:t Id2) (:R *F2))
+  (<= F2 F)
+  (&reach (:Id Id2) *Across)
+  (compose (:A Along) (:B Across) (:C *P)))
+
+(ALTS $choice "Two hypotheses on the exchange" $Spans
+  (ALT $Profile
+    ;; How many bars cover each line.
+    (INIT &covers Cardinality
+      (key ((&reach *Id ^Across))
+        (member ((:m Id))
+          (&reach *Id Across))))
+
+    ;; A line with C covers goes to the C bars nearest the far end of the spine.
+    (RULE &paint
+      (&bars.component *Id (:key *Col))
+      (&foot Id *Along)
+      (&rank Id (:Far *F))
+      (&covers.size (:key *Across) (:N *C))
+      (< F C)
+      (compose (:A Along) (:B Across) (:C *P)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&paint P))
+       (OR ((NOT (&spine (:C Col_in)))
+            (&bg (:C Col)))
+           ((&spine (:C Col_in))
+            (= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,213 @@
+;; inputs 9e57413ce8ac64378f4969e8141155fa4455e697dba4810786e618497cc62d3b programs/solvers/f18ec8cc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f18ec8cc
+
+(INPUT stripes "the grid is cut, along the axis of `from` (DIR_L), into full-length stripes, each a run of whole lines filled by one background color, the stripes' colors pairwise distinct."
+
+  ;; The edge from which stripes move to the opposite end.
+  (DET &from DirDomain)
+
+  (RULE &cell_line
+    (input *P *Col)
+    (&from *D)
+    (axis_of D *A)
+    (split P A (:Along *L) (:Across *P_across)))
+
+  ;; The color of a line all of one color.
+  (INIT &solid Singleton
+    (key ((&cell_line *Col ^L))
+      (member ((:v Col))
+        (&cell_line *Col L)))))
+
+(INPUT dots "inside a stripe, single cells of other colors, each the background color of another stripe; a stripe's two edge lines hold no dot, so each line's commonest color is its stripe's color.")
+
+(OUTPUT cycle-stripes "the output has the input's size, and its stripes are the input's stripes, each copied cell for cell with its dots, in their input order moved `shift` places toward `from`, the stripes that pass that edge wrapping round to the opposite end."
+
+  (INIT &line_mode_count Cardinality
+    (key ((&cell_line *P ^Col ^L))
+      (member ((:m P))
+        (&cell_line *P Col L))))
+
+  ;; Each line's commonest color.
+  (INIT &line_mode Order
+    (key ((&line_mode_count.size (:key ^L *Col)))
+      (member ((:t Col))
+        (&line_mode_count.size (:key L *Col)))
+      (score ((:t Col) (:S N))
+        (&line_mode_count.size (:key L *Col) *N))))
+
+  ;; A line's commonest color, unique or clashing.
+  (INIT &line_color Singleton
+    (key ((&line_mode.maximal (:key ^L) (:t *Col)))
+      (member ((:v Col))
+        (&line_mode.maximal (:key L) (:t *Col)))))
+
+  (RULE &cut
+    (&from *D)
+    (&line_color.value (:key (:L *L1)) (:v *C1))
+    (&line_color.value (:key *L) (:v *C2))
+    (neighbor (:P L) D (:Q L1))
+    (!= C1 C2))
+
+  ;; A line's stripe index: the cuts between it and the `from` edge.
+  (INIT &stripe_index Cardinality
+    (key ((&cell_line ^L))
+      (member ((:m L_cut))
+        (&cut (:L *L_cut))
+        (&from *D)
+        (OR ((= L_cut L))
+            ((nearer D (:P L_cut) (:Q L))))))
+    (domain ()))
+
+  (RULE &bad
+    (&line_color.plural (:key *L))
+    (&stripe_index.size (:key L) *N))
+
+  (DET &edge_mismatch
+    (&cell_line *E *Col *L (:P_across *X))
+    (&cell_line E (:P *Q) (:L *L_out) (:P_across X))
+    (&from *D)
+    (margin (:B L_out) D (:K 0))
+    (ex_output E (:P Q) (:Col *Col_out))
+    (!= Col Col_out))
+
+  (DET &lands_at_edge
+    (&cell_line *E *L)
+    (ex_output E)
+    (NOT (&edge_mismatch E L)))
+
+  (DET &nearer_landing
+    (&lands_at_edge *E *L)
+    (&lands_at_edge E (:L *L2))
+    (&from *D)
+    (nearer D (:P L2) (:Q L)))
+
+  (DET &lead
+    (&lands_at_edge *E *L)
+    (NOT (&nearer_landing E L)))
+
+  ;; The color of a line all of one color.
+  (INIT &solid2 Singleton
+    (key ((&cell_line ^E *Col ^L))
+      (member ((:v Col))
+        (&cell_line E *Col L))))
+
+  ;; The stripes that pass the `from` edge: the colors of the solid lines before the lead line.
+  (INIT &passed Cardinality
+    (key ((&lead ^E))
+      (member ((:m Col))
+        (&lead E *L)
+        (&solid2.value (:key E (:L *L2)) (:v *Col))
+        (&from *D)
+        (nearer D (:P L2) (:Q L)))
+      (domain ()
+        (&lead E))))
+
+  (DET &shift_contradicted
+    (&passed.size *N)
+    (ex_output *E)
+    (NOT (&passed.size (:key E) N)))
+
+  (DET &shift
+    (&passed.size *N)
+    (NOT (&shift_contradicted N)))
+
+  ;; Stripe n2 steps toward `from` to n1, and the stripe at the `from` edge wraps to the far end.
+  (INIT &stripe_cycle Walk
+    (successor ((:p N2) (:p_next N1))
+      (OR ((&cut (:L *L2))
+           (&from *D)
+           (neighbor (:P L2) D (:Q *L1))
+           (&stripe_index.size (:key (:L L1)) (:N *N1))
+           (&stripe_index.size (:key (:L L2)) (:N *N2)))
+          ((&from (:D *D2))
+           (opposite (:D D2) (:Opp *D_far))
+           (&stripe_index.size (:key (:L *L12)) (:N N2))
+           (margin (:B L12) (:D D2) (:K 0))
+           (&stripe_index.size (:key (:L *L22)) (:N N1))
+           (margin (:B L22) (:D D_far) (:K 0)))))
+    (steps ((:N K))
+      (&shift (:N *K))))
+
+  ;; The output lines in order: by the slot each stripe takes, then by place within the stripe.
+  (INIT &line_order Order
+    (member ((:t L))
+      (&stripe_index.size (:key *L)))
+    (score ((:t L) (:S N_slot))
+      (&stripe_index.size (:key *L) *N)
+      (&shift (:N *K))
+      (&stripe_cycle.walk (:p0 N) (:N K) (:p *N_slot)))
+    (secondary_score ((:t L) (:S K))
+      (&stripe_index.size (:key *L))
+      (&from *D)
+      (margin (:B L) D *K)))
+
+  ;; The combined width of the first `shift` stripes.
+  (INIT &moved Cardinality
+    (member ((:m L))
+      (&stripe_index.size (:key *L) *N)
+      (&shift (:N *K))
+      (< N K)))
+
+  ;; The lines step toward `from`, and the line at the `from` edge wraps to the far end.
+  (INIT &line_cycle Walk
+    (successor ((:p L2) (:p_next L1))
+      (OR ((&cell_line (:L *L2))
+           (&from *D)
+           (neighbor (:P L2) D (:Q *L1))
+           (&cell_line (:L L1)))
+          ((&from (:D *D2))
+           (opposite (:D D2) (:Opp *D_far))
+           (&cell_line (:L L2))
+           (margin (:B L2) (:D D2) (:K 0))
+           (&cell_line (:L L1))
+           (margin (:B L1) (:D D_far) (:K 0)))))
+    (steps ((:N W))
+      (&moved.size (:N *W)))))
+
+(ALTS $p "How the stripes are found" $Commonest
+  (ALT $SolidLines
+    (INPUT stripes "a cut falls between two adjacent solid lines of different colors, and the stripes are the runs between cuts; undefined where a run it reads holds solid lines of two colors."
+      (RULE &cut
+        (&from *D)
+        (&solid.value (:key (:L *L1)) (:v *C1))
+        (&solid.value (:key *L) (:v *C2))
+        (neighbor (:P L) D (:Q L1))
+        (!= C1 C2))
+
+      ;; The solid lines of one run share their color.
+      (INIT &run_color Singleton
+        (key ((&stripe_index.size (:key *L) ^N)
+              (&solid.value (:key L) (:v *Col)))
+          (member ((:v Col))
+            (&stripe_index.size (:key *L) N)
+            (&solid.value (:key L) (:v *Col)))))
+
+      (RULE &bad
+        (&run_color.plural (:key *N))))
+    (INPUT dots "no claim; the parse reads no line's commonest color.")))
+
+(ALTS $r "How the stripe sequence is reordered" $Cycle
+  (ALT $RotateColumns
+    (OUTPUT cycle-stripes "only the first `shift` stripes at the `from` edge are found, and the lines are rotated toward `from` by their combined width; undefined where the parse cannot read one of those stripes."
+      (RULE &bad_moved
+        (&bad *N)
+        (&shift (:N *K))
+        (< N K)))
+    (RULE &output
+      (NOT (&bad_moved))
+      (&cell_line *Col *L (:P_across *X))
+      (&moved.size (:N *W))
+      (&line_cycle.walk (:p0 L) (:N W) (:p *L_out))
+      (compose (:A L_out) (:B X) (:C *P)))))
+
+(RULE &output
+  (NOT (&bad))
+  (&cell_line *Col *L (:P_across *X))
+  (&line_order.rank (:t L) *R)
+  (&from *D)
+  (&cell_line (:L *L_out))
+  (margin (:B L_out) D (:K R))
+  (compose (:A L_out) (:B X) (:C *P)))
+
+(OUT (&output ^P ^Col))

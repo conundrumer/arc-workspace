@@ -1,0 +1,92 @@
+;; inputs 002cad2342e332a4c96e6ff01c49420d1abb6694c9f5941bdbfddd08d0c5b68c programs/solvers/84551f4c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 84551f4c
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The edge the bars stand on.
+(DET &ground DirDomain)
+
+(RULE &up
+  (&ground (:D *G))
+  (opposite (:D G) (:Opp *D)))
+
+;; The run of ink rising from each base.
+(INIT &rise Ray
+  (source (P)
+    (&ink *P))
+  (node (P)
+    (&ink *P))
+  (dir (D)
+    (&up *D)))
+
+(RULE &rise_run_full
+  (&rise.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+  (!= N 0))
+
+;; The color whose bars topple on their own.
+(DET &pusher RarestColor)
+
+;; The sense a bar turns in when it topples.
+(DET &topple SenseDomain)
+
+(RULE &fall
+  (&up (:D *U))
+  (&topple *S)
+  (turn S (:D U) (:D2 *D)))
+
+(RULE &base
+  (&ink *P)
+  (&ground (:D *G))
+  (margin (:B P) (:D G) (:K 0)))
+
+(RULE &bar_cell
+  (&base (:P *P_base))
+  (OR ((&rise_run_full (:V1 P_base) (:V3 *P)))
+      ((= P P_base))))
+
+(RULE &fallen
+  (&bar_cell *P_base (:P *P2))
+  (input (:P P2) *Col)
+  (&topple *S)
+  (c4_turn S (:T *R4))
+  (relative (:Base P_base) (:X P2) (:X_rel *V))
+  (apply (:D R4) (:P V) (:P_out *V2))
+  (compose (:A P_base) (:B V2) (:C *P)))
+
+;; The bars that topple: the pusher's bars, then each standing bar that a
+;; toppled bar's landed cell touches in the fall direction.
+(INIT &chain Propagation
+  (source ((:n P_base))
+    (&base (:P *P_base))
+    (input (:P P_base) *Col)
+    (&pusher (:C Col)))
+  (edge ((:a P_base) (:b P_base2))
+    (&fallen *P_base *P)
+    (&fall *D)
+    (neighbor P D *Q)
+    (&bar_cell (:P_base *P_base2) (:P Q))))
+
+(RULE &landed
+  (&chain.reached (:n *P_base))
+  (&fallen P_base *P *Col))
+
+(RULE &cleared
+  (&chain.reached (:n *P_base))
+  (&bar_cell P_base *P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&landed P *Col))
+      ((NOT (&landed P))
+       (&cleared P)
+       (&bg (:C Col)))
+      ((NOT (&landed P))
+       (NOT (&cleared P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

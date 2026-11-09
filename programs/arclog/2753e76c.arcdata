@@ -1,0 +1,7 @@
+;; inputs 55a673327feedda6f17d1dc75e8a973e538bdceedc5c91e800ecfa1c653433ed programs/solvers/2753e76c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2753e76c
+
+(param &bg Color (0))
+(param &corner DiagDir (DIAG_TR))
+(param &rank_axis Axis (AXIS_V))

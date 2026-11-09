@@ -1,0 +1,272 @@
+;; inputs 88c84d757d012e8f90627384d9f0912d646c010cee1f37664fa7c8641de557b4 programs/solvers/351d6448.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 351d6448
+
+(param &divider_color Color (5))
+(param &time_dir Dir (DIR_B))
+(param &divider_width number (1))
+(param &panel_count number (4))
+
+(exclude ($ObjectMotion $StepPerLine) "$ObjectMotion read per line fails Fit at test0, where the front of row 1 stops at a 0 cell and shows no steady advance.")
+(exclude ($DividerWidthFromLines &valid_cut=$Stored) "the stored cut fixes the width, so these cases are equivalent to those that take $StoredWidth")
+(exclude ($AnyPanelCount &valid_cut=$Stored) "the stored cut fixes the count, so these cases are equivalent to those that take $StoredCount")
+(exclude (&divider_color=$Derived &valid_cut=$Stored) "the stored cut fixes the color, so these cases are equivalent to those that store it")
+
+(alts $reading
+  (alt $FirstChange
+    (witness front-start ordinary concept
+      (separates "the 3 edge starts one column later than in the test, so the first change misses row 0: the concept moves that change and leaves (0,6) 2; $ObjectMotion advances the edge and recolors (0,6) 3")
+      (input (grid
+        (0 0 3 0 0 0 2 0 0 0 2 0 0)
+        (0 3 3 2 0 2 2 2 0 2 2 2 0)
+        (3 3 3 2 2 2 2 2 2 2 2 2 2)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 3 0 0 0 2 0 0 0 2 0 0)
+        (0 3 3 3 0 2 2 2 0 2 2 2 0)
+        (3 3 3 3 2 2 2 2 2 2 2 2 2)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 3 0 0 0 2 0 0 0 2 0 0)
+        (0 3 3 3 0 2 2 2 0 2 2 2 0)
+        (3 3 3 3 3 2 2 2 2 2 2 2 2)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 3 0 0 0 2 0 0 0 2 0 0)
+        (0 3 3 3 0 3 2 2 0 2 2 2 0)
+        (3 3 3 3 3 3 2 2 2 2 2 2 2)))
+      (output ($ObjectMotion $EveryStep) (grid
+        (0 0 3 0 0 0 3 0 0 0 2 0 0)
+        (0 3 3 3 0 3 3 2 0 2 2 2 0)
+        (3 3 3 3 3 3 3 2 2 2 2 2 2)))
+      (output ($FirstChange $EveryStep) ($FirstChange $WholePanel) (grid
+        (0 0 3 0 0 0 2 0 0 0 2 0 0)
+        (0 3 3 3 0 3 3 2 0 2 2 2 0)
+        (3 3 3 3 3 3 3 2 2 2 2 2 2)))
+      (output ($StepFromFirstTwo $StepPerLine) undefined)
+      (output ($ObjectMotion $StepFromFirstTwo)
+        (grid
+          (0 0 3 0 0 0 3 0 0 0 2 0 0)
+          (0 3 3 3 0 3 3 2 0 2 2 2 0)
+          (3 3 3 3 3 3 3 2 2 2 2 2 2))
+        (grid
+          (0 0 3 0 0 0 2 0 0 0 2 0 0)
+          (0 3 3 3 0 3 3 2 0 2 2 2 0)
+          (3 3 3 3 3 3 3 2 2 2 2 2 2))))))
+
+(alts $check
+  (alt $StepFromFirstTwo
+    (witness uneven-steps foreign $StepFromFirstTwo
+      (relaxed steady-step)
+      (separates "train0 with the last frame's object one column further, so the steps are 1, 1, 2: the concept finds no step every frame follows and is undefined; $StepFromFirstTwo takes step 1 from the first two changes and returns the last frame unchanged; $ObjectMotion & $StepFromFirstTwo translates the last frame's object one column on")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $EveryStep undefined)
+      (output ($FirstChange $StepFromFirstTwo) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($ObjectMotion $StepFromFirstTwo) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $scope
+  (alt $StepPerLine
+    (witness two-speeds variant $StepPerLine
+      (relaxed steady-step)
+      (separates "row 1 holds an object moving one column per frame and row 3 a run of 1 growing two columns per frame: the concept finds no one step and is undefined; $StepPerLine steps each row by its own count")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $WholePanel undefined)
+      (output $StepPerLine (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 1 1 1 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $width
+  (alt $DividerWidthFromLines
+    (witness divider-2-wide variant $DividerWidthFromLines
+      (relaxed panels)
+      (separates "train0 with each divider two rows wide: the concept is undefined; $DividerWidthFromLines cuts at the two-row dividers")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $StoredWidth undefined)
+      (output $DividerWidthFromLines (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $panels
+  (alt $AnyPanelCount
+    (witness five-panels variant $AnyPanelCount
+      (relaxed panels)
+      (separates "train0 with a fifth frame: the concept expects four panels and is undefined; $AnyPanelCount continues the motion past the fifth")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $StoredCount undefined)
+      (output $AnyPanelCount (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &divider_color
+  (alt &divider_color=$Derived
+    (witness divider_color=SharedColor variant &divider_color=$Derived
+      (relaxed panels)
+      (separates "train0 with dividers of 8: the concept finds no full line of 5 and is undefined; divider_color=SharedColor cuts at the lines of 8")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output (&divider_color=$Stored &valid_cut=$Derived) undefined)
+      (output &valid_cut=$Stored &divider_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &step_dir
+  (alt &step_dir=$Stored
+    (witness step_dir=stored variant &step_dir=$Stored
+      (relaxed steady-step)
+      (separates "a 3 region advances one column per frame over a 2 shape whose top edge rises one row per column, so the front of each step's recolorings advances toward T as well as toward R: the concept reads both sides and no motion matches every step, so it is undefined; step_dir=stored keeps the side R and advances the 3 region one more column")
+      (input (grid
+        (0 0 0 0 2 2 2 2 2 2 2 2 2)
+        (0 0 0 2 2 2 2 2 2 2 2 2 2)
+        (0 0 2 2 2 2 2 2 2 2 2 2 2)
+        (0 2 2 2 2 2 2 2 2 2 2 2 2)
+        (3 2 2 2 2 2 2 2 2 2 2 2 2)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 2 2 2 2 2 2 2 2 2)
+        (0 0 0 2 2 2 2 2 2 2 2 2 2)
+        (0 0 2 2 2 2 2 2 2 2 2 2 2)
+        (0 3 2 2 2 2 2 2 2 2 2 2 2)
+        (3 3 2 2 2 2 2 2 2 2 2 2 2)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 2 2 2 2 2 2 2 2 2)
+        (0 0 0 2 2 2 2 2 2 2 2 2 2)
+        (0 0 3 2 2 2 2 2 2 2 2 2 2)
+        (0 3 3 2 2 2 2 2 2 2 2 2 2)
+        (3 3 3 2 2 2 2 2 2 2 2 2 2)
+        (5 5 5 5 5 5 5 5 5 5 5 5 5)
+        (0 0 0 0 2 2 2 2 2 2 2 2 2)
+        (0 0 0 3 2 2 2 2 2 2 2 2 2)
+        (0 0 3 3 2 2 2 2 2 2 2 2 2)
+        (0 3 3 3 2 2 2 2 2 2 2 2 2)
+        (3 3 3 3 2 2 2 2 2 2 2 2 2)))
+      (output $FirstChange &step_dir=$Derived undefined)
+      (output ($ObjectMotion &step_dir=$Stored) (grid
+        (0 0 0 0 3 2 2 2 2 2 2 2 2)
+        (0 0 0 3 3 2 2 2 2 2 2 2 2)
+        (0 0 3 3 3 2 2 2 2 2 2 2 2)
+        (0 3 3 3 3 2 2 2 2 2 2 2 2)
+        (3 3 3 3 3 2 2 2 2 2 2 2 2))))))
+
+(alts &valid_cut
+  (alt &valid_cut=$Stored
+    (witness valid_cut=stored variant &valid_cut=$Stored
+      (relaxed panels)
+      (separates "`valid_cut=stored` from the derived value: train 0 with 5 and 1 swapped")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 2 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output (&divider_color=$Stored &valid_cut=$Derived) undefined)
+      (output &valid_cut=$Stored &divider_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))

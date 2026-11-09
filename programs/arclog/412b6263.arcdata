@@ -1,0 +1,10 @@
+;; inputs 7b2695f5e3ec2e252ae7756fef6d7ede1dc1adc10cf4f9fa39bd8415be5d5a1d programs/solvers/412b6263.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 412b6263
+
+(param &bg Color (7))
+(param &line_col Color (1))
+(param &xform D4 (D4_CC))
+(param &line_width number (1))
+(param &tiles (Axis number) (AXIS_V 2) (AXIS_H 1))
+(param &stack_axis Axis (AXIS_V))

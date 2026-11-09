@@ -1,0 +1,166 @@
+;; inputs c98c01d6921c28e0f5490c1dba7d841ddb40dad845bc9f78f67884c0df5b602d programs/solvers/de809cff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; de809cff
+
+(param &background Color (0))
+(param &mark_color Color (8))
+(param &ring_reach number (1))
+
+(alts $f
+  (alt $UnderColorHoles
+    (witness under-color-stray ordinary any
+      (separates "a cell of the beneath rectangle's color inside the overlap, where the top rectangle shows: the concept fills it as a stray, and $UnderColorHoles marks it as a pinhole ringed in the beneath color")
+      (input (grid
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 2 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)
+        (0 0 0 0 2 2 2 2 0 2 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)))
+      (output $FillForeign (grid
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 1 8 1 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)))
+      (output $UnderColorHoles (grid
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 2 2 2 2 2 2 2 2)
+        (1 1 1 1 2 8 2 2 2 2 2 2)
+        (1 1 1 1 2 2 2 2 2 2 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 1 8 1 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2))))))
+
+(alts $h
+  (alt $NeighborHoles
+    (witness corner-pinhole ordinary concept
+      (separates "a pinhole at a rectangle's corner, with two cells of its rectangle beside it: the concept marks it and rings it, and $NeighborHoles fills it as part of the rectangle")
+      (input (grid
+        (1 1 1 1 1 1 0 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)
+        (0 0 0 0 2 2 2 2 0 2 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)))
+      (output $AllHoles (grid
+        (1 1 1 1 1 2 8 2 0 0 0 0)
+        (1 1 1 1 1 2 2 2 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 1 8 1 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2)))
+      (output $NeighborHoles (grid
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 0 0 0 0 0)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (1 1 1 1 1 1 1 2 2 2 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 1 8 1 2 2)
+        (0 0 0 0 2 2 2 1 1 1 2 2)
+        (0 0 0 0 2 2 2 2 2 2 2 2))))))
+
+(alts $rc
+  (alt $OverlapRingColor
+    (witness four-colors borderline $OverlapRingColor
+      (relaxed two-colors)
+      (separates "two separate overlapping pairs of rectangles in four colors: the concept, whose ring color is the other of two colors, is undefined, and $OverlapRingColor rings each pinhole in the color of the rectangle its rectangle overlaps")
+      (input (grid
+        (2 2 2 2 2 2 2 0 0 0 0 0)
+        (2 2 2 2 2 0 2 0 0 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0 0 0)
+        (2 2 2 2 1 1 1 1 1 1 1 1)
+        (2 2 2 2 1 1 1 1 1 1 1 1)
+        (2 2 2 2 1 1 1 1 1 0 1 1)
+        (2 2 2 2 1 1 1 1 1 1 1 1)
+        (0 0 0 0 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (4 4 4 4 4 4 4 0 0 0 0 0)
+        (4 4 4 4 4 4 4 0 0 0 0 0)
+        (4 4 4 4 4 4 4 0 0 0 0 0)
+        (4 4 4 4 3 3 3 3 3 3 3 3)
+        (4 4 0 4 3 3 3 3 3 3 3 3)
+        (4 4 4 4 3 3 3 3 3 0 3 3)
+        (4 4 4 4 3 3 3 3 3 3 3 3)))
+      (output $OtherColor undefined)
+      (output $OverlapRingColor (grid
+        (2 2 2 2 1 1 1 0 0 0 0 0)
+        (2 2 2 2 1 8 1 0 0 0 0 0)
+        (2 2 2 2 1 1 1 0 0 0 0 0)
+        (2 2 2 2 1 1 1 1 1 1 1 1)
+        (2 2 2 2 1 1 1 1 2 2 2 1)
+        (2 2 2 2 1 1 1 1 2 8 2 1)
+        (2 2 2 2 1 1 1 1 2 2 2 1)
+        (0 0 0 0 1 1 1 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (4 4 4 4 4 4 4 0 0 0 0 0)
+        (4 4 4 4 4 4 4 0 0 0 0 0)
+        (4 4 4 4 4 4 4 0 0 0 0 0)
+        (4 3 3 3 3 3 3 3 3 3 3 3)
+        (4 3 8 3 3 3 3 3 4 4 4 3)
+        (4 3 3 3 3 3 3 3 4 8 4 3)
+        (4 4 4 4 3 3 3 3 4 4 4 3))))))
+
+(alts $cl
+  (alt $OwnRingWins
+    (witness ring-clash borderline any
+      (relaxed rings-apart)
+      (separates "pinholes of the two colors two columns apart across the colors' boundary, whose rings share three cells: the concept is undefined, $OwnRingWins gives those cells the ring of the pinhole in their own rectangle, and $ForeignRingWins the other ring")
+      (input (grid
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 0 2 0 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)))
+      (output $ClashUndefined undefined)
+      (output $ForeignRingWins (grid
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 2 2 2 1 1 2 2 2)
+        (1 1 1 1 2 8 2 8 1 2 2 2)
+        (1 1 1 1 2 2 2 1 1 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)))
+      (output $OwnRingWins (grid
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 1 1 0 0 0 0)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 2 2 1 1 1 2 2 2)
+        (1 1 1 1 2 8 1 8 1 2 2 2)
+        (1 1 1 1 2 2 1 1 1 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)
+        (1 1 1 1 1 1 2 2 2 2 2 2)))))
+  (alt $ForeignRingWins
+    (witness ring-clash borderline any)))

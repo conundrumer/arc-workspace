@@ -1,0 +1,170 @@
+;; inputs bec382a4fc395bb69a64f15987451e5af8a886c5e99d6c86c64405954bb5970a programs/solvers/67e490f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67e490f4
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color; everything else is ink.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+;; Same-colored ink objects.
+(INIT &obj Connectivity
+  (key ((input *P ^Col)
+        (NOT (&field.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&field.maximal (:t Col))))))
+
+(RULE &field_cell
+  (input *P *Col)
+  (&field.maximal (:t Col)))
+
+;; The field regions closed off from the grid edge.
+(INIT &closed Enclosure
+  (cell (P)
+    (&field_cell *P)))
+
+(RULE &stencil
+  (&closed.enclosed *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&obj.component (:P Q) *Id))
+
+(INIT &obj_shape BoundingBox
+  (key ((&obj.component *P ^Id))
+    (cell (P)
+      (&obj.component *P Id))))
+
+;; The group under which a piece and a cutout are the same shape.
+(DET &shape_sym SymDomain)
+
+(ALTS $s "what marks the stencil out among the objects" $Bordering
+  (ALT $Largest
+    (INIT &biggest_count Cardinality
+      (key ((&obj.component *P ^Id))
+        (member ((:m P))
+          (&obj.component *P Id))))
+
+    (INIT &biggest Order
+      (member ((:t Id))
+        (&biggest_count.size (:key *Id)))
+      (score ((:t Id) (:S N))
+        (&biggest_count.size (:key *Id) *N)))
+
+    (RULE &stencil
+      (&biggest.maximal (:t *Id)))))
+
+(ALTS $r "what a cutout is" $Box
+  (ALT $Closed
+    ;; The cells of each cutout, labeled by component, from one instance for both
+    ;; readings.
+    (INIT &cutout Connectivity
+      (node (P)
+        (&closed.enclosed *P)))))
+
+(INIT &stencil_box BoundingBox
+  (cell (P)
+    (&stencil *Id)
+    (&obj.component *P Id)))
+
+;; The cells of each cutout, labeled by component, from one instance for both
+;; readings.
+(INIT &cutout Connectivity
+  (node (P)
+    (&stencil_box.box *B)
+    (&field_cell *P)
+    (inside (:A P) B)))
+
+(INIT &cut_shape BoundingBox
+  (key ((&cutout.component *P ^Id))
+    (cell (P)
+      (&cutout.component *P Id))))
+
+(INIT &cong Agreement
+  (key ((OR ((&cut_shape.cell (:key (:Id ^C)) *P)
+             (&cut_shape.box (:key (:Id C)) *B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel *P_inner))
+             (&obj_shape.box (:key (:Id ^O))))
+            ((&obj_shape.cell (:key (:Id O)) P)
+             (&obj_shape.box (:key (:Id O)) B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel P_inner))
+             (&cut_shape.box (:key (:Id C))))))
+    (source ((:P P_inner))
+      (&cut_shape.cell (:key (:Id C)) *P)
+      (&cut_shape.box (:key (:Id C)) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&obj_shape.box (:key (:Id O))))
+    (target ((:P P_inner))
+      (&obj_shape.cell (:key (:Id O)) *P)
+      (&obj_shape.box (:key (:Id O)) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&cut_shape.box (:key (:Id C))))))
+
+(RULE &cong_src
+  (&cut_shape.cell (:key *Id) (:P *P2))
+  (&cut_shape.box (:key Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (&obj_shape.box (:key (:Id *Obj))))
+
+(RULE &cong_dst
+  (&obj_shape.cell (:key (:Id *Obj)) (:P *P2))
+  (&obj_shape.box (:key (:Id Obj)) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (&cut_shape.box))
+
+(RULE &over
+  (&cong_dst *Obj (:P *Q))
+  (&cut_shape.box (:key *Id))
+  (d4_inverse *D (:D_inv *D_back))
+  (apply (:D D_back) (:P Q) (:P_out *P))
+  (NOT (&cong_src Id Obj P)))
+
+(RULE &onto
+  (&cong_src *Id *Obj)
+  (d4_elem *D)
+  (NOT (&cong.mismatch (:key (:C Id) (:O Obj)) D))
+  (NOT (&over Id Obj D)))
+
+(INIT &fill_count Cardinality
+  (key ((&onto (:Id ^C) (:Obj *O) *D)
+        (&shape_sym *S)
+        (sym_member S D)
+        (&obj.component (:key ^Col) (:Id O)))
+    (member ((:m O))
+      (&onto (:Id C) (:Obj *O) *D)
+      (&shape_sym *S)
+      (sym_member S D)
+      (&obj.component (:key Col) (:Id O)))))
+
+;; The commonest color among the objects of the cutout's shape. The stencil
+;; surrounds its cutouts, so it never has a cutout's shape.
+(INIT &fill Order
+  (key ((&fill_count.size (:key (:C ^Id) *Col)))
+    (member ((:t Col))
+      (&fill_count.size (:key (:C Id) *Col)))
+    (score ((:t Col) (:S N))
+      (&fill_count.size (:key (:C Id) *Col) *N))))
+
+(RULE &output
+  (&stencil_box.box *B)
+  (OR ((&obj.component (:key *Col) (:P *P2) *Id)
+       (&stencil Id))
+      ((&cutout.component (:P P2) (:Id *Hole))
+       (&fill.maximal (:key (:Id Hole)) (:t Col))))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

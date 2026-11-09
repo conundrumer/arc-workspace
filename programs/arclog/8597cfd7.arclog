@@ -1,0 +1,151 @@
+;; inputs 4c21e3d371377677d0b2de1bf1fd65a277edecb85605efe9ecd8d1bbfb5a7ee8 programs/solvers/8597cfd7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8597cfd7
+
+(DET &sep VanishedColor)
+
+(DET &side DirDomain)
+
+(RULE &panels_divider
+  (input *P *Col)
+  (&sep (:C Col))
+  (&side *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&panels_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The panels the separator cuts, stacked along &side's axis.
+(INIT &panels_rank Order
+  (key ((OR ((&panels_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panels_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panels_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &out_dim ConstOutDim)
+
+(RULE &side_of
+  (&side *D)
+  (axis_of D *A)
+  (axis_of (:D *S) A)
+  (&panels_part_idx *P (:D S) (:N 0)))
+
+(RULE &measure_member
+  (input (:P *M) *Col)
+  (&side_of (:P M) *S))
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&out_dim *N)))
+
+(ALTS $choice "how a bar's length is measured" $Count
+  (ALT $Span
+    (RULE &slice_of
+      (input *P)
+      (&side *D)
+      (axis_of D *A)
+      (split P A (:Along *R)))
+
+    (RULE &ink_slice
+      (input *P *Col)
+      (&side_of P *S)
+      (&slice_of P *R))
+
+    (INIT &spans_frame Frame
+      (key ((&ink_slice ^Col ^S *R)
+            (frame_extent (:P R) *A *N))
+        (extent (A N)
+          (&ink_slice Col S *R)
+          (frame_extent (:P R) *A *N))))
+
+    (INIT &spans Ray
+      (key ((OR ((&ink_slice ^Col ^S *R))
+                ((&ink_slice Col S)
+                 (&side *D)
+                 (axis_of D *A)
+                 (axis4_of (:D *D2) A))
+                ((&spans_frame.cell (:key Col S) *P))))
+        (source ((:P R))
+          (&ink_slice Col S *R))
+        (node (P)
+          (&spans_frame.cell (:key Col S) *P))
+        (dir ((:D D2))
+          (&ink_slice Col S)
+          (&side *D)
+          (axis_of D *A)
+          (axis4_of (:D *D2) A))))
+
+    (RULE &spans_between
+      (&ink_slice *Col *S)
+      (&slice_of (:R *P))
+      (&side *D)
+      (axis_of D *A)
+      (axis4_of (:D *D2) A)
+      (dir8_opposite (:D D2) (:D2 *O))
+      (&spans.ray (:key Col S) P (:D D2))
+      (&spans.ray (:key Col S) P (:D O)))
+
+    (RULE &measure_member
+      (&spans_between *Col *S (:P *M)))))
+
+(INIT &growth Excess
+  (key ((OR ((&measure_member ^Col *S *M)
+             (&side *D)
+             (opposite D (:Opp S)))
+            ((&measure_member Col (:S D) M)
+             (&side D))))
+    (plus ((:m M))
+      (&measure_member Col *S *M)
+      (&side *D)
+      (opposite D (:Opp S)))
+    (minus ((:m M))
+      (&measure_member Col (:S *D) *M)
+      (&side D))))
+
+;; The winner: the color that grows the most.
+(INIT &winner Order
+  (member ((:t (:V Col) (:S N)))
+    (&growth.excess (:key *Col) *N))
+  (score ((:t (:V Col) (:S N)) (:S N))
+    (&growth.excess (:key *Col) *N)))
+
+(OUT (&frame.cell ^P) (&winner.maximal (:t ^V)))

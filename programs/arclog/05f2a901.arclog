@@ -1,0 +1,110 @@
+;; inputs 4cf227c95f33226de7d29c5b9a781f0ee75876aca4efe146d95268d233a9412c programs/solvers/05f2a901.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 05f2a901
+
+(DET &anchor RarestColor)
+
+(RULE &anchor_cell
+  (input *P *Col)
+  (&anchor (:C Col)))
+
+(DET &mover ChangedColor)
+
+(RULE &mover_cell
+  (input *P *Col)
+  (&mover (:C Col)))
+
+;; The anchor lies toward one edge from the mover, on a shared line.
+(INIT &cast Ray
+  (source (P)
+    (&mover_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &cast_ray
+  (&cast.ray *P *D *K (:Origin *Src))
+  (&anchor_cell P))
+
+(RULE &blocked
+  (&anchor_cell *P))
+
+(RULE &move_dir
+  (dir_elem *D)
+  (&cast_ray D))
+
+(RULE &shape
+  (&mover_cell *P))
+
+(DET &bg DominantColor)
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&mover_cell P)))
+      ((&mover_cell P)
+       (&bg (:C Col)))))
+
+(ALTS $choice "The cases differ in what counts as contact" $Block
+  (ALT $Touch
+    ;; One step along the travel past a cell beside the anchor.
+    (RULE &blocked
+      (&anchor_cell (:P *P3))
+      (dir_elem *D)
+      (neighbor (:P P3) D (:Q *P1))
+      (&move_dir (:D *D_move))
+      (neighbor (:P P1) (:D D_move) (:Q *P))))
+  (ALT $Extent
+    (INIT &bbox BoundingBox
+      (key ((OR ((&mover_cell *P)
+                 (&mover (:C ^Col)))
+                ((&anchor_cell P)
+                 (&anchor (:C Col)))))
+        (cell (P)
+          (OR ((&mover_cell *P)
+               (&mover (:C Col)))
+              ((&anchor_cell P)
+               (&anchor (:C Col)))))))
+
+    (RULE &box_cell
+      (&bbox.box (:key *Col) *B)
+      (input *P)
+      (inside (:A P) B))
+
+    (RULE &shape
+      (&mover (:C *Col))
+      (&box_cell Col *P))
+
+    (RULE &blocked
+      (&anchor (:C *Col))
+      (&box_cell Col *P))))
+
+;; The footprint travels toward the anchor until it would cover a blocked cell.
+(INIT &gravity Distance
+  (source_distance (K)
+    (OR ((&shape *P)
+         (&move_dir *D)
+         (margin (:B P) D *K))
+        ((&shape (:P *P3))
+         (&move_dir (:D *D2))
+         (&blocked (:P *P2))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &gravity_travel_full
+  (&gravity.distance *K)
+  (&move_dir *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &landed
+  (&gravity_travel_full (:V2 *V))
+  (&mover_cell (:P *P3))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((&gravity_travel_full)
+       (&cleared P Col)
+       (NOT (&landed P)))))
+
+(OUT (&output ^P ^Col))

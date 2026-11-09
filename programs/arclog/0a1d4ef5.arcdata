@@ -1,0 +1,5 @@
+;; inputs df6aff551a0380881b2717f2ca225901765fed228d66d0f9ed0c3b12f5c1f9e7 programs/solvers/0a1d4ef5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0a1d4ef5
+
+(param &min_side number (3))

@@ -1,0 +1,21 @@
+;; inputs edd16013fad8bcf0c4d2a5665de352dccefee687fccc9bbe26dfd1de40759827 programs/solvers/5783df64.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5783df64
+
+(DET &divisor ConstOutDim)
+
+(INIT &output_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&divisor *N)))
+
+(DET &bg DominantColor)
+
+(RULE &output
+  (input (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&output_division.tile (:P P_grid) (:P_outer *P)))
+
+(OUT (&output ^P ^Col))

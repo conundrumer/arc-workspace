@@ -1,0 +1,106 @@
+;; inputs 7f3041be161561de9e9705eaeadc9c7d754d2976651cd7d68d1abe7fdabaf21d programs/solvers/8b7bacbf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8b7bacbf
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color; the rest is ink.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(RULE &beside
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&ink (:P Q) *Col))
+
+;; Objects: same-colored ink, 8-connected.
+(INIT &object Connectivity
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col)))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &contact
+  (&object.component *P (:Id *A))
+  (&beside P *Q)
+  (&object.component (:P Q) (:Id *B)))
+
+;; The circuits: the classes of objects joined by touching. The marker's
+;; circuit stands in for a wire's continuation under a wire that crosses it:
+;; the crossing wire touches both parts. It also reaches a wire that another
+;; wire of the circuit merely touches.
+(INIT &circuit Quotient
+  (edge ((:a W) (:b W2))
+    (&contact (:A *W) (:B *W2))))
+
+(RULE &live
+  (&ink *P (:Col *M))
+  (ALL ((&ink (:P *Pm) (:Col M))
+        (&ink (:P *Q) (:Col M)))
+       ((= Pm Q)))
+  (&object.component (:key (:Col M)) P (:Id *W0))
+  (&circuit.class (:a W0) (:Id *C))
+  (&beside P (:Col *G))
+  (&object.component (:key (:Col G)) (:Id *W))
+  (&circuit.class (:a W) (:Id C)))
+
+;; Background regions, and the ink beside each.
+(INIT &region Connectivity
+  (node (P)
+    (input *P *Col)
+    (&bg_mode.maximal (:t Col))))
+
+(RULE &wall
+  (&region.component (:P *Q) (:Id *H))
+  (&beside (:P Q) (:Q *P) *Col))
+
+;; A hole is a region walled in one color.
+(INIT &wall_color Singleton
+  (key ((&wall ^H *Col))
+    (member ((:v Col))
+      (&wall H *Col))))
+
+;; A hole's box: its wall, and the same-colored ink 4-connected to the wall,
+;; so two boxes of one color that meet at a corner stay apart.
+(INIT &box Flood
+  (key ((OR ((&wall_color.value (:key ^H) (:v *Col))
+             (&ink *P Col))
+            ((&wall H P))))
+    (node (P)
+      (&wall_color.value (:key H) (:v *Col))
+      (&ink *P Col))
+    (source (P)
+      (&wall H *P))))
+
+(RULE &touch
+  (&box.reached (:key *H) *P)
+  (&beside P *Q)
+  (NOT (&box.reached (:key H) (:P Q)))
+  (&object.component (:P Q) (:Id *W)))
+
+(RULE &fill
+  (&region.component *P (:Id *H))
+  (&touch H *W)
+  (&live W (:M *Col)))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

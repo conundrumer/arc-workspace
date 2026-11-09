@@ -1,0 +1,237 @@
+;; inputs 1feb153ea12caaa8890f8240a4e5f592dda46ce800e3e07fc9c911180602ba4e programs/solvers/e39e9282.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e39e9282
+
+(INPUT background "a field of the background color fills the grid")
+
+(INPUT boxes "solid 3×3 squares of the keep color or of the erase color stand on the field, apart from each other")
+
+(INPUT pins "single cells of the pin color stand on the field, each next to one side cell of one box, across that side"
+
+  (INIT &color_count_count Cardinality
+    (key ((ex_input ^E *P (:Col ^C)))
+      (member ((:m P))
+        (ex_input E *P (:Col C)))))
+
+  (INIT &count_rank Order
+    (key ((&color_count_count.size (:key ^E *C) *N))
+      (member ((:t (:V C) (:S N)))
+        (&color_count_count.size (:key E *C) *N))
+      (score ((:t (:V C) (:S N)) (:S N))
+        (&color_count_count.size (:key E *C) *N))))
+
+  (DET &not_commonest
+    (&color_count_count.size (:key *C))
+    (ex_input *E)
+    (NOT (&count_rank.maximal (:key E) (:t (:V C)))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&color_count_count.size (:key *C))
+    (NOT (&not_commonest C)))
+
+  (DET &not_rarest
+    (&color_count_count.size (:key *C))
+    (ex_input *E)
+    (NOT (&count_rank.minimal (:key E) (:t (:V C)))))
+
+  (DET_OR_RULE &pin RarestColor
+    (&color_count_count.size (:key *C))
+    (NOT (&not_rarest C)))
+
+  (DET &turns
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET &pin_determined
+    (&color_count_count.size (:key *C))
+    (NOT (&not_rarest C)))
+
+  (DET &turns_off_pin
+    (&turns *C *C2)
+    (NOT (&pin_determined (:C C2))))
+
+  (DET &keep
+    (&turns *C)
+    (NOT (&turns_off_pin C)))
+
+  (DET &survives
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col C)))
+
+  (DET &erase
+    (&turns *C)
+    (NOT (&survives C)))
+
+  (RULE &box_color
+    (OR ((&keep *C))
+        ((&erase C))))
+
+  (INIT &boxes Connectivity
+    (key ((&box_color (:C ^Col)))
+      (node (P)
+        (input *P Col))))
+
+  (INIT &box_bbox BoundingBox
+    (key ((&boxes.component *P ^Id))
+      (cell (P)
+        (&boxes.component *P Id))))
+
+  (RULE &pin_cell
+    (input *P *Col)
+    (&pin (:C Col)))
+
+  (RULE &beside
+    (&boxes.component (:P *Q) *Id)
+    (&box_bbox.box (:key Id) *B)
+    (inside (:A Q) B)
+    (same_dist *D (:P1 Q) (:P2 B))
+    (neighbor (:P Q) D (:Q *P))
+    (&pin_cell P))
+
+  (RULE &pin_cast_blocked
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &pin_cast Ray
+    (source (P)
+      (&pin_cell *P)
+      (NOT (&beside P)))
+    (node (P)
+      (input *P)
+      (NOT (&pin_cast_blocked P)))
+    (dir (D)
+      (dir_elem *D))))
+
+(OUTPUT pin-cleared "each pin of a keep-color box becomes the background color")
+
+(OUTPUT pin-to-middle "each pin of a keep-color box paints the pin color on the box cell where the pin's line, through the box, crosses the box's middle line across that line")
+
+(OUTPUT box-erased "each erase-color box becomes the background color")
+
+(OUTPUT pin-grows "each pin of an erase-color box stays, and paints the pin color on the box cell next to it")
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &pin2
+    (&beside *P *Id *D *Q))
+
+  (RULE &keep_pin
+    (&pin2 *P *Id *D *Q)
+    (&boxes.component (:key *Col) (:P Q) Id)
+    (&keep (:C Col))))
+
+(ALTS $l "where a pin of a keep-color box lands along its line" $Middle
+  (ALT $PinJumpsEdge
+    (OUTPUT pin-to-middle "each pin of a keep-color box paints the pin color two cells along its line from the pin, on the cell past the box's edge cell")
+    (RULE &move
+      (&keep_pin *P *D *Q)
+      (opposite D (:Opp *D_in))
+      (neighbor (:P Q) (:D D_in) (:Q *L_cell))))
+  (ALT $PinNearFarEdge
+    (OUTPUT pin-to-middle "each pin of a keep-color box paints the pin color on the box cell next to the box's far edge, along the pin's line")
+    (RULE &move
+      (&keep_pin *P *Id *D *Q)
+      (&box_bbox.box (:key Id) *B)
+      (opposite D (:Opp *D_far))
+      (&boxes.component (:P *F) Id)
+      (inside (:A F) B)
+      (same_dist (:D D_far) (:P1 F) (:P2 B))
+      (perp_dir D *D2)
+      (same_dist (:D D2) (:P1 Q) (:P2 F))
+      (neighbor (:P F) D (:Q *L_cell)))))
+
+(ALTS $r "which pin-color cells are pins of a box" $Beside
+  (ALT $StrayPinCasts
+    (OUTPUT pin-cast "a pin-color cell that is next to no box, and that has only background between it and a box's side cell along a row or a column, is also a pin of that box"
+      (INIT &pin_cast_full Ray
+        (source (P)
+          (&pin_cell *P)
+          (NOT (&beside P)))
+        (node (P)
+          (input *P))
+        (dir (D)
+          (dir_elem *D)))
+
+      (RULE &pin_cast_stop_full
+        (&pin_cast.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&pin_cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &pin2
+        (OR ((&pin_cast_stop_full (:V1 *Q) (:V2 *D_cast) (:V4 *P))
+             (&boxes.component (:P Q) *Id)
+             (opposite (:D D_cast) (:Opp *D)))
+            ((&beside P Id D Q)))))))
+
+(ALTS $s "what a pin-color cell that is no pin becomes" $StrayKept
+  (ALT $StrayPinErased
+    (OUTPUT stray-erased "each pin-color cell that is no pin becomes the background color"
+      (RULE &stray
+        (&pin_cell *P)
+        (NOT (&pin2 P))))
+    (RULE &cleared
+      (OR ((&stray *P))
+          ((&move P))
+          ((&boxes.component (:key *Col) P)
+           (&erase (:C Col)))))
+    (ALT $UnpinnedBoxKept
+      (RULE &cleared
+        (OR ((&boxes.component (:key *Col) *P *Id)
+             (&erase (:C Col))
+             (&pin2 Id))
+            ((&stray P))
+            ((&move P)))))))
+
+(ALTS $u "what an erase-color box with no pin becomes" $UnpinnedErased
+  (ALT $UnpinnedBoxKept
+    (OUTPUT box-erased "an erase-color box with at least one pin becomes the background color, and one with no pin keeps its color")
+    (RULE &cleared
+      (OR ((&boxes.component (:key *Col) *P *Id)
+           (&erase (:C Col))
+           (&pin2 Id))
+          ((&move P))))))
+
+(RULE &grown
+  (&pin2 *Id *Q)
+  (&boxes.component (:key *Col) (:P Q) Id)
+  (&erase (:C Col)))
+
+(RULE &move
+  (&keep_pin *P *Id *D *Q)
+  (&box_bbox.box (:key Id) *B)
+  (&boxes.component (:P *L_cell) Id)
+  (inside (:A L_cell) B)
+  (relative (:Base B) (:X L_cell) (:X_rel *L_rel))
+  (dist_pair (:P L_rel) D *K (:K2 K))
+  (perp_dir D *D2)
+  (same_dist (:D D2) (:P1 Q) (:P2 L_cell)))
+
+(RULE &painted
+  (OR ((&move (:L_cell *P)))
+      ((&grown (:Q P)))))
+
+(RULE &cleared
+  (OR ((&move *P))
+      ((&boxes.component (:key *Col) P)
+       (&erase (:C Col)))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&pin (:C *Col)))
+      ((&cleared P)
+       (NOT (&painted P))
+       (&bg (:C Col)))
+      ((input P Col)
+       (NOT (&painted P))
+       (NOT (&cleared P))
+       (NOT (&keep_pin P)))))
+
+(INIT &color_count Order
+  (key ((&color_count_count.size (:key ^E *C)))
+    (member ((:t C))
+      (&color_count_count.size (:key E *C)))
+    (score ((:t C) (:S N))
+      (&color_count_count.size (:key E *C) *N))))
+
+(OUT (&output ^P ^Col))

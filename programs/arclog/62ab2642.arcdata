@@ -1,0 +1,7 @@
+;; inputs 1d3a0aea0674348024079b1f91943f4d3fd06940c517a5ef5fc57e76e2ab4bd0 programs/solvers/62ab2642.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 62ab2642
+
+(param &bg Color (0))
+(param &big_paint Color (8))
+(param &small_paint Color (7))

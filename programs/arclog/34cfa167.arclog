@@ -1,0 +1,183 @@
+;; inputs 637920b769a9758a590942ef08700ed7b696bd44d269eab0ad0682be4cd320ab programs/solvers/34cfa167.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 34cfa167
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The corner the arms run toward; the other block sits there.
+(DET &arm_corner DiagDirDomain)
+
+(RULE &arm_perp
+  (&arm_corner (:D *Diag))
+  (diag_dirs (:D Diag) (:D1 *D) *D2))
+
+;; The corner blocks' color.
+(DET &block_color SharedColor)
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (&block_color (:C Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+;; The block at the arms' corner stands alone; the other carries the arms.
+(INIT &from_corner Order
+  (member ((:t (:V Id) (:S K)))
+    (&bbox.box (:key *Id) *B)
+    (&arm_corner (:D *Diag))
+    (corner_dist (:P B) Diag *K))
+  (score ((:t (:V Id) (:S K)) (:S K))
+    (&bbox.box (:key *Id) *B)
+    (&arm_corner (:D *Diag))
+    (corner_dist (:P B) Diag *K)))
+
+(RULE &cast_mark
+  (&arm_perp (:D *Key))
+  (&from_corner.maximal (:t (:V *T)))
+  (&bbox.cell (:key (:Id T)) *P)
+  (&bbox.box (:key (:Id T)) *B)
+  (inside (:A P) B)
+  (same_dist (:D Key) (:P1 P) (:P2 B)))
+
+(INIT &cast_frame Frame
+  (key ((&cast_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&cast_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+(DET &period TileCount)
+
+;; The ground the figure sits on.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &block_offset
+  (&from_corner.maximal (:t (:V *T)))
+  (&bbox.box (:key (:Id T)) *B)
+  (&bbox.box (:key *Id) (:B *B2))
+  (relative (:Base B) (:X B2) (:X_rel *V)))
+
+(RULE &axis_offset
+  (&block_offset (:V *V2))
+  (split (:P V2) *A (:Along *V)))
+
+(RULE &corner_delta
+  (&axis_offset *A (:V *V1))
+  (perp A *A2)
+  (&axis_offset (:A A2) (:V *V2))
+  (compose (:A V1) (:B V2) (:C *V)))
+
+;; Each arm casts from the template block's side, so a mark's distance is
+;; read off the block's edge.
+(INIT &cast Ray
+  (key ((OR ((&cast_mark (:Key ^Ky) *P))
+            ((&arm_perp (:D Ky)))
+            ((&cast_frame.cell (:key Ky) P))))
+    (source (P)
+      (&cast_mark (:Key Ky) *P))
+    (node (P)
+      (&cast_frame.cell (:key Ky) *P))
+    (dir ((:D Ky))
+      (&arm_perp (:D Ky)))))
+
+(RULE &cast_cell
+  (&arm_perp (:D *Key))
+  (input))
+
+(RULE &arm_mark
+  (&cast.ray (:key (:Ky *D)) *P D *K)
+  (&cast_cell (:Key D))
+  (!= K 0)
+  (input P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &span Order
+  (key ((&arm_mark ^D *K))
+    (member ((:t K))
+      (&arm_mark D *K))
+    (score ((:t K) (:S K))
+      (&arm_mark D *K))))
+
+(RULE &period2
+  (&arm_perp *D)
+  (&period (:N *K)))
+
+(RULE &run
+  (&cast.ray (:key (:Ky *D)) *P D *K (:Origin *Src))
+  (&cast_cell (:Key D))
+  (input P)
+  (!= K 0)
+  (opposite D (:Opp *D2))
+  (&from_corner.minimal (:t (:V *S)))
+  (&bbox.box (:key (:Id S)) *B)
+  (nearer (:D D2) P (:Q B)))
+
+(RULE &side
+  (&arm_perp *D *D2)
+  (axis_of (:D D2) (:A *A2))
+  (&block_offset *Id (:V *V2))
+  (split (:P V2) (:A A2) (:Along *V))
+  (OR ((&from_corner.maximal (:t (:V Id)))
+       (opposite (:D D2) (:Opp *D_out)))
+      ((&from_corner.minimal (:t (:V Id)))
+       (= D_out D2))))
+
+(ALTS $choice "the distance at which the marks repeat, which the pairs do not separate" $Given
+  (ALT $Extend
+    (RULE &period2
+      (&arm_mark *D *P (:K *K_last))
+      (&span.maximal (:key D) (:t K_last))
+      (neighbor P D *Q)
+      (&cast.ray (:key (:Ky D)) (:P Q) D *K)
+      (&cast_cell (:Key D))
+      (input (:P Q)))))
+
+(RULE &rail
+  (&run *D *P *K)
+  (&period2 D (:K *N))
+  (divide (:T K) (:Side N) (:Gap 0) (:Remainder *R))
+  (&arm_mark D (:K R) *Col))
+
+(RULE &paint
+  ;; A corner block.
+  (OR ((&blocks.component (:P *P2) *Id)
+       (&from_corner.maximal (:t (:V Id)))
+       (&block_color (:C *Col))
+       (&corner_delta *V)
+       (compose (:A P2) (:B V) (:C *P)))
+      ;; A rail cell.
+      ((&rail *D (:P *Q) Col)
+       (&side D (:V *V2))
+       (compose (:A Q) (:B V2) (:C P)))
+      ;; The plain line one cell outside a rail.
+      ((&span.minimal (:key (:D *D2)) (:t *K_near))
+       (&arm_mark (:D D2) (:K K_near) Col)
+       (&from_corner.maximal (:t (:V *T)))
+       (&bbox.box (:key (:Id T)) *B)
+       (&run (:D D2) (:P *Q2) *Src)
+       (&bbox.cell (:key (:Id T)) (:P Src))
+       (inside (:A Src) B)
+       (same_dist (:D *D_out) (:P1 Src) (:P2 B))
+       (&side (:D D2) (:V *V3) D_out)
+       (compose (:A Q2) (:B V3) (:C *P_rail))
+       (neighbor (:P P_rail) (:D D_out) (:Q P)))))
+
+(RULE &output
+  (OR ((&paint *P *Col)
+       (input P))
+      ((input P)
+       (&bg_mode.maximal (:t Col))
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

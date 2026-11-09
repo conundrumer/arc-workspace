@@ -1,0 +1,65 @@
+;; inputs 092d7900d83ba1d2243890dfe7baa2a0f3a35f4db3f51476b366174bfd0e99b2 programs/solvers/1f642eb9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1f642eb9
+
+(DET &block SharedColor)
+
+(RULE &block_cell
+  (input *P *Col)
+  (&block (:C Col)))
+
+(RULE &rays_blocked
+  (&block_cell *P))
+
+(DET &bg DominantColor)
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&block (:C Col))))
+
+(INIT &rays_full Ray
+  (source (P)
+    (&marker *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(ALTS $choice "what stops a traveling color; the block is a solid rectangle in every pair, so the data does not say which" $Block
+  (ALT $Box
+    (INIT &bbox BoundingBox
+      (cell (P)
+        (&block_cell *P)))
+
+    (RULE &rays_blocked
+      (input *P)
+      (&bbox.box *B)
+      (inside (:A P) B))))
+
+;; Each marker casts every way; the color halts on the first cell the case
+;; blocks.
+(INIT &rays Ray
+  (source (P)
+    (&marker *P))
+  (node (P)
+    (input *P)
+    (NOT (&rays_blocked P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &rays_stop_full
+  (&rays.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&rays_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &paint
+  (&rays_stop_full (:V1 *P) (:V4 *P2))
+  (&marker (:P P2) *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

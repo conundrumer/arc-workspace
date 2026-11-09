@@ -1,0 +1,230 @@
+;; inputs d6d28129699c1147a78aa0176e4883f8ae04b9063f00d6a4bd1dd846478ff34e programs/solvers/e5c44e8f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e5c44e8f
+
+(INPUT one-seed "the input holds exactly one cell of seed_color (3) on a field of background (0).")
+
+(INPUT scattered-obstacles "the other non-background cells are single cells of obstacle_color (2).")
+
+(INPUT obstacle-before-edge "the spiral path from the seed meets an obstacle cell before it leaves the grid.")
+
+(OUTPUT spiral-path "the path starts at the seed and runs in arms along first_dir, then turns a quarter turn in turn_sense at the end of each arm; arms k = 0, 1, 2, ... have length (gap + 1) · (⌊k/2⌋ + 1), so arms 2, 2, 4, 4, 6, 6, ... at gap 1.")
+
+(OUTPUT stop-at-obstacle "the path ends at the last cell before its first cell that is an obstacle; the obstacle keeps its color.")
+
+(OUTPUT paint-path "each cell of the path takes seed_color, and every other cell keeps its input color."
+
+  (DET &first_dir DirDomain)
+
+  (DET &turn_sense SenseDomain)
+
+  (DET &repaint
+    (ex_input *E *P (:Col *Col_in))
+    (ex_output E P (:Col *Col_out))
+    (!= Col_in Col_out))
+
+  (DET_OR_RULE &seed_color RarestColor
+    (&repaint (:Col_out *C)))
+
+  (DET_OR_RULE &background DominantColor
+    (&repaint (:Col_in *C)))
+
+  (RULE &seed
+    (input *P *Col)
+    (&seed_color (:C Col)))
+
+  (DET &beside_dir
+    (&repaint (:E *Key))
+    (&first_dir (:D *F))
+    (&turn_sense *S)
+    (turn S (:D F) (:D2 *D)))
+
+  ;; A cast from the seed in the second arm's direction crosses gap empty
+  ;; cells before it meets the third arm.
+  (INIT &beside Ray
+    (key ((OR ((ex_input ^E *P *Col)
+               (&repaint (:Col_out Col)))
+              ((&beside_dir (:Key E) *D))
+              ((&beside_dir (:Key E))
+               (ex_input E P)
+               (NOT (&repaint E P)))))
+      (source (P)
+        (ex_input E *P *Col)
+        (&repaint (:Col_out Col)))
+      (node (P)
+        (&beside_dir (:Key E))
+        (ex_input E *P)
+        (NOT (&repaint E P)))
+      (dir (D)
+        (&beside_dir (:Key E) *D))))
+
+  (DET &gap
+    (&beside.ray (:key *E) (:P *Q) *D (:K *N))
+    (ex_output E (:P Q))
+    (neighbor (:P Q) D (:Q *Q2))
+    (&repaint E (:P Q2)))
+
+  ;; The ring radii, as translations from the seed toward first_dir: 0, then
+  ;; gap + 1 more for each ring.
+  (INIT &rings Propagation
+    (source ((:n N))
+      (= *N 0))
+    (edge ((:a V) (:b V2))
+      (input *P)
+      (&first_dir (:D *F))
+      (margin (:B P) (:D F) *K)
+      (jump_offset (:D F) K *V)
+      (&gap (:N *G))
+      (jump (:P V) (:D F) (:K G) (:Q *V1))
+      (neighbor (:P V1) (:D F) (:Q *V2))))
+
+  (RULE &ring
+    (&rings.reached (:n *V))
+    (&first_dir (:D *F))
+    (opposite (:D F) (:Opp *F_opp))
+    (margin (:B V) (:D F_opp) (:K *R))
+    (&seed (:P *S))
+    (uniform_outset (:K R) (:B *O))
+    (compose (:A S) (:B O) (:C *B)))
+
+  (RULE &turn_of
+    (&rings.edge (:a *V0) (:b *V))
+    (&ring (:V V0) (:B *B0))
+    (&ring V *R *B))
+
+  (RULE &arm
+    (&turn_of *B0 *R *B)
+    (&first_dir (:D *F))
+    (&turn_sense *S)
+    (turn S (:D *X) (:D2 *T))
+    (OR ((= T F)
+         (= *L B0)
+         (= *A B0))
+        ((turn S (:D F) (:D2 T))
+         (= L B)
+         (= A B0))
+        ((!= T F)
+         (NOT (turn S (:D F) (:D2 T)))
+         (= L B)
+         (= A B))))
+
+  (RULE &arm_cell
+    (input (:P *Q))
+    (neighbor (:P Q) (:Q *P))
+    (&arm *R *T *X *L *A *B)
+    (same_dist (:D X) (:P1 P) (:P2 L))
+    (opposite (:D T) (:Opp *T_opp))
+    (margin (:B P) (:D T_opp) (:K *K1))
+    (margin (:B A) (:D T_opp) (:K *K2))
+    (>= K1 K2)
+    (margin (:B P) (:D T) (:K *K3))
+    (margin B (:D T) (:K *K4))
+    (>= K3 K4))
+
+  (RULE &path
+    (&arm_cell *R *T *P)
+    (input P))
+
+  (RULE &arm_before
+    (&first_dir (:D *F))
+    (&turn_sense *S)
+    (dir_elem (:D *T2))
+    (OR ((turn S (:D F) (:D2 *T1))
+         (OR ((turn S (:D T1) (:D2 T2)))
+             ((opposite (:D T1) (:Opp T2)))))
+        ((= T1 F)
+         (!= T2 F))
+        ((opposite (:D F) (:Opp T1))
+         (turn S (:D T1) (:D2 T2)))))
+
+  (RULE &precedes
+    (&path (:R *R1) (:T *T1) (:P *P1))
+    (&path (:R *R2) (:T *T2) (:P *P2))
+    (OR ((< R1 R2))
+        ((= R1 R2)
+         (&arm_before T1 T2))
+        ((= R1 R2)
+         (= T1 T2)
+         (nearer (:D T1) (:P P2) (:Q P1)))))
+
+  (RULE &exit
+    (&path *R *T *P)
+    (neighbor P (:D T) *Q)
+    (&arm_cell R T (:P Q))
+    (NOT (input (:P Q))))
+
+  (DET &obstacle_color
+    (ex_input (:Col *C))
+    (NOT (&background C))
+    (NOT (&repaint (:Col_out C))))
+
+  (RULE &block
+    (input *P *Col)
+    (&obstacle_color (:C Col)))
+
+  (RULE &blocked
+    (&path *R *T *P)
+    (OR ((&block P))
+        ((&path (:R *R0) (:T *T0) (:P *O))
+         (&block (:P O))
+         (&precedes (:R1 R0) (:T1 T0) (:P1 O) (:R2 R) (:T2 T) (:P2 P)))))
+
+  (RULE &past_exit
+    (&path *R *T *P)
+    (&exit (:R *R0) (:T *T0) (:P *Q))
+    (&precedes (:R1 R0) (:T1 T0) (:P1 Q) (:R2 R) (:T2 T) (:P2 P))))
+
+(ALTS $e "What the path does when it leaves the grid before it meets an obstacle" $MeetsObstacle
+  (ALT $EdgeStop
+    (INPUT obstacle-before-edge "the path may leave the grid before it meets an obstacle.")
+    (OUTPUT stop-at-obstacle "the path also ends at its last cell in the grid.")
+    (RULE &painted
+      (&path *P)
+      (NOT (&seed P))
+      (NOT (&blocked P))
+      (NOT (&past_exit P)))
+
+    (RULE &defined))
+  (ALT $EdgeContinue
+    (INPUT obstacle-before-edge "the path may leave the grid before it meets an obstacle.")
+    (OUTPUT edge-continue "the path goes on outside the grid with the same arms, paints the cells where it re-enters, and ends before its first obstacle in the grid, or after its last cell in the grid when it meets none.")
+    (RULE &defined)))
+
+(ALTS $b "Which cells end the path" $ObstacleColor
+  (ALT $AnyColorBlocks
+    (INPUT scattered-obstacles "the other non-background cells may take any color but seed_color.")
+    (OUTPUT stop-at-obstacle "every cell that is neither background nor seed_color ends the path."
+      (RULE &block
+        (input *P *Col)
+        (NOT (&background (:C Col)))
+        (NOT (&seed_color (:C Col)))))))
+
+(RULE_OR_DET &paint
+  (&seed *P)
+  (input P *Col))
+
+(RULE &painted
+  (&path *P)
+  (NOT (&seed P))
+  (NOT (&blocked P)))
+
+(RULE &defined
+  (&path *R *T (:P *O))
+  (&block (:P O))
+  (NOT (&past_exit (:P O)))
+  (NOT (&exit R T (:P O))))
+
+(RULE &output
+  (&seed (:P *S))
+  (ALL ((&seed (:P *Q)))
+       ((= S Q)))
+  (&defined)
+  (input *P (:Col *Col2))
+  (IF ((&painted P))
+      ((&paint *Col))
+      ((= Col Col2))))
+
+(DET &background_determined
+  (&repaint (:Col_in *C)))
+
+(OUT (&output ^P ^Col))

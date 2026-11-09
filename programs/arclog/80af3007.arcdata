@@ -1,0 +1,7 @@
+;; inputs df84d388f0edef69ffb21e7ec597c17769b94a055d10b576cad369e2bcfd95ce programs/solvers/80af3007.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 80af3007
+
+(param &bg Color (0))
+(param &ink Color (5))
+(param &scale number (3))

@@ -1,0 +1,284 @@
+;; inputs 492f1e61fc4b6c242fee54d2a6947769216fe4e16803c31eadf999887da81669 programs/solvers/d59b0160.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d59b0160
+
+(INPUT background "the grid is filled with &background"
+
+  (DET &changed_to
+    (ex_input *E *P (:Col *C))
+    (ex_output E P *Col)
+    (!= C Col))
+
+  (DET &background_defect
+    (&changed_to (:Col *C))
+    (&changed_to (:Col *C2))
+    (!= C2 C))
+
+  (DET &background
+    (&changed_to (:Col *C))
+    (NOT (&background_defect C))))
+
+(INPUT legend-corner "a box at corner &key_corner, walled off from the rest of the grid by a 1-wide L of &divider cells, holds a few single cells of distinct colors on &background: the legend"
+
+  (RULE &cell
+    (input *P *Col))
+
+  (RULE &corner_cell
+    (&cell *P)
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  ;; The color of the L that walls off the legend.
+  (DET &divider ColorDomain)
+
+  (RULE &wall_ray_blocked
+    (&cell *P *Col)
+    (&divider (:C Col)))
+
+  (RULE &wall_ray_dir
+    (&divider)
+    (dir_elem *D))
+
+  (INIT &wall_ray_frame Frame
+    (extent (A N)
+      (&corner_cell *P)
+      (frame_extent P *A *N)))
+
+  (INIT &wall_ray Ray
+    (source (P)
+      (&corner_cell *P))
+    (node (P)
+      (&wall_ray_frame.cell *P)
+      (NOT (&wall_ray_blocked P)))
+    (dir (D)
+      (&wall_ray_dir *D)))
+
+  (INIT &wall_ray_full Ray
+    (source (P)
+      (&corner_cell *P))
+    (node (P)
+      (&wall_ray_frame.cell *P))
+    (dir (D)
+      (&wall_ray_dir *D)))
+
+  (RULE &wall_ray_stop_full
+    (&wall_ray.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&wall_ray_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &wall_reach
+    (&corner_cell *D *P)
+    (corner_dir (:C D) *A (:D *E))
+    (opposite (:D E) (:Opp *D_in))
+    (&wall_ray_stop_full (:V2 D_in) (:V3 *N) (:V4 P)))
+
+  (RULE &wall_cell
+    (diag_dirs *D (:A *A1) (:D1 *E1) (:D2 *E2))
+    (perp (:A A1) *A2)
+    (&wall_reach D (:A A1) (:N *N1))
+    (&wall_reach D (:A A2) (:N *N2))
+    (&cell *P)
+    (margin (:B P) (:D E1) (:K N1))
+    (margin (:B P) (:D E2) (:K *J))
+    (<= J N2))
+
+  (RULE &wall_gap
+    (&wall_cell *D *P)
+    (&cell P *Col)
+    (NOT (&divider (:C Col))))
+
+  (RULE &walled
+    (&wall_cell *D)
+    (NOT (&wall_gap D)))
+
+  (DET &walled2
+    (&walled *E *D)
+    (&divider (:C *Div))
+    (NOT (&background (:C Div))))
+
+  (DET &key_corner_defect
+    (diag_dir_elem *D)
+    (ex_input *E)
+    (NOT (&walled2 E D)))
+
+  (DET &key_corner
+    (diag_dir_elem *D)
+    (NOT (&key_corner_defect D))))
+
+(INPUT panels "away from the legend, rectangles of color 0, each separated from the others and from the legend by &background, hold scattered single cells of other colors"
+
+  (RULE &corner
+    (&key_corner *D))
+
+  (RULE_OR_DET &legend_extent
+    (&corner *D)
+    (&walled D)
+    (&wall_reach D *A *N))
+
+  (RULE_OR_DET &legend_area
+    (&corner *D)
+    (diag_dirs D (:A *A1) (:D1 *E1) (:D2 *E2))
+    (perp (:A A1) *A2)
+    (&legend_extent (:A A1) (:N *N1))
+    (&legend_extent (:A A2) (:N *N2))
+    (&cell *P)
+    (margin (:B P) (:D E1) (:K *J1))
+    (<= J1 N1)
+    (margin (:B P) (:D E2) (:K *J2))
+    (<= J2 N2))
+
+  (RULE &legend_found
+    (&legend_area))
+
+  (RULE &panel_node
+    (&legend_found)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&legend_area P)))
+
+  (INIT &panel8 Connectivity
+    (node (P)
+      (&panel_node *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT legend-colors "the legend colors are the colors in the legend box other than &background")
+
+(OUTPUT erase-full-panel "a panel whose cells hold every legend color becomes &background"
+
+  (RULE &legend_wall
+    (&legend_area *P)
+    (&corner *D)
+    (corner_dir (:C D) *A (:D *E))
+    (&legend_extent A *N)
+    (margin (:B P) (:D E) (:K N)))
+
+  (RULE &legend_cell
+    (&legend_area *P)
+    (NOT (&legend_wall P)))
+
+  (RULE &legend_color
+    (&legend_cell *P)
+    (&cell P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &panel4 Connectivity
+    (node (P)
+      (&panel_node *P)))
+
+  (RULE &panel
+    (&panel4.component *P *Id))
+
+  (RULE &panel_color
+    (&panel *P (:Id *K))
+    (input P *Col))
+
+  ;; The legend's cells of a color outnumber the panel's.
+  (INIT &shortfall Excess
+    (key ((OR ((&panel ^Id)
+               (&legend_cell (:P *Q))
+               (input (:P Q) ^Col)
+               (&legend_color Col))
+              ((&panel *P Id)
+               (input P Col))))
+      (plus ((:m Q))
+        (&panel Id)
+        (&legend_cell (:P *Q))
+        (input (:P Q) Col)
+        (&legend_color Col))
+      (minus ((:m P))
+        (&panel *P Id)
+        (input P Col))))
+
+  (INIT &legend_hits Cardinality
+    (key ((&panel_color (:K ^Id) *Col)
+          (&legend_color Col))
+      (member ((:m Col))
+        (&panel_color (:K Id) *Col)
+        (&legend_color Col))))
+
+  (INIT &panel_box BoundingBox
+    (key ((&panel *P ^Id))
+      (cell (P)
+        (&panel *P Id)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &lacks
+    (&panel (:Id *K))
+    (&legend_color *Col)
+    (NOT (&panel_color K Col)))
+
+  (RULE &erased
+    (&panel_color *K)
+    (NOT (&lacks K))))
+
+(ALTS $erase "which panels are erased" $EveryColor
+  (ALT $LegendMultiset
+    (OUTPUT erase-full-panel "a panel is erased when it holds at least as many cells of each legend color as the legend does; undefined where the concept is"
+
+      (RULE &erased
+        (&panel_color *K)
+        (NOT (&shortfall.excess (:key (:Id K)))))))
+  (ALT $StoredLegendCount
+    (OUTPUT erase-full-panel "a panel is erased when it holds at least &legend_need distinct legend colors; undefined where the concept is"
+      (DET &legend_key
+        (&legend_area *E)
+        (&divider (:C *Col)))
+
+      (INIT &legend_size Cardinality
+        (key ((&legend_key ^E ^Col))
+          (member ((:m Col2))
+            (&legend_color E (:Col *Col2)))))
+
+      (INIT &need Singleton
+        (member ((:v N))
+          (&legend_size.size *N)))
+
+      (DET &legend_need
+        (&need.value (:v *N)))
+
+      (RULE &erased
+        (&legend_hits.size (:key (:Id *K)) *N)
+        (&legend_need (:N *Need))
+        (>= N Need)))))
+
+(ALTS $adj "which cells join one panel" $Adjacency4
+  (ALT $Adjacency8
+    (INPUT panels "a panel is an 8-connected piece of non-background cells, so panels that touch at a corner are one panel; undefined where the concept is"
+      (RULE &panel
+        (&panel8.component *P *Id)))))
+
+(ALTS $extent "which cells an erased panel covers" $PanelCells
+  (ALT $PanelBbox
+    (OUTPUT erase-full-panel "an erased panel's bounding box becomes &background; undefined where the concept is")
+    (RULE &erased_cell
+      (&erased (:K *Id))
+      (&panel_box.box (:key Id) *B)
+      (input *P)
+      (inside (:A P) B))))
+
+(ALTS $place "where the legend stands" $StoredCorner
+  (ALT $LegendAnyCorner
+    (INPUT legend-corner "the legend's corner is the one corner at which a divider L walls off a box; undefined where no corner, or more than one, has such an L"
+      (RULE &corner
+        (&walled *D)
+        (ALL ((&walled (:D *D1))
+              (&walled (:D *D2)))
+             ((= D1 D2)))))))
+
+(RULE &erased_cell
+  (&erased (:K *Id))
+  (&panel *P Id))
+
+(RULE &output
+  (OR ((&erased_cell *P)
+       (&background (:C *Col)))
+      ((&legend_found)
+       (input P Col)
+       (NOT (&erased_cell P)))))
+
+(OUT (&output ^P ^Col))

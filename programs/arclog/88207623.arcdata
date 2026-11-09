@@ -1,0 +1,8 @@
+;; inputs 833143bc68d965f3387cd55d70543ef017df45821f16c3755815edb180f13c92 programs/solvers/88207623.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 88207623
+
+(param &bg Color (0))
+(param &line Color (2))
+(param &shape Color (4))
+(param &across_axis Axis (AXIS_H))

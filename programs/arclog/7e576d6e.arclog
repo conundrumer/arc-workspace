@@ -1,0 +1,204 @@
+;; inputs f484ee64d849bd56591386bd997edd0578c8981757a50f5838e26a3e17c7e553 programs/solvers/7e576d6e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7e576d6e
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background: what most cells carry.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &broken
+  (input *P *Col)
+  (&bg_mode.maximal (:t Col))
+  (split P *A (:Along *L)))
+
+(RULE &cut_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&broken A L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col)))
+  (NOT (&cut_on_divider P)))
+
+(INIT &line_mode_count Cardinality
+  (key ((&cut_on_divider *P)
+        (input P ^Col))
+    (member ((:m P))
+      (&cut_on_divider *P)
+      (input P Col))))
+
+;; The dividers' color is what most of their cells carry; the rest of a
+;; divider is its gap.
+(INIT &line_mode Order
+  (member ((:t Col))
+    (&line_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&line_mode_count.size (:key *Col) *N)))
+
+(RULE &gap
+  (input *P *Col)
+  (&cut_divider *A *L)
+  (split P A (:Along L))
+  (NOT (&line_mode.maximal (:t Col))))
+
+;; The middle cell of each gap.
+(INIT &gap_box BoundingBox
+  (key ((&gap *P ^L))
+    (cell (P)
+      (&gap *P L))))
+
+(RULE &gap_mid
+  (&gap *P *L)
+  (&gap_box.box (:key L) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+;; The corner the path heads toward: its progress direction on the axis the dividers cut.
+(DET &heading DiagDirDomain)
+
+(RULE &progress
+  (&cut_divider *A)
+  (&heading (:D *Diag))
+  (corner_dir (:C Diag) A *D))
+
+(RULE &entry
+  (OR ((&gap_mid (:P *S))
+       (&progress *D)
+       (opposite D (:Opp *D_back))
+       (neighbor (:P S) (:D D_back) (:Q *P)))
+      ((&marker (:P S))
+       (= P S))))
+
+(RULE &seq_elem
+  (OR ((&marker *P))
+      ((&gap_mid P))))
+
+;; The stops the path visits, in progress order: the markers and the gap
+;; middles.
+(INIT &seq Order
+  (member ((:t P))
+    (&seq_elem *P))
+  (score ((:t P) (:S K))
+    (&seq_elem *P)
+    (&progress *D)
+    (opposite D (:Opp *D_back))
+    (margin (:B P) (:D D_back) *K)))
+
+(RULE &elbow
+  (&seq.successor (:a *S) (:b *S2))
+  (&entry (:S S2) (:P *Q))
+  (&progress *A)
+  (perp A (:A2 *A_x))
+  (input *P)
+  (same_line A P (:Q S))
+  (same_line (:A A_x) P Q))
+
+(RULE &segment
+  (OR ((&elbow *S (:P *Q))
+       (&entry S *P))
+      ((&elbow *S2 P)
+       (&entry (:S S2) (:P Q)))))
+
+(RULE &span_mark
+  (OR ((&segment (:P *Key_p) *Q)
+       (= *P Key_p))
+      ((&segment (:P Key_p) Q)
+       (= P Q))))
+
+;; The path: the cells each run spans.
+(INIT &span Ray
+  (key ((OR ((&span_mark (:Key_p ^P) ^Q (:P *P2)))
+            ((&segment P Q)
+             (axis_elem *A)
+             (same_line A P Q)
+             (axis4_of *D A))
+            ((&segment P Q)
+             (axis_elem (:A *A3))
+             (same_line (:A A3) P Q)
+             (input (:P P2)))))
+    (source ((:P P2))
+      (&span_mark (:Key_p P) Q (:P *P2)))
+    (node ((:P P2))
+      (&segment P Q)
+      (axis_elem *A)
+      (same_line A P Q)
+      (input (:P *P2)))
+    (dir (D)
+      (&segment P Q)
+      (axis_elem *A)
+      (same_line A P Q)
+      (axis4_of *D A))))
+
+(RULE &span_between
+  (&segment (:P *Key_p) *Q)
+  (input *P)
+  (axis_elem *A)
+  (same_line A (:P Key_p) Q)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray (:key (:P Key_p) Q) P D)
+  (&span.ray (:key (:P Key_p) Q) P (:D O)))
+
+(RULE &output
+  (OR ((&span_between *P)
+       (&marker *Col))
+      ((input P Col)
+       (NOT (&span_between P)))))
+
+(OUT (&output ^P ^Col))

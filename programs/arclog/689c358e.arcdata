@@ -1,0 +1,6 @@
+;; inputs 1073f9d10e1ef5d8edea6d655fd850b22a5513624162fedbf4bcf0b3ac70f750 programs/solvers/689c358e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 689c358e
+
+(param &bg Color (7))
+(param &far Color (0))

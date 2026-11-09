@@ -1,0 +1,188 @@
+;; inputs c58386df3c30cff63b104c80b5bfbe6b707c6c2326eb4406757fadf83e4e14b7 programs/solvers/e41c6fd3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e41c6fd3
+
+(INPUT copies-of-one-shape "on a field of the background color, the cells of each other color form one copy, and all copies are translates of one shape."
+
+  (DET &change_without
+    (ex_input (:Col *C))
+    (ex_input *E *P (:Col *C1))
+    (ex_output E P (:Col *C2))
+    (!= C1 C2)
+    (!= C1 C)
+    (!= C2 C))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&change_without C)))
+
+  (INIT &comp4 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (INIT &comp8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT one-anchor "one copy has the anchor color.")
+
+(INPUT disjoint-columns "no two copies share a column.")
+
+(OUTPUT align-to-anchor "each copy slides along align_axis, with its place across that axis kept, until its line on an edge of align_axis meets the anchor copy's line on that edge; the anchor copy stays where it is. The rule runs both edges of align_axis and is undefined on an input where the two edges give different outputs.")
+
+(OUTPUT clear-rest "every cell that no moved copy covers is the background color."
+
+  (RULE &copy
+    (input *P (:Col *Key))
+    (NOT (&background (:C Key))))
+
+  (INIT &copy_box BoundingBox
+    (key ((&copy (:Key ^K) *P))
+      (cell (P)
+        (&copy (:Key K) *P))))
+
+  (DET &not_kept
+    (OR ((ex_input (:Col *C))
+         (ex_output *E)
+         (NOT (ex_input E (:Col C))))
+        ((ex_input (:E *E2) *P (:Col C))
+         (ex_output (:E E2))
+         (NOT (ex_output (:E E2) P (:Col C))))))
+
+  (DET &anchor
+    (ex_input (:Col *C))
+    (NOT (&not_kept C)))
+
+  (RULE &anchor_copy
+    (&copy (:Key *K) *P)
+    (input P *Col)
+    (&anchor (:C Col)))
+
+  (DET &line_holds
+    (ex_output *E *P (:Col *C))
+    (axis_elem *A)
+    (ex_input E (:P *Q) (:Col C))
+    (same_line A P Q))
+
+  (DET &off_line
+    (ex_output *E *P (:Col *C))
+    (axis_elem *A)
+    (NOT (&line_holds E A P C)))
+
+  (DET &align_axis
+    (axis_elem *A)
+    (NOT (&off_line A)))
+
+  (RULE &slide_axis
+    (&align_axis *A))
+
+  (RULE &edge_line
+    (&slide_axis *A)
+    (axis_of *D A)
+    (&copy_box.box (:key *K) *B)
+    (&copy (:Key K) *P)
+    (inside (:A P) B)
+    (same_dist D (:P1 P) (:P2 B))
+    (split P A (:Along *L)))
+
+  (RULE &line
+    (input *P)
+    (split P *A (:Along *L))))
+
+(ALTS $r "what one copy is" $ColorClass
+  (ALT $ObjectComponents
+    (INPUT copies-of-one-shape "each connected component of one color is a copy; undefined where the anchor color has more than one component."
+      (RULE &copy
+        (&comp4.component (:key *Col) *P (:Id *Key))))
+    (ALTS $adjacency "which neighbors join a component" $Adjacency4
+      (ALT $Adjacency8
+        (INPUT copies-of-one-shape "components join at corners as well."
+          (RULE &copy
+            (&comp8.component (:key *Col) *P (:Id *Key))))))))
+
+(ALTS $a "what of a copy's span meets the anchor's span" $AlignEdges
+  (ALT $AlignCenter
+    (OUTPUT align-to-anchor "the copy's span on the slide axis and the anchor's span have one center; undefined where the two spans differ in length by an odd count.")
+    (RULE &moved
+      (&edge_line *K *D (:L *L_c))
+      (axis_of D *A)
+      (&line A *L)
+      (relative (:Base L_c) (:X L) (:X_rel *V))
+      (&copy_box.box (:key K) *B)
+      (compose (:A B) (:B V) (:C *B_t))
+      (&anchor_copy (:K *K_a))
+      (&copy_box.box (:key (:K K_a)) (:B *B_a))
+      (relative (:Base B_a) (:X B_t) (:X_rel *X))
+      (dist_pair (:P X) D (:K *N) (:K2 N)))))
+
+(ALTS $s "where the slide axis comes from" $StoredAxis
+  (ALT $AxisFromLayout
+    (OUTPUT align-to-anchor "the slide axis is the one whose cross axis has the copies' spans pairwise disjoint; undefined where the spans are pairwise disjoint on both axes or on neither."
+      (RULE &span_overlap
+        (&line *A *L)
+        (&copy_box.box (:key (:K *K1)) (:B *B1))
+        (split (:P B1) A (:Along *B1_along))
+        (inside (:A L) (:B B1_along))
+        (&copy_box.box (:key (:K *K2)) (:B *B2))
+        (split (:P B2) A (:Along *B2_along))
+        (inside (:A L) (:B B2_along))
+        (!= K1 K2))
+
+      (RULE &slide_axis
+        (&span_overlap *A)
+        (perp A *A2)
+        (NOT (&span_overlap (:A A2)))))))
+
+(RULE &anchor_split
+  (&anchor_copy (:K *K1))
+  (&anchor_copy (:K *K2))
+  (!= K1 K2))
+
+(RULE &slide_edge
+  (&slide_axis *A)
+  (axis_of *D A))
+
+(RULE &moved
+  (&edge_line *K *D *L)
+  (&anchor_copy (:K *K_a))
+  (&edge_line (:K K_a) D (:L *L_a))
+  (relative (:Base L) (:X L_a) (:X_rel *V)))
+
+(RULE &placed
+  (&moved *K *D *V)
+  (&copy (:Key K) (:P *P2))
+  (input (:P P2) *Col)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &landed
+  (OR ((&placed *D *P *Col))
+      ((&slide_edge D)
+       (input P)
+       (NOT (&placed D P))
+       (&background (:C Col)))))
+
+(RULE &failed
+  (OR ((&slide_edge *D)
+       (&copy (:Key *K))
+       (NOT (&moved K D)))
+      ((&landed (:D *D3) *P *Col)
+       (opposite (:D D3) (:Opp *D2))
+       (NOT (&landed (:D D2) P Col)))))
+
+(RULE &output
+  (&landed *P *Col)
+  (NOT (&failed))
+  (NOT (&anchor_split)))
+
+(OUT (&output ^P ^Col))

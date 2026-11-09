@@ -1,0 +1,8 @@
+;; inputs aedc28185f9f623180e7916278f0b249fc2254563141393c27df81b02898a04a programs/solvers/42f83767.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 42f83767
+
+(param &bg Color (0))
+(param &stencil Color (5))
+(param &strip_axis Axis (AXIS_H))
+(param &gap number (1))

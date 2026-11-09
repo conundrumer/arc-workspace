@@ -1,0 +1,678 @@
+;; inputs 7d0744b502fe2dd690de7962a3b32fbbf820484a64fb0af2b3243a6e37807ced programs/solvers/a32d8b75.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a32d8b75
+
+(INPUT separator "one or more full lines of &sep split the grid into panels. One panel is the field, and each other panel is a legend."
+
+  (DET &dropped
+    (ex_output *E)
+    (ex_input E (:Col *C))
+    (NOT (ex_output (:Col C))))
+
+  (DET &dropped_missing
+    (&dropped *C)
+    (ex_output *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET &line_mixed
+    (ex_input *E *P *Col)
+    (split P *A (:Along *L))
+    (ex_input E (:P *Q) (:Col *Col2))
+    (split (:P Q) A (:Along L))
+    (!= Col Col2))
+
+  (DET &full_line
+    (ex_input *E *P *Col)
+    (split P *A (:Along *L))
+    (NOT (&line_mixed E A L Col)))
+
+  (DET &sep_missing
+    (&dropped *C)
+    (ex_output *E)
+    (NOT (&full_line E (:Col C))))
+
+  (DET &sep
+    (&dropped *C)
+    (NOT (&dropped_missing C))
+    (NOT (&sep_missing C))))
+
+(INPUT field "the field is the one panel that holds no &sep cell")
+
+(INPUT legend "a legend holds four parts on a &bg ground. A framed box is a square of &box_side cells on a side, closed off by &sep or by the grid edge. - a pattern: a rectangle filled with exactly two colors - a mask: a shape of one color, apart from the pattern - an anchor box: a framed box with one &anchor cell at a corner and &bg elsewhere - an arrow box: a framed box with &arrow at its center and at one edge-neighbor of the center, and &bg elsewhere"
+
+  (RULE &line_break
+    (input *P *Col)
+    (NOT (&sep (:C Col)))
+    (split P *A (:Along *L)))
+
+  (RULE &separator
+    (input *P)
+    (split P *A (:Along *L))
+    (NOT (&line_break A L)))
+
+  (RULE &panels_on_divider
+    (input *P)
+    (&separator *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &panels_rank Order
+    (key ((OR ((&separator *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&separator *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&separator *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *P D (:N *N1))
+    (&panels_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &panels_tile_of
+    (&panels_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET &bg
+    (&dropped *C)
+    (NOT (&dropped_missing C))
+    (NOT (&sep C)))
+
+  (RULE &panel_cell
+    (&panels_tile_of *P (:P_tile *Pl))
+    (input P *Col))
+
+  (RULE &sep_panel
+    (&panel_cell *Pl *Col)
+    (&sep (:C Col)))
+
+  (DET &legend2
+    (&sep_panel *E *Pl)
+    (ex_output E))
+
+  (DET &legend_cell2
+    (&legend2 *E *Pl)
+    (ex_output E)
+    (&panel_cell E Pl *P *Col)
+    (NOT (&sep (:C Col))))
+
+  ;; The regions of a legend that &sep closes off.
+  (INIT &region2 Connectivity
+    (key ((&legend_cell2 (:E ^Ky) ^Pl *P))
+      (node (P)
+        (&legend_cell2 (:E Ky) Pl *P))))
+
+  (INIT &region_box2 BoundingBox
+    (key ((&region2.component (:key ^Ky) *P ^Id))
+      (cell (P)
+        (&region2.component (:key Ky) *P Id))))
+
+  (DET &region_gap2
+    (&region2.component (:key (:Ky *E) *Pl) *Id)
+    (ex_output E)
+    (&region_box2.box (:key (:Ky E) Id) *B)
+    (&panel_cell E Pl *P)
+    (inside (:A P) B)
+    (NOT (&region2.component (:key (:Ky E) Pl) P Id)))
+
+  (DET &square
+    (&region2.component (:key (:Ky *E)) *P *Id)
+    (&region_box2.box (:key (:Ky E) Id) *B)
+    (NOT (&region_gap2 E Id))
+    (box_extent B P *A *N)
+    (perp A *A2)
+    (box_extent B P (:A A2) N))
+
+  (DET &box_side_missing
+    (&square *N)
+    (ex_output *E)
+    (NOT (&square E N)))
+
+  (DET &box_side
+    (&square (:N *K))
+    (NOT (&box_side_missing (:N K))))
+
+  (RULE &legend
+    (&sep_panel *Pl))
+
+  (RULE &legend_cell
+    (&legend *Pl)
+    (&panel_cell Pl *P *Col)
+    (NOT (&sep (:C Col))))
+
+  ;; The regions of a legend that &sep closes off.
+  (INIT &region Connectivity
+    (key ((&legend_cell ^Pl *P))
+      (node (P)
+        (&legend_cell Pl *P))))
+
+  (INIT &region_box BoundingBox
+    (key ((&region.component *P ^Id))
+      (cell (P)
+        (&region.component *P Id))))
+
+  (RULE &off_side
+    (&region.component *P *Id)
+    (&region_box.box (:key Id) *B)
+    (box_extent B P *A *N)
+    (NOT (&box_side (:K N))))
+
+  (RULE &region_gap
+    (&region.component (:key *Pl) *Id)
+    (&region_box.box (:key Id) *B)
+    (&panel_cell Pl *P)
+    (inside (:A P) B)
+    (NOT (&region.component (:key Pl) P Id)))
+
+  (RULE &framed
+    (&region.component (:key *Pl) *Id)
+    (&region_box.box (:key Id) *B)
+    (NOT (&region_gap Id))
+    (NOT (&off_side Id)))
+
+  (RULE &in_box
+    (&framed *Pl *B)
+    (&panel_cell Pl *P)
+    (inside (:A P) B))
+
+  (RULE &ground_ink
+    (&legend_cell *Pl *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&in_box P)))
+
+  (INIT &piece Connectivity
+    (key ((&ground_ink ^Pl *P))
+      (node (P)
+        (&ground_ink Pl *P))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id))))
+
+  (RULE &piece_color
+    (&piece.component (:key *Pl) *P *Id)
+    (&ground_ink Pl P *Col))
+
+  (RULE &source_piece
+    (&piece.component (:key *Pl) *Id)
+    (&piece_color Id (:Col *C1))
+    (&piece_color Id (:Col *C2))
+    (!= C1 C2))
+
+  (RULE &source
+    (&source_piece *Pl *Id)
+    (&piece_box.box (:key Id) *B)
+    (&piece.component (:key Pl) *P Id)
+    (&ground_ink Pl P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *T)))
+
+  (RULE &pattern_color
+    (&source *Pl *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &mask_color_count Cardinality
+    (key ((&source_piece ^Pl)
+          (&ground_ink Pl *P ^Col)
+          (NOT (&pattern_color Pl Col)))
+      (member ((:m P))
+        (&source_piece Pl)
+        (&ground_ink Pl *P Col)
+        (NOT (&pattern_color Pl Col)))))
+
+  (DET &off_side2
+    (&region2.component (:key (:Ky *E)) *P *Id)
+    (&region_box2.box (:key (:Ky E) Id) *B)
+    (box_extent B P *A *N)
+    (NOT (&box_side (:K N))))
+
+  (DET &framed2
+    (&region2.component (:key (:Ky *E) *Pl) *Id)
+    (&region_box2.box (:key (:Ky E) Id) *B)
+    (NOT (&region_gap2 E Id))
+    (NOT (&off_side2 E Id)))
+
+  (DET &box_ink2
+    (&framed2 *E *Pl *B)
+    (ex_output E)
+    (&panel_cell E Pl *P *Col)
+    (inside (:A P) B)
+    (NOT (&bg (:C Col))))
+
+  (DET &arrow_cand2
+    (&box_ink2 *E *B *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *S))
+    (centered (:P S))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&box_ink2 E B (:P Q)))
+
+  (DET &arrow_extra2
+    (&arrow_cand2 *E *B *P *Q)
+    (&box_ink2 E B (:P *R))
+    (!= R P)
+    (!= R Q))
+
+  (DET &arrow_pair2
+    (&framed2 *E *Pl *B)
+    (&arrow_cand2 E B *P *D *Q)
+    (&box_ink2 E B P *Col)
+    (&box_ink2 E B (:P Q) Col)
+    (NOT (&arrow_extra2 E B P Q)))
+
+  (DET &arrow_missing
+    (&arrow_pair2 *Col)
+    (ex_output *E)
+    (NOT (&arrow_pair2 E Col)))
+
+  (DET &arrow
+    (&arrow_pair2 (:Col *C))
+    (NOT (&arrow_missing (:Col C))))
+
+  (RULE &box_ink
+    (&framed *Pl *B)
+    (&panel_cell Pl *P *Col)
+    (inside (:A P) B)
+    (NOT (&bg (:C Col))))
+
+  ;; The reading order: the corner it starts from, and the axis it runs along first.
+  (DET &reading_corner DiagDirDomain)
+
+  (DET &reading_axis AxisDomain)
+
+  (DET &box_other_ink2
+    (&box_ink2 *E *B *P)
+    (&box_ink2 E B (:P *Q))
+    (!= P Q))
+
+  (DET &anchor_cand2
+    (&framed2 *E *Pl *B)
+    (&box_ink2 E B *P *Col)
+    (inside (:A P) B)
+    (same_corner (:D *Diag) (:P1 P) (:P2 B))
+    (NOT (&box_other_ink2 E B P)))
+
+  (DET &anchor_missing
+    (&anchor_cand2 *Col)
+    (ex_output *E)
+    (NOT (&anchor_cand2 E Col)))
+
+  (DET &anchor
+    (&anchor_cand2 (:Col *C))
+    (NOT (&anchor_missing (:Col C))))
+
+  (RULE &box_start
+    (&framed *Pl *B)
+    (&reading_corner (:D *C))
+    (&panel_cell Pl *P)
+    (inside (:A P) B)
+    (same_corner (:D C) (:P1 P) (:P2 B)))
+
+  (INIT &box_order Order
+    (key ((&box_start ^Pl ^C *P))
+      (member ((:t P))
+        (&box_start Pl C *P))
+      (score ((:t P) (:S K1))
+        (&box_start Pl C *P)
+        (&reading_axis *A)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&box_start Pl C *P)
+        (&reading_axis *A)
+        (diag_dist P (:Diag C) A *K1 *K2))))
+
+  (RULE &first_box
+    (&box_order.minimal (:key *Pl *C) (:t *P))
+    (&box_start Pl *B C P))
+
+  (INIT &ink_order Order
+    (key ((&first_box ^C ^B))
+      (member ((:t P))
+        (&box_ink B *P))
+      (score ((:t P) (:S K1))
+        (&box_ink B *P)
+        (&reading_axis *A)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&box_ink B *P)
+        (&reading_axis *A)
+        (diag_dist P (:Diag C) A *K1 *K2))))
+
+  (RULE &piece_start
+    (&piece_box.box (:key *Id) *B)
+    (&reading_corner (:D *C))
+    (&panel_cell *Pl *P)
+    (inside (:A P) B)
+    (same_corner (:D C) (:P1 P) (:P2 B)))
+
+  (INIT &piece_order Order
+    (key ((&piece_start ^Pl ^C *P))
+      (member ((:t P))
+        (&piece_start Pl C *P))
+      (score ((:t P) (:S K1))
+        (&piece_start Pl C *P)
+        (&reading_axis *A)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&piece_start Pl C *P)
+        (&reading_axis *A)
+        (diag_dist P (:Diag C) A *K1 *K2))))
+
+  (INIT &mask_color Order
+    (key ((&mask_color_count.size (:key ^Pl *Col)))
+      (member ((:t Col))
+        (&mask_color_count.size (:key Pl *Col)))
+      (score ((:t Col) (:S N))
+        (&mask_color_count.size (:key Pl *Col) *N)))))
+
+(INPUT order "in each legend the pattern stands above the mask, and the anchor box above the arrow box")
+
+(INPUT legend-left "a legend stands left of the field")
+
+(INPUT mask-color "the mask color is not a pattern color")
+
+(OUTPUT crop "the output is the field, with its size and content, before the stamps"
+
+  (RULE &field_cell
+    (&panel_cell *Pl *P)
+    (NOT (&sep_panel Pl)))
+
+  (INIT &field_box BoundingBox
+    (cell (P)
+      (&field_cell *P))))
+
+(OUTPUT orient "the mask's bounding box, read as a set of cells, turns by the rotation that takes &ref_dir onto the arrow direction, from the center arrow cell to the other one"
+
+  (RULE &mask_cell
+    (&source_piece *Pl *Id)
+    (&ground_ink Pl *P)
+    (NOT (&piece.component (:key Pl) P Id)))
+
+  (INIT &mask_box BoundingBox
+    (key ((&mask_cell ^Pl *P))
+      (cell (P)
+        (&mask_cell Pl *P))))
+
+  ;; The arrow direction at which the mask does not turn.
+  (DET &ref_dir DirDomain))
+
+(OUTPUT scale "each cell of the turned mask becomes a block the size of the pattern")
+
+(OUTPUT anchor "the blocks are placed flush with the field corner that is the corner of the anchor cell in its box, and cut at the field edge")
+
+(OUTPUT swap "the stamp is the pattern with its two colors exchanged. The stamp does not turn.")
+
+(OUTPUT stamp "each block at a mask cell takes the stamp, and every other field cell keeps its color. Each legend stamps its own mask on the same field. Where two stamps overlap, the output is undefined."
+
+  (RULE &arrow_cand
+    (&box_ink *B *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *S))
+    (centered (:P S))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&box_ink B (:P Q)))
+
+  (RULE &arrow_extra
+    (&arrow_cand *B *P *Q)
+    (&box_ink B (:P *R))
+    (!= R P)
+    (!= R Q))
+
+  (RULE &arrow_pair
+    (&framed *Pl *B)
+    (&arrow_cand B *P *D *Q)
+    (&box_ink B P *Col)
+    (&box_ink B (:P Q) Col)
+    (NOT (&arrow_extra B P Q)))
+
+  (RULE &anchor_cand
+    (&framed *Pl *B)
+    (&box_ink B *P *Col)
+    (inside (:A P) B)
+    (same_corner (:D *Diag) (:P1 P) (:P2 B))
+    (ALL ((&box_ink B (:P *Q)))
+         ((= P Q))))
+
+  (RULE &pattern_many
+    (&pattern_color *Pl (:Col *C1))
+    (&pattern_color Pl (:Col *C2))
+    (&pattern_color Pl (:Col *C3))
+    (!= C1 C2)
+    (!= C1 C3)
+    (!= C2 C3))
+
+  (RULE &swapped
+    (&pattern_color *Pl *Col)
+    (&pattern_color Pl (:Col *Col2))
+    (!= Col Col2)
+    (NOT (&pattern_many Pl))))
+
+(ALTS $arrow "how the arrow box is found" $ArrowColor
+  (ALT $ArrowByShape
+    (INPUT legend "the arrow box is the framed box with two cells of one color, any color, at its center and at one edge-neighbor of the center. Undefined where no framed box has that shape.")
+    (RULE &arrow_dir
+      (&arrow_pair *Pl *D))))
+
+(ALTS $pattern "how the pattern is found" $PatternRect
+  (ALT $StampFirst
+    (INPUT legend "the pattern is the bounding-box subgrid of the first piece in reading order, and the mask is every other piece outside the framed boxes"
+      (RULE &source_piece
+        (&piece_order.minimal (:key *Pl *C) (:t *P))
+        (&piece_start Pl *Id C P))
+
+      (RULE &source
+        (&source_piece *Pl *Id)
+        (&piece_box.box (:key Id) *B)
+        (&panel_cell Pl *P *Col)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *T))))
+    (OUTPUT swap "a stamp with exactly two colors other than &bg is swapped, and any other stamp is kept as it is")
+    (RULE &stamp_color
+      (OR ((&source *Pl *T *Col)
+           (NOT (&bg (:C Col)))
+           (NOT (&swapped Pl)))
+          ((&source Pl T (:Col *C))
+           (&swapped Pl (:Col C) (:Col2 Col)))
+          ((&source Pl T Col)
+           (&bg (:C Col)))))))
+
+(ALTS $mask "how the mask is found" $MaskShape
+  (ALT $MaskByColor
+    (INPUT legend "the mask is every cell outside the framed boxes of the most common color that is not a pattern color. With no such color, the legend stamps nothing."
+      (RULE &mask_cell
+        (&mask_color.maximal (:key *Pl) (:t *Col))
+        (&ground_ink Pl *P Col)))))
+
+(ALTS $anchor "how the anchor box is found" $AnchorColor
+  (ALT $AnchorByPosition
+    (INPUT legend "the anchor box is the first framed box in reading order. Its first non-&bg cell in reading order, of any color, gives the corner when it is at a corner, and the corner the reading starts from otherwise. Undefined where the legend has no framed box."
+      (RULE &first_at_corner
+        (&ink_order.minimal (:key *B *C) (:t *P))
+        (inside (:A P) B)
+        (same_corner (:D *Diag) (:P1 P) (:P2 B))))
+    (RULE &anchor_corner
+      (&first_box *Pl *C *B)
+      (OR ((&first_at_corner B C *Diag))
+          ((NOT (&first_at_corner B C))
+           (= Diag C)))))
+  (ALT $AnchorByShape
+    (INPUT legend "the anchor box is the framed box with one non-&bg cell, of any color, at a corner. Undefined where no framed box has that shape.")
+    (RULE &anchor_corner
+      (&anchor_cand *Pl *Diag))))
+
+(ALTS $field "how the field and the legends are found" $NoSepPanel
+  (ALT $FieldByPosition
+    (INPUT field "with one separator, the legend is the panel on the &legend_side of it and the field is the panel past it. With two or more, the two end panels are legends and the field lies between them. Undefined where a panel taken as a legend holds no legend."
+      (RULE &two_separators
+        (&separator *A (:L *L1))
+        (&separator A (:L *L2))
+        (!= L1 L2))
+
+      (RULE &side
+        (&separator *A)
+        (axis_of *D A))
+
+      (DET &legend_end
+        (&side *E *D)
+        (ex_output E)
+        (&panels_part_idx E *P D (:N 0))
+        (&panels_tile_of E P (:P_tile *Pl))
+        (&sep_panel E Pl))
+
+      (DET &legend_side_missing
+        (&legend_end *D)
+        (ex_output *E)
+        (NOT (&legend_end E D)))
+
+      (DET &legend_side
+        (&legend_end *D)
+        (NOT (&legend_side_missing D)))
+
+      (RULE &legend
+        (&legend_side *D)
+        (&panel_cell *Pl *P)
+        (OR ((&panels_part_idx P D (:N 0)))
+            ((axis_of D *A)
+             (&two_separators A)
+             (opposite D (:Opp *D2))
+             (&panels_part_idx P (:D D2) (:N 0)))))
+
+      (RULE &separator_toward
+        (input *P)
+        (axis_of *D *A)
+        (&separator A *L)
+        (nearer D (:P L) (:Q P)))
+
+      (RULE &field_cell
+        (&legend_side *D)
+        (axis_of D *A)
+        (opposite D (:Opp *D2))
+        (&separator_toward *P D)
+        (OR ((NOT (&two_separators A)))
+            ((&two_separators A)
+             (&separator_toward P (:D D2))))))))
+
+(RULE &case)
+
+(RULE &arrow_dir
+  (&arrow_pair *Pl *D *Col)
+  (&arrow (:C Col)))
+
+(RULE &mask_turn
+  (&arrow_dir *Pl *D)
+  (&ref_dir (:D *D0))
+  (c4_elem (:D *G))
+  (apply_dir (:D G) (:Dir D0) (:Dir_out D)))
+
+(RULE &stamp_frame
+  (&source_piece *Pl *Id)
+  (&piece_box.box (:key Id) *B)
+  (&panel_cell Pl *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *T)))
+
+(INIT &scaled_tiling Tiling
+  (outer ((:P Q))
+    (&case)
+    (&legend *Pl)
+    (&mask_cell Pl *P)
+    (&mask_box.box (:key Pl) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *S))
+    (&mask_turn Pl *G)
+    (apply (:D G) (:P S) (:P_out *Q)))
+  (inner ((:P T))
+    (&case)
+    (&legend *Pl)
+    (&stamp_frame Pl *T)))
+
+(RULE &field_at
+  (&field_cell *P)
+  (input P *Col)
+  (&field_box.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &anchor_corner
+  (&anchor_cand *Pl *Diag *Col)
+  (&anchor (:C Col)))
+
+(RULE &stamp_color
+  (OR ((&source *Pl *T (:Col *C))
+       (&swapped Pl (:Col C) (:Col2 *Col)))
+      ((&source Pl T Col)
+       (&bg (:C Col)))))
+
+(RULE &scaled
+  (&case)
+  (&legend *Pl)
+  (&mask_cell Pl *P)
+  (&mask_box.box (:key Pl) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *S))
+  (&mask_turn Pl *G)
+  (apply (:D G) (:P S) (:P_out *Q))
+  (&stamp_frame Pl *T)
+  (&scaled_tiling.cell (:P_outer Q) (:P_inner T) (:P *P_s)))
+
+(RULE &cover
+  (&scaled *Pl *T *P_s)
+  (&anchor_corner Pl *Diag)
+  (diag_dist (:P P_s) Diag (:A *Ax) *K1 *K2)
+  (&field_at *P_inner)
+  (diag_dist (:P P_inner) Diag (:A Ax) K1 K2))
+
+(RULE &ready
+  (&case)
+  (&legend *Pl)
+  (&mask_turn Pl)
+  (&anchor_corner Pl)
+  (&stamp_frame Pl))
+
+(RULE &unready
+  (&case)
+  (&legend *Pl)
+  (NOT (&ready Pl)))
+
+(RULE &overlap
+  (&cover *Pl *P_inner)
+  (&cover (:Pl *Pl2) P_inner)
+  (!= Pl Pl2))
+
+(RULE &shown
+  (OR ((&cover *Pl *T *P_inner)
+       (NOT (&overlap P_inner))
+       (&stamp_color Pl T *Col)
+       (NOT (&unready)))
+      ((&case)
+       (&field_at P_inner Col)
+       (NOT (&cover P_inner))
+       (NOT (&unready)))))
+
+(OUT (&shown ^P_inner ^Col))

@@ -1,0 +1,309 @@
+;; inputs addb3d00c1ea899442f2474c3d8e004c3b3c3fad4a5dc9e921e30d33b6ef4504 programs/solvers/2ccd9fef.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2ccd9fef
+
+(INPUT panel-strip "the input is a row or a column of equal panels laid end to end with no divider, and every panel shows one frame drawing.")
+
+(INPUT blank-panel "one panel shows the frame alone. It is the panel of fewest colors, in the split into equal panels under which that panel leaves the fewest cells of the other panels unexplained, and it lies at one end of the strip.")
+
+(INPUT stages "every other panel holds a stage: figures, each a 4-connected group of the cells that differ from the frame.")
+
+(OUTPUT stage-order "the stages run along the strip toward the blank panel, which holds the stage after the last one.")
+
+(OUTPUT track "a figure continues the figure of the next stage that shares a cell with it, and its step is the change of its box's margins from one stage to the next, the same at every stage, and none across the growth axis, the axis across the strip.")
+
+(OUTPUT next-stage "each stage with the stage after it is a demonstration. The rules of the catalog that every demonstration confirms each draw the stage after the last one in the blank panel, over the frame."
+
+  (INIT &cand_tile_division Division
+    (key ((input *P)
+          (sub_extent P ^A (:K ^N)))
+      (cell (P)
+        (input *P)
+        (sub_extent P A (:K N)))
+      (parts (A N)
+        (input *P)
+        (sub_extent P A (:K N)))))
+
+  ;; The colors a candidate's panel holds.
+  (INIT &palette Cardinality
+    (key ((&cand_tile_division.tile (:key ^A ^N) *P (:P_outer ^Pan))
+          (input P *Col))
+      (member ((:m Col))
+        (&cand_tile_division.tile (:key A N) *P (:P_outer Pan))
+        (input P *Col))))
+
+  ;; The candidate's frame: its plainest panel.
+  (INIT &plainest Order
+    (key ((&palette.size (:key ^A ^N *Pan) (:N *S)))
+      (member ((:t (:V Pan) S))
+        (&palette.size (:key A N *Pan) (:N *S)))
+      (score ((:t (:V Pan) S) S)
+        (&palette.size (:key A N *Pan) (:N *S)))))
+
+  (RULE &cand_tpl
+    (&cand_tile_division.tile (:key *A *N) *P (:P_outer *Pan) (:P_inner *P_intile))
+    (input P *Col)
+    (&plainest.minimal (:key A N) (:t (:V Pan))))
+
+  (INIT &miss Cardinality
+    (key ((OR ((&cand_tile_division.tile (:key ^A ^N) *P (:P_inner *P_intile))
+               (input P *Col)
+               (&cand_tpl A N P_intile (:Col *Col2))
+               (!= Col Col2))
+              ((&cand_tile_division.tile (:key A N) (:P_outer *P_tile))
+               (&plainest.minimal (:key A N) (:t (:V *Pan)))
+               (!= P_tile Pan))))
+      (member ((:m P))
+        (&cand_tile_division.tile (:key A N) *P (:P_inner *P_intile))
+        (input P *Col)
+        (&cand_tpl A N P_intile (:Col *Col2))
+        (!= Col Col2))
+      (domain ()
+        (&cand_tile_division.tile (:key A N) (:P_outer *P_tile))
+        (&plainest.minimal (:key A N) (:t (:V *Pan)))
+        (!= P_tile Pan))))
+
+  ;; The split its frame explains best.
+  (INIT &fewest Order
+    (member ((:t A N S))
+      (&miss.size (:key *A *N) (:N *S)))
+    (score ((:t A N S) S)
+      (&miss.size (:key *A *N) (:N *S))))
+
+  (RULE &tile
+    (&fewest.minimal (:t *A *N))
+    (&cand_tile_division.tile (:key A N) *P (:P_outer *P_tile) (:P_inner *P_intile)))
+
+  (RULE &tpl_pan
+    (&fewest.minimal (:t *A *N))
+    (&plainest.minimal (:key A N) (:t (:V *Pan))))
+
+  (RULE &tpl
+    (&fewest.minimal (:t *A *N))
+    (&cand_tpl A N *P_intile *Col))
+
+  (RULE &time_dir
+    (&fewest.minimal (:t *A))
+    (axis_of *D A)
+    (&tpl_pan *Pan)
+    (margin (:B Pan) D (:K 0)))
+
+  (RULE &growth_axis
+    (&fewest.minimal (:t *A))
+    (perp A (:A2 *G)))
+
+  (RULE &stage_panel
+    (&tile (:P_tile *Pan))
+    (NOT (&tpl_pan Pan)))
+
+  (RULE &stage_cell
+    (&stage_panel *Pan)
+    (&tile *P (:P_tile Pan) *P_intile)
+    (input P *Col))
+
+  (RULE &content
+    (&stage_cell *Pan (:P_intile *P) *Col)
+    (&tpl (:P_intile P) (:Col *Col2))
+    (!= Col Col2))
+
+  (RULE &succ_stage
+    (&stage_panel *Pan)
+    (&time_dir *D)
+    (neighbor (:P Pan) D (:Q *Pan2))
+    (&stage_panel (:Pan Pan2)))
+
+  (INIT &figure Connectivity
+    (key ((&content ^Pan *P))
+      (node (P)
+        (&content Pan *P))))
+
+  (RULE &fig_cell
+    (&figure.component (:key *Pan) *P (:Id *F))
+    (&content Pan P *Col))
+
+  (INIT &fbox BoundingBox
+    (key ((&figure.component (:key ^Pan) *P (:Id ^F)))
+      (cell (P)
+        (&figure.component (:key Pan) *P (:Id F)))))
+
+  (RULE &succ_fig
+    (&succ_stage *Pan *Pan2)
+    (&figure.component (:key Pan) *P (:Id *F))
+    (&figure.component (:key (:Pan Pan2)) P (:Id *F2)))
+
+  (RULE &lineage_source
+    (&figure.component (:key *Pan) (:Id *F))
+    (NOT (&succ_stage (:Pan2 Pan))))
+
+  ;; Each figure of the first stage followed from stage to stage.
+  (INIT &lineage Propagation
+    (key ((&lineage_source ^Pan ^F))
+      (source ((:n Pan F))))
+    (edge ((:a (:Pan Pan3) (:F F3)) (:b (:Pan Pan2) (:F F2)))
+      (&succ_fig (:Pan *Pan3) (:F *F3) *Pan2 *F2)))
+
+  ;; The figure's step over the stages.
+  (INIT &step Singleton
+    (key ((&lineage.reached (:key ^Pan ^F) (:n (:Pan *Pan3) (:F *F3)))
+          (&succ_fig (:Pan Pan3) (:F F3) *Pan2 *F2)
+          (&fbox.box (:key (:Pan Pan3) (:F F3)) *B)
+          (&fbox.box (:key (:Pan Pan2) (:F F2)) (:B *B2))
+          (relative (:Base B) (:X B2) (:X_rel *V)))
+      (member ((:v V))
+        (&lineage.reached (:key Pan F) (:n (:Pan *Pan3) (:F *F3)))
+        (&succ_fig (:Pan Pan3) (:F F3) *Pan2 *F2)
+        (&fbox.box (:key (:Pan Pan3) (:F F3)) *B)
+        (&fbox.box (:key (:Pan Pan2) (:F F2)) (:B *B2))
+        (relative (:Base B) (:X B2) (:X_rel *V)))))
+
+  (RULE &fig_box
+    (&lineage.reached (:key (:Pan *Root_pan) (:F *Root_f)) (:n *Pan *F))
+    (&step.value (:key (:Pan Root_pan) (:F Root_f)) (:v *V))
+    (&growth_axis *G)
+    (split (:P V) (:A G) (:Across 0))
+    (&fbox.box (:key Pan F) *B)
+    (compose (:A B) (:B V) (:C *B2)))
+
+  (RULE &outward
+    (&fig_box *Pan *F *V)
+    (&growth_axis *G)
+    (axis_of *D (:A G))
+    (margin (:B V) D (:K *M))
+    (< M 0))
+
+  (RULE &end_shift
+    (&fig_box *Pan *F *B *B2)
+    (&growth_axis *G)
+    (corner_dir (:C *Dg) (:A G) *D)
+    (&tpl (:P_intile *P))
+    (inside (:A P) B)
+    (same_corner (:D Dg) (:P1 P) (:P2 B))
+    (&tpl (:P_intile *Q))
+    (inside (:A Q) (:B B2))
+    (same_corner (:D Dg) (:P1 Q) (:P2 B2))
+    (relative (:Base P) (:X Q) (:X_rel *T)))
+
+  (RULE &travel
+    (&end_shift *Pan *F *D *T)
+    (OR ((&fig_cell Pan F *P *Col)
+         (compose (:A P) (:B T) (:C *Q)))
+        ((&fig_box Pan F *B *B2)
+         (compose (:A B) (:B T) (:C *B_t))
+         (&tpl (:P_intile Q))
+         (inside (:A Q) (:B B2))
+         (NOT (inside (:A Q) (:B B_t)))
+         (opposite D (:Opp *D2))
+         (&growth_axis *G)
+         (&tpl (:P_intile *E))
+         (inside (:A E) (:B B_t))
+         (same_dist (:D D2) (:P1 E) (:P2 B_t))
+         (same_line (:A G) (:P Q) (:Q E))
+         (relative (:Base T) (:X E) (:X_rel P))
+         (&fig_cell Pan F P Col))))
+
+  ;; What a color turns into over a step, read where consecutive stages both
+  ;; hold a figure. A color the steps disagree about keeps itself.
+  (INIT &stage_turn Singleton
+    (key ((&succ_stage *Pan *Pan2)
+          (&content Pan *P ^Col)
+          (&content (:Pan Pan2) P (:Col *Col2)))
+      (member ((:v Col2))
+        (&succ_stage *Pan *Pan2)
+        (&content Pan *P Col)
+        (&content (:Pan Pan2) P (:Col *Col2)))))
+
+  (RULE &recolor
+    (OR ((&stage_turn.value (:key *Col) (:v *Col2)))
+        ((&content Col)
+         (NOT (&stage_turn.value (:key Col)))
+         (= Col2 Col))))
+
+  ;; A color of one stage, as another stage shows it: turned once per step
+  ;; between them.
+  (INIT &phase Propagation
+    (key ((&content (:Pan ^J) (:Col ^C)))
+      (source ((:n (:Pan J) (:Col C)))))
+    (edge ((:a (:Pan K1) (:Col C1)) (:b (:Pan K) (:Col C2)))
+      (OR ((&succ_stage (:Pan *K1) (:Pan2 *K))
+           (&recolor (:Col *C1) (:Col2 *C2)))
+          ((&succ_stage (:Pan K) (:Pan2 K1))
+           (&recolor (:Col C2) (:Col2 C1))))))
+
+  ;; The color the stages other than the one after pan show at a cell, turned
+  ;; to the stage after pan.
+  (INIT &recall Singleton
+    (key ((&content (:Pan *J) (:P ^Q) (:Col *C))
+          (&stage_panel ^Pan)
+          (NOT (&succ_stage Pan (:Pan2 J)))
+          (&phase.reached (:key J C) (:n Pan (:Col *C1)))
+          (&recolor (:Col C1) *Col2))
+      (member ((:v Col2))
+        (&content (:Pan *J) (:P Q) (:Col *C))
+        (&stage_panel Pan)
+        (NOT (&succ_stage Pan (:Pan2 J)))
+        (&phase.reached (:key J C) (:n Pan (:Col *C1)))
+        (&recolor (:Col C1) *Col2))))
+
+  ;; A stage and the stage after it.
+  (DEMONSTRATED &catalog
+    (value ((:o Pan) (:i P_intile) (:v Col))
+      (&stage_cell *Pan *P_intile *Col))
+    (demonstration ((:o Pan) (:o2 Pan2))
+      (&succ_stage *Pan *Pan2))
+    (DEMO_RULE $Stretch "Each figure travels with one end while its other end runs out ahead, and the lines it gains repeat the line at the leading end."
+      (RULE &rule_paint
+        (&travel *Pan *F *D (:Q *P) *Col)
+        (opposite D (:Opp *D2))
+        (&outward Pan F (:D D2)))
+
+      (RULE &prediction
+        (&rule_paint *Pan)
+        (OR ((&rule_paint Pan (:P *P_intile) *Col))
+            ((&tpl P_intile Col)
+             (NOT (&rule_paint Pan (:P P_intile)))))))
+    (DEMO_RULE $Push "Each figure travels with the end that runs out, and the lines it gains behind repeat the line at the trailing end."
+      (RULE &rule_paint
+        (&travel *Pan *F *D (:Q *P) *Col)
+        (&outward Pan F D)
+        (opposite D (:Opp *D2))
+        (NOT (&outward Pan F (:D D2))))
+
+      (RULE &prediction
+        (&rule_paint *Pan)
+        (OR ((&rule_paint Pan (:P *P_intile) *Col))
+            ((&tpl P_intile Col)
+             (NOT (&rule_paint Pan (:P P_intile)))))))
+    (DEMO_RULE $Stay "Each figure keeps its place while its colors turn. A cell it gains takes the color the other stages show there, turned to the stage, and a cell no other stage shows repeats the cell one step of its end back."
+      (RULE &gained
+        (&fig_box *Pan *F *B *B2)
+        (&tpl (:P_intile *Q))
+        (inside (:A Q) (:B B2))
+        (NOT (inside (:A Q) B)))
+
+      (RULE &rule_paint
+        (&fig_box *Pan *F *B)
+        (OR ((&fig_cell Pan F *P (:Col *Col0))
+             (&recolor (:Col Col0) (:Col2 *Col)))
+            ((&gained Pan F (:Q P))
+             (&recall.value (:key Pan (:Q P)) (:v Col)))
+            ((&gained Pan F (:Q P))
+             (NOT (&recall.value (:key Pan (:Q P))))
+             (&outward Pan F *D)
+             (&end_shift Pan F D *T)
+             (relative (:Base T) (:X P) (:X_rel *P2))
+             (inside (:A P2) B)
+             (&fig_cell Pan F (:P P2) (:Col Col0))
+             (&recolor (:Col Col0) (:Col2 Col)))))
+
+      (RULE &prediction
+        (&rule_paint *Pan)
+        (OR ((&rule_paint Pan (:P *P_intile) *Col))
+            ((&tpl P_intile Col)
+             (NOT (&rule_paint Pan (:P P_intile)))))))))
+
+(RULE &output
+  (&succ_stage (:Pan2 *Pan))
+  (NOT (&succ_stage Pan))
+  (&catalog (:o Pan) (:i *P) (:v *Col)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,33 @@
+;; inputs 183afe0fdcf7674a78dbe1f9952f37cf35b890c5640621cbf990d9c981370742 programs/solvers/d4469b4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d4469b4b
+
+(param &bg Color (0))
+(param &mark Color (5))
+(param &out_dim number (3))
+(param &center (Color Position)
+  (1 (grid
+    (_ _ _)
+    (_ 1 _)
+    (_ _ _)))
+  (2 (grid
+    (_ 1 _)
+    (_ _ _)
+    (_ _ _)))
+  (3 (grid
+    (_ _ _)
+    (_ _ _)
+    (_ _ 1))))
+(param &glyph (Color Position Color)
+  (1 (grid
+    (0 5 0)
+    (5 5 5)
+    (0 5 0)))
+  (2 (grid
+    (5 5 5)
+    (0 5 0)
+    (0 5 0)))
+  (3 (grid
+    (0 0 5)
+    (0 0 5)
+    (5 5 5))))

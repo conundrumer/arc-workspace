@@ -1,0 +1,9 @@
+;; inputs 6aad2d5b4f52784b11249e390d5ad2a8dba696f54bf5dfcb68fc42c4fc8a39fa programs/solvers/6d1d5c90.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6d1d5c90
+
+(param &marker_edge Dir (DIR_L))
+(param &shift_dir Dir (DIR_B))
+(param &band_width number (1))
+(param &marker_color Color (2))
+(param &marker_count number (1))

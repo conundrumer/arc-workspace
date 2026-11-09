@@ -1,0 +1,54 @@
+;; inputs 25d1adde63344f0335cce977643c3423c350c1da24043129a9dfa65df1d6f87a programs/solvers/96a8c0cd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 96a8c0cd
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(RULE &marker2
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &heading
+  (&marker2 *P)
+  (opposite *D (:Opp *D_edge))
+  (margin (:B P) (:D D_edge) (:K 0)))
+
+(DET &trail
+  (ex_output *E *P *Col)
+  (&marker (:C Col)))
+
+(DET &deflect
+  (&trail *E *P)
+  (&heading E *D)
+  (neighbor P D *Q)
+  (ex_input E (:P Q) (:Col *C_bar))
+  (NOT (&bg (:C C_bar)))
+  (turn *S D (:D2 *D_side))
+  (neighbor (:P Q) (:D D_side) (:Q *R))
+  (&trail E (:P R)))
+
+;; The walker's steps from the marker.
+(INIT &walk Propagation
+  (source ((:n P))
+    (&marker2 *P))
+  (edge ((:a P) (:b Q))
+    (input *P)
+    (&heading *D)
+    (neighbor P D (:Q *Q_ahead))
+    (OR ((input (:P Q_ahead) (:Col *Col_bar))
+         (&deflect (:C_bar Col_bar) *S)
+         (turn S D (:D2 *D_side))
+         (neighbor P (:D D_side) *Q))
+        ((= Q Q_ahead)))
+    (input (:P Q) *Col)
+    (&bg (:C Col))))
+
+(RULE &output
+  (OR ((&walk.reached (:n *P))
+       (&marker (:C *Col)))
+      ((input P Col)
+       (NOT (&walk.reached (:n P))))))
+
+(OUT (&output ^P ^Col))

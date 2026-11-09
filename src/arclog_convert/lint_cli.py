@@ -8,7 +8,7 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from arclog_convert import lint
+from arclog_convert import lint, out as output_dir
 from arclog_convert.lint import GEN, Linter, arcdata_errs
 from arclog_convert.readback import Stale, read_checked
 
@@ -45,7 +45,7 @@ def main(argv: list[str]) -> int:
         return 0
     show_all = "--all" in argv
     argv = [a for a in argv if a != "--all"]
-    paths = [Path(a) for a in argv] or (sorted(GEN.glob("*.arclog")) + sorted(GEN.parent.glob("*.arcscene"))
+    paths = [Path(a) for a in argv] or (sorted(GEN.glob("*.arclog")) + sorted(output_dir().glob("*.arcscene"))
                                         + sorted(GEN.glob("*.arcdata")))
     counts: Counter = Counter()
     files: dict[str, set] = defaultdict(set)

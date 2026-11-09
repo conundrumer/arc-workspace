@@ -1,0 +1,295 @@
+;; inputs 95d615f140b41f17139c40c69facdbb20d9d7088f2c03315b074721ec1f8e703 programs/solvers/e6721834.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e6721834
+
+(INPUT two-halves "the grid is cut along one axis into two halves of equal size, each filled with its own background color, which the other half lacks.")
+
+(INPUT dot-half "one half holds single dots on its background, no two of them 4-adjacent.")
+
+(INPUT object-half "the other half holds solid rectangles apart from one another, each of one body color with some cells of another color, its marks.")
+
+(INPUT exact-cover "in one way only, the dots split into groups, each group a translated copy of the marks, with their colors, of a different rectangle.")
+
+(INPUT placed-fit "each rectangle, moved by its group's translation, lies inside the dot half and overlaps no other moved rectangle.")
+
+(OUTPUT output-is-dot-half "the output is the dot half, with its background kept and its dots erased."
+
+  (RULE &line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  ;; The cut at the midline: line l's mirror image is the next line.
+  (RULE &cut
+    (&line *A *L)
+    (axis_of *D A)
+    (opposite D (:Opp *O))
+    (neighbor (:P L) (:D O) (:Q *L2))
+    (axis_inversion A (:T *F))
+    (apply (:D F) (:P L) (:P_out L2)))
+
+  (RULE &dot_part
+    (&cut *D *L)
+    (axis_of D *A)
+    (input *P *Col)
+    (split P A (:Along *L_p))
+    (OR ((= L_p L))
+        ((nearer D (:P L_p) (:Q L)))))
+
+  (INIT &dot_ground_count Cardinality
+    (key ((&dot_part (:D ^K_d) (:L ^K_l) *P ^Col))
+      (member ((:m P))
+        (&dot_part (:D K_d) (:L K_l) *P Col))))
+
+  (RULE &obj_part
+    (&cut *D *L)
+    (axis_of D *A)
+    (opposite D (:Opp *O))
+    (input *P *Col)
+    (split P A (:Along *L_p))
+    (nearer (:D O) (:P L_p) (:Q L)))
+
+  (INIT &obj_ground_count Cardinality
+    (key ((&obj_part (:D ^K_d) (:L ^K_l) *P ^Col))
+      (member ((:m P))
+        (&obj_part (:D K_d) (:L K_l) *P Col))))
+
+  (INIT &dot_ground Order
+    (key ((&dot_ground_count.size (:key (:K_d ^D) (:K_l ^L) *Col)))
+      (member ((:t Col))
+        (&dot_ground_count.size (:key (:K_d D) (:K_l L) *Col)))
+      (score ((:t Col) (:S N))
+        (&dot_ground_count.size (:key (:K_d D) (:K_l L) *Col) *N))))
+
+  (INIT &obj_ground Order
+    (key ((&obj_ground_count.size (:key (:K_d ^D) (:K_l ^L) *Col)))
+      (member ((:t Col))
+        (&obj_ground_count.size (:key (:K_d D) (:K_l L) *Col)))
+      (score ((:t Col) (:S N))
+        (&obj_ground_count.size (:key (:K_d D) (:K_l L) *Col) *N))))
+
+  (RULE &halves
+    (&dot_ground.maximal (:key *D *L) (:t *Col1))
+    (&obj_ground.maximal (:key D L) (:t *Col2))
+    (NOT (&dot_part D L (:Col Col2)))
+    (NOT (&obj_part D L (:Col Col1))))
+
+  (INIT &dot_box BoundingBox
+    (key ((&halves ^D ^L))
+      (cell (P)
+        (&dot_part D L *P)))))
+
+(OUTPUT move-rectangle "each rectangle that has a group is drawn, body and marks, at the translation that puts its marks on that group.")
+
+(OUTPUT drop-unmatched "a rectangle that has no group is not drawn."
+
+  (RULE &obj_ink
+    (&halves *D *L)
+    (&obj_part D L *P *Col)
+    (NOT (&obj_ground.maximal (:key D L) (:t Col))))
+
+  (INIT &piece4 Connectivity
+    (key ((&obj_ink ^D ^L *P))
+      (node (P)
+        (&obj_ink D L *P))))
+
+  (RULE &rect_cell
+    (&piece4.component (:key *D *L) *P (:Id *R))
+    (input P *Col))
+
+  (INIT &body_count Cardinality
+    (key ((&rect_cell (:D ^O_d) (:L ^O_l) ^R *P ^Col))
+      (member ((:m P))
+        (&rect_cell (:D O_d) (:L O_l) R *P Col))))
+
+  (RULE &dot
+    (&halves *D *L)
+    (&dot_part D L *P *Col)
+    (NOT (&dot_ground.maximal (:key D L) (:t Col))))
+
+  (INIT &body Order
+    (key ((&body_count.size (:key (:O_d ^D) (:O_l ^L) ^R *Col)))
+      (member ((:t Col))
+        (&body_count.size (:key (:O_d D) (:O_l L) R *Col)))
+      (score ((:t Col) (:S N))
+        (&body_count.size (:key (:O_d D) (:O_l L) R *Col) *N))))
+
+  (RULE &mark
+    (&rect_cell *D *L *R *P *Col)
+    (NOT (&body.maximal (:key D L R) (:t Col))))
+
+  (INIT &fit_color Occurrences
+    (key ((OR ((&mark (:D ^Mk_d) (:L ^Mk_l) ^R *P *Col))
+              ((&mark (:D Mk_d) (:L Mk_l) R)
+               (&dot (:D Mk_d) (:L Mk_l) P Col))))
+      (cell (P (:v Col))
+        (&mark (:D Mk_d) (:L Mk_l) R)
+        (&dot (:D Mk_d) (:L Mk_l) *P *Col))
+      (shape (P (:v Col))
+        (&mark (:D Mk_d) (:L Mk_l) R *P *Col))))
+
+  (RULE &occurs
+    (&fit_color.occurrence (:key (:Mk_d *D) (:Mk_l *L) *R) (:P *V)))
+
+  (RULE &take
+    (&occurs *D *L *R *V)
+    (&mark D L R (:P *M))
+    (compose (:A V) (:B M) (:C *P_dot)))
+
+  (RULE &bare
+    (&take *D *L)
+    (&dot D L *P)
+    (NOT (&take D L (:P_dot P))))
+
+  ;; A matching whose dots outnumber the marks that can take one, which no cover
+  ;; holds: a cover gives each dot a mark of its own.
+  (INIT &short Excess
+    (key ((OR ((&take (:D ^K_d) (:L ^K_l))
+               (&dot (:D K_d) (:L K_l) *P))
+              ((&take (:D K_d) (:L K_l) (:M *P_mark)))))
+      (plus ((:m P))
+        (&take (:D K_d) (:L K_l))
+        (&dot (:D K_d) (:L K_l) *P))
+      (minus ((:m P_mark))
+        (&take (:D K_d) (:L K_l) (:M *P_mark)))))
+
+  (RULE &ties_pool
+    (&take *D *L *P_dot *R *M)
+    (NOT (&bare D L))
+    (NOT (&short.excess (:key (:K_d D) (:K_l L)))))
+
+  (RULE &ties_key
+    (&ties_pool *D *L)
+    (ONE))
+
+  (RULE &ties_item
+    (&ties_pool *D *L *P_dot *R *M)
+    (&ties_key D L))
+
+  (CHOOSE &ties
+    (for ((&ties_item ^D ^L ^P_dot))
+      (from (&ties_item D L P_dot *R *M)))
+    (never
+      (&ties_item *D *L *P_dot *R *M)
+      (&ties_item D L (:P_dot *P_dot2) R M)
+      (!= P_dot P_dot2))
+    (never
+      (&ties_item *D *L (:P_dot *P_dot_1) *R (:M *P_mark_2))
+      (&ties_item D L (:P_dot *P_dot_3) R (:M *P_mark_4))
+      (relative (:Base P_mark_2) (:X P_dot_1) (:X_rel *V1))
+      (relative (:Base P_mark_4) (:X P_dot_3) (:X_rel *V2))
+      (!= V1 V2))
+    (never
+      (&ties_item (:D *Mk_d) (:L *Mk_l) (:P_dot *P_dot_5) *R (:M *P_mark_6))
+      (&ties_item (:D Mk_d) (:L Mk_l) *P_dot (:R *R2) (:M *M2))
+      (relative (:Base P_mark_6) (:X P_dot_5) (:X_rel *V))
+      (&mark (:D Mk_d) (:L Mk_l) R (:P *P_mark))
+      (compose (:A V) (:B P_mark) (:C P_dot))
+      (OR ((!= R2 R))
+          ((!= M2 P_mark)))))
+
+  (RULE &placed
+    (&ties *D *L *P_dot *R (:M *P_mark))
+    (relative (:Base P_mark) (:X P_dot) (:X_rel *V)))
+
+  (RULE &defect
+    (OR ((&ties *D *L)
+         (&dot D L *P)
+         (NOT (&ties D L (:P_dot P))))
+        ((&placed D L *R (:V *V1))
+         (&placed D L R (:V *V2))
+         (!= V1 V2))
+        ((&placed D L (:R *R2) *V)
+         (&mark D L (:R R2) (:P *P_mark))
+         (compose (:A V) (:B P_mark) (:C *P_dot))
+         (NOT (&ties D L P_dot (:R R2) (:M P_mark))))))
+
+  (RULE &cover
+    (&ties *D *L)
+    (NOT (&defect D L)))
+
+  (RULE &draw
+    (&placed *D *L *R *V)
+    (&rect_cell D L R (:P *P2) *Col)
+    (compose (:A V) (:B P2) (:C *P))))
+
+(ALTS $f "whether a cover is discarded when its moved rectangles do not fit" $AllCovers
+  (ALT $FitFiltersCovers
+    (OUTPUT fit-filter "a cover is discarded when its moved rectangles overlap or leave the dot half. Undefined where no cover is left."
+      (RULE &misfit
+        (OR ((&draw *D *L (:P *Q))
+             (NOT (&dot_part D L (:P Q))))
+            ((&placed D L (:R *R1) (:V *V1))
+             (&rect_cell D L (:R R1) (:P *P1))
+             (compose (:A V1) (:B P1) (:C *Q2))
+             (&placed D L (:R *R2) (:V *V2))
+             (!= R1 R2)
+             (&rect_cell D L (:R R2) (:P *P2))
+             (compose (:A V2) (:B P2) (:C Q2))))))
+    (RULE &kept
+      (&cover *D *L)
+      (NOT (&misfit D L)))))
+
+(ALTS $m "what a mark must land on" $ColorMatch
+  (ALT $MatchShapeOnly
+    (INPUT exact-cover "marks match dots by position alone, whatever their colors."
+      (INIT &fit_shape Occurrences
+        (key ((OR ((&mark (:D ^Mk_d) (:L ^Mk_l) ^R *P))
+                  ((&mark (:D Mk_d) (:L Mk_l) R)
+                   (&dot (:D Mk_d) (:L Mk_l) P))))
+          (cell (P)
+            (&mark (:D Mk_d) (:L Mk_l) R)
+            (&dot (:D Mk_d) (:L Mk_l) *P))
+          (shape (P)
+            (&mark (:D Mk_d) (:L Mk_l) R *P))))
+
+      (RULE &occurs
+        (&fit_shape.occurrence (:key (:Mk_d *D) (:Mk_l *L) *R) (:P *V))))))
+
+(ALTS $a "which cells join one rectangle" $Objects4
+  (ALT $Objects8
+    (INPUT object-half "rectangles are the 8-connected parts of the object half, so rectangles that touch at a corner move as one object."
+      (INIT &piece8 Connectivity
+        (key ((&obj_ink ^D ^L *P))
+          (node (P)
+            (&obj_ink D L *P)))
+        (step ((:Delta S))
+          (OR ((diag_dir_elem *D)
+               (step_offset D (:V *S)))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) (:V S))))))
+
+      (RULE &rect_cell
+        (&piece8.component (:key *D *L) *P (:Id *R))
+        (input P *Col)))))
+
+(ALTS $s "where the grid is cut" $Halves
+  (ALT $SplitAtColorChange
+    (INPUT two-halves "the two parts need not be of equal size; the cut is at any line where each part's background is absent from the other part."
+      (RULE &cut
+        (&line *A *L)
+        (axis_of *D A)
+        (opposite D (:Opp *O))
+        (neighbor (:P L) (:D O) (:Q *L2))
+        (&line A (:L L2))))))
+
+(ALTS $c "which cells of a rectangle are its marks" $OffColor
+  (ALT $MarksByDotColor
+    (INPUT object-half "the marks are the cells of the rectangle whose color some dot has."
+      (RULE &mark
+        (&rect_cell *D *L *R *P *Col)
+        (&dot D L Col)))))
+
+(RULE &kept
+  (&cover *D *L))
+
+(RULE &output
+  (&kept *D *L)
+  (&dot_part D L (:P *Q))
+  (&dot_box.box (:key D L) *B)
+  (inside (:A Q) B)
+  (relative (:Base B) (:X Q) (:X_rel *P))
+  (OR ((&draw D L (:P Q) *Col))
+      ((&dot_ground.maximal (:key D L) (:t Col))
+       (NOT (&draw D L (:P Q))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,224 @@
+;; inputs cb2b9c30ee735bfb85123f9abaa0adda80b3c3dd8c1774072615ac37b34d55b1 programs/solvers/446ef5d2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 446ef5d2
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &ink_size Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col))))))
+
+;; The picture sits on a field and is drawn in the rest: the field is the
+;; commonest ink, and the mark is the rarest.
+(INIT &by_size Order
+  (member ((:t (:V Col) (:S N)))
+    (&ink_size.size (:key *Col) *N))
+  (score ((:t (:V Col) (:S N)) (:S N))
+    (&ink_size.size (:key *Col) *N)))
+
+(RULE &drawn
+  (&ink_size.size (:key *Col))
+  (NOT (&by_size.maximal (:t (:V Col))))
+  (NOT (&by_size.minimal (:t (:V Col)))))
+
+(INIT &pieces Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg_mode.maximal (:t Col)))
+    (NOT (&by_size.minimal (:t (:V Col))))))
+
+(RULE &piece_cell
+  (&pieces.component *P *Id)
+  (input P *Col))
+
+(INIT &pbox BoundingBox
+  (key ((&pieces.component *P ^Id))
+    (cell (P)
+      (&pieces.component *P Id))))
+
+(INIT &rim Boundary
+  (key ((&pieces.component *P ^Id))
+    (cell (P)
+      (&pieces.component *P Id))))
+
+(RULE &shape
+  (&piece_cell *Id *P *Col)
+  (&pbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &shape_rim
+  (&shape *Id *P_inner *Col)
+  (&pbox.box (:key Id) *B)
+  (compose (:A B) (:B P_inner) (:C *P))
+  (&rim.exposed (:key Id) P *D)
+  (dir_elem D))
+
+(RULE &inked_face
+  (&shape_rim *Id *D *Col)
+  (&drawn Col))
+
+(RULE &anchor
+  (&piece_cell *Id *P)
+  (&pbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (same_corner (:D *Diag) (:P1 P) (:P2 B))
+  (neighbor P (:D Diag) *Q)
+  (input (:P Q) *Col)
+  (&by_size.minimal (:t (:V Col))))
+
+;; A box the marked corner cell spans with a far cell, sitting at that corner
+;; of the bbox.
+(INIT &bbox BoundingBox
+  (key ((input (:P ^Q)))
+    (cell (P)
+      (OR ((&anchor *P))
+          ((= P Q))))))
+
+(RULE &span
+  (&anchor *Diag (:P *A))
+  (&bbox.cell (:key *Q) (:P A))
+  (&bbox.box (:key Q) *B)
+  (inside A B)
+  (same_corner (:D Diag) (:P1 A) (:P2 B)))
+
+(RULE &span_cell
+  (&span *B)
+  (input *P)
+  (inside (:A P) B))
+
+(INIT &span_size Cardinality
+  (key ((&span_cell ^B *P))
+    (member ((:m P))
+      (&span_cell B *P))))
+
+(INIT &piece_area Cardinality
+  (member ((:m P))
+    (&pieces.component *P)))
+
+(RULE &rect
+  (&span_size.size (:key *B) *N)
+  (&piece_area.size N))
+
+(RULE &rect_cell
+  (&rect *B)
+  (&span_cell B *P))
+
+(INIT &occ Occurrences
+  (key ((OR ((&rect_cell ^B *P)
+             (&pieces.component ^Id))
+            ((&rect B)
+             (&shape Id *P_inner))))
+    (cell (P)
+      (&rect_cell B *P)
+      (&pieces.component Id))
+    (shape ((:P P_inner))
+      (&rect B)
+      (&shape Id *P_inner))))
+
+(RULE &place
+  (&occ.occurrence (:key *B *Id) (:P *B_occ))
+  (&shape Id *P_inner *Col)
+  (compose (:A B_occ) (:B P_inner) (:C *P)))
+
+(RULE &spills
+  (&place *B *Id *B_occ *P *Col)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B))
+  (&drawn Col))
+
+(RULE &fit
+  (&place *B *Id *B_occ)
+  (NOT (&spills B Id B_occ))
+  (OR ((NOT (&anchor Id)))
+      ((&pbox.box (:key Id) (:B B_occ)))))
+
+(RULE &covers
+  (&fit *B *Id (:B_occ *Cd_b))
+  (&place B Id (:B_occ Cd_b) *P *Col))
+
+(RULE &edge
+  (&fit *B *Id (:B_occ *Cd_b))
+  (&shape_rim Id *P_inner *D *Col)
+  (compose (:A Cd_b) (:B P_inner) (:C *P))
+  (neighbor P D *Q)
+  (&rect_cell B (:P Q)))
+
+(RULE &face
+  (&edge *B *Id *Cd_b *P *D *Q *Col)
+  (&inked_face Id D))
+
+(RULE &clash
+  (OR ((&covers *B (:Id *Cd_id) *Cd_b *P)
+       (&covers B (:Id *Cd2_id) (:Cd_b *Cd2_b) P)
+       (OR ((!= Cd_b Cd2_b))
+           ((!= Cd_id Cd2_id))))
+      ((&fit B (:Id Cd_id) (:B_occ Cd_b))
+       (&fit B (:Id Cd_id) (:B_occ Cd2_b))
+       (!= Cd_b Cd2_b)
+       (= Cd2_id Cd_id))
+      ((&face B (:Id Cd_id) Cd_b (:P *P2) *D *Q *Col)
+       (opposite D (:Opp *D2))
+       (&face B (:Id Cd2_id) (:Cd_b Cd2_b) (:P Q) (:D D2) (:Q P2) (:Col *Col2))
+       (!= Col Col2))))
+
+(RULE &mate
+  (&edge *B *Id *Cd_b *Q)
+  (&covers B (:Id *Cd2_id) (:Cd_b *Cd2_b) (:P Q))
+  (NOT (&clash B (:Cd_id Id) Cd_b Cd2_id Cd2_b)))
+
+(RULE &stranded
+  (&edge *B *Id *Cd_b *Q)
+  (NOT (&mate B Id Cd_b Q)))
+
+(RULE &cand
+  (&fit *B *Id (:B_occ *Cd_b))
+  (NOT (&stranded B Id Cd_b)))
+
+(RULE &forcing_item
+  (&cand *B *Id *Cd_b)
+  (&covers B Id Cd_b *P))
+
+(CHOOSE &forcing
+  (for ((&forcing_item ^B ^P))
+    (from (&forcing_item B P *Id *Cd_b)))
+  (never
+    (&forcing_item *B *Id *Cd_b)
+    (&forcing_item B (:Id *Id2) (:Cd_b *Cd_b2))
+    (&clash B (:Cd_id Id) Cd_b (:Cd2_id Id2) (:Cd2_b Cd_b2)))
+  (never
+    (&forcing_item *B *Id *Cd_b)
+    (&forcing_item B (:P *P2) (:Id *Id2) (:Cd_b *Cd_b2))
+    (&forcing_item B (:P P2) Id Cd_b)
+    (OR ((!= Id Id2))
+        ((!= Cd_b Cd_b2)))))
+
+(RULE &painted
+  (&forcing *B *Id *Cd_b)
+  (&covers B Id Cd_b *P *Col))
+
+(RULE &unsettled
+  (&rect_cell *B *P)
+  (NOT (&painted B P)))
+
+(RULE &output
+  (&rect *B)
+  (NOT (&unsettled B))
+  (input *P)
+  (OR ((&painted B P *Col))
+      ((NOT (&rect_cell B P))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

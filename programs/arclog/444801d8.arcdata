@@ -1,0 +1,7 @@
+;; inputs dea7cfee5443482cd08e8f3e9906362b1591401e36545cf3dc28ac788ff4c5be programs/solvers/444801d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 444801d8
+
+(param &bg Color (0))
+(param &wall Color (1))
+(param &open_dir Dir (DIR_T))

@@ -1,0 +1,184 @@
+;; inputs b1f487b7a322ff1abbfdee8b78bfa43eec8a7139ff6823300c509ce39e9fab02 programs/solvers/8a6d367c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8a6d367c
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+;; The rectangles each color draws.
+(INIT &drect Outlines
+  (key ((&ink ^Col))
+    (node (P)
+      (input *P Col))))
+
+;; The frame: the rectangle that holds ink of another color.
+(RULE &frame
+  (&drect.box (:key *Col) *B)
+  (input *P (:Col *C))
+  (interior (:A P) B)
+  (&ink (:Col C))
+  (!= C Col))
+
+(ALTS $pa "how the frame is found" $Rect
+  (ALT $Enclose
+    ;; Each ink color walls the rest of the grid off.
+    (INIT &closed Enclosure
+      (key ((&ink ^Col))
+        (cell (P)
+          (input *P (:Col *C))
+          (!= C Col))))
+
+    (RULE &ring_wall
+      (&closed.enclosed (:key *Col) (:P *Q) *Id)
+      (neighbor (:P Q) *D (:Q *P))
+      (input P Col))
+
+    ;; The box the wall spans: it runs around the region, so the box holds it too.
+    (INIT &ring_box BoundingBox
+      (key ((&ring_wall ^Col ^Id *P))
+        (cell (P)
+          (&ring_wall Col Id *P))))
+
+    (RULE &frame_ring
+      (&closed.enclosed (:key *Col) *P *Id)
+      (input P (:Col *C))
+      (&ink (:Col C))
+      (!= C Col))
+
+    (RULE &frame
+      (&frame_ring *Col *Id)
+      (&ring_box.box (:key Col Id) *B))
+
+    (RULE &wall_cell
+      (&frame_ring (:Col *R_col) (:Id *R_id))
+      (&ring_wall (:Col R_col) (:Id R_id) *P))
+
+    (RULE &inside_cell
+      (&frame_ring *Col *Id)
+      (&closed.enclosed (:key Col) *P Id))))
+
+(ALTS $k "what a shape is" $Color
+  (ALT $Piece
+    (INIT &pieces Connectivity
+      (key ((&outside *P ^Col))
+        (node (P)
+          (&outside *P Col)))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &shape_cell
+      (&pieces.component *P (:Id *S))))
+  (ALT $Object
+    (INIT &parts Connectivity
+      (node (P)
+        (&outside *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &shape_cell
+      (&parts.component *P (:Id *S)))))
+
+(RULE &inside_cell
+  (&frame *B)
+  (input *P)
+  (interior (:A P) B))
+
+(RULE &fill
+  (&inside_cell *P)
+  (input P *Col)
+  (&ink Col))
+
+;; The frame's inside, in its own frame.
+(INIT &hole BoundingBox
+  (cell (P)
+    (&inside_cell *P)))
+
+(RULE &hole_view
+  (&inside_cell *P)
+  (&hole.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &covered
+  (&frame *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &outside
+  (input *P *Col)
+  (&ink Col)
+  (NOT (&covered P)))
+
+(INIT &color_class Quotient
+  (equivalent ((:a P) (:b Q))
+    (&outside *P *Col)
+    (&outside (:P *Q) Col)))
+
+(RULE &shape_cell
+  (&color_class.class (:a *P) (:Id *S)))
+
+;; Each shape's pattern: its cells in its own box.
+(INIT &pattern BoundingBox
+  (key ((&shape_cell (:S ^Id) *P))
+    (cell (P)
+      (&shape_cell (:S Id) *P))))
+
+(RULE &pattern_cell
+  (&shape_cell *S *P)
+  (&pattern.box (:key (:Id S)) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_tile)))
+
+(RULE &blocks_dim
+  (&shape_cell (:S *Key) *P)
+  (&pattern.box (:key (:Id Key)) *B)
+  (box_extent B P *A *N))
+
+;; The frame's inside divided into a shape's pattern of blocks.
+(INIT &blocks Division
+  (key ((OR ((&blocks_dim (:Key ^Id))
+             (&hole_view *P_inner))
+            ((&blocks_dim (:Key Id) *A *N))))
+    (cell ((:P P_inner))
+      (&blocks_dim (:Key Id))
+      (&hole_view *P_inner))
+    (parts (A N)
+      (&blocks_dim (:Key Id) *A *N))))
+
+(RULE &contradicted
+  (&fill (:P *P_grid))
+  (&hole_view (:P P_grid) *P_inner)
+  (&blocks.tile (:key (:Id *S)) (:P P_inner) (:P_outer *P_tile))
+  (NOT (&pattern_cell S P_tile)))
+
+(RULE &wall_cell
+  (&frame *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(RULE &output
+  (OR ((&frame *B *Col)
+       (&wall_cell (:P *P_grid_in))
+       (inside (:A P_grid_in) B)
+       (relative (:Base B) (:X P_grid_in) (:X_rel *P)))
+      ((&hole_view (:P *P_grid_in2) *P_inner)
+       (&frame (:B *B2))
+       (inside (:A P_grid_in2) (:B B2))
+       (relative (:Base B2) (:X P_grid_in2) (:X_rel P))
+       (&blocks.tile (:key (:Id *S_id)) (:P P_inner) (:P_outer *P_tile))
+       (NOT (&contradicted (:S S_id)))
+       (IF ((&pattern_cell (:S S_id) P_tile))
+           ((&fill Col))
+           ((&bg (:C Col)))))))
+
+(OUT (&output ^P ^Col))

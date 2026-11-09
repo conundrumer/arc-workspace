@@ -1,0 +1,8 @@
+;; inputs 9ff48d91a2f814849743eecb2bbd31a046db8969dab432db719577dd7788516f programs/solvers/56dc2b01.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 56dc2b01
+
+(param &bg Color (0))
+(param &mover Color (3))
+(param &anchor Color (2))
+(param &back Color (8))

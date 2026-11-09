@@ -1,0 +1,145 @@
+;; inputs d35917bb2a2658103400ae443f76acb65fe431157db55015aaecdf99f1ab2d5d programs/solvers/d89b689b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d89b689b
+
+(param &background Color (0))
+(param &block_color Color (8))
+
+(alts $t
+  (alt $GridQuadrant
+    (witness marker-past-grid-midline ordinary concept
+      (separates "A marker lies below and left of the block but above the grid's middle row, so it shares a grid quadrant with the marker above-left of the block: the block-corner reading moves each marker into its block corner, and the grid-quadrant reading sends two markers to one cell and is undefined.")
+      (input (grid
+        (0 0 0 1 0 0 0 0 0 4)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 6)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $BlockCorner $NearestBlockCell (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 0 0 0)
+        (0 0 0 0 0 3 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $GridQuadrant undefined))
+    (witness marker-in-right-half-column borderline $GridQuadrant
+      (relaxed one-marker-per-corner)
+      (separates "The marker 4 lies directly above the block's left column, in the grid's right half, beside the marker 1 off the block's top-left corner: the grid-quadrant reading moves 1 into the top-left block cell and 4 into the top-right one; the nearest-cell reading sends both to the top-left cell, and the block-corner reading, which needs 4 off a corner, leaves the top-right cell empty, so both are undefined.")
+      (input (grid
+        (0 0 0 1 0 4 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 6)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $BlockCorner $NearestBlockCell undefined)
+      (output $GridQuadrant (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 0 0 0)
+        (0 0 0 0 0 3 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))))
+  (alt $NearestBlockCell
+    (witness marker-in-block-column borderline $NearestBlockCell
+      (relaxed one-marker-per-corner)
+      (separates "A marker lies directly above the block's left column: the nearest-cell reading moves it into the block's top-left cell, and the block-corner reading, which needs it off a corner, is undefined.")
+      (input (grid
+        (0 0 0 0 0 1 0 0 0 4)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 6)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $BlockCorner $GridQuadrant undefined)
+      (output $NearestBlockCell (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 1 4 0 0 0)
+        (0 0 0 0 0 3 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $l
+  (alt $BlockByShape
+    (witness block-other-color variant $BlockByShape
+      (relaxed one-block)
+      (separates "The 2×2 block is of color 3 in place of 8: the shape reading finds it and moves the markers in, and each reading that finds the block by the stored color 8 finds none and is undefined.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 7 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 0 0 0 0)
+        (0 0 0 0 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 4 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 9)))
+      (output $ByColor undefined)
+      (output $BlockByShape (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 6 7 0 0 0 0)
+        (0 0 0 0 4 9 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed one-block)
+      (separates "The field is 1 in place of 0: the derived background reads the field as 1 and moves the markers onto a field of 1, and the stored background 0 reads every field cell as a marker and is undefined.")
+      (input (grid
+        (1 1 1 1 1 1 1 1 7 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 6 1 1 1 1 1 1 1 1)
+        (1 1 1 1 8 8 1 1 1 1)
+        (1 1 1 1 8 8 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 4 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 9)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 6 7 1 1 1 1)
+        (1 1 1 1 4 9 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1))))))

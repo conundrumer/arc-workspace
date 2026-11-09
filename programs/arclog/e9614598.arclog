@@ -1,0 +1,210 @@
+;; inputs 6b903d83364db4abef93088f9d1d81c3f69985d89c82eb0cb093beb0835411ae programs/solvers/e9614598.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9614598
+
+(INPUT background "every cell other than the marks holds &background"
+
+  (DET &two_others
+    (ex_input *Col)
+    (ex_input *E (:P *P1) (:Col *C1))
+    (ex_input E (:P *P2) (:Col *C2))
+    (!= P1 P2)
+    (!= C1 Col)
+    (!= C2 Col))
+
+  (DET &background_defect
+    (ex_input *Col)
+    (ex_input *E)
+    (OR ((NOT (&two_others E Col)))
+        ((ex_input E (:P *P1) (:Col *C1))
+         (ex_input E (:P *P2) (:Col *C2))
+         (ex_input E (:P *P3) (:Col *C3))
+         (!= C1 Col)
+         (!= C2 Col)
+         (!= C3 Col)
+         (!= P1 P2)
+         (!= P1 P3)
+         (!= P2 P3))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&background_defect (:Col C)))))
+
+(INPUT two-marks "the input holds exactly two non-background cells, both of color 1")
+
+(INPUT marks-aligned "the two marks share a row or a column")
+
+(INPUT even-separation "the distance between the two marks along their line is even, so one cell lies equally far from each")
+
+(INPUT plus-clear "the plus drawn at that cell lies inside the grid and covers no mark")
+
+(OUTPUT keep-input "every input cell is kept, except where the plus is drawn")
+
+(OUTPUT midpoint "the center is the cell on the line between the two marks at equal distance from each")
+
+(OUTPUT plus "the center and each cell &arm_length or fewer steps from it in each of the four cardinal directions take &plus_color"
+
+  (RULE &mark
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &center
+    (&mark (:P *M1))
+    (&mark (:P *M2))
+    (!= M1 M2)
+    (axis_elem *A)
+    (same_line A (:P M1) (:Q M2))
+    (input *P)
+    (relative (:Base M1) (:X P) (:X_rel *V))
+    (relative (:Base P) (:X M2) (:X_rel V)))
+
+  (RULE &crowded
+    (&mark (:P *A))
+    (&mark (:P *B))
+    (&mark (:P *C))
+    (!= A B)
+    (!= A C)
+    (!= B C))
+
+  (RULE &drawn_center
+    (&center *P)
+    (NOT (&crowded)))
+
+  (INIT &arms_frame Frame
+    (extent (A N)
+      (&drawn_center *P)
+      (frame_extent P *A *N)))
+
+  (DET &mark2
+    (ex_input *E *P *Col)
+    (NOT (&background (:C Col))))
+
+  (DET &center2
+    (&mark2 *E (:P *M1))
+    (&mark2 E (:P *M2))
+    (!= M1 M2)
+    (axis_elem *A)
+    (same_line A (:P M1) (:Q M2))
+    (ex_input E *P)
+    (relative (:Base M1) (:X P) (:X_rel *V))
+    (relative (:Base P) (:X M2) (:X_rel V)))
+
+  (DET &arms_mark
+    (ex_output (:E *Key))
+    (&center2 (:E Key) *P))
+
+  (INIT &arms_frame2 Frame
+    (key ((&arms_mark (:Key ^Ky) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&arms_mark (:Key Ky) *P)
+        (frame_extent P *A *N))))
+
+  ;; The cells in line with each center.
+  (INIT &arms2 Ray
+    (key ((OR ((&arms_mark (:Key ^Ky) *P))
+              ((ex_output (:E Ky))
+               (dir_elem *D))
+              ((&arms_frame2.cell (:key Ky) P))))
+      (source (P)
+        (&arms_mark (:Key Ky) *P))
+      (node (P)
+        (&arms_frame2.cell (:key Ky) *P))
+      (dir (D)
+        (ex_output (:E Ky))
+        (dir_elem *D))))
+
+  (DET &drawn
+    (ex_output *E *P *Col)
+    (ex_input E P (:Col *Col_in))
+    (!= Col Col_in))
+
+  ;; The farthest drawn cell from the center along a cardinal line.
+  (INIT &reach Order
+    (key ((&arms2.ray (:key (:Ky ^E)) *P *K)
+          (ex_output E P)
+          (&drawn E P))
+      (member ((:t K))
+        (&arms2.ray (:key (:Ky E)) *P *K)
+        (ex_output E P)
+        (&drawn E P))
+      (score ((:t K) (:S K))
+        (&arms2.ray (:key (:Ky E)) *P *K)
+        (ex_output E P)
+        (&drawn E P))))
+
+  (DET &arm_length
+    (&reach.maximal (:t *K)))
+
+  (INIT &arms Ray
+    (source (P)
+      (&drawn_center *P))
+    (node (P)
+      (&arms_frame.cell *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &plus_cell
+    (&arms.ray *P *K)
+    (input P)
+    (&arm_length (:K *L))
+    (<= K L))
+
+  (DET &plus_color
+    (&drawn *Col)))
+
+(ALTS $m "which cells are the marks" $NonBackground
+  (ALT $MarkColor
+    (INPUT two-marks "the marks are the cells of &mark_color, and other cells keep their color; undefined where the input holds other than two cells of that color"
+      (DET &background_determined
+        (ex_input *Col)
+        (NOT (&background_defect Col)))
+
+      (DET_OR_RULE &mark_color RarestColor
+        (&background_determined (:Col *B))
+        (ex_input (:Col *C))
+        (!= C B))
+
+      (RULE &mark
+        (input *P *Col)
+        (&mark_color (:C Col))))))
+
+(ALTS $c "where the center lies" $Midpoint
+  (ALT $BoxCenter
+    (OUTPUT midpoint "the center is the cell whose row is at equal distance from the two marks' rows and whose column is at equal distance from their columns, whether or not the marks share a row or a column; undefined where the marks are at an odd distance on either axis"
+      (RULE &center
+        (&mark (:P *M1))
+        (&mark (:P *M2))
+        (!= M1 M2)
+        (input *P)
+        (relative (:Base M1) (:X P) (:X_rel *V))
+        (relative (:Base P) (:X M2) (:X_rel V))))))
+
+(ALTS $p "how many pluses are drawn" $OnePair
+  (ALT $EveryPair
+    (OUTPUT midpoint "a plus is drawn at the center of each two marks that the center rule accepts, and an input with no such pair is kept unchanged; defined on every input"
+      (RULE &drawn_center
+        (&center *P)))
+    (RULE &defined)))
+
+(ALTS $o "what shows where the plus covers a mark" $PlusOnTop
+  (ALT $MarksOnTop
+    (OUTPUT keep-input "a mark under the plus keeps its color")
+    (RULE &paint
+      (&plus_cell *P)
+      (NOT (&mark P)))))
+
+(RULE &defined
+  (&drawn_center))
+
+(RULE &paint
+  (&plus_cell *P))
+
+(RULE &output
+  (&defined)
+  (input *P (:Col *Col_in))
+  (IF ((&paint P))
+      ((&plus_color *Col))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

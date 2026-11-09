@@ -1,0 +1,238 @@
+;; inputs 42783cb112388d9979eaa6b0a564b0d8633adf5ce97aec2338f50a5c1ea0850d programs/solvers/fc10701f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fc10701f
+
+(INPUT two-blocks "the grid is background 6 with one solid mover block of 7 and one solid target block of 9 of the same size, aligned so that they span the same rows or the same columns.")
+
+(INPUT corridor "the corridor is the cells strictly between the two blocks along the axis that joins them, across the blocks' common span; it holds only background.")
+
+(INPUT gates "gate cells of 0 stand in mirrored pairs on the two sides of the corridor's span, against it, some along the corridor and some elsewhere.")
+
+(OUTPUT vacate "the mover block's cells become background.")
+
+(OUTPUT land "the target block's cells become mover.")
+
+(OUTPUT stamp-gates "each corridor cell that has a gate cell on each side of it, in its line across the corridor's axis, becomes mark."
+
+  (DET &target
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output E (:Col C))))
+
+  (DET &mover
+    (&target (:C *C_t))
+    (ex_input *E *P (:Col C_t))
+    (ex_output E P (:Col *C)))
+
+  (RULE &mover_cell
+    (input *P (:Col *C))
+    (&mover C))
+
+  (RULE &target_cell
+    (input *P (:Col *C))
+    (&target C))
+
+  ;; the mover slides from each of its cells toward each direction, and stops at the target
+  (INIT &slide Ray
+    (source (P)
+      (&mover_cell *P))
+    (node (P)
+      (input *P)
+      (NOT (&target_cell P)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &slide_full Ray
+    (source (P)
+      (&mover_cell *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &slide_stop_full
+    (&slide.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&slide_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &corridor
+    (&slide.ray *P *D (:Origin *Src))
+    (&slide_stop_full (:V2 D) (:V4 Src))
+    (NOT (&mover_cell P)))
+
+  (RULE &path
+    (OR ((&corridor *P))
+        ((&mover_cell P))))
+
+  ;; a corridor cell runs across the path to the path's side
+  (INIT &path_run Ray
+    (source (P)
+      (&path *P))
+    (node (P)
+      (&path *P))
+    (dir (D)
+      (dir_elem *D))))
+
+(OUTPUT keep "every other cell keeps its input color."
+
+  (DET &background_determined
+    (&mover (:C *C_m))
+    (ex_input *E *P (:Col C_m))
+    (ex_output E P (:Col *C)))
+
+  (DET &gate
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (&target C))
+    (NOT (&mover C))
+    (NOT (&background_determined C)))
+
+  ;; a gate casts along each line through it
+  (INIT &gate_cast Ray
+    (source (P)
+      (input *P (:Col *C))
+      (&gate C))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &gate_cast_ray
+    (&gate_cast.ray *P *D *K (:Origin *Src))
+    (&path P))
+
+  (RULE &motion
+    (&slide_stop_full (:V2 *D))
+    (dir_elem D))
+
+  (RULE &stamp_region
+    (&corridor *P))
+
+  (RULE &post
+    (&gate_cast_ray *P (:D *D_cast))
+    (opposite (:D D_cast) (:Opp *D)))
+
+  ;; the axis across the motion
+  (RULE &line_axis
+    (&motion *D)
+    (axis_of D (:A *A_motion))
+    (perp (:A A_motion) (:A2 *A)))
+
+  (RULE &block_edge
+    (input *P (:Col *C))
+    (dir_elem (:D *E1))
+    (neighbor P (:D E1) *Q)
+    (NOT (input (:P Q) (:Col C)))))
+
+(ALTS $sides "how many sides of a corridor cell need a gate post" $BothSides
+  (ALT $EitherSide
+    (OUTPUT stamp-gates "a gate cell on at least one side is enough.")
+    (RULE &stamped
+      (&stamp_region *P)
+      (&line_axis *A)
+      (axis_of *D A)
+      (&post P D))))
+
+(ALTS $reach "how far from the corridor a gate post may stand" $AnyDistance
+  (ALT $AnyDistance
+    (ALTS $axis "which lines through a corridor cell are read for gate posts" $CrossLine
+      (ALT $AnyAxis
+        (OUTPUT stamp-gates "a gate cell on each side along either axis is enough."
+          (RULE &line_axis
+            (axis_elem *A))))))
+  (ALT $AdjacentGate
+    (OUTPUT stamp-gates "the post cells must touch the corridor's sides, the line just outside the blocks' common span."
+      (RULE &post
+        (&path_run.end (:P *Q) *D (:Origin *P))
+        (dir_elem D)
+        (neighbor (:P Q) D (:Q *Q_out))
+        (input (:P Q_out) (:Col *C))
+        (&gate C)))))
+
+(ALTS $region "which cells the stamp may fall on" $Corridor
+  (ALT $StampStart
+    (OUTPUT stamp-gates "the mover's start cells are stamped too, under the same test, after vacate."
+      (RULE &stamp_region
+        (&path *P)))))
+
+(ALTS $landing "how the mover lands on the target" $Paint
+  (ALT $TranslateMover
+    (OUTPUT land "the target cells become background, and the mover's shape moves along the axis until its leading edge is on the target's far edge."
+      (RULE &travel
+        (&motion *D)
+        (&mover (:C *C_m))
+        (&target (:C *C_t))
+        (&block_edge (:C C_m) (:P *P_m) (:E1 D))
+        (&block_edge (:C C_t) (:P *P_t) (:E1 D))
+        (&slide_full.ray (:P P_t) D *K (:Origin P_m))))
+    (RULE &cleared
+      (&travel)
+      (OR ((&mover_cell *P))
+          ((&target_cell P))))
+
+    (RULE &landed
+      (&travel *D *K)
+      (&mover_cell (:P *P_start))
+      (jump (:P P_start) D K (:Q *P))
+      (input P)))
+  (ALT $TranslateNear
+    (OUTPUT land "as $TranslateMover, but the mover's trailing edge lands on the target's near edge."
+      (RULE &travel
+        (&motion *D)
+        (opposite D (:Opp *E))
+        (&mover (:C *C_m))
+        (&target (:C *C_t))
+        (&block_edge (:C C_m) (:P *P_m) (:E1 E))
+        (&block_edge (:C C_t) (:P *P_t) (:E1 E))
+        (&slide_full.ray (:P P_t) D *K (:Origin P_m))))
+    (RULE &cleared
+      (&travel)
+      (OR ((&mover_cell *P))
+          ((&target_cell P))))
+
+    (RULE &landed
+      (&travel *D *K)
+      (&mover_cell (:P *P_start))
+      (jump (:P P_start) D K (:Q *P))
+      (input P))))
+
+(DET_OR_RULE &background DominantColor
+  (&mover (:C *C_m))
+  (ex_input *E *P (:Col C_m))
+  (ex_output E P (:Col *C)))
+
+(RULE &stamped
+  (&stamp_region *P)
+  (&line_axis *A)
+  (axis_of *D A)
+  (&post P D)
+  (opposite D (:Opp *D2))
+  (&post P (:D D2)))
+
+(RULE &landed
+  (&target_cell *P))
+
+(RULE &cleared
+  (&mover_cell *P))
+
+(DET &mark
+  (ex_output *E (:Col *C))
+  (NOT (ex_input E (:Col C))))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&landed P)
+       (&mover (:C *Col)))
+      ((NOT (&landed P))
+       (&stamped P)
+       (&mark (:C Col)))
+      ((NOT (&stamped P))
+       (&cleared P)
+       (NOT (&landed P))
+       (&background (:C Col)))
+      ((NOT (&landed P))
+       (NOT (&stamped P))
+       (NOT (&cleared P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,122 @@
+;; inputs 781d907e165780c3664f5afcc509e17aeebe5eec2328e6c63675f7bba2450bf3 programs/solvers/8cb8642d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8cb8642d
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component ^Id *P))
+    (cell (P)
+      (&comps.component Id *P))))
+
+(RULE &hole
+  (&bbox.box (:key *Id) *B)
+  (&comps.component Id *P)
+  (interior (:A P) B))
+
+;; The inside, viewed from its own frame.
+(INIT &hole_box BoundingBox
+  (key ((&hole ^Id *P))
+    (cell (P)
+      (&hole Id *P))))
+
+(RULE &hole_view
+  (&hole *Id *P)
+  (&hole_box.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &arm
+  (&hole_view *Id *P_inner)
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (dist_pair (:P P_inner) (:D D1) *K (:K2 *K1))
+  (dist_pair (:P P_inner) (:D D2) K *K2)
+  (<= K K1)
+  (<= K K2))
+
+(RULE &arm_end
+  (&arm *Id *P_inner *Diag)
+  (diag_opposite (:D Diag) (:Opp *D_in))
+  (neighbor (:P P_inner) (:D D_in) *Q)
+  (NOT (&arm Id (:P_inner Q) Diag)))
+
+(INIT &join_frame Frame
+  (key ((&arm_end ^Id *P_inner)
+        (frame_extent (:P P_inner) *A *N))
+    (extent (A N)
+      (&arm_end Id *P_inner)
+      (frame_extent (:P P_inner) *A *N))))
+
+;; The line joining two arm ends.
+(INIT &join Ray
+  (key ((OR ((&arm_end ^Id *P_inner))
+            ((&hole_view Id)
+             (axis_elem *A)
+             (axis4_of *D A))
+            ((&join_frame.cell (:key Id) *P))))
+    (source ((:P P_inner))
+      (&arm_end Id *P_inner))
+    (node (P)
+      (&join_frame.cell (:key Id) *P))
+    (dir (D)
+      (&hole_view Id)
+      (axis_elem *A)
+      (axis4_of *D A))))
+
+(RULE &join_between
+  (&hole_view (:Id *Key) (:P_inner *P))
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&join.ray (:key (:Id Key)) P D)
+  (&join.ray (:key (:Id Key)) P (:D O)))
+
+(RULE &frame_color
+  (&bbox.box (:key *Id) *B)
+  (&comps.component Id *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B))
+  (input P *Col))
+
+(RULE &marker_color
+  (&hole *Id *P)
+  (input P *Col)
+  (NOT (&frame_color Id Col)))
+
+(RULE &drawn
+  (OR ((&arm *Id *P_inner))
+      ((&join_between (:Key Id) (:P P_inner)))))
+
+(ALTS $choice "how the inside's drawn cells are found" $Join
+  (ALT $Medial
+    ;; The nearest edges of each inside cell.
+    (INIT &nearest Order
+      (key ((&hole_view ^P *P_inner)
+            (margin (:B P_inner) *D *K))
+        (member ((:t (:V D) (:S K)))
+          (&hole_view P *P_inner)
+          (margin (:B P_inner) *D *K))
+        (score ((:t (:V D) (:S K)) (:S K))
+          (&hole_view P *P_inner)
+          (margin (:B P_inner) *D *K))))
+
+    (RULE &drawn
+      (&hole_view *Id *P *P_inner)
+      (&nearest.minimal (:key P) (:t (:V *D1)))
+      (&nearest.minimal (:key P) (:t (:V *D2)))
+      (!= D1 D2))))
+
+(RULE &output
+  (OR ((&hole_view *Id *P *P_inner)
+       (IF ((&drawn Id P_inner))
+           ((&marker_color Id *Col))
+           ((&bg (:C Col)))))
+      ((input P Col)
+       (NOT (&hole P)))))
+
+(OUT (&output ^P ^Col))

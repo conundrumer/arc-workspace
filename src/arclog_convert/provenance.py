@@ -1,8 +1,8 @@
-"""The provenance of the files the converter writes under `gen/`: the header of each file, the record of each solver, and
+"""The provenance of the files the converter writes to the directory of the converted solvers (`programs/arclog/`): the header of each file, the record of each solver, and
 the hash of the converter that both hold.
 
-Each file the converter writes under `gen/` (`<stem>.arclog`, `<stem>.arcdata` and each file of
-`gen/cases/<stem>/`) is read-only and begins with two comment lines:
+Each file the converter writes there (`<stem>.arclog`, `<stem>.arcdata` and each file of
+`cases/<stem>/`) is read-only and begins with two comment lines:
 
     ;; inputs <inputs hash> programs/solvers/<stem>.dl
     ;; converter <code hash>
@@ -16,13 +16,13 @@ cases skipped for a fault and the error that stopped the case files. Its lines a
     code <code hash>
     arclog <sha256 of <stem>.arclog>
     arcdata <sha256 of <stem>.arcdata>
-    case <sha256> <file name under gen/cases/<stem>/>      (a line per case file)
+    case <sha256> <file name under cases/<stem>/>      (a line per case file)
     skipped <n>                                              (where n is not 0)
     error <JSON string>                                      (where the case files stopped with a REPEATABLE error)
 
 A file matches the record where its bytes have the recorded sha256 and its header holds the recorded hashes
 (`file_faults`). The code hash is the hash of the import closure of `arclog_convert.convert`, of the Souffle sources
-that its runs depend on, of the lib's files and of the native streams digest (`code_digest`); the readers of `gen/`
+that its runs depend on, of the lib's files and of the native streams digest (`code_digest`); the readers of that directory
 are in `arclog_convert.readback`, which `arclog_convert.convert` does not import.
 """
 
@@ -40,7 +40,7 @@ from engine.memo import hash_files, write_whole
 
 
 CASES = "cases"
-"""The directory of `gen/` that holds, in a directory per solver, the files of the cases."""
+"""The directory of the converted solvers that holds, in a directory per solver, the files of the cases."""
 
 CODE_ROOT = "arclog_convert.convert"
 """The module that the code hash follows the imports of."""
@@ -146,11 +146,11 @@ class Record(NamedTuple):
     code: str
     """The hash of the converter that made them (`code_digest`)."""
     arclog: str
-    """The sha256 of `gen/<stem>.arclog`."""
+    """The sha256 of `<stem>.arclog` of the converted solvers."""
     arcdata: str
-    """The sha256 of `gen/<stem>.arcdata`."""
+    """The sha256 of `<stem>.arcdata` of the converted solvers."""
     cases: dict[str, str]
-    """The sha256 of each file of `gen/cases/<stem>/`, by file name."""
+    """The sha256 of each file of `cases/<stem>/` of the converted solvers, by file name."""
     error: str | None = None
     """The error that stopped the case files of the solver, where one did and `arclog_convert.convert.REPEATABLE`
     holds it."""
@@ -214,7 +214,7 @@ def read_bytes_or_none(path: Path) -> bytes | None:
 
 
 def case_faults(stem: str, record: Record) -> list[str]:
-    """The kinds of fault of the files under `gen/cases/<stem>/` against `record`, each led by `cases/` and the
+    """The kinds of fault of the files under `cases/<stem>/` of the converted solvers against `record`, each led by `cases/` and the
     file's name: a file of the directory that the record lacks, or a file of the record that fails `file_faults`."""
     directory = paths.OUT_DIR / CASES / stem
     held = {p.name for p in directory.iterdir()} if directory.is_dir() else set()

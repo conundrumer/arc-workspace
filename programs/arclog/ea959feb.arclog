@@ -1,0 +1,227 @@
+;; inputs a20566b2de83b151aec26a1c9871fa178e0d95810378cbf64dd193226f66fd08 programs/solvers/ea959feb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ea959feb
+
+(INPUT periodic-pattern "the grid is a pattern that repeats along each axis, with a period on each axis shorter than the grid, so each cell's row phase and column phase recur elsewhere in the grid."
+
+  (DET_OR_RULE &mask_color "The color of the patches." DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (RULE &known
+    (input *P *Col)
+    (NOT (&mask_color (:C Col))))
+
+  (RULE &known_step
+    (dir_elem *D)
+    (&known *P (:Col *C))
+    (neighbor P D *Q)
+    (&known (:P Q) (:Col *C_next)))
+
+  (DET &branching
+    (axis_of *D *A)
+    (ex_output *E *P (:Col *C))
+    (neighbor P D *Q)
+    (ex_output E (:P Q) (:Col *C2))
+    (ex_output E (:P *P2) (:Col C))
+    (neighbor (:P P2) D (:Q *Q2))
+    (ex_output E (:P Q2) (:Col *C3))
+    (!= C2 C3))
+
+  (DET &cycle_axis
+    (axis_elem *A)
+    (NOT (&branching A)))
+
+  (RULE &seen_succ
+    (&cycle_axis *A)
+    (axis_of *D A)
+    (&known_step D *C *C_next))
+
+  ;; The cycle toward each direction of the axis, completed through the mask color.
+  (INIT &cyc Walk
+    (key ((OR ((&seen_succ ^D (:C *C1) (:C_next *C2)))
+              ((&cycle_axis *A)
+               (axis_of D A)
+               (&known (:Col *C))
+               (&mask_color (:C *M))
+               (OR ((NOT (&seen_succ D C))
+                    (= C1 C)
+                    (= C2 M))
+                   ((NOT (&seen_succ D (:C_next C)))
+                    (= C1 M)
+                    (= C2 C))))))
+      (successor ((:p C1) (:p_next C2))
+        (OR ((&seen_succ D (:C *C1) (:C_next *C2)))
+            ((&cycle_axis *A)
+             (axis_of D A)
+             (&known (:Col *C))
+             (&mask_color (:C *M))
+             (OR ((NOT (&seen_succ D C))
+                  (= C1 C)
+                  (= C2 M))
+                 ((NOT (&seen_succ D (:C_next C)))
+                  (= C1 M)
+                  (= C2 C)))))))))
+
+(INPUT mask-patches "solid rectangles of `mask_color` cover parts of the pattern, and they cover fewer cells than the pattern shows elsewhere at each phase pair.")
+
+(INPUT mask-color-in-pattern "`mask_color` is also one of the pattern's own colors, so a cell of that color is a masked cell or a pattern cell.")
+
+(INPUT phase-uncovered "each pair of a row phase and a column phase has a cell outside every patch.")
+
+(OUTPUT restore-period "each cell of the output takes the color the pattern has at its row phase and column phase, which the cells outside the patches show; a cell outside the patches keeps its color."
+
+  ;; The pattern's period on each axis, read off the known cells.
+  (INIT &si Periods
+    (cell (P (:v Col))
+      (&known *P *Col)))
+
+  (RULE &period
+    (&si.fundamental_period *A *K))
+
+  ;; The translations by the periods.
+  (INIT &wp_t Wallpaper
+    (grid (P)
+      (input *P))
+    (period (A K)
+      (&period *A *K)))
+
+  ;; The translations by the periods, with the row and column reflections.
+  (INIT &wp_m Wallpaper
+    (transform (D)
+      (axis_inversion (:A *A1) (:T *D)) (axis_elem (:A A1)))
+    (cell (P (:v Col))
+      (&known *P *Col))
+    (grid (P)
+      (input *P))
+    (period (A K)
+      (&period *A *K)))
+
+  (RULE &action
+    (&wp_t.action *P *Q))
+
+  (INIT &orbit Quotient
+    (edge ((:a P) (:b Q))
+      (&action *P *Q))))
+
+(ALTS $v "What structure the pattern has along `cycle_axis`." $Periodic
+  (ALT $ColorCycle
+    (INPUT periodic-pattern "along `cycle_axis`, each line steps through one cyclic order of all the input's colors, read off adjacent known cells and completed through `mask_color`; the pattern repeats along the other axis, where each step from a cell to the next goes one fixed count of cycle steps past the step before."
+      (RULE_OR_DET &line_known "Some known cell shares p's line along the cycle axis."
+        (&cycle_axis *A)
+        (input *P)
+        (&known (:P *Q))
+        (same_line A P Q))
+
+      (RULE &step_line
+        (&orbit.class (:a *P) *Id)
+        (OR ((NOT (&line_known P))
+             (&orbit.class (:a *P2) Id)
+             (&line_known (:P P2)))
+            ((&line_known P)
+             (= P2 P))))
+
+      (RULE &reach
+        (&step_line *P *P2)
+        (&cycle_axis *A)
+        (&known (:P *Q) (:Col *C0))
+        (same_line A (:P P2) Q)
+        (relative (:Base Q) (:X P2) (:X_rel *V))
+        (axis_of *D A)
+        (opposite D (:Opp *D_opp))
+        (margin (:B V) (:D D_opp) *K)
+        (>= K 0))
+
+      ;; The cycle toward each direction of the axis, completed through the mask color.
+      (INIT &cyc Walk
+        (key ((OR ((&seen_succ ^D (:C *C1) (:C_next *C2)))
+                  ((&cycle_axis *A)
+                   (axis_of D A)
+                   (&known (:Col *C))
+                   (&mask_color (:C *M))
+                   (OR ((NOT (&seen_succ D C))
+                        (= C1 C)
+                        (= C2 M))
+                       ((NOT (&seen_succ D (:C_next C)))
+                        (= C1 M)
+                        (= C2 C))))
+                  ((&reach D *K))))
+          (successor ((:p C1) (:p_next C2))
+            (OR ((&seen_succ D (:C *C1) (:C_next *C2)))
+                ((&cycle_axis *A)
+                 (axis_of D A)
+                 (&known (:Col *C))
+                 (&mask_color (:C *M))
+                 (OR ((NOT (&seen_succ D C))
+                      (= C1 C)
+                      (= C2 M))
+                     ((NOT (&seen_succ D (:C_next C)))
+                      (= C1 M)
+                      (= C2 C))))))
+          (steps ((:N K))
+            (&reach D *K)))))
+    (OUTPUT restore-period "a cell takes the cycle step from a known cell of its line along `cycle_axis`, or else of a line of its phase on the other axis, or else the next step along the other axis from the two stepped cells beside it or beside a cell of its phase; undefined where the known cells admit no single cycle."
+      (RULE &period
+        (&cycle_axis (:A *A3))
+        (perp (:A A3) (:A2 *A))
+        (&si.fundamental_period A *K))
+
+      (RULE &stepped
+        (&reach *P *D *K *C0)
+        (&cyc.walk (:key D) (:p0 C0) (:N K) (:p *Col)))
+
+      (RULE &unstepped
+        (&orbit.class (:a *P))
+        (NOT (&step_line P)))
+
+      (RULE &grown
+        (&unstepped *P)
+        (&orbit.class (:a P) *Id)
+        (&orbit.class (:a *P2) Id)
+        (&across *D (:E1 *E))
+        (neighbor (:P P2) (:D E) (:Q *Q1))
+        (neighbor (:P Q1) (:D E) (:Q *Q2))
+        (&stepped (:P Q1) (:Col *C1))
+        (&stepped (:P Q2) (:Col *C2))
+        (&cyc.walk (:key D) (:p0 C2) (:N *S) (:p C1))
+        (&cyc.walk (:key D) (:p0 C1) (:N S) (:p *X))
+        (&growth D *G)
+        (&cyc.walk (:key D) (:p0 X) (:N G) (:p *Col))))
+    (RULE &output
+      (OR ((&stepped *P *Col))
+          ((&grown P Col))
+          ((&unstepped P)
+           (NOT (&grown P))
+           (input P Col))))))
+
+(ALTS $c "Which cells are a cell's counterparts." $Translations
+  (ALT $MirrorSymmetry
+    (OUTPUT restore-period "the counterparts also include the images under the row and column reflections, taken modulo the periods, that some pair of known cells witnesses and none contradicts; undefined where the concept is undefined."
+      (RULE &action
+        (&wp_m.action *P *Q)))))
+
+(RULE &orbit_color
+  (&orbit.class (:a *Q) *Id)
+  (&known (:P Q) *Col))
+
+(RULE &output
+  (&orbit.class (:a *P) *Id)
+  (OR ((&orbit_color Id *Col))
+      ((NOT (&orbit_color Id))
+       (input P Col))))
+
+(RULE &across
+  (&cycle_axis *A)
+  (axis_of *D A)
+  (perp_dir D (:D2 *E1)))
+
+(RULE &growth
+  (&across *D (:E1 *E))
+  (&known_step (:D E) (:C *C1) (:Q *P) (:C_next *C2))
+  (&known_step (:D E) P (:C C2) (:C_next *C3))
+  (&cyc.walk (:key D) (:p0 C1) (:N *S) (:p C2))
+  (&cyc.walk (:key D) (:p0 C2) (:N S) (:p *X))
+  (&cyc.walk (:key D) (:p0 X) (:N *G) (:p C3)))
+
+(OUT (&output ^P ^Col))

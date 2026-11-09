@@ -1,0 +1,6 @@
+;; inputs 69816014f83981aa9fff02d8ac817e8a8ceff601a6f141e35b6fe93b9a8b7239 programs/solvers/58c02a16.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58c02a16
+
+(param &bg Color (7))
+(param &corner DiagDir (DIAG_TL))

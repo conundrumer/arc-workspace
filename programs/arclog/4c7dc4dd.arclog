@@ -1,0 +1,190 @@
+;; inputs ab9a1a083b09c63cd7ef05aca88b30fc555b76e04614876f4ff42d74f5159128 programs/solvers/4c7dc4dd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4c7dc4dd
+
+;; The color of a panel's unfilled cells.
+(DET &hole SharedColor)
+
+;; The rectangles each drawn color draws.
+(INIT &drect Outlines
+  (key ((input *P ^Col)
+        (NOT (&hole (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&hole (:C Col))))))
+
+;; What a rectangle encloses.
+(INIT &bbox BoundingBox
+  (key ((&drect.box (:B ^Pan)))
+    (cell (P)
+      (input *P)
+      (interior (:A P) (:B Pan)))))
+
+(RULE &cand
+  (&bbox.cell (:key *Pan) (:P *P_grid))
+  (input (:P P_grid) *Col)
+  (&bbox.box (:key Pan) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner))
+  (box_extent B (:P P_grid) *A *N)
+  (perp A *A2)
+  (box_extent B (:P P_grid) (:A A2) N))
+
+(RULE &cand_side
+  (&cand *Pan *Col)
+  (&hole (:C Col))
+  (&bbox.box (:key Pan) *B)
+  (&bbox.cell (:key Pan) *P)
+  (box_extent B P *N))
+
+;; The panels are the largest of them; smaller frames sit inside their marks.
+(INIT &widest Order
+  (member ((:t (:V Pan) (:S N)))
+    (&cand_side *Pan *N))
+  (score ((:t (:V Pan) (:S N)) (:S N))
+    (&cand_side *Pan *N)))
+
+(RULE &pval
+  (&widest.maximal (:t (:V *Pan)))
+  (&cand Pan *P_inner *Col))
+
+(RULE &mark
+  (&pval *Pan *P_inner *Col)
+  (NOT (&hole (:C Col))))
+
+(RULE &own
+  (&mark *Pan *Col)
+  (&mark (:Pan *Pan2))
+  (!= Pan Pan2)
+  (NOT (&mark (:Pan Pan2) Col)))
+
+(RULE &slot
+  (&mark (:Pan *Answer))
+  (&mark (:Pan *Shown))
+  (&mark (:Pan *Done))
+  (!= Answer Shown)
+  (!= Answer Done)
+  (!= Shown Done))
+
+(DEMONSTRATED &catalog
+  (key ((OR ((&slot (:Answer ^Pan) (:Shown ^Pan1))
+             (&mark (:Pan *Pan3))
+             (&pval (:Pan Pan3) *P_inner *Col))
+            ((&slot (:Answer Pan) (:Shown Pan1) (:Done *Pan2)))))
+    (value ((:o Pan3) (:i P_inner) (:v Col))
+      (&slot (:Answer Pan) (:Shown Pan1))
+      (&mark (:Pan *Pan3))
+      (&pval (:Pan Pan3) *P_inner *Col))
+    (demonstration ((:o Pan1) (:o2 Pan2))
+      (&slot (:Answer Pan) (:Shown Pan1) (:Done *Pan2))))
+  (DEMO_RULE $Extend
+    ;; The canvas the marks lie on: one color along a diagonal, chained across
+    ;; the two diagonal families.
+    (INIT &spread Quotient
+      (edge ((:a Pan P) (:b Pan (:P Q)))
+        (&mark *Pan)
+        (&pval Pan (:P_inner *P))
+        (&pval Pan (:P_inner *Q))
+        (diag_axis_elem *Da)
+        (same_line (:A Da) P Q)))
+
+    (INIT &canvas Singleton
+      (key ((&mark ^Pan (:P_inner *P_mark) *Col)
+            (&spread.class (:a Pan (:P P_mark)) *Id)
+            (&spread.class (:a Pan (:P ^P_inner)) Id))
+        (member ((:v Col))
+          (&mark Pan (:P_inner *P_mark) *Col)
+          (&spread.class (:a Pan (:P P_mark)) *Id)
+          (&spread.class (:a Pan (:P P_inner)) Id))))
+
+    (RULE &predict
+      (&pval *Pan *P_inner (:Col *V))
+      (&hole (:C *H))
+      (OR ((= V H)
+           (&canvas.value (:key Pan P_inner) (:v *Col)))
+          ((!= V H)
+           (= Col H))))
+
+    (RULE &prediction
+      (&slot (:Answer *Pan) (:Shown *Pan1))
+      (&predict (:Pan *Pan3) *P_inner *Col)))
+  (DEMO_RULE $Span
+    (RULE &flank_axis
+      (&widest.maximal (:t (:V *Key)))
+      (axis_elem *A))
+
+    (INIT &flank_frame Frame
+      (key ((&mark ^Pan *P_inner)
+            (axis_elem *A)
+            (frame_extent (:P P_inner) A *N))
+        (extent (A N)
+          (&mark Pan *P_inner)
+          (axis_elem *A)
+          (frame_extent (:P P_inner) A *N))))
+
+    (INIT &flank Ray
+      (key ((OR ((&mark ^Pan *P_inner))
+                ((&flank_axis (:Key Pan) *A)
+                 (axis4_of *D A))
+                ((&flank_frame.cell (:key Pan) *P))))
+        (source ((:P P_inner))
+          (&mark Pan *P_inner))
+        (node (P)
+          (&flank_frame.cell (:key Pan) *P))
+        (dir (D)
+          (&flank_axis (:Key Pan) *A)
+          (axis4_of *D A))))
+
+    (RULE &flank_between
+      (&pval (:Pan *Key) (:P_inner *P))
+      (&flank_axis Key *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&flank.ray (:key (:Pan Key)) P D)
+      (&flank.ray (:key (:Pan Key)) P (:D O)))
+
+    (RULE &predict
+      (OR ((&mark *Pan *P_inner *Col))
+          ((&pval Pan P_inner (:Col *H))
+           (&hole (:C H))
+           (IF ((&flank_between (:Key Pan) (:P P_inner)))
+               ((&own Pan Col))
+               ((= Col H))))))
+
+    (RULE &prediction
+      (&slot (:Answer *Pan) (:Shown *Pan1))
+      (&predict (:Pan *Pan3) *P_inner *Col)))
+  (DEMO_RULE $Reflect
+    ;; The window a panel shows: the box its marks span.
+    (INIT &window BoundingBox
+      (key ((&mark ^Pan *P_inner))
+        (cell ((:P P_inner))
+          (&mark Pan *P_inner))))
+
+    (RULE &repeat
+      (&pval *Pan (:P_inner *P_inner2) *Col)
+      (&window.box (:key Pan) *B)
+      (inside (:A P_inner2) B)
+      (d4_elem *D)
+      (apply D (:P P_inner2) (:P_out *P_inner)))
+
+    (INIT &image Singleton
+      (key ((&repeat ^Pan ^P_inner *Col))
+        (member ((:v Col))
+          (&repeat Pan P_inner *Col))))
+
+    (RULE &predict
+      (&pval *Pan *P_inner)
+      (OR ((&image.value (:key Pan P_inner) (:v *Col)))
+          ((NOT (&repeat Pan P_inner))
+           (&own Pan Col))))
+
+    (RULE &prediction
+      (&slot (:Answer *Pan) (:Shown *Pan1))
+      (&predict (:Pan *Pan3) *P_inner *Col))))
+
+(RULE &output
+  (&slot (:Answer *Pan) (:Shown *Pan1))
+  (&catalog (:key Pan Pan1) (:o Pan) (:i *P) (:v *Col)))
+
+(OUT (&output ^P ^Col))

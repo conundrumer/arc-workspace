@@ -1,0 +1,11 @@
+;; inputs a68bdba824af5f50613050f14c9a4785387c7ed36bb3ac75dd0b7dca196781c6 programs/solvers/c1990cce.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c1990cce
+
+(param &bg Color (0))
+(param &grow Dir (DIR_B))
+(param &echo_axis DiagAxis (DAXIS_DG))
+(param &echo Color (1))
+(param &v_color Color (2))
+(param &spacing number (2))
+(param &period number (4))

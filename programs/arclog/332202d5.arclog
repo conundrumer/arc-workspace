@@ -1,0 +1,81 @@
+;; inputs 17e24b5f444f3c8ed74f29cdb919f499419cb6b94fb1eb9caf54d2bbd2403db1 programs/solvers/332202d5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 332202d5
+
+;; The field the marked lines sit in.
+(DET &bg DominantColor)
+
+;; The axis the marked lines stack along; the divider runs along it.
+(DET &axis AxisDomain)
+
+(RULE &cell_split
+  (input *P *Col)
+  (&axis *A)
+  (split P A (:Along *P_along) (:Across *P_across)))
+
+;; The divider's color in the input; the crossings take it in the output.
+(DET &divider_color SharedColor)
+
+(RULE &divider
+  (&cell_split *Col *P_across)
+  (&divider_color (:C Col)))
+
+(RULE &mark
+  (&cell_split *Col *P_along *P_across)
+  (NOT (&bg (:C Col)))
+  (NOT (&divider P_across)))
+
+(INIT &casts_frame Frame
+  (extent (A N)
+    (&mark *P_along)
+    (frame_extent (:P P_along) *A *N)))
+
+;; The crossings' color in the input; every line takes it in the output.
+(DET &cross_color RarestColor)
+
+;; Each marked line casts its color both ways along the stacking axis.
+(INIT &casts Ray
+  (source ((:P P_along))
+    (&mark *P_along))
+  (node (P)
+    (&casts_frame.cell *P))
+  (dir (D)
+    (&axis *A)
+    (axis_of *D A)))
+
+;; The colors carried by the nearest marked lines.
+(INIT &nearest Order
+  (key ((&cell_split ^P_along))
+    (member ((:t (:V Col) (:S K)))
+      (&casts.ray (:P P_along) *K (:Origin *Src))
+      (&mark (:P_along Src) *Col))
+    (score ((:t (:V Col) (:S K)) (:S K))
+      (&casts.ray (:P P_along) *K (:Origin *Src))
+      (&mark (:P_along Src) *Col))))
+
+(INIT &agree Singleton
+  (key ((&nearest.minimal (:key ^P_along) (:t (:V *Col))))
+    (member ((:v Col))
+      (&nearest.minimal (:key P_along) (:t (:V *Col))))))
+
+(RULE &field
+  (OR ((&agree.value (:key *P_along) (:v *Col)))
+      ((&agree.plural (:key P_along))
+       (&cross_color (:C Col)))))
+
+(RULE &output
+  (&cell_split *P *P_along *P_across)
+  (OR ((&mark P_along)
+       (&divider P_across)
+       (&divider_color (:C *Col)))
+      ((&mark P_along)
+       (NOT (&divider P_across))
+       (&cross_color (:C Col)))
+      ((NOT (&mark P_along))
+       (&divider P_across)
+       (&cross_color (:C Col)))
+      ((NOT (&mark P_along))
+       (NOT (&divider P_across))
+       (&field P_along Col))))
+
+(OUT (&output ^P ^Col))

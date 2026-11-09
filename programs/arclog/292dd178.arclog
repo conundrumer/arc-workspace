@@ -1,0 +1,70 @@
+;; inputs 8707ca80abd6ad0731ceb79ccfbfb7decb42658070d015970198dd810a5dd7f9 programs/solvers/292dd178.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 292dd178
+
+(DET &wall RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(INIT &comp Connectivity
+  (node (P)
+    (&wall_cell *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comp.component *P ^Id))
+    (cell (P)
+      (&comp.component *P Id))))
+
+(RULE &hole
+  (&bbox.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(INIT &flow Ray
+  (source (P)
+    (&hole *P))
+  (node (P)
+    (input *P)
+    (NOT (&wall_cell P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &painted
+  (&flow.ray *P))
+
+(ALTS $choice "how the fill reaches outside the box through the break" $Flow
+  (ALT $Cast
+    (INIT &cast Ray
+      (key ((OR ((&bbox.box *B)
+                 (input *P)
+                 (inside (:A P) B)
+                 (same_dist ^D (:P1 P) (:P2 B))
+                 (NOT (&wall_cell P)))
+                ((dir_elem D))))
+        (source (P)
+          (&bbox.box *B)
+          (input *P)
+          (inside (:A P) B)
+          (same_dist D (:P1 P) (:P2 B))
+          (NOT (&wall_cell P)))
+        (node (P)
+          (dir_elem D)
+          (input *P))
+        (dir (D)
+          (dir_elem D))))
+
+    (RULE &painted
+      (OR ((&hole *P))
+          ((&cast.ray P))))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

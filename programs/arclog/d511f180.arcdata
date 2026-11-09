@@ -1,0 +1,7 @@
+;; inputs 2602411d35bd848f7917c8a70f33d0ece2996b47d33dd2990c31567ccb4a27a0 programs/solvers/d511f180.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d511f180
+
+(representative 0d3d703e)
+
+(param &swap (Color Color) (5 8))

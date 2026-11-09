@@ -1,0 +1,8 @@
+;; inputs 774aaefe49b9e6af01a005db7b232e90595d86fc9f81b2a3c505516e8163009c programs/solvers/2685904e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2685904e
+
+(param &base_dir Dir (DIR_B))
+(param &sep_dist number (3))
+(param &pattern_dist number (1))
+(param &bg Color (0))

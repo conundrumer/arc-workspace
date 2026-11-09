@@ -1,0 +1,50 @@
+;; inputs 0735b5bd7ac7eb745b4ccdafcefa505d8848d0e1d2c86c27e749eee05ba4a36f programs/solvers/3391f8c0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3391f8c0
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &bbox BoundingBox
+  (key ((&objs.component ^Id *P))
+    (cell (P)
+      (&objs.component Id *P))))
+
+(RULE &shape
+  (&objs.component *Id (:key *Col) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &swap
+  (&objs.component (:key *Col))
+  (&objs.component (:key (:Col *Col2)))
+  (!= Col Col2))
+
+(RULE &paint
+  (&objs.component *Id (:key (:Col *Col3)))
+  (&swap (:Col Col3) (:Col2 *Col))
+  (&shape Col *P_inner)
+  (input *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel P_inner)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

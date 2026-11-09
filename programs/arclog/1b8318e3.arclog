@@ -1,0 +1,73 @@
+;; inputs 52e4957c4870c5217c5d557f0aa146c052776ea7043e2f750e9e3bd323460bf7 programs/solvers/1b8318e3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1b8318e3
+
+(DET &bg DominantColor)
+
+(DET &block UnchangedColor)
+
+(RULE &block_cell
+  (input *P *Col)
+  (&block (:C Col)))
+
+(RULE &dot
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&block (:C Col))))
+
+(RULE &beside
+  (input *P)
+  (NOT (&block_cell P))
+  (neighbor P *D *Q)
+  (&block_cell (:P Q)))
+
+(RULE &side
+  (dir_elem *D)
+  (&beside *P D))
+
+;; Each dot casts along its row, column, and diagonals.
+(INIT &cast Ray
+  (source (P)
+    (&dot *P))
+  (node (P)
+    (input *P)
+    (NOT (&dot P)))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &run
+  (&cast.ray (:P *T) *D *K (:Origin *P))
+  (OR ((dir_elem D)
+       (&beside (:P T)))
+      ((&beside (:P T) D)
+       (NOT (&side (:P T))))))
+
+;; The fewest steps among the open slides.
+(INIT &shortest Order
+  (key ((&run ^P *T *K))
+    (member ((:t (:V T) (:S K)))
+      (&run P *T *K))
+    (score ((:t (:V T) (:S K)) (:S K))
+      (&run P *T *K))))
+
+(RULE &cardinal_low
+  (&shortest.minimal (:key *P) (:t (:V *T)))
+  (&run P T *D)
+  (dir_elem D))
+
+(RULE &arrive
+  (&dot (:P *P2) *Col)
+  (&shortest.minimal (:key (:P P2)) (:t (:V *P)))
+  (OR ((&cardinal_low (:P P2) (:T P)))
+      ((NOT (&cardinal_low (:P P2))))))
+
+(RULE &output
+  (input *P)
+  (OR ((input P *Col)
+       (&block (:C Col)))
+      ((&arrive P Col))
+      ((NOT (&block_cell P))
+       (NOT (&arrive P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

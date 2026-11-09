@@ -1,0 +1,66 @@
+;; inputs 73e733bda11d88eebfd914d1823d50f3f00b318f25811183bc3d757809ddad9d programs/solvers/269e22fb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 269e22fb
+
+;; Every output is the whole chart, each one copy of it, in its own pose.
+;; Each of an output's two colors gives one class of cells.
+(INIT &class_id Quotient
+  (equivalent ((:a Col) (:b Col))
+    (ex_output *Col)))
+
+(DET &cell_class
+  (ex_output *E *P *Col)
+  (&class_id.class (:a Col) (:Id *K)))
+
+(RIGID_DET &chart
+  (instance ((&cell_class ^E))
+    (&cell_class E *P *K)))
+
+;; The chart's canvas in each pose — the frame its cells are stated in.
+(INIT &canvas Frame
+  (key ((&chart.cell_class (:Pose ^D) *P)
+        (frame_extent P *A *N)
+        (&chart.cell_class (:Pose D) (:P *P2))
+        (frame_extent (:P P2) (:A *A2) (:N *N2))
+        (perp A A2))
+    (extent (A N)
+      (&chart.cell_class (:Pose D) *P)
+      (frame_extent P *A *N))))
+
+(RULE &cell_class2
+  (&chart.cell_class *K))
+
+;; A one-to-one map of the chart's two cell classes onto the pair's two
+;; colors, as the class of the two pairings that make it up.
+(INIT &color_map Quotient
+  (edge ((:a K Col) (:b (:K K2) (:Col Col2)))
+    (&cell_class2 *K)
+    (&cell_class2 (:K *K2))
+    (!= K K2)
+    (input *Col)
+    (input (:Col *Col2))
+    (!= Col Col2)))
+
+(RULE &chart2
+  (&color_map.class (:a *K *Col) (:Id *M))
+  (&canvas.cell (:key *D) *P)
+  (&chart.cell_class (:Pose D) P K))
+
+;; Where the input lays onto the rendered chart, cell for cell.
+(INIT &occ Occurrences
+  (key ((OR ((&chart2 ^D ^M *P *Col))
+            ((d4_elem D)
+             (&color_map.class (:Id M))
+             (input P Col))))
+    (cell (P (:v Col))
+      (&chart2 D M *P *Col))
+    (shape (P (:v Col))
+      (d4_elem D)
+      (&color_map.class (:Id M))
+      (input *P *Col))))
+
+(RULE &output
+  (&occ.occurrence (:key (:D *R_d) (:M *R_m)))
+  (&chart2 (:D R_d) (:M R_m) *P *Col))
+
+(OUT (&output ^P ^Col))

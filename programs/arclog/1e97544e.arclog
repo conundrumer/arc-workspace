@@ -1,0 +1,89 @@
+;; inputs 7f4eaa446de28032c340a70012b03687de1c9be9759323c69c3eceda5d17ca2e programs/solvers/1e97544e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e97544e
+
+(DET &hole ChangedColor)
+
+;; The fault diagonal runs from this corner.
+(DET &corner DiagDirDomain)
+
+;; Stripes run along this axis.
+(DET &axis AxisDomain)
+
+(RULE &intact
+  (input *P *Col)
+  (NOT (&hole (:C Col))))
+
+(RULE &damaged
+  (input *P *Col)
+  (&hole (:C Col)))
+
+(RULE &stripe
+  (input *P)
+  (&corner (:D *C))
+  (&axis *A)
+  (split P A *Across)
+  (diag_dirs (:D C) A (:D2 *D_jog))
+  (diag_dist P (:Diag C) A (:K1 *K_start) (:K2 *K_jog))
+  (OR ((> K_start K_jog)
+       (opposite (:D D_jog) (:Opp *D_back))
+       (neighbor (:P Across) (:D D_back) (:Q *S)))
+      ((<= K_start K_jog)
+       (= S Across))))
+
+(RULE &stripe_color
+  (&stripe (:P *Q) *S)
+  (&intact (:P Q) *Col))
+
+(ALTS $choice "how the pattern's law is read" $Stripe
+  (ALT $Cycle
+    ;; The cycle advances along this diagonal.
+    (DET &diag_axis DiagAxisDomain)
+
+    (RULE &cycle_succ
+      (&diag_axis (:Da *DA))
+      (diag_axis_of *D (:Da DA))
+      (&intact *P *Col)
+      (neighbor P D *Q)
+      (&intact (:P Q) (:Col *Col2)))
+
+    ;; The diagonal lines through the intact cells, each cell with its step count
+    ;; from the intact cell.
+    (INIT &line Ray
+      (source (P)
+        (&intact *P))
+      (node (P)
+        (input *P))
+      (dir (D)
+        (&diag_axis (:Da *DA))
+        (diag_axis_of *D (:Da DA))))
+
+    ;; The color a count of steps along the cycle reaches.
+    (INIT &advance Walk
+      (key ((OR ((&cycle_succ ^D *Col *Col2))
+                ((&line.ray D *K)
+                 (diag_dir_elem D))))
+        (successor ((:p Col) (:p_next Col2))
+          (&cycle_succ D *Col *Col2))
+        (steps ((:N K))
+          (&line.ray D *K)
+          (diag_dir_elem D))))
+
+    (RULE &flow
+      (&intact (:P *P2) (:Col *Col3))
+      (&line.ray *P *D *K (:Origin P2))
+      (diag_dir_elem D)
+      (&advance.walk (:key D) (:p0 Col3) (:N K) (:p *Col)))
+
+    (RULE &output
+      (OR ((&damaged *P)
+           (&flow P *Col))
+          ((&intact P Col))))))
+
+(RULE &output
+  (OR ((&intact *P *Col))
+      ((&damaged P)
+       (&stripe P *S)
+       (&stripe_color S Col))))
+
+(OUT (&output ^P ^Col))

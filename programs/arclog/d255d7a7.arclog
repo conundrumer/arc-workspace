@@ -1,0 +1,219 @@
+;; inputs 3b591a4fe8517902eafa88bdd261203fd5b2c8493d65875eb61d93685d746cf3 programs/solvers/d255d7a7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d255d7a7
+
+(INPUT cup "each cup is a &frame (0) bracket of 3 × 3 cells that is open on one side, and its open side lies on a grid edge"
+
+  (INIT &out_mode_count Cardinality
+    (key ((ex_output ^E *P ^Col))
+      (member ((:m P))
+        (ex_output E *P Col))))
+
+  ;; The commonest color of each output.
+  (INIT &out_mode Order
+    (key ((&out_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&out_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&out_mode_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&out_mode.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&out_mode.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&out_mode.maximal (:t *C))
+    (NOT (&background_defect C)))
+
+  (INIT &ink_mode_count Cardinality
+    (key ((ex_output ^E)
+          (ex_input E *P ^Col)
+          (NOT (&background (:C Col))))
+      (member ((:m P))
+        (ex_output E)
+        (ex_input E *P Col)
+        (NOT (&background (:C Col))))))
+
+  ;; The commonest color of each train input other than background.
+  (INIT &ink_mode Order
+    (key ((&ink_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&ink_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&ink_mode_count.size (:key E *Col) *N))))
+
+  (DET &frame_defect
+    (&ink_mode.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&ink_mode.maximal (:key E) (:t C))))
+
+  (DET &frame
+    (&ink_mode.maximal (:t *C))
+    (NOT (&frame_defect C)))
+
+  ;; Each frame component is one cup with its handle.
+  (INIT &piece2 Connectivity
+    (key ((ex_output ^E *P *Col)
+          (&frame (:C Col)))
+      (node (P)
+        (ex_output E *P *Col)
+        (&frame (:C Col)))))
+
+  (INIT &piece_box2 BoundingBox
+    (key ((&piece2.component (:key (:E ^K)) *P ^Id))
+      (cell (P)
+        (&piece2.component (:key (:E K)) *P Id)))))
+
+(INPUT handle "a straight &frame line runs from the middle of each cup's closed side, away from its opening, to the opposite grid edge")
+
+(OUTPUT slide-to-handle-end "each cup, with the cells inside its bracket, moves along its handle until its closed side lies on the handle's last cell")
+
+(OUTPUT clear-vacated "the handle and the cup's old cells become &background")
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  ;; Each frame component is one cup with its handle.
+  (INIT &piece Connectivity
+    (node (P)
+      (input *P *Col)
+      (&frame (:C Col))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id))))
+
+  ;; A piece cell whose line across the handle holds piece cells on both sides
+  ;; of the piece's box.
+  (RULE &cup_cell
+    (&piece.component *P (:Id *Cup))
+    (&piece_box.box (:key (:Id Cup)) *B)
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&piece.component (:P *Q) (:Id Cup))
+    (inside (:A Q) B)
+    (same_dist D (:P1 Q) (:P2 B))
+    (same_line A P Q)
+    (&piece.component (:P *Q2) (:Id Cup))
+    (inside (:A Q2) B)
+    (same_dist (:D D2) (:P1 Q2) (:P2 B))
+    (same_line A P (:Q Q2)))
+
+  ;; The box of the cup's bracket.
+  (INIT &cup_box BoundingBox
+    (key ((&cup_cell (:Cup ^Id) *P))
+      (cell (P)
+        (&cup_cell (:Cup Id) *P))))
+
+  (RULE &handle
+    (&piece_box.box (:key (:Id *Cup)) *B)
+    (&cup_box.box (:key (:Id Cup)) (:B *B_cup))
+    (relative (:Base B) (:X B_cup) (:X_rel *B_rel))
+    (margin (:B B_rel) *D *K)
+    (NOT (margin (:B B_rel) D (:K 0))))
+
+  (RULE &travel
+    (&handle *Cup *D *K))
+
+  (RULE &carried
+    (&handle *Cup)
+    (&cup_box.box (:key (:Id Cup)) (:B *B_cup))
+    (input *P)
+    (inside (:A P) (:B B_cup)))
+
+  (RULE &landed
+    (&carried (:Cup *Id) (:P *P2))
+    (input (:P P2) *Col)
+    (&travel (:Cup Id) *D *K)
+    (jump (:P P2) D K (:Q *P)))
+
+  (RULE &vacated
+    (OR ((&carried *P))
+        ((&piece.component P *Id)
+         (&handle (:Cup Id)))))
+
+  (RULE &kept
+    (input *P *Col)
+    (NOT (&piece.component P))
+    (NOT (&vacated P))))
+
+(ALTS $r "which cells travel with the cup" $BracketBox
+  (ALT $EdgeSlab
+    (OUTPUT slide-to-handle-end "the slab from the grid edge at the cup's open side to its closed side, across the cup's width, travels"
+      (RULE &carried
+        (&handle *Cup *D)
+        (axis_of D *A)
+        (&cup_box.box (:key (:Id Cup)) (:B *B_cup))
+        (input (:P *Q))
+        (inside (:A Q) (:B B_cup))
+        (input *P)
+        (same_line A P Q)
+        (NOT (nearer D P Q))))))
+
+(ALTS $l "where the cup stops" $HandleEnd
+  (ALT $EdgeLanding
+    (OUTPUT slide-to-handle-end "the cup stops with its closed side on the grid edge the handle points to"
+      (RULE &travel
+        (&handle *Cup *D)
+        (&cup_box.box (:key (:Id Cup)) (:B *B_cup))
+        (margin (:B B_cup) D *K)))))
+
+(ALTS $o "what shows where a landed cup covers a cell that keeps its color" $CupOnTop
+  (ALT $MarksOnTop
+    (OUTPUT keep-rest "a kept cell other than &background shows over the landed cup"
+      (RULE &kept_ink
+        (&kept *P *Col)
+        (NOT (&background (:C Col)))))
+    (RULE &output
+      (OR ((&landed *P *Col)
+           (NOT (&kept_ink P)))
+          ((&kept P Col)
+           (&landed P)
+           (&kept_ink P))
+          ((&vacated P)
+           (NOT (&landed P))
+           (&background (:C Col)))
+          ((&kept P Col)
+           (NOT (&landed P)))))))
+
+(ALTS $e "how far a cup reaches along its handle" $Spanning
+  (ALT $StoredWidth
+    (INPUT cup "the &cup_width lines at the open side of a &frame component are the cup and the rest is handle; undefined where a component is not &cup_width across"
+      (DET_OR_RULE &cup_width TileCount
+        (&piece_box2.box (:key (:K *E) *Id) *B)
+        (&piece2.component (:key E) *P Id)
+        (axis_elem *A)
+        (box_extent B P A *N))
+
+      ;; A piece cell among the cup_width lines at the piece's open side, the side
+      ;; whose two corners both hold piece cells.
+      (RULE &cup_cell
+        (&piece.component *P (:Id *Cup))
+        (&piece_box.box (:key (:Id Cup)) *B)
+        (corner_dir *C *A *D)
+        (corner_dir (:C *C2) A D)
+        (!= C C2)
+        (&piece.component (:P *Q) (:Id Cup))
+        (inside (:A Q) B)
+        (same_corner (:D C) (:P1 Q) (:P2 B))
+        (&piece.component (:P *Q2) (:Id Cup))
+        (inside (:A Q2) B)
+        (same_corner (:D C2) (:P1 Q2) (:P2 B))
+        (&cup_width (:N *W))
+        (perp A *A2)
+        (box_extent B P (:A A2) (:N W))
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (margin (:B P_rel) D *K)
+        (< K W)))))
+
+(RULE &output
+  (OR ((&vacated *P)
+       (NOT (&landed P))
+       (&background (:C *Col)))
+      ((&kept P Col)
+       (NOT (&landed P)))
+      ((&landed P Col))))
+
+(OUT (&output ^P ^Col))

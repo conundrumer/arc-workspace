@@ -1,0 +1,160 @@
+;; inputs 8c95af68f6f8500fe1eb888fb145538f34d052a7844b1efbae7be46f371255bf programs/solvers/00dbd492.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 00dbd492
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The square's wall is one ink component, so its box is the square.
+(INIT &comps Connectivity
+  (node (P)
+    (&ink *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &viewed
+  (input *P)
+  (&bbox.box (:key *Id) *B)
+  (inside (:A P) B))
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &region2
+  (&viewed *Id *P)
+  (&bg_cell P))
+
+(DET &changed
+  (ex_input *E *P (:Col *C_in))
+  (ex_output E P *Col)
+  (!= Col C_in))
+
+(INIT &regions Connectivity
+  (key ((&changed ^E *P))
+    (node (P)
+      (&changed E *P))))
+
+(DET &region
+  (&regions.component (:key *E) *P *Id)
+  (&changed E P *Col))
+
+(INIT &rbox BoundingBox
+  (key ((&region ^E ^Id *P))
+    (cell (P)
+      (&region E Id *P))))
+
+(DET &size_fill
+  (&region (:E *H_e) (:Id *H_id) *P *Col)
+  (&rbox.box (:key (:E H_e) (:Id H_id)) *B)
+  (box_extent B P *A *N)
+  (perp A *A2)
+  (box_extent B P (:A A2) N))
+
+(ALTS $choice "how the fill is found" $Recolor
+  (ALT $Recolor
+    (ALTS $r "how the empty region is delimited" $Box
+      (ALT $Enclose
+        ;; $Enclose: the bg regions closed off from the grid edge.
+        (INIT &closed Enclosure
+          (cell (P)
+            (&bg_cell *P)))
+        (RULE &region2
+          (&closed.enclosed *P *Id))))
+    (ALTS $k "how the region's size is measured" $Size
+      (ALT $Count
+        (INIT &region_size2 Cardinality
+          (key ((&region2 ^Id *P))
+            (member ((:m P))
+              (&region2 Id *P))))
+        (INIT &region_size Cardinality
+          (key ((&region ^E ^Id *P))
+            (member ((:m P))
+              (&region E Id *P))))
+        (DET &count_fill
+          (&region_size.size (:key (:E *H_e) (:Id *H_id)) *N)
+          (&region (:E H_e) (:Id H_id) *Col))
+        (RULE &fill
+          (&region_size2.size (:key *Id) *N)
+          (&count_fill N *Col)))))
+  (ALT $Replace
+    (RULE &inner
+      (input *P)
+      (&bbox.box (:key *Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+    (DET &obj_member
+      (&inner *E *Id *P *P_inner)
+      (&ink E P))
+
+    (DET &rewritten
+      (&inner *E *Id *P)
+      (&changed E P))
+
+    ;; One id per distinct object.
+    (INIT &same2 Inclusion
+      (pattern ((:pattern (:E O_e) (:Id O_id)) (:m P_inner))
+        (&rewritten (:E *O_e) (:Id *O_id))
+        (&obj_member (:E O_e) (:Id O_id) *P_inner))
+      (observed ((:observed (:E O_e) (:Id O_id)) (:m P_inner))
+        (&rewritten (:E *O_e) (:Id *O_id))
+        (&obj_member (:E O_e) (:Id O_id) *P_inner)))
+
+    (INIT &entry Quotient
+      (equivalent ((:a (:E O_e) (:Id O_id)) (:b (:E O2_e) (:Id O2_id)))
+        (&same2.equal (:observed (:E *O_e) (:Id *O_id)) (:pattern (:E *O2_e) (:Id *O2_id)))))
+
+    (DET &patch_member
+      (&entry.class (:a (:E *O_e) (:Id *O_id)) *Id)
+      (&obj_member (:E O_e) (:Id O_id) (:P_inner *P)))
+
+    (INIT &same Inclusion
+      (pattern ((:pattern Pat) (:m P))
+        (&patch_member (:Id *Pat) *P))
+      (observed ((:observed Id) (:m P_inner))
+        (&inner *Id *P *P_inner)
+        (&ink P)))
+
+    (DET &obj_out
+      (&inner *E *Id *P *P_inner)
+      (ex_output E P *Col))
+
+    (DET &patch_out
+      (&entry.class (:a (:E *O_e) (:Id *O_id)) *Id)
+      (&obj_out (:E O_e) (:Id O_id) (:P_inner *P) *Col))
+
+    (RULE &painted
+      (&same.equal (:observed *Id) (:pattern *Pat))
+      (&patch_out (:Id Pat) (:P *P_inner) *Col)
+      (&inner Id *P P_inner))))
+
+(INIT &rbox2 BoundingBox
+  (key ((&region2 ^Id *P))
+    (cell (P)
+      (&region2 Id *P))))
+
+(RULE &fill
+  (&rbox2.cell (:key *Id) *P)
+  (&rbox2.box (:key Id) *B)
+  (box_extent B P *A *N)
+  (perp A *A2)
+  (box_extent B P (:A A2) N)
+  (&size_fill N *Col))
+
+(RULE &painted
+  (&region2 *Id *P)
+  (&fill Id *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

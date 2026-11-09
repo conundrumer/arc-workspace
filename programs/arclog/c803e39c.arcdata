@@ -1,0 +1,160 @@
+;; inputs 84e4c53a7ec8aa94914af932b5a883617c1e44ea81f7518c9e7758994dedd935 programs/solvers/c803e39c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c803e39c
+
+(param &background Color (0))
+(param &panel_from Dir (DIR_L))
+(param &panel_role (number number number number) (0 1 2 3))
+(param &near_side Dir (DIR_L))
+(param &divider_color Color (5))
+(param &tile_color Color (1))
+(param &map_color Color (2))
+
+(alts $r
+  (alt $TileByColor
+    (witness swapped-shape-colors variant concept
+      (relaxed tile-shape)
+      (relaxed map-shape)
+      (separates "The tile_color shape sits in panel 1 and the map_color shape in panel 0. The concept takes panel 0 as the tile; $TileByColor takes the tile_color shape as the tile, so the two products swap factors.")
+      (input (grid
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)
+        (0 2 0 2 0 5 0 1 1 0 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 2 0 2 0 5 0 1 0 1 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 2 2 2 0 5 0 0 1 1 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)))
+      (output $PanelRank (grid
+        (3 9 3 3 9 3 9 9 9)
+        (3 9 3 3 9 3 9 9 9)
+        (3 3 3 3 3 3 9 9 9)
+        (3 9 3 9 9 9 3 9 3)
+        (3 9 3 9 9 9 3 9 3)
+        (3 3 3 9 9 9 3 3 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 3 3 3 3 3)))
+      (output $TileByColor (grid
+        (3 3 9 9 9 9 3 3 9)
+        (3 9 3 9 9 9 3 9 3)
+        (9 3 3 9 9 9 9 3 3)
+        (3 3 9 9 9 9 3 3 9)
+        (3 9 3 9 9 9 3 9 3)
+        (9 3 3 9 9 9 9 3 3)
+        (3 3 9 3 3 9 3 3 9)
+        (3 9 3 3 9 3 3 9 3)
+        (9 3 3 9 3 3 9 3 3))))))
+
+(alts $f
+  (alt $ShapeBbox
+    (witness shape-short-of-square variant concept
+      (relaxed shapes-span-square)
+      (separates "The tile shape leaves the last column of its 3x3 square empty. The concept keeps the 3x3 square and gives 9x9; $ShapeBbox crops the tile to its 3x2 bounding box and gives 9x6.")
+      (input (grid
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)
+        (0 1 1 0 0 5 0 2 2 0 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 1 0 0 0 5 0 2 0 2 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 1 1 0 0 5 0 0 2 2 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)))
+      (output $Square $HeightSide (grid
+        (3 3 9 3 3 9 9 9 9)
+        (3 9 9 3 9 9 9 9 9)
+        (3 3 9 3 3 9 9 9 9)
+        (3 3 9 9 9 9 3 3 9)
+        (3 9 9 9 9 9 3 9 9)
+        (3 3 9 9 9 9 3 3 9)
+        (9 9 9 3 3 9 3 3 9)
+        (9 9 9 3 9 9 3 9 9)
+        (9 9 9 3 3 9 3 3 9)))
+      (output $ShapeBbox (grid
+        (3 3 3 3 9 9)
+        (3 9 3 9 9 9)
+        (3 3 3 3 9 9)
+        (3 3 9 9 3 3)
+        (3 9 9 9 3 9)
+        (3 3 9 9 3 3)
+        (9 9 3 3 3 3)
+        (9 9 3 9 3 9)
+        (9 9 3 3 3 3)))))
+  (alt $HeightSide
+    (witness extra-bottom-row borderline concept
+      (relaxed four-panels)
+      (separates "The grid is one row taller than the solid squares need. The concept takes n from the 3x3 squares and gives 9x9; $HeightSide takes n as the height less 2, reads 4x4 frames, and gives 16x16.")
+      (input (grid
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)
+        (0 1 0 1 0 5 0 2 2 0 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 1 0 1 0 5 0 2 0 2 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 1 1 1 0 5 0 0 2 2 0 5 0 3 3 3 0 5 0 9 9 9 0)
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0 5 0 0 0 0 0)))
+      (output $Square $ShapeBbox (grid
+        (3 9 3 3 9 3 9 9 9)
+        (3 9 3 3 9 3 9 9 9)
+        (3 3 3 3 3 3 9 9 9)
+        (3 9 3 9 9 9 3 9 3)
+        (3 9 3 9 9 9 3 9 3)
+        (3 3 3 9 9 9 3 3 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 3 3 3 3 3)))
+      (output $HeightSide (grid
+        (3 9 3 9 3 9 3 9 9 9 9 9 9 9 9 9)
+        (3 9 3 9 3 9 3 9 9 9 9 9 9 9 9 9)
+        (3 3 3 9 3 3 3 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9)
+        (3 9 3 9 9 9 9 9 3 9 3 9 9 9 9 9)
+        (3 9 3 9 9 9 9 9 3 9 3 9 9 9 9 9)
+        (3 3 3 9 9 9 9 9 3 3 3 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 3 9 3 9 3 9 3 9 9 9 9 9)
+        (9 9 9 9 3 9 3 9 3 9 3 9 9 9 9 9)
+        (9 9 9 9 3 3 3 9 3 3 3 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9 9 9 9 9))))))
+
+(alts $dv
+  (alt $DividerByLines
+    (witness recolored-dividers variant $DividerByLines
+      (relaxed four-panels)
+      (separates "The divider lines are 6 in place of 5. The concept, at the stored divider color 5, finds no dividers and is undefined; $DividerByLines takes the color of the full lines and gives the product.")
+      (input (grid
+        (0 0 0 0 0 6 0 0 0 0 0 6 0 0 0 0 0 6 0 0 0 0 0)
+        (0 1 0 1 0 6 0 2 2 0 0 6 0 3 3 3 0 6 0 9 9 9 0)
+        (0 1 0 1 0 6 0 2 0 2 0 6 0 3 3 3 0 6 0 9 9 9 0)
+        (0 1 1 1 0 6 0 0 2 2 0 6 0 3 3 3 0 6 0 9 9 9 0)
+        (0 0 0 0 0 6 0 0 0 0 0 6 0 0 0 0 0 6 0 0 0 0 0)))
+      (output $StoredDivider undefined)
+      (output $DividerByLines (grid
+        (3 9 3 3 9 3 9 9 9)
+        (3 9 3 3 9 3 9 9 9)
+        (3 3 3 3 3 3 9 9 9)
+        (3 9 3 9 9 9 3 9 3)
+        (3 9 3 9 9 9 3 9 3)
+        (3 3 3 9 9 9 3 3 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 3 3 3 3 3))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed four-panels)
+      (separates "The background is 6 in place of 0. The concept, at the stored background 0, reads the margins as ink and is undefined; the derived background is 6 and gives the product.")
+      (input (grid
+        (6 6 6 6 6 5 6 6 6 6 6 5 6 6 6 6 6 5 6 6 6 6 6)
+        (6 1 6 1 6 5 6 2 2 6 6 5 6 3 3 3 6 5 6 9 9 9 6)
+        (6 1 6 1 6 5 6 2 6 2 6 5 6 3 3 3 6 5 6 9 9 9 6)
+        (6 1 1 1 6 5 6 6 2 2 6 5 6 3 3 3 6 5 6 9 9 9 6)
+        (6 6 6 6 6 5 6 6 6 6 6 5 6 6 6 6 6 5 6 6 6 6 6)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (3 9 3 3 9 3 9 9 9)
+        (3 9 3 3 9 3 9 9 9)
+        (3 3 3 3 3 3 9 9 9)
+        (3 9 3 9 9 9 3 9 3)
+        (3 9 3 9 9 9 3 9 3)
+        (3 3 3 9 9 9 3 3 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 9 3 3 9 3)
+        (9 9 9 3 3 3 3 3 3))))))

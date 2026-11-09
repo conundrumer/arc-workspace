@@ -14,7 +14,8 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
-from arclog_convert.readback import read_checked  # noqa: E402  the corpus is a gen/ directory
+from arclog_convert.readback import read_checked  # noqa: E402  the corpus is the converter's directory of converted solvers
+from engine import checkout  # noqa: E402
 
 
 def dump(task, corpus):
@@ -35,7 +36,7 @@ def dump(task, corpus):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('output', type=Path)
-    parser.add_argument('--corpus', type=Path, default=ROOT / 'work/arclog/gen')
+    parser.add_argument('--corpus', type=Path, default=checkout.arclog())
     parser.add_argument('--task', action='append', help='limit to task id; repeatable')
     parser.add_argument('--worker', help=argparse.SUPPRESS)
     args = parser.parse_args()

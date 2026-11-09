@@ -1,0 +1,268 @@
+;; inputs 8b70fc1c08352179ed13ee5c310152b72335024d808f6415e7851a2edfa3cf4f programs/solvers/ac605cbb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac605cbb
+
+(param &stamp_line (Color Offset)
+  (1 (grid
+    (_ _ _)
+    (@_ 1 1)))
+  (2 (grid
+    (_ 1 1 1 @_)))
+  (3 (grid
+    (@_)
+    (1)
+    (1)
+    (_)))
+  (6 (grid
+    (_)
+    (1)
+    (1)
+    (1)
+    (1)
+    (1)
+    (@_))))
+(param &stamp_end (Color Offset)
+  (1 (grid
+    (_ _ 1)
+    (@_ _ _)))
+  (2 (grid
+    (1 _ _ _ @_)))
+  (3 (grid
+    (@_)
+    (_)
+    (_)
+    (1)))
+  (6 (grid
+    (1)
+    (_)
+    (_)
+    (_)
+    (_)
+    (_)
+    (@_))))
+(param &line_color Color (5))
+(param &cross_color Color (4))
+(param &cross_dir DiagDir (DIAG_BL))
+(param &ray_fixed_dir Dir (DIR_B))
+
+(alts $ink
+  (alt $RayUnderInk
+    (witness ray-meets-line ordinary concept
+      (separates "The ray from the crossing of the 2 line and the 3 line meets a cell of the 6 line at (7,1). The concept paints that cell 4 and the ray reaches (8,0); RayUnderInk keeps the 5 there and the ray reaches (8,0); RayStopsAtInk keeps the 5 and the ray ends at (6,2).")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RayPaintsInk (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 3 0 0 0 0 0)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 2 5 4 5 2 0 0 0)
+        (0 5 0 4 3 0 0 0 0 0)
+        (0 5 4 0 0 0 0 0 0 0)
+        (0 4 0 0 0 0 0 0 0 0)
+        (4 6 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RayStopsAtInk (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 3 0 0 0 0 0)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 2 5 4 5 2 0 0 0)
+        (0 5 0 4 3 0 0 0 0 0)
+        (0 5 4 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 0 0 0 0)
+        (0 6 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RayUnderInk (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 3 0 0 0 0 0)
+        (0 5 0 0 5 0 0 0 0 0)
+        (0 5 2 5 4 5 2 0 0 0)
+        (0 5 0 4 3 0 0 0 0 0)
+        (0 5 4 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 0 0 0 0)
+        (4 6 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))))
+  (alt $RayStopsAtInk
+    (witness ray-meets-line ordinary concept)))
+
+(alts $heading
+  (alt $RayAlongHorizontalLine
+    (witness one-line-crosses-three ordinary concept
+      (separates "The line of the 1 stamp, which runs right, crosses the 3 line at (5,3). The concept casts the ray down-left from there; RayAlongHorizontalLine casts it down-right.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RayStoredDir (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0)
+        (0 0 0 5 1 0 0 0 0 0)
+        (0 0 1 4 5 0 0 0 0 0)
+        (0 0 4 3 0 0 0 0 0 0)
+        (0 4 0 0 0 0 0 0 0 0)
+        (4 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RayAlongHorizontalLine (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0 0)
+        (0 0 0 5 1 0 0 0 0 0)
+        (0 0 1 4 5 0 0 0 0 0)
+        (0 0 0 3 4 0 0 0 0 0)
+        (0 0 0 0 0 4 0 0 0 0)
+        (0 0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 0 0 4 0 0))))))
+
+(alts $end
+  (alt $EndOverLine
+    (witness end-on-line borderline $EndOverLine
+      (relaxed stamps-meet-at-lines)
+      (separates "The end cell of the 2 stamp lands on a line cell of the 3 stamp at (4,2). The concept paints that cell two colors and is undefined; EndOverLine paints 2, LineOverEnd paints 5, and CrossAtEndCell paints 4 and casts a ray down-left from there.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EndLineClash undefined)
+      (output $CrossAtEndCell (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0 0)
+        (0 0 4 5 5 5 2 0 0 0)
+        (0 4 3 0 0 0 0 0 0 0)
+        (4 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $EndOverLine (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0 0)
+        (0 0 2 5 5 5 2 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $LineOverEnd (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0 0)
+        (0 0 5 5 5 5 2 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))))
+  (alt $LineOverEnd
+    (witness end-on-line borderline $EndOverLine))
+  (alt $CrossAtEndCell
+    (witness end-on-line borderline $EndOverLine)))
+
+(alts $seed
+  (alt $SeedOverStamp
+    (witness line-on-seed borderline $SeedOverStamp
+      (relaxed stamps-meet-at-lines)
+      (separates "The 2 line passes over the 3 seed at (4,4). The concept paints that cell 5; SeedOverStamp keeps the 3.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 0 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $StampOverSeed (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 5 5 5 2 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $SeedOverStamp (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 5 3 5 2 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $grid
+  (alt $DropStampOffGrid
+    (witness stamp-off-grid borderline concept
+      (relaxed stamps-fit)
+      (separates "The 6 stamp from the seed at (3,3) reaches past the top edge. The concept draws the part of the stamp inside the grid, the line cells (0,3)-(2,3); DropStampOffGrid draws none of it.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 6 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $ClipStampToGrid (grid
+        (0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0)
+        (0 0 0 6 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $DropStampOffGrid (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 6 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))

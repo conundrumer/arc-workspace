@@ -1,0 +1,6 @@
+;; inputs 7a1ebb645b2657d593995634e3ce8c9cc29fbcbb424fbf8f67ba8109adcc66da programs/solvers/952a094c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 952a094c
+
+(param &bg Color (0))
+(param &eject D4 (D4_HT))

@@ -1,0 +1,136 @@
+;; inputs 6066f09a78a323cbf4f3020a28f3e295aa4aabd1efd618d3ca1f5dfcde0a479a programs/solvers/e69241bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e69241bd
+
+(param &background Color (0))
+(param &wall Color (5))
+(param &seed_colors Color (1) (3) (4) (6) (7) (8))
+
+(alts $r
+  (alt $NearestSeed
+    (witness two-seeds-one-room borderline $NearestSeed
+      (relaxed seeds)
+      (separates "one room holds two seeds of different colors; the room fill gives each floor cell both colors and is undefined, and the nearest-seed fill splits the room between the two seeds")
+      (input (grid
+        (1 0 0 0 0 4)
+        (0 0 0 0 0 0)
+        (5 5 5 5 5 5)
+        (0 0 0 0 0 0)))
+      (output $OneSeed undefined)
+      (output $NearestSeed (grid
+        (1 1 1 4 4 4)
+        (1 1 1 4 4 4)
+        (5 5 5 5 5 5)
+        (0 0 0 0 0 0))))))
+
+(alts $s
+  (alt $StoredSeedColors
+    (witness unseen-seed-color ordinary concept
+      (separates "a seed has the color 2, which no train input holds; any non-floor non-wall color floods its room, and the stored seed colors leave the 2 room unfilled")
+      (input (grid
+        (0 0 5 0 0)
+        (0 2 5 0 6)
+        (5 5 5 5 5)
+        (0 0 0 5 0)))
+      (output $AnyColor $SingleCell &seed_colors=$Derived (grid
+        (2 2 5 6 6)
+        (2 2 5 6 6)
+        (5 5 5 5 5)
+        (0 0 0 5 0)))
+      (output ($StoredSeedColors &seed_colors=$Stored) (grid
+        (0 0 5 6 6)
+        (0 2 5 6 6)
+        (5 5 5 5 5)
+        (0 0 0 5 0)))))
+  (alt $SingleCell
+    (witness two-cell-seed borderline concept
+      (relaxed seeds)
+      (separates "a seed of color 2 is a two-cell piece; any non-floor non-wall cell seeds its room, and the single-cell test leaves the 2 room unfilled")
+      (input (grid
+        (0 0 5 0 0)
+        (0 2 5 0 6)
+        (0 2 5 0 0)))
+      (output $AnyColor (grid
+        (2 2 5 6 6)
+        (2 2 5 6 6)
+        (2 2 5 6 6)))
+      (output $SingleCell $StoredSeedColors (grid
+        (0 0 5 6 6)
+        (0 2 5 6 6)
+        (0 2 5 6 6))))))
+
+(alts $w
+  (alt $SecondCommonest
+    (witness walls-outnumber-floor variant concept
+      (separates "the wall color 5 outnumbers the floor color 0; the stored wall floods the floor of the room of the 3 seed, and the second commonest color 0 is taken as the wall, so no floor cell is left and the input is returned")
+      (input (grid
+        (5 5 0 5 5)
+        (5 0 0 5 0)
+        (5 5 5 5 0)
+        (0 0 5 3 0)
+        (5 0 5 5 5)))
+      (output ($StoredWall &background=$Stored) (grid
+        (5 5 0 5 5)
+        (5 0 0 5 3)
+        (5 5 5 5 3)
+        (0 0 5 3 3)
+        (5 0 5 5 5)))
+      (output $SecondCommonest &background=$Derived (grid
+        (5 5 0 5 5)
+        (5 0 0 5 0)
+        (5 5 5 5 0)
+        (0 0 5 3 0)
+        (5 0 5 5 5))))
+    (witness seeds-outnumber-walls borderline concept
+      (separates "three seeds of color 2 outnumber the two wall cells; the stored wall floods each room with 2, and the second commonest color 2 is taken as the wall, so the 5 cells seed their rooms")
+      (input (grid
+        (2 0 0 5 2 0 0 5 2 0 0)))
+      (output ($AnyColor $StoredWall) $SingleCell (grid
+        (2 2 2 5 2 2 2 5 2 2 2)))
+      (output $SecondCommonest (grid
+        (2 5 5 5 2 5 5 5 2 0 0)))
+      (output $StoredSeedColors (grid
+        (2 0 0 5 2 0 0 5 2 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant concept
+      (separates "the wall color 5 outnumbers the floor color 0; the stored background floods the floor of the room of the 3 seed, and the derived background takes 5, finds no floor cell, and returns the input")
+      (input (grid
+        (5 5 0 5 5)
+        (5 0 0 5 0)
+        (5 5 5 5 0)
+        (0 0 5 3 0)
+        (5 0 5 5 5)))
+      (output ($StoredWall &background=$Stored) (grid
+        (5 5 0 5 5)
+        (5 0 0 5 3)
+        (5 5 5 5 3)
+        (0 0 5 3 3)
+        (5 0 5 5 5)))
+      (output $SecondCommonest &background=$Derived (grid
+        (5 5 0 5 5)
+        (5 0 0 5 0)
+        (5 5 5 5 0)
+        (0 0 5 3 0)
+        (5 0 5 5 5))))))
+
+(alts &seed_colors
+  (alt &seed_colors=$Derived
+    (witness seed_colors=RarestColor ordinary concept
+      (separates "`seed_colors=RarestColor` from the stored value: the input of `unseen-seed-color`")
+      (input (grid
+        (0 0 5 0 0)
+        (0 2 5 0 6)
+        (5 5 5 5 5)
+        (0 0 0 5 0)))
+      (output $AnyColor $SingleCell &seed_colors=$Derived (grid
+        (2 2 5 6 6)
+        (2 2 5 6 6)
+        (5 5 5 5 5)
+        (0 0 0 5 0)))
+      (output ($StoredSeedColors &seed_colors=$Stored) (grid
+        (0 0 5 6 6)
+        (0 2 5 6 6)
+        (5 5 5 5 5)
+        (0 0 0 5 0))))))

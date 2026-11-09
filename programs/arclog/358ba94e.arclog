@@ -1,0 +1,76 @@
+;; inputs 822cb0c8c1c2dec26a74a9da93c534196deb5f1edfe09adf981c9f2b7e19bbd8 programs/solvers/358ba94e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 358ba94e
+
+(DET &bg DominantColor)
+
+(INIT &pieces Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; Each square's own box: the crop frame, and the inside the punched cells sit in.
+(INIT &bbox BoundingBox
+  (key ((&pieces.component *P ^Id))
+    (cell (P)
+      (&pieces.component *P Id))))
+
+(INIT &ink_count Cardinality
+  (key ((&pieces.component *P ^Id))
+    (member ((:m P))
+      (&pieces.component *P Id))))
+
+(RULE &score
+  (&ink_count.size (:key *Id) *N))
+
+(ALTS $choice "what the count runs over" $Ink
+  (ALT $Holes
+    (INIT &hole_count Cardinality
+      (key ((OR ((&pieces.component ^Id))
+                ((&bbox.box (:key Id) *B)
+                 (input *P *Col)
+                 (&bg (:C Col))
+                 (inside (:A P) B))))
+        (member ((:m P))
+          (&bbox.box (:key Id) *B)
+          (input *P *Col)
+          (&bg (:C Col))
+          (inside (:A P) B))
+        (domain ()
+          (&pieces.component Id))))
+
+    (RULE &score
+      (&hole_count.size (:key *Id) *N)))
+  (ALT $Cavities
+    (INIT &cavity Enclosure
+      (cell (P)
+        (input *P *Col)
+        (&bg (:C Col))))
+
+    (INIT &cavity_count Cardinality
+      (key ((&pieces.component ^Id))
+        (member ((:m Id_reg))
+          (&cavity.enclosed *P (:Id *Id_reg))
+          (dir_elem *D)
+          (neighbor P D *Q)
+          (&pieces.component (:P Q) Id))
+        (domain ()
+          (&pieces.component Id))))
+
+    (RULE &score
+      (&cavity_count.size (:key *Id) *N))))
+
+(RULE &shared
+  (&score *Id *N)
+  (&score (:Id *Id2) N)
+  (!= Id Id2))
+
+(RULE &output
+  (&score *Id)
+  (NOT (&shared Id))
+  (&bbox.box (:key Id) *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

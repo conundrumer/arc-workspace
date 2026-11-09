@@ -1,0 +1,7 @@
+;; inputs f3b2ee09b1f741e92f346da569d22db4edf6f25412368e777cc2ea7bf745c100 programs/solvers/2f0c5170.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2f0c5170
+
+(param &bg Color (8))
+(param &canvas Color (0))
+(param &ink Color (4))

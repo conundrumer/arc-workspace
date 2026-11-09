@@ -1,0 +1,59 @@
+;; inputs 3793c629cc7573afc3ce1bde66e58172d106b28dd5fea5ef307fa724d124dc49 programs/solvers/e0fb7511.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e0fb7511
+
+(param &mark Color (0))
+(param &fill Color (8))
+(param &min_size number (2))
+(param &min_neighbors number (1))
+
+(alts $choice
+  (alt $NeighborCount
+    (witness domino-and-tromino ordinary concept
+      (separates "a domino and an L-tromino of 0 at min_neighbors=2: the concept recolors both groups whole; $NeighborCount recolors only the tromino's corner cell, the one cell with two 0 neighbors")
+      (assign &min_neighbors (2))
+      (input (grid
+        (1 1 1 1 1 1)
+        (1 0 0 1 1 1)
+        (1 1 1 1 0 1)
+        (1 1 1 0 0 1)
+        (1 0 1 1 1 1)
+        (1 1 1 1 1 1)))
+      (output concept (grid
+        (1 1 1 1 1 1)
+        (1 8 8 1 1 1)
+        (1 1 1 1 8 1)
+        (1 1 1 8 8 1)
+        (1 0 1 1 1 1)
+        (1 1 1 1 1 1)))
+      (output $NeighborCount (grid
+        (1 1 1 1 1 1)
+        (1 0 0 1 1 1)
+        (1 1 1 1 0 1)
+        (1 1 1 0 8 1)
+        (1 0 1 1 1 1)
+        (1 1 1 1 1 1))))))
+
+(alts &mark
+  (alt &mark=$Derived
+    (witness mark=RarestColor borderline concept
+      (relaxed field-with-marks)
+      (separates "0 outnumbers 1: the concept recolors the one 19-cell group of 0; mark=RarestColor reads 1 as the mark and recolors the two dominoes of 1")
+      (input (grid
+        (0 0 0 1 0)
+        (0 1 0 1 0)
+        (0 1 0 0 0)
+        (0 0 0 1 0)
+        (1 0 0 0 0)))
+      (output &mark=$Stored (grid
+        (8 8 8 1 8)
+        (8 1 8 1 8)
+        (8 1 8 8 8)
+        (8 8 8 1 8)
+        (1 8 8 8 8)))
+      (output &mark=$Derived (grid
+        (0 0 0 8 0)
+        (0 8 0 8 0)
+        (0 8 0 0 0)
+        (0 0 0 1 0)
+        (1 0 0 0 0))))))

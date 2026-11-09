@@ -1,0 +1,142 @@
+;; inputs 2c8c65b3359cddf3b327bf7b459de0be32870a2512abc94942ebe32c7f1b4761 programs/solvers/c6e1b8da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c6e1b8da
+
+(INPUT solid-rectangles "every input holds solid rectangles on a field of &background, each rectangle in its own color."
+
+  (DET &edge_color
+    (ex_input *E *P *Col)
+    (margin (:B P) *D (:K 0)))
+
+  (DET &off_edge
+    (ex_input *Col)
+    (ex_output *E)
+    (dir_elem *D)
+    (NOT (&edge_color E Col D)))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&off_edge (:Col C)))))
+
+(INPUT tails "at least one rectangle has a tail: a straight line one cell wide, of the rectangle's color, that goes out from the middle part of one side, perpendicular to that side. The other rectangles have no tail.")
+
+(INPUT tailed-on-top "a tailed rectangle and its tail lie on top of any rectangle they overlap. Only a tailed rectangle or a tail hides part of a rectangle.")
+
+(OUTPUT slide-by-tail "each tailed rectangle moves in the direction its tail points, by as many cells as the tail has, so its leading side ends on the tail's tip. The tail is not drawn.")
+
+(OUTPUT slid-on-top "a moved rectangle covers any other rectangle where they overlap.")
+
+(OUTPUT restore-whole "each rectangle with no tail is drawn whole at its place, the cells a tailed rectangle or a tail hid in the input included.")
+
+(OUTPUT vacated-background "a cell that no rectangle covers in the output is &background."
+
+  (RULE &mate
+    (input *P *Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) Col))
+
+  (RULE &side_end
+    (input (:P *Q))
+    (perp_dir *D *D2)
+    (NOT (&mate (:P Q) (:D D2))))
+
+  (RULE &flanked
+    (&mate *P *D)
+    (axis_of D (:A *A2))
+    (perp (:A A2) (:A2 *A)))
+
+  (RULE &tail_cand
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (axis_elem *A)
+    (NOT (&flanked P A)))
+
+  (RULE &foot
+    (&mate (:P *Q) *D (:Q *T))
+    (axis_of D *A)
+    (&tail_cand (:P T) A)
+    (NOT (&side_end Q D)))
+
+  (RULE &tail_node
+    (&foot (:Q *Key))
+    (input (:P Key) *Col)
+    (input *P Col))
+
+  ;; The tail of each foot: the run of its color's cells that leaves it.
+  (INIT &tail Ray
+    (key ((OR ((&tail_node (:Key ^Ky) *P))
+              ((&foot (:Q Ky) *D))))
+      (source (P)
+        (&tail_node (:Key Ky) *P))
+      (node (P)
+        (&tail_node (:Key Ky) *P))
+      (dir (D)
+        (&foot (:Q Ky) *D))))
+
+  (RULE &tail_run_full
+    (&tail.ray (:key (:Ky *V0)) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &tail_cell
+    (&tail_run_full (:V0 *Q) (:V1 Q) (:V3 *T)))
+
+  (INIT &tail_size Cardinality
+    (key ((&tail_cell ^Q *T))
+      (member ((:m T))
+        (&tail_cell Q *T))))
+
+  (RULE &slide
+    (&foot *Q *D)
+    (input (:P Q) *Col)
+    (&tail_size.size (:key Q) *N))
+
+  ;; Each rectangle's extent: the box of its color's cells, the tail left out.
+  (INIT &rect BoundingBox
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col)))
+          (NOT (&tail_cell (:T P))))
+      (cell (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))
+        (NOT (&tail_cell (:T P))))))
+
+  (RULE &still
+    (&rect.box (:key *Col) *B)
+    (NOT (&slide Col))
+    (input *P)
+    (inside (:A P) B)))
+
+(ALTS $choice "how a rectangle with no tail shows where a tailed one hid it" $RestoreWhole
+  (ALT $RestoreVacatedOnly
+    (OUTPUT restore-whole "each rectangle with no tail keeps its input cells, and a cell that a moved rectangle or its tail leaves takes the color of the rectangle with no tail whose bounding box holds it; undefined where two such boxes hold one left cell.")
+    (RULE &ground
+      (input *P (:Col *Col_in))
+      (OR ((&slide (:Col Col_in))
+           (&still P *Col))
+          ((NOT (&slide (:Col Col_in)))
+           (= Col Col_in))
+          ((&slide (:Col Col_in))
+           (NOT (&still P))
+           (&background (:C Col)))))))
+
+(RULE &slid
+  (&slide *Col *D *N)
+  (&rect.box (:key Col) *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (jump (:P P2) D (:K N) (:Q *P)))
+
+(RULE &ground
+  (input *P)
+  (OR ((&still P *Col))
+      ((NOT (&still P))
+       (&background (:C Col)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&slid P *Col))
+      ((NOT (&slid P))
+       (&ground P Col))))
+
+(OUT (&output ^P ^Col))

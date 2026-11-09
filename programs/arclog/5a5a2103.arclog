@@ -1,0 +1,124 @@
+;; inputs ff9982a85dca1c7618aa6ab2024fc4b602aa189ceee95b1ee2f78d226466cb96 programs/solvers/5a5a2103.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5a5a2103
+
+(DET &gap DivisorRatio)
+
+(DET &tile_dim SepTileDim)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (axis_elem *A)
+    (&tile_dim (:D *K)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(DET &bg DominantColor)
+
+(DET &legend_dir DirDomain)
+
+(DET &spread_axis AxisDomain)
+
+(RULE &tile
+  (input (:P *P_grid))
+  (&tile_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(RULE &ink
+  (&tile (:P_grid *P) *P_tile *P_intile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &legend_tile
+  (&ink *P_tile)
+  (&legend_dir *D)
+  (margin (:B P_tile) D (:K 0)))
+
+(RULE &spread
+  (&legend_dir *D)
+  (axis_of D *A))
+
+(ALTS $choice "which tiles are read as the legend, and the line family a legend color spreads along" $Edge
+  (ALT $Footprint
+    (DET &shape_tile
+      (&ink *E *P_tile *Col)
+      (ex_output E)
+      (NOT (ex_output E Col)))
+
+    (DET &marker
+      (&ink *E *P_tile (:P_intile *P))
+      (ex_output E)
+      (NOT (&shape_tile E P_tile)))
+
+    (INIT &glyph Inclusion
+      (pattern ((:m P_intile))
+        (&marker (:P *P_intile)))
+      (observed ((:observed P_tile) (:m P_intile))
+        (&ink *P_tile *P_intile)))
+
+    (RULE &legend_tile
+      (&glyph.equal (:observed *P_tile)))
+
+    (RULE &spread
+      (&spread_axis *A)))
+  (ALT $Twin
+    ;; Tiles compared against each other: both sides are intile ink sets.
+    (INIT &twin Inclusion
+      (pattern ((:pattern P_tile) (:m P_intile))
+        (&ink *P_tile *P_intile))
+      (observed ((:observed P_tile) (:m P_intile))
+        (&ink *P_tile *P_intile)))
+
+    (RULE &legend_tile
+      (&twin.equal (:observed *P_tile) (:pattern *P_tile2))
+      (!= P_tile P_tile2))
+
+    (RULE &spread
+      (&spread_axis *A)))
+  (ALT $Line
+    (RULE &tile_line
+      (&ink *P_tile)
+      (split (:P P_tile) *A (:Along *L)))
+
+    (INIT &busiest_count Cardinality
+      (key ((&tile_line ^A ^L *P_tile))
+        (member ((:m P_tile))
+          (&tile_line A L *P_tile))))
+
+    (INIT &busiest Order
+      (member ((:t (:A M_a) (:L M_l)))
+        (&busiest_count.size (:key (:A *M_a) (:L *M_l))))
+      (score ((:t (:A M_a) (:L M_l)) (:S N))
+        (&busiest_count.size (:key (:A *M_a) (:L *M_l)) *N)))
+
+    (RULE &legend_tile
+      (&busiest.maximal (:t *A *L))
+      (&tile_line A L *P_tile))
+
+    (RULE &spread
+      (&busiest.maximal (:t *A)))))
+
+(RULE &stamp
+  (&ink *P_tile *P_intile)
+  (NOT (&legend_tile P_tile)))
+
+(RULE &tile_color
+  (&ink (:P_tile *P_legend) *Col)
+  (&legend_tile (:P_tile P_legend))
+  (&spread *A)
+  (&tile *P_tile)
+  (same_line A (:P P_legend) (:Q P_tile)))
+
+(RULE &output
+  (OR ((&tile (:P_grid *P) *P_tile *P_intile)
+       (&tile_color P_tile (:Col *Col_row))
+       (OR ((NOT (&stamp P_intile))
+            (&bg (:C *Col)))
+           ((&stamp P_intile)
+            (= Col Col_row))))
+      ((input P Col)
+       (NOT (&tile (:P_grid P))))))
+
+(OUT (&output ^P ^Col))

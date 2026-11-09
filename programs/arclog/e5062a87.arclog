@@ -1,0 +1,176 @@
+;; inputs 475dd020680ce3001bb0a52bb566272bfe95bb75ce0e6c5dfe54ea0384e5cfca programs/solvers/e5062a87.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e5062a87
+
+(INPUT field-with-holes "every cell that is not of &shape_color is of the field color, 5, or of &hole_color."
+
+  (DET &hole_color
+    (ex_input *E *P (:Col *C))
+    (NOT (ex_output E P (:Col C)))
+    (ex_output E))
+
+  (DET_OR_RULE &shape_color RarestColor
+    (ex_output *E *P (:Col *C))
+    (NOT (ex_input E P (:Col C)))))
+
+(INPUT one-shape "the cells of &shape_color form one 4-connected shape, the template.")
+
+(INPUT placements-disjoint "no two translates of the template that lie completely on cells of &hole_color share a cell.")
+
+(OUTPUT stamp-every-fit "each translate of the template whose cells are all of &hole_color in the input takes &shape_color in the output."
+
+  (DET_OR_RULE &field_color DominantColor
+    (ex_input (:Col *C))
+    (NOT (&shape_color C))
+    (NOT (&hole_color C)))
+
+  (RULE &template_color
+    (&shape_color (:C *Col)))
+
+  (RULE &template_cell
+    (&template_color *Col)
+    (input *P Col))
+
+  (INIT &objects4 Connectivity
+    (node (P)
+      (&template_cell *P)))
+
+  (INIT &objects8 Connectivity
+    (node (P)
+      (&template_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT rest-kept "every other cell keeps its input color."
+
+  ;; The transform of the template's own orientation.
+  (DET &identity D4Domain)
+
+  (RULE &transform
+    (&identity *D))
+
+  (RULE &base_seat
+    (input *P *Col)
+    (&hole_color (:C Col)))
+
+  (RULE &seat
+    (&base_seat *P))
+
+  ;; One class holding every template cell.
+  (INIT &whole Quotient
+    (edge ((:a P) (:b Q))
+      (&template_cell *P)
+      (&template_cell (:P *Q))))
+
+  (RULE &footprint
+    (&template_cell *P)
+    (&whole.class (:a P) *Id))
+
+  (INIT &occ Occurrences
+    (key ((OR ((&seat *P)
+               (&footprint ^Id)
+               (&transform ^D))
+              ((&footprint Id P)
+               (&transform D)
+               (apply D P (:P_out *Q)))))
+      (cell (P)
+        (&seat *P)
+        (&footprint Id)
+        (&transform D))
+      (shape ((:P Q))
+        (&footprint Id *P)
+        (&transform D)
+        (apply D P (:P_out *Q)))))
+
+  (RULE &fit_cell
+    (&occ.occurrence (:key *Id *D) (:P *M))
+    (&occ.shape (:key Id D) (:P *Q))
+    (compose (:A M) (:B Q) (:C *P))))
+
+(ALTS $o "which transforms of the template are copied" $OwnOrientation
+  (ALT $MirrorCopies
+    (OUTPUT stamp-every-fit "the copies also include the template mirrored across &mirror_axis"
+      (DET &mirror_axis AxisDomain)
+
+      (RULE &transform
+        (OR ((&mirror_axis *A)
+             (axis_inversion A (:T *D)))
+            ((&identity D)))))))
+
+(ALTS $s "which cells a copy may cover" $HoleSeat
+  (ALT $NonFieldSeat
+    (OUTPUT stamp-every-fit "a copy may cover any cell that is neither of &field_color nor of the shape color"
+      (RULE &base_seat
+        (&template_color)
+        (input *P *Col)
+        (NOT (&field_color (:C Col)))
+        (NOT (&template_color Col))))))
+
+(ALTS $t "whether a copy may cover template cells" $OffShape
+  (ALT $SeatOnShape
+    (OUTPUT stamp-every-fit "a copy may also cover cells of the shape color"
+      (RULE &seat
+        (OR ((&template_cell *P))
+            ((&base_seat P)))))))
+
+(ALTS $x "what fits that share cells paint" $AllFits
+  (ALT $ExclusiveFits
+    (OUTPUT stamp-every-fit "only a fit that shares no cell with another fit paints"
+      (RULE &crowded
+        (&fit_cell *Id *D *M *P)
+        (&fit_cell (:Id *Id2) (:D *D2) (:M *M2) P)
+        (OR ((&fit_cell (:Id Id2) (:D D2) (:M M2) (:P *Q))
+             (NOT (&fit_cell Id D M (:P Q))))
+            ((&fit_cell Id D M (:P Q))
+             (NOT (&fit_cell (:Id Id2) (:D D2) (:M M2) (:P Q)))))))
+    (RULE &painted
+      (&fit_cell *Id *D *M *P)
+      (NOT (&crowded Id D M)))))
+
+(ALTS $f "what one footprint is" $WholeShape
+  (ALT $PerObject
+    (INPUT one-shape "the cells of the shape color form one or more objects")
+    (OUTPUT stamp-every-fit "each object of the shape color is its own footprint and stamps at its own fits"
+      (RULE &footprint
+        (&objects4.component *P *Id)))
+    (ALTS $adj "how template cells join into one object" $Join4
+      (ALT $Join8
+        (OUTPUT stamp-every-fit "diagonal neighbors join as well"
+          (RULE &footprint
+            (&objects8.component *P *Id)))))))
+
+(ALTS $c "how the shape color is set" $StoredShape
+  (ALT $ThirdColorShape
+    (OUTPUT stamp-every-fit "the shape color is the one input color other than &field_color and &hole_color; undefined where there is not exactly one such color"
+      (RULE &third_color
+        (input *Col)
+        (NOT (&field_color (:C Col)))
+        (NOT (&hole_color (:C Col))))
+
+      (RULE &template_color
+        (&third_color *Col)
+        (ALL ((&third_color (:Col *Col1))
+              (&third_color (:Col *Col2)))
+             ((= Col1 Col2)))))))
+
+(RULE_OR_DET &paint_color
+  (&template_color *Col))
+
+(RULE &painted
+  (&fit_cell *P))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint_color *Col))
+      ((&template_color)
+       (input P Col)
+       (NOT (&painted P)))))
+
+(DET &shape_color_determined
+  (ex_output *E *P (:Col *C))
+  (NOT (ex_input E P (:Col C))))
+
+(OUT (&output ^P ^Col))

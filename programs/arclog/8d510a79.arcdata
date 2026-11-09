@@ -1,0 +1,12 @@
+;; inputs 912e420834623a75614a98e5e43c52d192e19513a0d30e3d85e554fcb35bac55 programs/solvers/8d510a79.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8d510a79
+
+(param &bg Color (0))
+(param &toward Color (2))
+(param &away Color (1))
+(param &cast_dir (Color Dir Dir)
+  (2 DIR_B DIR_B)
+  (2 DIR_T DIR_T)
+  (1 DIR_B DIR_T)
+  (1 DIR_T DIR_B))

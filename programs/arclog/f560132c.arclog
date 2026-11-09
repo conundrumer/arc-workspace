@@ -1,0 +1,182 @@
+;; inputs fa69da24e0aea3f2fe874b7ea0ecd57b066fb3e9173f4717073937d3ec85996f programs/solvers/f560132c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f560132c
+
+(INPUT four-pieces "four single-color objects of four distinct colors on a field of `background` (0), each one 4-connected, no two touching, even at a corner.")
+
+(INPUT key-piece "exactly one piece holds a 2×2 block of four distinct colors, none of them `background` or a piece's color, nearest the `key_corner` (DIAG_TL) corner of the piece's box; the key cells count as cells of that piece.")
+
+(INPUT pieces-tile-square "the four pieces, the key piece unturned and each other piece under some rotation, tile a solid square with no gap and no overlap, each piece covering exactly one corner of the square, the key piece the `key_corner` (DIAG_TL) corner."
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &background_defect
+    (&commonest.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET &background
+    (&commonest.maximal (:t *C))
+    (NOT (&background_defect C)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &area Cardinality
+    (member ((:m P))
+      (&ink *P))
+    (domain ()))
+
+  (INIT &square Frame
+    (key ((input *P)
+          (sub_extent P (:A *A2) (:K ^N))
+          (input (:P *P2))
+          (sub_extent (:P P2) (:A *A22) (:K N))
+          (perp *A (:A2 *A3)))
+      (extent (A N)
+        (input *P)
+        (sub_extent P (:A *A2) (:K N))
+        (axis_elem *A))))
+
+  (INIT &square_area Cardinality
+    (key ((&square.cell (:key ^N) *P))
+      (member ((:m P))
+        (&square.cell (:key N) *P)))))
+
+(OUTPUT assemble "the output is that square, the key piece placed unturned and each other piece turned by the rotation that makes the four tile it; the program enumerates every rotation of C4 for a piece."
+
+  (INIT &piece Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &bbox BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id)))))
+
+(OUTPUT color-by-corner "every cell of a piece, key cells included, takes the key's color at the same corner of the key as the corner of the square the piece covers.")
+
+(RULE &key_cell
+  (&ink *P (:Col *C0))
+  (diag_dirs (:D *Dg) *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (&ink (:P Q1) (:Col *C1))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&ink (:P Q2) (:Col *C2))
+  (neighbor P (:D Dg) (:Q *Q3))
+  (&ink (:P Q3) (:Col *C3))
+  (!= C0 C1)
+  (!= C0 C2)
+  (!= C0 C3)
+  (!= C1 C2)
+  (!= C1 C3)
+  (!= C2 C3))
+
+(RULE &key_edge
+  (&key_cell *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (NOT (&key_cell (:P Q))))
+
+(RULE &key_color
+  (diag_dirs *D *D1 *D2)
+  (&key_edge (:D D1) *P)
+  (&key_edge (:D D2) P)
+  (input P *Col))
+
+(RULE &foot
+  (&piece.component (:P *P2) *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *S))
+  (c4_elem *D)
+  (apply D (:P S) (:P_out *P)))
+
+(RULE &corner_place
+  (&area.size (:N *K))
+  (&square_area.size (:key *N) (:N K))
+  (&square.cell (:key N) (:P *Q))
+  (corner_dist (:P Q) (:K 0))
+  (&foot *Id *D (:P *S))
+  (relative (:Base S) (:X Q) (:X_rel *B)))
+
+(RULE &off_square
+  (&corner_place *Id *D *B)
+  (&foot Id D (:P *S))
+  (compose (:A B) (:B S) (:C *P))
+  (NOT (inside (:A P) (:B 0))))
+
+(RULE &covers
+  (&corner_place *Id *D *B)
+  (NOT (&off_square Id D B))
+  (&foot Id D (:P *S))
+  (compose (:A B) (:B S) (:C *P)))
+
+(RULE &corner_cand
+  (&covers *Id (:D *C_d) *B *P)
+  (corner_dist P (:Diag *D) (:K 0)))
+
+(RULE &overlap
+  (&covers (:Id *C_id) (:D *C_d) (:B *C_b) *P)
+  (&covers (:Id *C2_id) (:D *C2_d) (:B *C2_b) P)
+  (OR ((!= C_b C2_b))
+      ((!= C_d C2_d))
+      ((!= C_id C2_id))))
+
+(DET &unturned
+  (d4_compose (:A *D) (:B D) (:C D)))
+
+(RULE &tiling
+  (&key_cell *P)
+  (&piece.component P (:Id *Key_id))
+  (&unturned (:D *Key_d))
+  (&corner_cand (:Id Key_id) (:C_d Key_d) (:B *Key_b))
+  (&corner_cand (:Id *C2_id) (:C_d *C2_d) (:B *C2_b))
+  (!= C2_id Key_id)
+  (NOT (&overlap (:C_id Key_id) (:C_d Key_d) (:C_b Key_b) C2_id C2_d C2_b))
+  (&corner_cand (:Id *C3_id) (:C_d *C3_d) (:B *C3_b))
+  (!= C3_id Key_id)
+  (!= C3_id C2_id)
+  (NOT (&overlap (:C_id Key_id) (:C_d Key_d) (:C_b Key_b) (:C2_id C3_id) (:C2_d C3_d) (:C2_b C3_b)))
+  (NOT (&overlap (:C_id C2_id) (:C_d C2_d) (:C_b C2_b) (:C2_id C3_id) (:C2_d C3_d) (:C2_b C3_b)))
+  (&corner_cand (:Id *C4_id) (:C_d *C4_d) (:B *C4_b))
+  (!= C4_id Key_id)
+  (!= C4_id C2_id)
+  (!= C4_id C3_id)
+  (NOT (&overlap (:C_id Key_id) (:C_d Key_d) (:C_b Key_b) (:C2_id C4_id) (:C2_d C4_d) (:C2_b C4_b)))
+  (NOT (&overlap (:C_id C2_id) (:C_d C2_d) (:C_b C2_b) (:C2_id C4_id) (:C2_d C4_d) (:C2_b C4_b)))
+  (NOT (&overlap (:C_id C3_id) (:C_d C3_d) (:C_b C3_b) (:C2_id C4_id) (:C2_d C4_d) (:C2_b C4_b)))
+  (ONE))
+
+;; Each piece of a tiling takes the key's color at the corner it covers.
+(RULE &output
+  (&tiling (:Key_id *C1_id) (:Key_d *C1_d) (:Key_b *C1_b) *C2_id *C2_d *C2_b *C3_id *C3_d *C3_b *C4_id *C4_d *C4_b)
+  (OR ((= *C_b C1_b)
+       (= *C_d C1_d)
+       (= *C_id C1_id))
+      ((= C_b C2_b)
+       (= C_d C2_d)
+       (= C_id C2_id))
+      ((= C_b C3_b)
+       (= C_d C3_d)
+       (= C_id C3_id))
+      ((= C_b C4_b)
+       (= C_d C4_d)
+       (= C_id C4_id)))
+  (&covers (:Id C_id) (:D C_d) (:B C_b) *P)
+  (&corner_cand (:Id C_id) C_d (:B C_b) (:D *Dg))
+  (&key_color (:D Dg) *Col))
+
+(OUT (&output ^P ^Col))

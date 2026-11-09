@@ -1,0 +1,7 @@
+;; inputs 71d4986b73e6c52663a8ac77afab22f98826440502dea81768a05bd5254b8508 programs/solvers/496994bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 496994bd
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_V))
+(param &dir Dir (DIR_T))

@@ -1,0 +1,132 @@
+;; inputs 7cabbd8b9d9aaf42898ba48fa0ea5d872f22c11036e821ec6b5a9f204a0a20bd programs/solvers/57aa92db.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 57aa92db
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &obj_cell
+  (&objs.component *P *Id)
+  (input P *Col))
+
+(RULE &unshared
+  (&obj_cell *Col)
+  (&obj_cell (:Id *O))
+  (NOT (&obj_cell (:Id O) Col)))
+
+(RULE &mark_col
+  (&obj_cell *Col)
+  (NOT (&unshared Col)))
+
+;; The mark's block: one tile of the object's copy, and so its size.
+(INIT &block BoundingBox
+  (key ((&obj_cell (:Id ^O) *P *Col)
+        (&mark_col Col))
+    (cell (P)
+      (&obj_cell (:Id O) *P *Col)
+      (&mark_col Col))))
+
+(RULE &obj_grid_dim
+  (&block.cell (:key (:O *Key)) *P)
+  (&block.box (:key (:O Key)) *B)
+  (box_extent B P *A (:N *K)))
+
+(INIT &obj_box BoundingBox
+  (key ((&obj_cell (:Id ^O) *P))
+    (cell (P)
+      (&obj_cell (:Id O) *P))))
+
+(RULE &obj_inner
+  (&obj_box.cell (:key (:O *Id)) (:P *P_grid))
+  (&obj_box.box (:key (:O Id)) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+;; Each object as a grid of tiles the size of its mark.
+(INIT &obj_grid Division
+  (key ((OR ((&obj_grid_dim (:Key ^Ky))
+             (&obj_inner *P_inner))
+            ((&obj_grid_dim (:Key Ky) *A (:K *N)))))
+    (cell ((:P P_inner))
+      (&obj_grid_dim (:Key Ky))
+      (&obj_inner *P_inner))
+    (side (A (:K N))
+      (&obj_grid_dim (:Key Ky) *A (:K *N)))))
+
+(INIT &fullest_count Cardinality
+  (key ((&obj_inner (:Id ^O) *P_inner)
+        (&obj_grid.tile (:key (:Ky O)) (:P P_inner) (:P_outer *P_tile)))
+    (member ((:m P_tile))
+      (&obj_inner (:Id O) *P_inner)
+      (&obj_grid.tile (:key (:Ky O)) (:P P_inner) (:P_outer *P_tile)))))
+
+(RULE &block_inner
+  (&block.box (:key (:O *Id)) *B)
+  (input (:P *P_grid))
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_intile)))
+
+;; The template: the object showing the most tiles of the shape.
+(INIT &fullest Order
+  (member ((:t O))
+    (&fullest_count.size (:key *O)))
+  (score ((:t O) (:S N))
+    (&fullest_count.size (:key *O) *N)))
+
+(RULE &shape_cell
+  (&fullest.maximal (:t *O))
+  (&obj_inner (:Id O) *P_grid *P_inner)
+  (input (:P P_grid) *Col)
+  (&obj_grid.tile (:key (:Ky O)) (:P P_inner) (:P_outer *P_tile)))
+
+(INIT &seat_tiling Tiling
+  (outer ((:P P_tile))
+    (&shape_cell *P_tile *Col)
+    (&mark_col Col))
+  (inner ((:P P_intile))
+    (&block_inner *P_intile)))
+
+(RULE &seat
+  (&seat_tiling.cell (:P_inner *P_intile) (:P *P_stamp))
+  (&block_inner *Id *P_grid P_intile)
+  (relative (:Base P_stamp) (:X P_grid) (:X_rel *V)))
+
+(INIT &stamp_tiling Tiling
+  (outer ((:P P_tile))
+    (&shape_cell *P_tile))
+  (inner ((:P P_intile))
+    (&seat (:Id *O))
+    (&block_inner (:Id O) *P_intile)))
+
+(RULE &body_col
+  (&obj_cell *Id *Col)
+  (NOT (&mark_col Col)))
+
+(RULE &stamp
+  (&seat *Id *V)
+  (&shape_cell *P_tile *Col)
+  (&block_inner Id *P_intile)
+  (&stamp_tiling.cell (:P_outer P_tile) (:P_inner P_intile) (:P *P_stamp))
+  (compose (:A P_stamp) (:B V) (:C *P_grid))
+  (input (:P P_grid)))
+
+(RULE &output
+  (OR ((&stamp (:Id *O) (:P_grid *P) (:Col *C_shape))
+       (OR ((NOT (&mark_col (:Col C_shape)))
+            (&body_col (:Id O) *Col))
+           ((&mark_col (:Col C_shape))
+            (= Col C_shape))))
+      ((input P)
+       (NOT (&stamp (:P_grid P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

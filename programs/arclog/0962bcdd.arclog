@@ -1,0 +1,124 @@
+;; inputs 061425db5666676173661e15880064f2dcff5ebb832cc702ef9ccf4cc217a2b7 programs/solvers/0962bcdd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0962bcdd
+
+(DET &bg DominantColor)
+
+(RULE &arm
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &marker
+  (input *P (:Col *C_center))
+  (&arm P (:Col *C_arm))
+  (ALL ((dir_elem *D))
+       ((&arm P D (:Col C_arm)))))
+
+(INIT &arm_frame Frame
+  (key ((&marker (:P ^Pm)))
+    (extent (A N)
+      (frame_extent (:P Pm) *A *N))))
+
+(INIT &diag_frame Frame
+  (key ((&marker (:P ^Pm)))
+    (extent (A N)
+      (frame_extent (:P Pm) *A *N))))
+
+(DET &radius SepThickness)
+
+;; One cast per kind, keyed by the marker cell.
+(INIT &arm2 Ray
+  (key ((OR ((&marker (:P ^Pm)))
+            ((&arm_frame.cell (:key Pm) *P))))
+    (source ((:P Pm))
+      (&marker (:P Pm)))
+    (node (P)
+      (&arm_frame.cell (:key Pm) *P))
+    (dir (D)
+      (&marker (:P Pm))
+      (dir_elem *D))))
+
+(RULE &arm_cell
+  (&marker (:P *Key))
+  (input))
+
+(INIT &diag Ray
+  (key ((OR ((&marker (:P ^Pm)))
+            ((&diag_frame.cell (:key Pm) *P))))
+    (source ((:P Pm))
+      (&marker (:P Pm)))
+    (node (P)
+      (&diag_frame.cell (:key Pm) *P))
+    (dir (D)
+      (&marker (:P Pm))
+      (diag_dir_elem *D))))
+
+(RULE &diag_cell
+  (&marker (:P *Key))
+  (input))
+
+(RULE &paint
+  (&radius (:G *R))
+  (OR ((&arm2.ray (:key *Pm) *P *K)
+       (&arm_cell (:Key Pm))
+       (input P)
+       (&marker (:P Pm) (:C_arm *Col)))
+      ((&diag.ray (:key Pm) P K)
+       (&diag_cell (:Key Pm))
+       (input P)
+       (&marker (:P Pm) (:C_center Col))))
+  (!= K 0)
+  (<= K R))
+
+(ALTS $choice "how the marker's growth is drawn" $Ray
+  (ALT $Lookup
+    (DET &star
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col))))
+
+    (INIT &comps Connectivity
+      (key ((&star ^E *P))
+        (node (P)
+          (&star E *P)))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (DET &star_marker
+      (&marker *E *P *C_center *C_arm)
+      (&comps.component (:key E) P *Id))
+
+    (DET &star_cell
+      (&comps.component (:key *E) *P *Id)
+      (&star E P *Col)
+      (&star_marker E Id (:P *Pm))
+      (relative (:Base Pm) (:X P) (:X_rel *Delta)))
+
+    (DET &template_arm
+      (&star_marker *E *Id (:C_arm *Ca))
+      (&star_cell E Id *Delta (:Col Ca)))
+
+    (DET &template_center
+      (&star_marker *E *Id (:C_center *Cc))
+      (&star_cell E Id *Delta (:Col Cc)))
+
+    (RULE &paint
+      (&marker (:P *C) (:C_center *Cc) (:C_arm *Ca))
+      (OR ((&template_arm (:Delta *V))
+           (= *Col Ca))
+          ((&template_center (:Delta V))
+           (= Col Cc)))
+      (compose (:A C) (:B V) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

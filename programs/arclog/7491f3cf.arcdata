@@ -1,0 +1,24 @@
+;; inputs 7be84e004de191df647e34207a6d8cdaad8111e24d3d7604f7a74d04a4a262c4 programs/solvers/7491f3cf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7491f3cf
+
+(param &mask_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ 1 _ _ _ _)
+    (_ _ _ _ _ _)))
+(param &top_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ _ 1 _ _ _)
+    (_ _ _ _ _ _)))
+(param &under_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ _ _ 1 _ _)
+    (_ _ _ _ _ _)))
+(param &out_tile Position
+  (grid
+    (_ _ _ _ _ _)
+    (_ _ _ _ 1 _)
+    (_ _ _ _ _ _)))

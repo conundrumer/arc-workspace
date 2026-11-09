@@ -1,0 +1,41 @@
+;; inputs cc4c33344dc4f846ac4f370c569fb39622953250536e39057a7f0e2fb396d646 programs/solvers/4347f46a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4347f46a
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&ink *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &inner_cell
+  (&bbox.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(ALTS $choice "which cells are the interior" $Box
+  (ALT $Erode
+    (INIT &exposed Boundary
+      (cell (P)
+        (&ink *P)))
+
+    (RULE &inner_cell
+      (&ink *P)
+      (NOT (&exposed.boundary P)))))
+
+(RULE &output
+  (OR ((&inner_cell *P)
+       (&bg (:C *Col)))
+      ((input P Col)
+       (NOT (&inner_cell P)))))
+
+(OUT (&output ^P ^Col))

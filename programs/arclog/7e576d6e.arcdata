@@ -1,0 +1,5 @@
+;; inputs f484ee64d849bd56591386bd997edd0578c8981757a50f5838e26a3e17c7e553 programs/solvers/7e576d6e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7e576d6e
+
+(param &heading DiagDir (DIAG_BR))

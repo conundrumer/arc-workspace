@@ -1,0 +1,121 @@
+;; inputs be4cee8f4e33d9b6ddfc02eb3f0d9f47a48165f8633ecae2d84c5491de5b8c3d programs/solvers/22a4bbc2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22a4bbc2
+
+;; Counting edge: ranks run from this edge; its axis stacks the bars.
+(DET &dir DirDomain)
+
+(DET &bg UnchangedColor)
+
+(RULE &cell_row
+  (input *P)
+  (&dir *D)
+  (axis_of D *A)
+  (split P A (:Along *R)))
+
+(RULE &row_cell
+  (&cell_row *P *R)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &row_color
+  (&row_cell *R *P)
+  (input P *Col))
+
+(RULE &boundary
+  (&row_color *R *Col)
+  (&dir *D)
+  (neighbor (:P R) D (:Q *R2))
+  (NOT (&row_color (:R R2) Col)))
+
+(INIT &run_of_frame Frame
+  (extent (A N)
+    (&boundary *R)
+    (frame_extent (:P R) *A *N)))
+
+(DET &mark AnyOutNewColor)
+
+;; The mark pattern along the bar sequence: mark_len marked bars, then mark_gap unmarked, repeating.
+(DET &mark_len DivisorRatio)
+
+(DET &mark_gap TileCount)
+
+(RULE &run_of_blocked
+  (&cell_row (:R *P))
+  (OR ((&boundary (:R P)))
+      ((NOT (&row_cell (:R P))))))
+
+;; Rows of the run each boundary starts: it carries on away from the counting
+;; edge until the next boundary or a row with no ink.
+(INIT &run_of Ray
+  (source ((:P R))
+    (&boundary *R))
+  (node (P)
+    (&run_of_frame.cell *P)
+    (NOT (&run_of_blocked P)))
+  (dir ((:D O))
+    (&dir *D)
+    (opposite D (:Opp *O))))
+
+(INIT &seq Order
+  (member ((:t K))
+    (&boundary *R)
+    (&dir *D)
+    (margin (:B R) D *K))
+  (score ((:t K) (:S K))
+    (&boundary *R)
+    (&dir *D)
+    (margin (:B R) D *K)))
+
+(ALTS $choice "what a bar is" $Run
+  (ALT $Object
+    (INIT &comps Connectivity
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (node (P)
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &obj_box BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &obj_margin
+      (&dir *D)
+      (&obj_box.box (:key *Id) *B)
+      (margin B D *K))
+
+    (INIT &seq Order
+      (member ((:t K))
+        (&obj_margin *K))
+      (score ((:t K) (:S K))
+        (&obj_margin *K)))
+
+    (RULE &mark_cell
+      (&mark_margin *K)
+      (&obj_margin *Id K)
+      (&comps.component *P Id))))
+
+(RULE &mark_margin
+  (&seq.rank (:t *K) *R)
+  (&mark_len (:K *N))
+  (&mark_gap (:N *G))
+  (divide (:T R) (:Side N) (:Gap G)))
+
+(RULE &mark_cell
+  (&mark_margin *K)
+  (&dir *D)
+  (&boundary (:R *R_top))
+  (margin (:B R_top) D K)
+  (&run_of.ray (:P *R) (:Origin R_top))
+  (&cell_row R)
+  (&row_cell R *P))
+
+(RULE &output
+  (OR ((&mark_cell *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&mark_cell P)))))
+
+(OUT (&output ^P ^Col))

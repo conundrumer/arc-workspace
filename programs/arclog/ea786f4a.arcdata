@@ -1,0 +1,5 @@
+;; inputs 358548293cbdbecf464f4fde012361f506263b1db890e840df44fc3a62d69942 programs/solvers/ea786f4a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ea786f4a
+
+(param &ink Color (0))

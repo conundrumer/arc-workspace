@@ -1,0 +1,144 @@
+;; inputs ddd1ebaf6bf89eed19aa34aba8fefe01b9702ee52cc20865486146991ca3c687 programs/solvers/6aa20dc0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6aa20dc0
+
+(INIT &ground_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The ground: the commonest color.
+(INIT &ground Order
+  (member ((:t Col))
+    (&ground_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&ground_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&ground.maximal (:t Col))))
+
+(INIT &obj Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+;; Each object's one color; the object of several colors is the template,
+;; and every other object is a square.
+(INIT &hue Singleton
+  (key ((&obj.component *P ^Id)
+        (&ink P *Col))
+    (member ((:v Col))
+      (&obj.component *P Id)
+      (&ink P *Col))))
+
+;; The template as a picture: its box, ground cells included.
+(INIT &tmpl_box BoundingBox
+  (cell (P)
+    (&obj.component *P *Id)
+    (&hue.plural (:key Id))))
+
+(RULE &tmpl
+  (&tmpl_box.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &square
+  (&obj.component *P *Id)
+  (&hue.value (:key Id)))
+
+(INIT &sq_box BoundingBox
+  (key ((&square *P ^Id))
+    (cell (P)
+      (&square *P Id))))
+
+(INIT &pair_box BoundingBox
+  (key ((&square (:Id ^A))
+        (&square (:Id ^B)))
+    (cell (P)
+      (!= A B)
+      (OR ((&square *P (:Id A)))
+          ((&square P (:Id B)))))))
+
+(RULE &tmpl_dim
+  (&tmpl_box.cell *P)
+  (&tmpl_box.box *B)
+  (box_extent B P *A *N))
+
+(RULE &square_cell
+  (&pair_box.cell (:key *A *B) *P)
+  (&square P *Id)
+  (&pair_box.box (:key A B) (:B *B2))
+  (inside (:A P) (:B B2))
+  (relative (:Base B2) (:X P) (:X_rel *P_inner)))
+
+;; Those boxes divided as the template is: one tile per template cell.
+(INIT &square_tiles Division
+  (cell ((:P P_inner))
+    (&square_cell *P_inner))
+  (parts (A N)
+    (&tmpl_dim *A *N)))
+
+(RULE &square_tile
+  (&square_cell *A *B *Id *P *P_inner)
+  (&square_tiles.tile (:P P_inner) (:P_outer *P_tile) (:P_inner *P_intile))
+  (&sq_box.box (:key Id) (:B *B_sq))
+  (box_extent (:B B_sq) P (:A *A3) (:N *N1))
+  (perp (:A A3) *A2)
+  (box_extent (:B B_sq) P (:A A2) (:N *N2))
+  (axis_extents (:P P_intile) (:A A3) N1 N2))
+
+(RULE &pair
+  (&square_tile *A *B (:Id A))
+  (&square_tile A B (:Id B)))
+
+(RULE &pair_cell
+  (&pair *A *B)
+  (&pair_box.box (:key A B) (:B *B2))
+  (input *P)
+  (inside (:A P) (:B B2))
+  (relative (:Base B2) (:X P) (:X_rel *P_inner)))
+
+;; The pair's box divided as the template is.
+(INIT &tiles Division
+  (cell ((:P P_inner))
+    (&pair_cell *P_inner))
+  (parts (A N)
+    (&tmpl_dim *A *N)))
+
+;; The turns that carry the template's marks onto the pair's squares.
+(INIT &fit Agreement
+  (key ((OR ((&pair ^A ^B)
+             (&tmpl *P_inner *Col))
+            ((&square_tile A B *Id *P_tile)
+             (&hue.value (:key Id) (:v Col)))))
+    (source ((:P P_inner) (:v Col))
+      (&pair A B)
+      (&tmpl *P_inner *Col))
+    (target ((:P P_tile) (:v Col))
+      (&square_tile A B *Id *P_tile)
+      (&hue.value (:key Id) (:v *Col)))))
+
+(RULE &fit_src
+  (&pair *A *B)
+  (&tmpl))
+
+(RULE &stamp
+  (&pair_cell (:A *Pair_a) (:B *Pair_b) *P *P_inner)
+  (&tiles.tile (:P P_inner) (:P_outer *P_tile))
+  (&fit_src (:A Pair_a) (:B Pair_b))
+  (&tmpl (:P_inner *Q) *Col)
+  (apply *D (:P Q) (:P_out P_tile))
+  (NOT (&fit.conflict (:key (:A Pair_a) (:B Pair_b)) D)))
+
+(RULE &output
+  (OR ((&stamp *P *Col))
+      ((input P Col)
+       (NOT (&stamp P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,113 @@
+;; inputs efb6ea60957dfe76618f778fa24e4df5d875d30b881386c38d7b6842ed1554bb programs/solvers/9b30e358.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9b30e358
+
+(param &dir Dir (DIR_T))
+(param &axis Axis (AXIS_V))
+
+(exclude ($Edge $Both))
+(exclude ($Both $EdgeLine))
+
+(alts $scope
+  (alt $Edge
+    (witness gap-below borderline concept
+      (relaxed block)
+      (separates "$Ink, $Edge, and $Both units when a blank line lies between the ink and the edge opposite &dir")
+      (input (grid
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 3 3 3 3)))
+      (output ($Ink $Toward) (grid
+        (3 3 3 3 9 3 3)
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 3 3 3 3)))
+      (output $Edge (grid
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 3 3 3 3)
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 3 3 3 3)))
+      (output $Both (grid
+        (3 3 3 3 9 3 3)
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 9 2 9 3)
+        (3 3 3 2 9 2 3)
+        (3 3 3 9 9 9 3)
+        (3 3 3 3 9 3 3)
+        (3 3 3 9 2 9 3))))))
+
+(alts $spread
+  (alt $Both
+    (witness gap-below borderline concept)))
+
+(alts $ground
+  (alt $EdgeLine
+    (witness dense-ink borderline $EdgeLine
+      (relaxed ink)
+      (separates "the majority and the $EdgeLine background readings when the ink outnumbers the background")
+      (input (grid
+        (5 5 5 5 5)
+        (5 5 5 5 5)
+        (5 5 5 5 5)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)))
+      (output ($Toward $Majority) (grid
+        (5 5 5 5 5)
+        (5 5 5 5 5)
+        (5 5 5 5 5)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)))
+      (output $Both (grid
+        (5 5 5 5 5)
+        (5 5 5 5 5)
+        (5 5 5 5 5)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (5 5 5 5 5)))
+      (output $EdgeLine (grid
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2)
+        (2 5 2 5 2)
+        (2 2 2 2 2))))))

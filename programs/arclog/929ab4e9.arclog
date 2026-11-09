@@ -1,0 +1,35 @@
+;; inputs 6314c6927f777e0f0fb7129f750733ed164cb199710dcfa358d1606b5df03e70 programs/solvers/929ab4e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 929ab4e9
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(ALTS $choice "Which D4 elements the repair reads from" $Full
+  (ALT $Detect
+    ;; Self-symmetry of the clean cells.
+    (INIT &sym Agreement
+      (source (P (:v Col))
+        (&clean *P *Col))
+      (target (P (:v Col))
+        (&clean *P *Col)))
+
+    (RULE &output
+      (OR ((&clean *P *Col))
+          ((input P (:Col *N))
+           (&noise (:C N))
+           (apply *D P (:P_out *P2))
+           (NOT (&sym.conflict D))
+           (&clean (:P P2) Col))))))
+
+(RULE &output
+  (OR ((&clean *P *Col))
+      ((input P (:Col *N))
+       (&noise (:C N))
+       (apply *D P (:P_out *P2))
+       (&clean (:P P2) Col))))
+
+(OUT (&output ^P ^Col))

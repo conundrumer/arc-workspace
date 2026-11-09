@@ -1,0 +1,77 @@
+;; inputs c5ca8f5596f223a2b61ac74af37289a32de33b38480e9d6ee68718866417f0d9 programs/solvers/88a10436.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 88a10436
+
+(DET &bg DominantColor)
+
+(DET &marker ChangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &marker2
+  (&ink *P *Col)
+  (&marker (:C Col)))
+
+(ALTS $m "which cells are the marker" $Color
+  (ALT $Lone
+    (RULE &touching
+      (&ink *P)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&ink (:P Q)))
+
+    (RULE &marker2
+      (&ink *P)
+      (NOT (&touching P)))))
+
+(ALTS $c "what the copy carries" $Ink
+  (ALT $Box
+    (RULE &content
+      (&boxed *P)
+      (input P *Col))))
+
+(RULE &shape
+  (&ink *P)
+  (NOT (&marker2 P)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&shape *P)))
+
+(RULE &boxed
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(RULE &center
+  (&bbox.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(RULE &seated
+  (&center (:P *Ctr))
+  (&boxed *P)
+  (relative (:Base Ctr) (:X P) (:X_rel *V))
+  (&marker2 (:P *A))
+  (compose A (:B V) (:C *Q))
+  (input (:P Q)))
+
+(RULE &content
+  (&shape *P)
+  (&ink P *Col))
+
+(RULE &paint
+  (&content *P *Col)
+  (&seated P *Q))
+
+(RULE &output
+  (OR ((&paint (:Q *P) *Col))
+      ((input P Col)
+       (&center)
+       (NOT (&paint (:Q P))))))
+
+(OUT (&output ^P ^Col))

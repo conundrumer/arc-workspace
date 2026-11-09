@@ -1,0 +1,206 @@
+;; inputs 607a1a2b2c7afd30b64e054ffc423ba63a248a9db9c4db5dac91e1b3d15c968e programs/solvers/ae58858e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ae58858e
+
+(param &new_color Color (6))
+(param &shape_color Color (2))
+(param &bg Color (0))
+(param &min_size number (4))
+(param &size_recolor number (4) (5) (6) (7) (8))
+(param &size_keep number (1) (2) (3))
+
+(alts $a
+  (alt $Diagonal
+    (witness diagonal-contact ordinary concept
+      (separates "two dominoes of color 2 meet at one corner (0,1)-(1,2); under 4-adjacency they are two 2-cell shapes and stay 2, under 8-adjacency they are one 4-cell shape and turn 6")
+      (input (grid
+        (2 2 0 0 0 0)
+        (0 0 2 2 0 0)
+        (0 0 0 0 0 2)
+        (2 0 0 0 0 2)
+        (2 2 0 0 0 0)
+        (0 2 0 0 2 0)))
+      (output $Orthogonal (grid
+        (2 2 0 0 0 0)
+        (0 0 2 2 0 0)
+        (0 0 0 0 0 2)
+        (6 0 0 0 0 2)
+        (6 6 0 0 0 0)
+        (0 6 0 0 2 0)))
+      (output $Diagonal (grid
+        (6 6 0 0 0 0)
+        (0 0 6 6 0 0)
+        (0 0 0 0 0 2)
+        (6 0 0 0 0 2)
+        (6 6 0 0 0 0)
+        (0 6 0 0 2 0))))))
+
+(alts $s
+  (alt $Foreground
+    (witness other-color-shape variant $Foreground
+      (relaxed scattered-shapes)
+      (separates "a 4-cell shape of color 3 beside the shapes of color 2; the stored shape color leaves it 3, every non-0 color turns it 6, and the rarest color (3) turns it 6 and leaves the shapes of color 2 unchanged")
+      (input (grid
+        (0 0 0 0 0 0)
+        (2 2 0 3 3 0)
+        (0 2 0 3 3 0)
+        (0 2 0 0 0 0)
+        (0 2 0 0 2 0)
+        (0 0 0 0 2 0)))
+      (output ($StoredColor &shape_color=$Stored) (grid
+        (0 0 0 0 0 0)
+        (6 6 0 3 3 0)
+        (0 6 0 3 3 0)
+        (0 6 0 0 0 0)
+        (0 6 0 0 2 0)
+        (0 0 0 0 2 0)))
+      (output &shape_color=$Derived (grid
+        (0 0 0 0 0 0)
+        (2 2 0 6 6 0)
+        (0 2 0 6 6 0)
+        (0 2 0 0 0 0)
+        (0 2 0 0 2 0)
+        (0 0 0 0 2 0)))
+      (output $Foreground (grid
+        (0 0 0 0 0 0)
+        (6 6 0 6 6 0)
+        (0 6 0 6 6 0)
+        (0 6 0 0 0 0)
+        (0 6 0 0 2 0)
+        (0 0 0 0 2 0))))))
+
+(alts $m
+  (alt $Multicolor
+    (witness two-color-contact borderline concept
+      (relaxed scattered-shapes)
+      (separates "a domino of color 2 sits on a 3 domino; per-color shapes are two 2-cell shapes and stay, a shape of mixed colors is one 4-cell shape and turns 6")
+      (input (grid
+        (0 0 0 0 0 0)
+        (2 2 0 0 0 0)
+        (0 0 0 2 2 0)
+        (0 0 0 3 3 0)
+        (0 2 0 0 0 0)
+        (0 2 2 2 0 0)))
+      (output ($StoredColor &shape_color=$Stored) $SameColor (grid
+        (0 0 0 0 0 0)
+        (2 2 0 0 0 0)
+        (0 0 0 2 2 0)
+        (0 0 0 3 3 0)
+        (0 6 0 0 0 0)
+        (0 6 6 6 0 0)))
+      (output &shape_color=$Derived (grid
+        (0 0 0 0 0 0)
+        (2 2 0 0 0 0)
+        (0 0 0 2 2 0)
+        (0 0 0 3 3 0)
+        (0 2 0 0 0 0)
+        (0 2 2 2 0 0)))
+      (output $Multicolor (grid
+        (0 0 0 0 0 0)
+        (2 2 0 0 0 0)
+        (0 0 0 6 6 0)
+        (0 0 0 6 6 0)
+        (0 6 0 0 0 0)
+        (0 6 6 6 0 0))))))
+
+(alts $t
+  (alt $SizeTable
+    (witness unseen-size ordinary concept
+      (separates "a 9-cell block of color 2, a size the train pairs do not show; the threshold turns it 6, and a size table that lists 9 among the kept sizes leaves it 2")
+      (assign &size_keep (1) (2) (3) (9))
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 2)
+        (0 2 2 2 0 0 2)
+        (0 2 2 2 0 0 0)
+        (0 0 0 0 0 2 0)
+        (2 2 0 0 0 2 0)))
+      (output $Threshold (grid
+        (0 0 0 0 0 0 0)
+        (0 6 6 6 0 0 2)
+        (0 6 6 6 0 0 2)
+        (0 6 6 6 0 0 0)
+        (0 0 0 0 0 2 0)
+        (2 2 0 0 0 2 0)))
+      (output $SizeTable (grid
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 2)
+        (0 2 2 2 0 0 2)
+        (0 2 2 2 0 0 0)
+        (0 0 0 0 0 2 0)
+        (2 2 0 0 0 2 0))))))
+
+(alts &shape_color
+  (alt &shape_color=$Derived
+    (witness shape_color=RarestColor borderline concept
+      (separates "cells of color 2 outnumber 0 cells; the stored shape color recolors the large shapes of color 2, the rarest color is 0 and its large regions turn 6")
+      (input (grid
+        (2 2 2 0 0)
+        (2 2 2 0 2)
+        (2 2 0 0 0)
+        (0 0 0 2 2)
+        (2 2 0 2 2)))
+      (output (&shape_color=$Stored &bg=$Stored) (grid
+        (6 6 6 0 0)
+        (6 6 6 0 2)
+        (6 6 0 0 0)
+        (0 0 0 6 6)
+        (2 2 0 6 6)))
+      (output &shape_color=$Derived ($Threshold &bg=$Derived) (grid
+        (2 2 2 6 6)
+        (2 2 2 6 2)
+        (2 2 6 6 6)
+        (6 6 6 2 2)
+        (2 2 6 2 2)))
+      (output ($SizeTable &bg=$Derived) undefined))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed scattered-shapes)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 1 1 1 1 1)
+        (2 2 1 1 1 2 2 1)
+        (1 2 2 1 1 2 2 1)
+        (1 1 1 1 1 1 2 2)
+        (1 1 1 1 1 1 1 1)
+        (1 2 2 2 1 1 1 1)
+        (1 1 1 1 1 2 1 1)
+        (1 1 2 2 1 1 1 1)
+        (2 1 2 2 1 1 2 2)
+        (2 1 1 1 1 1 1 1)))
+      (output $StoredColor &bg=$Derived (grid
+        (1 1 1 1 1 1 1 1)
+        (6 6 1 1 1 6 6 1)
+        (1 6 6 1 1 6 6 1)
+        (1 1 1 1 1 1 6 6)
+        (1 1 1 1 1 1 1 1)
+        (1 2 2 2 1 1 1 1)
+        (1 1 1 1 1 2 1 1)
+        (1 1 6 6 1 1 1 1)
+        (2 1 6 6 1 1 2 2)
+        (2 1 1 1 1 1 1 1)))
+      (output ($Foreground $SizeTable &bg=$Stored) undefined)
+      (output ($SameColor $Threshold &bg=$Stored) (grid
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 2 2 2 6 6 6 6)
+        (6 6 6 6 6 2 6 6)
+        (6 6 6 6 6 6 6 6)
+        (2 6 6 6 6 6 2 2)
+        (2 6 6 6 6 6 6 6)))
+      (output $Multicolor (grid
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6))))))

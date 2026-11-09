@@ -1,0 +1,164 @@
+;; inputs 9a043fb7ad21dd3d245f463a9a07f537babd7ebe62fcdbcf8268d4afe64ddbae programs/solvers/ef135b50.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ef135b50
+
+(param &object_color Color (2))
+(param &bridge_color Color (9))
+(param &bridge_axis Axis (AXIS_H))
+(param &background Color (0))
+
+(exclude ($AllLines $PerLineRun))
+
+(alts $unit
+  (alt $PerLineRun
+    (witness blocked-pair-open-lines ordinary concept
+      (separates "a middle rectangle covers only rows 2-4 of the gap between two rectangles sharing rows 2-6: the concept bridges each rectangle to the middle one and leaves rows 5-6 open, $PerLineRun & $BorderLinesUnbridged also bridges rows 5-6 across the whole gap")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 0 2 2 0 0 2 2)
+        (2 2 0 0 2 2 0 0 2 2)
+        (2 2 0 0 2 2 0 0 2 2)
+        (2 2 0 0 0 0 0 0 2 2)
+        (2 2 0 0 0 0 0 0 2 2)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $PiecePair (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 9 9 2 2 9 9 2 2)
+        (2 2 9 9 2 2 9 9 2 2)
+        (2 2 9 9 2 2 9 9 2 2)
+        (2 2 0 0 0 0 0 0 2 2)
+        (2 2 0 0 0 0 0 0 2 2)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $PerLineRun (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 9 9 2 2 9 9 2 2)
+        (2 2 9 9 2 2 9 9 2 2)
+        (2 2 9 9 2 2 9 9 2 2)
+        (2 2 9 9 9 9 9 9 2 2)
+        (2 2 9 9 9 9 9 9 2 2)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $adj
+  (alt $DiagonalJoin
+    (witness corner-touching-rectangles borderline concept
+      (relaxed solid-rectangles)
+      (separates "two rectangles touch at a corner: the concept keeps them apart and bridges each to the rectangle on the right, $DiagonalJoin joins them into one piece and bridges from its bounding box, leaving rows 2-3 cols 2-3 open")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 0 0 0 0 0 0 0)
+        (2 2 0 0 0 0 0 2 2 0)
+        (2 2 0 0 0 0 0 2 2 0)
+        (0 0 2 2 0 0 0 2 2 0)
+        (0 0 2 2 0 0 0 2 2 0)
+        (0 0 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $SideJoin $BorderLinesUnbridged (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 0 0 0 0 0 0 0)
+        (2 2 9 9 9 9 9 2 2 0)
+        (2 2 9 9 9 9 9 2 2 0)
+        (0 0 2 2 9 9 9 2 2 0)
+        (0 0 2 2 9 9 9 2 2 0)
+        (0 0 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $DiagonalJoin (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 0 0 0 0 0 0 0)
+        (2 2 0 0 9 9 9 2 2 0)
+        (2 2 0 0 9 9 9 2 2 0)
+        (0 0 2 2 9 9 9 2 2 0)
+        (0 0 2 2 9 9 9 2 2 0)
+        (0 0 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $strip
+  (alt $CellwiseStrip
+    (witness l-shaped-piece borderline $CellwiseStrip
+      (relaxed solid-rectangles)
+      (separates "an L-shaped piece faces a rectangle: the concept bridges from the L bounding box, leaving rows 2-4 cols 2-3 open, $CellwiseStrip bridges from the L cells on each row and fills them")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 0 0 0 0 2 2 0)
+        (2 2 0 0 0 0 0 2 2 0)
+        (2 2 0 0 0 0 0 2 2 0)
+        (2 2 2 2 0 0 0 2 2 0)
+        (2 2 2 2 0 0 0 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $BoxStrip (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 0 0 9 9 9 2 2 0)
+        (2 2 0 0 9 9 9 2 2 0)
+        (2 2 0 0 9 9 9 2 2 0)
+        (2 2 2 2 9 9 9 2 2 0)
+        (2 2 2 2 9 9 9 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $CellwiseStrip $PerLineRun (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (2 2 9 9 9 9 9 2 2 0)
+        (2 2 9 9 9 9 9 2 2 0)
+        (2 2 9 9 9 9 9 2 2 0)
+        (2 2 2 2 9 9 9 2 2 0)
+        (2 2 2 2 9 9 9 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $border
+  (alt $BorderLinesUnbridged
+    (witness border-line-bridge ordinary concept
+      (separates "two rectangles share grid row 0 with a clear gap between them: the concept bridges rows 0-2, $BorderLinesUnbridged leaves row 0 unbridged and bridges rows 1-2")
+      (input (grid
+        (2 2 2 0 0 0 2 2 2 0)
+        (2 2 2 0 0 0 2 2 2 0)
+        (2 2 2 0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)))
+      (output $AllLines (grid
+        (2 2 2 9 9 9 2 2 2 0)
+        (2 2 2 9 9 9 2 2 2 0)
+        (2 2 2 9 9 9 2 2 2 0)
+        (0 0 0 0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)))
+      (output $BorderLinesUnbridged (grid
+        (2 2 2 0 0 0 2 2 2 0)
+        (2 2 2 9 9 9 2 2 2 0)
+        (2 2 2 9 9 9 2 2 2 0)
+        (0 0 0 0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0))))))

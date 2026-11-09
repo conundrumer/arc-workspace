@@ -1,0 +1,248 @@
+;; inputs 0c6f4badbcbebf9fd920627320bbf268253272a9bd0c24de0afb6e6993315803 programs/solvers/e9bb6954.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9bb6954
+
+(INPUT background-field "the field is 0.")
+
+(INPUT square-blocks "one or more solid squares of side 3, each a single color, each a whole 4-connected component of that color."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &parts Connectivity
+    (key ((ex_input ^E *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (ex_input E *P Col)
+        (NOT (&background (:C Col))))))
+
+  (INIT &part_box BoundingBox
+    (key ((&parts.component (:key (:E ^Ec_e) (:Col ^Ec_col)) *P (:Id ^U)))
+      (cell (P)
+        (&parts.component (:key (:E Ec_e) (:Col Ec_col)) *P (:Id U)))))
+
+  (DET &holed
+    (&part_box.box (:key (:Ec_e *E) (:Ec_col *Col) *U) *B)
+    (ex_input E *P (:Col *C))
+    (inside (:A P) B)
+    (!= C Col))
+
+  (DET &square_side
+    (&part_box.box (:key (:Ec_e *E) (:Ec_col *Col) *U) *B)
+    (NOT (&holed E Col U))
+    (&parts.component (:key E Col) *P (:Id U))
+    (&parts.component (:key E Col) (:P *Q) (:Id U))
+    (!= P Q)
+    (box_extent B P (:A *A1) (:N *K))
+    (perp (:A A1) *A2)
+    (box_extent B P (:A A2) (:N K)))
+
+  (DET &missing
+    (&square_side *K)
+    (ex_output *E)
+    (NOT (&square_side E K)))
+
+  (DET_OR_RULE &block_size TileCount
+    (&square_side (:K *N))
+    (NOT (&missing (:K N))))
+
+  (INIT &comps Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (INIT &comps8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &part_cell
+    (&comps.component (:key *Col) *P (:Id *Pt)))
+
+  (INIT &part_box2 BoundingBox
+    (key ((&part_cell (:Pt ^U) *P))
+      (cell (P)
+        (&part_cell (:Pt U) *P))))
+
+  (RULE &blob_cell
+    (&part_cell (:Pt *U) *Col *P)
+    (&part_box2.box (:key U) *B))
+
+  (INIT &square Frame
+    (extent (A (:N K))
+      (&block_size (:N *K))
+      (axis_elem *A)))
+
+  (INIT &occ Occurrences
+    (key ((OR ((input *P ^Col)
+               (NOT (&background (:C Col))))
+              ((input Col)
+               (NOT (&background (:C Col)))
+               (&square.cell (:P *S)))))
+      (cell (P (:v Col))
+        (input *P Col)
+        (NOT (&background (:C Col))))
+      (shape ((:P S) (:v Col))
+        (input Col)
+        (NOT (&background (:C Col)))
+        (&square.cell (:P *S)))))
+
+  (INIT &size Cardinality
+    (key ((&blob_cell ^Col ^B *P))
+      (member ((:m P))
+        (&blob_cell Col B *P))))
+
+  (INIT &largest Order
+    (member ((:t Col B (:S N)))
+      (&size.size (:key *Col *B) *N))
+    (score ((:t Col B (:S N)) (:S N))
+      (&size.size (:key *Col *B) *N))))
+
+(INPUT distinct-block-colors "no two blocks share a color.")
+
+(INPUT scattered-noise "every other non-background cell is noise, in single cells or short runs, and no noise forms a solid square of side 3.")
+
+(INPUT separate-lines "no two blocks share a row or a column, so no block's center row or center column is another block's.")
+
+(INPUT lines-miss-blocks "no block's center row or center column passes through another block.")
+
+(OUTPUT center-cross "each block paints its center row and its center column, end to end, in its color, over noise and background.")
+
+(OUTPUT crossing-cleared "a cell on lines of two different blocks becomes the background, whatever the input holds there.")
+
+(OUTPUT rest-kept "every other cell keeps its input color."
+
+  (RULE &holed2
+    (&blob_cell *Col *B)
+    (input *P (:Col *C))
+    (inside (:A P) B)
+    (!= C Col))
+
+  (RULE &block
+    (&blob_cell *Col *B *P)
+    (NOT (&holed2 Col B))
+    (&block_size (:N *K))
+    (box_extent B P (:A *A1) (:N K))
+    (perp (:A A1) *A2)
+    (box_extent B P (:A A2) (:N K)))
+
+  (RULE &center
+    (&block *Col *B)
+    (input (:P *C))
+    (inside (:A C) B)
+    (relative (:Base B) (:X C) (:X_rel *C_rel))
+    (centered (:P C_rel)))
+
+  (RULE &line
+    (&center *Col *B *C)
+    (input (:P *Q))
+    (axis_elem *A)
+    (same_line A (:P C) Q)))
+
+(ALTS $shape "which components are blocks" $Square
+  (ALT $AnySideSquare
+    (INPUT square-blocks "a block is a solid one-color square of any side above 1, with no block size; undefined where such a square has an even side"
+      (RULE &block
+        (&blob_cell *Col *B *P)
+        (NOT (&holed2 Col B))
+        (box_extent B P (:A *A1) *N)
+        (perp (:A A1) *A2)
+        (box_extent B P (:A A2) N)
+        (&blob_cell Col B (:P *Q))
+        (!= P Q))))
+  (ALT $LargestComponents
+    (INPUT square-blocks "the blocks are the one-color components of the greatest cell count in the grid, crossed at their bounding box's center; undefined where such a box has an even side"
+      (RULE &block
+        (&largest.maximal (:t *Col *B))))))
+
+(ALTS $group "how a block's cells are grouped" $Components
+  (ALT $Components8
+    (INPUT square-blocks "8-adjacency in place of 4-adjacency, so a same-color cell at a block's corner joins it"
+      (RULE &part_cell
+        (&comps8.component (:key *Col) *P (:Id *Pt)))))
+  (ALT $SquareOccurrence
+    (INPUT square-blocks "every placement of a solid one-color square of side 3, whether or not other cells of that color touch it; undefined where two placements of one color overlap"
+      (RULE &blob_cell
+        (&occ.occurrence (:key *Col) (:P *B))
+        (input *P)
+        (inside (:A P) B)))
+    (RULE &undefined
+      (OR ((&blob_cell *Col (:B *B1) *P)
+           (&blob_cell Col (:B *B2) P)
+           (!= B1 B2))
+          ((&block (:Col *Col2) *B)
+           (NOT (&center (:Col Col2) B)))))))
+
+(ALTS $fill "what a crossing cell takes" $ClearToBackground
+  (ALT $CrossColorStored
+    (OUTPUT crossing-cleared "a crossing takes a stored cross color, 0"
+      (DET_OR_RULE &cross_color DominantColor))
+    (RULE &fill
+      (&cross_color (:C *Col)))))
+
+(ALTS $test "which cells count as crossings" $TwoBlocks
+  (ALT $CrossOnlyPerpendicular
+    (OUTPUT crossing-cleared "a crossing is a cell where one block's row line meets another block's column line; undefined where two row lines or two column lines of different colors fall on one cell")
+    (RULE &crossing
+      (&line (:Col *Col1) (:B *B1) (:A *A1) *Q)
+      (&line (:Col *Col2) (:B *B2) (:A *A2) Q)
+      (OR ((!= Col1 Col2))
+          ((!= B1 B2)))
+      (perp (:A A1) A2))))
+
+(ALTS $over "what a line paints over" $OverEverything
+  (ALT $BlocksOverLines
+    (OUTPUT center-cross "a cell of another block keeps that block's color"
+      (RULE &shielded
+        (&block *Col *B)
+        (&blob_cell Col B (:P *Q))))
+    (RULE &output
+      (OR ((&defined)
+           (&line *Col (:Q *P))
+           (NOT (&crossing (:Q P)))
+           (NOT (&shielded (:Q P))))
+          ((&defined)
+           (&crossing (:Q P))
+           (NOT (&shielded (:Q P)))
+           (&fill Col))
+          ((&defined)
+           (input P Col)
+           (OR ((NOT (&line (:Q P))))
+               ((&shielded (:Q P)))))))))
+
+(RULE &undefined
+  (&block *Col *B)
+  (NOT (&center Col B)))
+
+(RULE &crossing
+  (&line (:Col *Col1) (:B *B1) *Q)
+  (&line (:Col *Col2) (:B *B2) Q)
+  (OR ((!= Col1 Col2))
+      ((!= B1 B2))))
+
+(RULE &fill
+  (&background (:C *Col)))
+
+(RULE &defined
+  (NOT (&undefined)))
+
+(RULE &output
+  (OR ((&defined)
+       (&line *Col (:Q *P))
+       (NOT (&crossing (:Q P))))
+      ((&defined)
+       (&crossing (:Q P))
+       (&fill Col))
+      ((&defined)
+       (input P Col)
+       (NOT (&line (:Q P))))))
+
+(OUT (&output ^P ^Col))

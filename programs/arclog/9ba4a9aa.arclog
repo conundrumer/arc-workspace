@@ -1,0 +1,124 @@
+;; inputs 28f351e5409a879e11f44c6d9c2318564a27e0a13d133488b2f30921fb598d27 programs/solvers/9ba4a9aa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9ba4a9aa
+
+(INPUT ground "the commonest color is the background")
+
+(INPUT squares "the ink holds 3×3 squares; a square is framed when a uniform border surrounds a center of another color, and one square, the source, is not framed"
+
+  (INIT &ground_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &ground Order
+    (member ((:t Col))
+      (&ground_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ground_count.size (:key *Col) *N)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&ground.maximal (:t Col))))
+
+  (INIT &rim Boundary
+    (cell (P)
+      (&ink *P))
+    (dir (D)
+      (dir8_elem *D)))
+
+  (RULE &center
+    (&ink (:P *C))
+    (NOT (&rim.boundary (:P C))))
+
+  (RULE &border
+    (&center *C)
+    (neighbor (:P C) *D (:Q *P)))
+
+  (RULE &square_cell
+    (&center *C)
+    (OR ((&border C *P))
+        ((= P C))))
+
+  (INIT &square BoundingBox
+    (key ((&square_cell ^C *P))
+      (cell (P)
+        (&square_cell C *P)))))
+
+(INPUT trails "the ink outside the squares is dots; dots of one color, one spacing apart along a row or column, chain into a trail, and a trail ends beside a square"
+
+  ;; Distance from a trail dot to the next.
+  (DET &spacing TileCount)
+
+  (INIT &frame Singleton
+    (key ((&border ^C *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&border C *P)
+        (input P *Col))))
+
+  (RULE &framed
+    (&frame.value (:key *C) (:v *Col))
+    (input (:P C) (:Col *Col2))
+    (!= Col Col2))
+
+  (RULE &source
+    (&center *C)
+    (NOT (&framed C)))
+
+  (RULE &dot
+    (&ink *P *Col)
+    (NOT (&square_cell P)))
+
+  (RULE &beside
+    (&dot *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&square_cell *C (:P Q)))
+
+  ;; The trail leaving the source: dots of one color, one spacing apart, reached
+  ;; from the dot beside the source. The lib's unit steps stay in the set; dots
+  ;; are never adjacent, so they never fire.
+  (INIT &trail Flood
+    (key ((&dot *P ^Col))
+      (node (P)
+        (&dot *P Col))
+      (source (P)
+        (&source *C)
+        (&beside *P C)
+        (&dot P Col)))
+    (step ((:Delta V))
+      (OR ((&spacing (:N *K))
+           (dir_elem *D)
+           (jump_offset D K *V))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) V))))))
+
+(OUTPUT pick "the output is the framed square that the trail leaving the source reaches")
+
+(ALTS $choice "what makes a dot part of the source's trail" $Chain
+  (ALT $Hue
+    (INPUT trails "the ink outside the squares is dots, and the dots of one color form a trail"
+      (RULE &lead_color
+        (&source *C)
+        (&beside *P C)
+        (&dot P *Col)))
+    (RULE &target
+      (&framed *C)
+      (&beside *P C)
+      (&dot P *Col)
+      (&lead_color Col))))
+
+(RULE &target
+  (&framed *C)
+  (&beside *P C)
+  (&trail.reached P))
+
+(RULE &output
+  (&target *C)
+  (&square.box (:key C) *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

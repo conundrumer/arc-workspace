@@ -1,0 +1,89 @@
+;; inputs 12d3a9736a25ff57bfa2356db5b2c4cf60abe8455cc1d3b3c5921f9add3c3158 programs/solvers/6ffbe589.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ffbe589
+
+(DET &bg DominantColor)
+
+(DET &sense SenseDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Cells cluster across a gap of at most one cell: a cluster step is two
+;; steps in any directions.
+(INIT &cluster Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((step_offset (:D *D1) (:V *S1))
+         (step_offset (:D *D2) (:V *S2))
+         (compose (:A S1) (:B S2) (:C S)))
+        ((dir_elem (:D *D3))
+         (step_offset (:D D3) (:V S))))))
+
+;; The figure is the largest cluster.
+(INIT &size Cardinality
+  (key ((&cluster.component *P ^Id))
+    (member ((:m P))
+      (&cluster.component *P Id))))
+
+(INIT &largest Order
+  (member ((:t (:V Id) (:S N)))
+    (&size.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&size.size (:key *Id) *N)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&largest.maximal (:t (:V *Id)))
+    (&cluster.component *P Id)))
+
+(RULE &cropped
+  (&bbox.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &covered
+  (&bbox.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+;; Quarter turns per figure color: its stray cells outside the box.
+(INIT &turns Cardinality
+  (key ((OR ((&ink *P ^Col)
+             (NOT (&covered P)))
+            ((&cropped Col)
+             (NOT (&bg (:C Col))))))
+    (member ((:m P))
+      (&ink *P Col)
+      (NOT (&covered P)))
+    (domain ()
+      (&cropped Col)
+      (NOT (&bg (:C Col))))))
+
+;; The rotation: each crop cell steps one quarter turn about the center.
+(INIT &rot Walk
+  (successor ((:p P) (:p_next P2))
+    (&cropped (:P_inner *P))
+    (&sense *S)
+    (c4_turn S (:T *R))
+    (apply (:D R) P (:P_out *P2)))
+  (steps (N)
+    (&turns.size *N)))
+
+(RULE &landed
+  (&cropped (:P_inner *P0) *Col)
+  (&turns.size (:key Col) *N)
+  (&rot.walk (:p0 P0) N (:p *P)))
+
+(RULE &output
+  (OR ((&landed *P *Col))
+      ((&cropped (:P_inner P))
+       (NOT (&landed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

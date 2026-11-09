@@ -1,0 +1,254 @@
+;; inputs 167461506d7e49854dcdd45ba0c626af7fd724d7ab71475e9cf3115e9e4da6eb programs/solvers/a5f85a15.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a5f85a15
+
+(param &bg Color (0))
+(param &mark Color (4))
+(param &period number (2))
+(param &mark_phase number (1))
+(param &line_dir DiagDir (DIAG_BR))
+(param &start_edge Dir (DIR_T))
+(param &parity_edge Dir (DIR_L))
+
+(exclude ($DerivedAxis $ColumnParity))
+
+(alts $segment
+  (alt $DiagonalClass
+    (witness gap variant concept
+      (relaxed diagonal-lines)
+      (separates "A main-diagonal line with a one-cell gap after its first cell: runs restart the count after the gap, and $DiagonalClass counts across it.")
+      (input (grid
+        (5 0 0 0)
+        (0 0 0 0)
+        (0 0 5 0)
+        (0 0 0 5)))
+      (output $ColumnParity $Run $GridDiagonal (grid
+        (5 0 0 0)
+        (0 0 0 0)
+        (0 0 5 0)
+        (0 0 0 4)))
+      (output $DiagonalClass (grid
+        (5 0 0 0)
+        (0 0 0 0)
+        (0 0 4 0)
+        (0 0 0 5))))))
+
+(alts $split
+  (alt $ColorRuns
+    (witness two-colors borderline $ColorRuns
+      (relaxed diagonal-lines)
+      (separates "One main-diagonal run of a 5 cell then two 7 cells: the concept counts across the color change, and $ColorRuns starts a new count at it.")
+      (input (grid
+        (5 0 0)
+        (0 7 0)
+        (0 0 7)))
+      (output $ColorBlind $ColumnParity $GridDiagonal (grid
+        (5 0 0)
+        (0 4 0)
+        (0 0 7)))
+      (output $ColorRuns (grid
+        (5 0 0)
+        (0 7 0)
+        (0 0 4))))))
+
+(alts $origin
+  (alt $GridDiagonal
+    (witness inner-segment variant concept
+      (relaxed diagonal-lines)
+      (separates "A main-diagonal segment that starts inside the grid: the concept counts from the segment's first cell, and $GridDiagonal counts from the grid-edge cell of its diagonal.")
+      (input (grid
+        (0 0 0 0 0)
+        (0 0 5 0 0)
+        (0 0 0 5 0)
+        (0 0 0 0 5)
+        (0 0 0 0 0)))
+      (output $LineStart $ColumnParity (grid
+        (0 0 0 0 0)
+        (0 0 5 0 0)
+        (0 0 0 4 0)
+        (0 0 0 0 5)
+        (0 0 0 0 0)))
+      (output $GridDiagonal (grid
+        (0 0 0 0 0)
+        (0 0 4 0 0)
+        (0 0 0 5 0)
+        (0 0 0 0 4)
+        (0 0 0 0 0)))))
+  (alt $ColumnParity
+    (witness odd-column-start variant concept
+      (separates "A main-diagonal line that starts on the top edge at an odd column: the concept counts from the line's first cell, and $ColumnParity marks the cells in odd columns.")
+      (input (grid
+        (0 5 0 0)
+        (0 0 5 0)
+        (0 0 0 5)
+        (0 0 0 0)))
+      (output $LineStart $GridDiagonal (grid
+        (0 5 0 0)
+        (0 0 4 0)
+        (0 0 0 5)
+        (0 0 0 0)))
+      (output $ColumnParity (grid
+        (0 4 0 0)
+        (0 0 5 0)
+        (0 0 0 4)
+        (0 0 0 0))))
+    (witness touching-lines borderline concept
+      (relaxed diagonal-lines)
+      (separates "Two main-diagonal lines side by side: the concept counts along each line, and $ColumnParity marks the cells in odd columns.")
+      (input (grid
+        (5 5 0 0)
+        (0 5 5 0)
+        (0 0 5 5)
+        (0 0 0 5)))
+      (output $LineStart $GridDiagonal (grid
+        (5 5 0 0)
+        (0 4 4 0)
+        (0 0 5 5)
+        (0 0 0 4)))
+      (output $ColumnParity (grid
+        (5 4 0 0)
+        (0 4 5 0)
+        (0 0 5 4)
+        (0 0 0 4))))))
+
+(alts $heading
+  (alt $DerivedAxis
+    (witness anti-diagonal-odd variant $DerivedAxis
+      (relaxed diagonal-lines)
+      (separates "One anti-diagonal line of three cells: the stored step finds no line and returns the input, and $DerivedAxis marks the middle cell, as does $DiagonalClass under the stored step with the stored diagonal.ray.")
+      (input (grid
+        (0 0 5)
+        (0 5 0)
+        (5 0 0)))
+      (output ($Run $StoredStep) ($DiagonalClass $StoredStep &diagonal.ray=$Derived) (grid
+        (0 0 5)
+        (0 5 0)
+        (5 0 0)))
+      (output $ColumnParity $GridDiagonal $DerivedAxis ($DiagonalClass $StoredStep &diagonal.ray=$Stored) (grid
+        (0 0 5)
+        (0 4 0)
+        (5 0 0))))
+    (witness anti-diagonal-wide variant $DerivedAxis
+      (relaxed diagonal-lines)
+      (separates "One anti-diagonal line of three cells in a 3x4 grid: $DerivedAxis counts along the line, $GridDiagonal under the stored step marks each ink cell whose min(row, column) is odd, and $GridDiagonal under $DerivedAxis counts along the anti-diagonal; $DiagonalClass under the stored step with the stored diagonal.ray marks the same cell as $DerivedAxis.")
+      (input (grid
+        (0 0 0 5)
+        (0 0 5 0)
+        (0 5 0 0)))
+      (output ($Run $StoredStep) ($DiagonalClass $StoredStep &diagonal.ray=$Derived) (grid
+        (0 0 0 5)
+        (0 0 5 0)
+        (0 5 0 0)))
+      (output $ColumnParity (grid
+        (0 0 0 4)
+        (0 0 5 0)
+        (0 4 0 0)))
+      (output $GridDiagonal (grid
+        (0 0 0 5)
+        (0 0 4 0)
+        (0 4 0 0)))
+      (output $DerivedAxis ($DiagonalClass $StoredStep &diagonal.ray=$Stored) (grid
+        (0 0 0 5)
+        (0 0 4 0)
+        (0 5 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed diagonal-lines)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (2 1 1)
+        (1 2 1)
+        (1 1 2)))
+      (output ($LineStart $StoredStep &bg=$Stored) $GridDiagonal (grid
+        (2 1 1)
+        (1 4 4)
+        (1 4 2)))
+      (output $ColumnParity (grid
+        (2 4 1)
+        (1 4 1)
+        (1 4 2)))
+      (output &bg=$Derived (grid
+        (2 1 1)
+        (1 4 1)
+        (1 1 2)))
+      (output $DerivedAxis undefined))))
+
+(alts &diagonal.ray
+  (alt &diagonal.ray=$Stored
+    (witness diagonal.ray=stored variant $DerivedAxis
+      (relaxed diagonal-lines)
+      (separates "`diagonal.ray=stored` from the derived value: train 1 turned a quarter turn clockwise")
+      (input (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 9 0 0 0 0 0)
+        (0 9 0 0 0 0 0 9)
+        (9 0 0 0 0 0 9 0)
+        (0 0 0 0 0 9 0 0)
+        (0 0 0 0 9 0 0 0)
+        (0 0 0 9 0 0 0 0)
+        (0 0 9 0 0 0 0 0)))
+      (output ($Run $StoredStep) (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 9 0 0 0 0 0)
+        (0 9 0 0 0 0 0 9)
+        (9 0 0 0 0 0 9 0)
+        (0 0 0 0 0 9 0 0)
+        (0 0 0 0 9 0 0 0)
+        (0 0 0 9 0 0 0 0)
+        (0 0 9 0 0 0 0 0)))
+      (output ($DiagonalClass $StoredStep &diagonal.ray=$Derived) (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 9 0 0 0 0 0)
+        (0 9 0 0 0 0 0 9)
+        (9 0 0 0 0 0 4 0)
+        (0 0 0 0 0 4 0 0)
+        (0 0 0 0 4 0 0 0)
+        (0 0 0 4 0 0 0 0)
+        (0 0 9 0 0 0 0 0)))
+      (output ($DiagonalClass $StoredStep &diagonal.ray=$Stored) (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 4 0 0 0 0 0)
+        (0 9 0 0 0 0 0 9)
+        (4 0 0 0 0 0 9 0)
+        (0 0 0 0 0 4 0 0)
+        (0 0 0 0 9 0 0 0)
+        (0 0 0 4 0 0 0 0)
+        (0 0 4 0 0 0 0 0)))
+      (output ($GridDiagonal $StoredStep &diagonal.ray=$Derived) (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 4 0 0 0 0 0)
+        (0 4 0 0 0 0 0 9)
+        (9 0 0 0 0 0 4 0)
+        (0 0 0 0 0 9 0 0)
+        (0 0 0 0 9 0 0 0)
+        (0 0 0 4 0 0 0 0)
+        (0 0 9 0 0 0 0 0)))
+      (output ($GridDiagonal $StoredStep &diagonal.ray=$Stored) (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 4 0 0 0 0 0)
+        (0 4 0 0 0 0 0 9)
+        (4 0 0 0 0 0 4 0)
+        (0 0 0 0 0 9 0 0)
+        (0 0 0 0 4 0 0 0)
+        (0 0 0 4 0 0 0 0)
+        (0 0 4 0 0 0 0 0)))
+      (output $ColumnParity (grid
+        (0 0 0 4 0 0 0 0)
+        (0 0 9 0 0 0 0 0)
+        (0 4 0 0 0 0 0 4)
+        (9 0 0 0 0 0 9 0)
+        (0 0 0 0 0 4 0 0)
+        (0 0 0 0 9 0 0 0)
+        (0 0 0 4 0 0 0 0)
+        (0 0 9 0 0 0 0 0)))
+      (output $DerivedAxis (grid
+        (0 0 0 9 0 0 0 0)
+        (0 0 4 0 0 0 0 0)
+        (0 9 0 0 0 0 0 9)
+        (4 0 0 0 0 0 4 0)
+        (0 0 0 0 0 9 0 0)
+        (0 0 0 0 4 0 0 0)
+        (0 0 0 9 0 0 0 0)
+        (0 0 4 0 0 0 0 0))))))

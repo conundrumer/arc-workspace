@@ -1,0 +1,270 @@
+;; inputs a157b2e900357bd8110d934d975a4d2737188b3ee9aca2a69176556f10cf9fc7 programs/solvers/b0c4d837.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0c4d837
+
+(param &wall_color Color (5))
+(param &open_dir Dir (DIR_T))
+(param &fluid_color Color (8))
+(param &background Color (0))
+(param &out_dim number (3))
+(param &fill_order (Position number)
+  (grid
+    (0 1 2)
+    (_ _ 3)
+    (_ _ _)))
+(param &order_corner DiagDir (DIAG_TL))
+(param &line_axis Axis (AXIS_H))
+(param &mark_color Color (8))
+(param &count_table (Position Color number)
+  ((0 2 0 2) 8 1)
+  ((0 2 1 1) 0 1)
+  ((0 2 2 0) 0 1)
+  ((1 1 0 2) 0 1)
+  ((1 1 1 1) 0 1)
+  ((1 1 2 0) 0 1)
+  ((2 0 0 2) 0 1)
+  ((2 0 1 1) 0 1)
+  ((2 0 2 0) 0 1)
+  ((0 2 0 2) 8 2)
+  ((0 2 1 1) 8 2)
+  ((0 2 2 0) 0 2)
+  ((1 1 0 2) 0 2)
+  ((1 1 1 1) 0 2)
+  ((1 1 2 0) 0 2)
+  ((2 0 0 2) 0 2)
+  ((2 0 1 1) 0 2)
+  ((2 0 2 0) 0 2)
+  ((0 2 0 2) 8 3)
+  ((0 2 1 1) 8 3)
+  ((0 2 2 0) 8 3)
+  ((1 1 0 2) 0 3)
+  ((1 1 1 1) 0 3)
+  ((1 1 2 0) 0 3)
+  ((2 0 0 2) 0 3)
+  ((2 0 1 1) 0 3)
+  ((2 0 2 0) 0 3)
+  ((0 2 0 2) 8 4)
+  ((0 2 1 1) 8 4)
+  ((0 2 2 0) 8 4)
+  ((1 1 0 2) 0 4)
+  ((1 1 1 1) 0 4)
+  ((1 1 2 0) 8 4)
+  ((2 0 0 2) 0 4)
+  ((2 0 1 1) 0 4)
+  ((2 0 2 0) 0 4))
+
+(alts $render
+  (alt $CountTable
+    (witness table-entry ordinary concept
+      (separates "A cup with two empty rows, with the count table holding for two a grid that no fill order lays: the concept gives two marks along the top row; the count table gives a mark at the top-left cell and one at the middle cell.")
+      (assign &count_table ((0 2 0 2) 8 1) ((0 2 1 1) 0 1) ((0 2 2 0) 0 1) ((1 1 0 2) 0 1) ((1 1 1 1) 0 1) ((1 1 2 0) 0 1) ((2 0 0 2) 0 1) ((2 0 1 1) 0 1) ((2 0 2 0) 0 1) ((0 2 0 2) 8 2) ((0 2 1 1) 0 2) ((0 2 2 0) 0 2) ((1 1 0 2) 0 2) ((1 1 1 1) 8 2) ((1 1 2 0) 0 2) ((2 0 0 2) 0 2) ((2 0 1 1) 0 2) ((2 0 2 0) 0 2) ((0 2 0 2) 8 3) ((0 2 1 1) 8 3) ((0 2 2 0) 8 3) ((1 1 0 2) 0 3) ((1 1 1 1) 0 3) ((1 1 2 0) 0 3) ((2 0 0 2) 0 3) ((2 0 1 1) 0 3) ((2 0 2 0) 0 3) ((0 2 0 2) 8 4) ((0 2 1 1) 8 4) ((0 2 2 0) 8 4) ((1 1 0 2) 0 4) ((1 1 1 1) 0 4) ((1 1 2 0) 8 4) ((2 0 0 2) 0 4) ((2 0 1 1) 0 4) ((2 0 2 0) 0 4))
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 5 5 5 5 5 0)))
+      (output $Laid (grid
+        (8 8 0)
+        (0 0 0)
+        (0 0 0)))
+      (output $CountTable (grid
+        (8 0 0)
+        (0 8 0)
+        (0 0 0))))))
+
+(alts $order
+  (alt $SnakeOrder
+    (witness count-past-four ordinary $SnakeOrder
+      (separates "A cup with five empty rows above the liquid. The stored fill order ranks four cells, so the concept is undefined there; the derived snake order lays the fifth mark at the middle cell; the derived clockwise spiral lays it at the bottom-right cell; the count table has no entry for five.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 8 8 8 5 0 0)
+        (0 0 5 8 8 8 5 0 0)
+        (0 0 5 5 5 5 5 0 0)))
+      (output $FillOrder undefined)
+      (output $SnakeOrder (grid
+        (8 8 8)
+        (0 8 8)
+        (0 0 0)))
+      (output $SpiralOrder (grid
+        (8 8 8)
+        (0 0 8)
+        (0 0 8)))
+      (output $CountTable undefined)))
+  (alt $SpiralOrder
+    (witness count-past-four ordinary $SnakeOrder)))
+
+(alts $mark
+  (alt $MarkColor
+    (witness mark-color ordinary concept
+      (separates "A cup with three empty rows, with the mark color reassigned to a color other than the liquid color: the concept lays the marks in the liquid color; the stored mark color lays them in that other color.")
+      (assign &mark_color (2))
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 5 5 5 5 5 0)))
+      (output $LiquidMark &mark_color=$Derived $CountTable (grid
+        (8 8 8)
+        (0 0 0)
+        (0 0 0)))
+      (output ($MarkColor &mark_color=$Stored) (grid
+        (2 2 2)
+        (0 0 0)
+        (0 0 0))))))
+
+(alts $rim
+  (alt $LowerRim
+    (witness uneven-rim foreign concept
+      (relaxed cup)
+      (separates "A cup whose left wall rises two rows above its right wall: the concept counts the empty rows from the top of the taller wall and gives four marks; the lower-rim reading counts from the top of the shorter wall and gives two.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 0 0 0 5 0 0)
+        (0 0 5 8 8 8 5 0 0)
+        (0 0 5 8 8 8 5 0 0)
+        (0 0 5 5 5 5 5 0 0)))
+      (output $TopRim (grid
+        (8 8 8)
+        (0 0 8)
+        (0 0 0)))
+      (output $LowerRim (grid
+        (8 8 0)
+        (0 0 0)
+        (0 0 0))))))
+
+(alts $liquid
+  (alt $LiquidAnyColor
+    (witness liquid-color variant $LiquidAnyColor
+      (relaxed liquid)
+      (separates "A cup whose liquid has a color other than the stored liquid color: the concept and every reading that finds the liquid by the stored color find no liquid and are undefined; the reading that takes the liquid as the color above the floor, and the rarest-color derivation, lay two marks in the liquid color.")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 2 2 2 2 5 0)
+        (0 5 2 2 2 2 5 0)
+        (0 5 5 5 5 5 5 0)))
+      (output ($StoredLiquid &fluid_color=$Stored) undefined)
+      (output &fluid_color=$Derived ($LiquidMark $LiquidAnyColor) (grid
+        (2 2 0)
+        (0 0 0)
+        (0 0 0)))
+      (output ($MarkColor $LiquidAnyColor) ($CountTable $LiquidAnyColor) (grid
+        (8 8 0)
+        (0 0 0)
+        (0 0 0))))
+    (witness liquid-debris borderline concept
+      (relaxed liquid)
+      (separates "A cup whose liquid holds one cell of another color directly above the floor: the stored liquid color finds the liquid's top and gives three marks; the reading of the liquid's color from the cells above the floor finds two colors there and is undefined; the rarest color is the stray color, so the derived liquid color counts from the stray cell and gives four marks, and the derived mark color lays the three marks in the stray color.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 5 0 0 0 5 0)
+        (0 5 0 0 0 5 0)
+        (0 5 0 0 0 5 0)
+        (0 5 8 8 8 5 0)
+        (0 5 8 2 8 5 0)
+        (0 5 5 5 5 5 0)))
+      (output ($StoredLiquid &fluid_color=$Stored &mark_color=$Stored) (grid
+        (8 8 8)
+        (0 0 0)
+        (0 0 0)))
+      (output &fluid_color=$Derived (grid
+        (2 2 2)
+        (0 0 2)
+        (0 0 0)))
+      (output $LiquidAnyColor undefined)
+      (output &mark_color=$Derived (grid
+        (2 2 2)
+        (0 0 0)
+        (0 0 0))))))
+
+(alts &fluid_color
+  (alt &fluid_color=$Derived
+    (witness fluid_color=RarestColor ordinary concept
+      (separates "A wide cup holding more liquid cells than wall cells: the concept gives one mark; the rarest color is the wall color, so the derived liquid color reads the liquid top at the wall top and gives no mark.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0 5 0 0)
+        (0 0 5 8 8 8 8 8 8 5 0 0)
+        (0 0 5 8 8 8 8 8 8 5 0 0)
+        (0 0 5 8 8 8 8 8 8 5 0 0)
+        (0 0 5 5 5 5 5 5 5 5 0 0)))
+      (output (&fluid_color=$Stored &mark_color=$Stored) (grid
+        (8 0 0)
+        (0 0 0)
+        (0 0 0)))
+      (output &fluid_color=$Derived (grid
+        (0 0 0)
+        (0 0 0)
+        (0 0 0)))
+      (output &mark_color=$Derived (grid
+        (5 0 0)
+        (0 0 0)
+        (0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor ordinary concept
+      (separates "A cup whose liquid outnumbers the background: the concept gives one mark on a background grid; the commonest color is the liquid color, so the derived background fills the whole output with it; the rarest color is the wall color, so the derived liquid color gives no mark.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 0 0 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 8 8 8 8 8 8 5 0)
+        (0 5 5 5 5 5 5 5 5 0)))
+      (output (&fluid_color=$Stored &background=$Stored &mark_color=$Stored) (grid
+        (8 0 0)
+        (0 0 0)
+        (0 0 0)))
+      (output &background=$Derived (grid
+        (8 8 8)
+        (8 8 8)
+        (8 8 8)))
+      (output &fluid_color=$Derived (grid
+        (0 0 0)
+        (0 0 0)
+        (0 0 0)))
+      (output &mark_color=$Derived (grid
+        (5 0 0)
+        (0 0 0)
+        (0 0 0))))))
+
+(alts &mark_color
+  (alt &mark_color=$Derived
+    (witness mark_color=RarestColor ordinary concept
+      (separates "`mark_color=RarestColor` from the stored value: the input of `mark-color` at its assignment")
+      (assign &mark_color (2))
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 5 5 5 5 5 0)))
+      (output $LiquidMark &mark_color=$Derived $CountTable (grid
+        (8 8 8)
+        (0 0 0)
+        (0 0 0)))
+      (output ($MarkColor &mark_color=$Stored) (grid
+        (2 2 2)
+        (0 0 0)
+        (0 0 0))))))

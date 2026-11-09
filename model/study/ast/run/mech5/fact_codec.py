@@ -66,7 +66,7 @@ def expand_case(value,ev,record,context):
         raise ValueError('case metadata does not match observed program/kept identities')
     program=ev.arclog.StudyProgram.from_sexp(text,ev.settings).decode_source()
     naming=json.dumps(names) if names is not None else program.relation_source_names_json(
-        str(MAIN_ROOT/'work/arclog/gen'),record['task'],case)
+        str(MAIN_ROOT/'programs/arclog'),record['task'],case)
     result=deepcopy(value);result['schema']='judge-case-bundle-v1'
     result['export']=json.loads(ev.arclog.study_program_export_json(program,naming))
     result['kept_assignments']=kept

@@ -1,0 +1,267 @@
+;; inputs 2dd37ccd533577ffa35a2fe81509412bbb91ca416d8b6d54692f66c6a8d8db7f programs/solvers/aab50785.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aab50785
+
+(INPUT marker-blocks "every input holds an even number of blocks of &marker_color, and no other cell has that color; a block is a placement of &block_shape whose cells all have the marker color"
+
+  (DET &marker_color VanishedColor)
+
+  (DET &bg DominantColor)
+
+  (INIT &pieces Connectivity
+    (key ((ex_input ^E *P (:Col *K))
+          (&marker_color (:C K)))
+      (node (P)
+        (ex_input E *P (:Col *K))
+        (&marker_color (:C K)))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&pieces.component (:key ^E) *P ^Id))
+      (cell (P)
+        (&pieces.component (:key E) *P Id))))
+
+  (DET &block_shape
+    (&pieces.component (:key *E) (:P *P2) *Id)
+    (&piece_box.box (:key E Id) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &window_blocks Occurrences
+    (key ((OR ((input *P (:Col ^K)))
+              ((input (:Col K))
+               (&block_shape (:P *S)))))
+      (cell (P)
+        (input *P (:Col K)))
+      (shape ((:P S))
+        (input (:Col K))
+        (&block_shape (:P *S)))))
+
+  (RULE &found
+    (&window_blocks.occurrence (:key *K) (:P *B)))
+
+  (INIT &pieces4 Connectivity
+    (key ((input *P (:Col ^K)))
+      (node (P)
+        (input *P (:Col K)))))
+
+  (RULE &piece
+    (&pieces4.component (:key *K) *P (:Id *Pc)))
+
+  (INIT &piece_box2 BoundingBox
+    (key ((&piece (:Pc ^Id) *P))
+      (cell (P)
+        (&piece (:Pc Id) *P))))
+
+  (INIT &pieces8 Connectivity
+    (key ((input *P (:Col ^K)))
+      (node (P)
+        (input *P (:Col K))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &piece_shape Inclusion
+    (pattern ((:m S))
+      (&block_shape (:P *S)))
+    (observed ((:observed Pc) (:m P_rel))
+      (&piece *Pc *P)
+      (&piece_box2.box (:key (:Id Pc)) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_rel))))
+
+  (RULE &candidate
+    (&found *K *B)
+    (NOT (&bg (:C K))))
+
+  (INIT &derived_marker Singleton
+    (member ((:v K))
+      (&candidate *K))))
+
+(INPUT noise-field "the other cells are a field of 0 with scattered cells of the other colors, and those colors form no block")
+
+(INPUT block-pairs "the blocks pair off; the two blocks of a pair cover the same lines across &pair_axis, their band, with at least one cell between them"
+
+  ;; The axis the two blocks of a pair lie along.
+  (DET &pair_axis AxisDomain))
+
+(INPUT equal-gaps "in one input, every pair has the same number of cells between its two blocks")
+
+(INPUT disjoint-rows "the bands of different pairs do not overlap")
+
+(OUTPUT window "each pair gives a window: the cells of its band strictly between its two blocks")
+
+(OUTPUT copy-window "the window's cells are copied unchanged, 0 included")
+
+(OUTPUT stack "the windows, of one width by equal-gaps, stack across &pair_axis, in the order of their bands, and form the output"
+
+  (RULE &block
+    (&marker_color (:C *K))
+    (&found K *B))
+
+  (RULE &beyond
+    (&block (:B *B1))
+    (&block (:B *B2))
+    (&pair_axis *A)
+    (same_line A (:P B1) (:Q B2))
+    (axis_of *D A)
+    (margin (:B B1) D (:K *K1))
+    (margin (:B B2) D (:K *K2))
+    (< K1 K2))
+
+  (RULE &crossed
+    (&beyond *B1 (:B2 *B) *D)
+    (&beyond (:B1 B) *B2 D))
+
+  (RULE &gap
+    (&beyond *B1 *B2 *D)
+    (input *P)
+    (&pair_axis *A)
+    (split (:P B1) A (:Across *Band))
+    (split P A (:Across *Line))
+    (inside (:A Line) (:B Band))
+    (opposite D (:Opp *O))
+    (nearer (:D O) P (:Q B1))
+    (nearer D P (:Q B2)))
+
+  (RULE &span
+    (&beyond *B1 *B2 *D)
+    (NOT (&crossed B1 B2 D)))
+
+  (INIT &window BoundingBox
+    (key ((&span ^B1 ^B2 *D)
+          (&gap B1 B2 D *P))
+      (cell (P)
+        (&span B1 B2 *D)
+        (&gap B1 B2 D *P))))
+
+  (RULE &window_cell
+    (&window.box (:B *W))
+    (input *P *Col)
+    (inside (:A P) (:B W))
+    (relative (:Base W) (:X P) (:X_rel *P_inner))
+    (&pair_axis *A)
+    (split (:P P_inner) A (:Along *P_col))
+    (split P A (:Across *Line)))
+
+  (RULE &stack_dir
+    (&pair_axis (:A *A0))
+    (perp (:A A0) (:A2 *A))
+    (axis_of *D A))
+
+  (RULE &band_stack_elem
+    (&stack_dir *D)
+    (&window_cell *W *Line))
+
+  ;; One window per band: the windows stack in the order of their bands, each
+  ;; window's lines in their own order.
+  (INIT &band_stack Order
+    (key ((OR ((&band_stack_elem ^D (:W *T_w) (:Line *T_line)))
+              ((&band_stack_elem D *W *Line)
+               (margin (:B W) D *K))
+              ((&band_stack_elem D (:W *W2) (:Line *Line2))
+               (margin (:B Line2) D (:K *K3)))))
+      (member ((:t (:W T_w) (:Line T_line)))
+        (&band_stack_elem D (:W *T_w) (:Line *T_line)))
+      (score ((:t W Line) (:S K))
+        (&band_stack_elem D *W *Line)
+        (margin (:B W) D *K))
+      (secondary_score ((:t W Line) (:S K))
+        (&band_stack_elem D *W *Line)
+        (margin (:B Line) D *K)))))
+
+(ALTS $reading "how a block is found" $WindowBlocks
+  (ALT $ComponentBlocks
+    (INPUT marker-blocks "a block is an edge-connected piece of the marker color whose cells, read in its bounding box, are &block_shape"
+      (RULE &found
+        (&piece_shape.equal (:observed *Id))
+        (&piece (:Pc Id) *K)
+        (&piece_box2.box (:key Id) *B)))
+    (ALTS $shape "the shape of a block under ComponentBlocks" $StoredShape
+      (ALT $DerivedShape
+        (INPUT marker-blocks "a block is any piece of the marker color that fills its bounding box"
+          (RULE &holed
+            (&piece *Pc *K)
+            (&piece_box2.box (:key (:Id Pc)) *B)
+            (input *P)
+            (inside (:A P) B)
+            (NOT (&piece Pc K P)))
+          (RULE &found
+            (&piece (:Pc *Id) *K)
+            (&piece_box2.box (:key Id) *B)
+            (NOT (&holed (:Pc Id))))
+          ;; A block one line thick: some cell lies on two opposite edges of it.
+          (RULE &thin
+            (&found *B)
+            (input *P)
+            (inside (:A P) B)
+            (same_dist *D (:P1 P) (:P2 B))
+            (opposite D (:Opp *O))
+            (same_dist (:D O) (:P1 P) (:P2 B)))
+          (RULE &candidate
+            (&found *K *B)
+            (NOT (&bg (:C K)))
+            (NOT (&thin B))))))
+    (ALTS $conn "which cells join into one piece under ComponentBlocks" $Conn4
+      (ALT $Conn8
+        (INPUT marker-blocks "diagonal neighbors also join into one piece"
+          (RULE &piece
+            (&pieces8.component (:key *K) *P (:Id *Pc))))))))
+
+(ALTS $marker "where the marker color comes from" $StoredMarker
+  (ALT $DeriveMarker
+    (INPUT marker-blocks "the marker color is the one color other than &bg that has a block; under DerivedShape only a block that spans two lines on each axis counts, as a marker and as a block; undefined when no color or several colors have one"
+      (RULE &block
+        (&derived_marker.value (:v *K))
+        (&candidate K *B)))))
+
+(ALTS $lone "what a band with one block gives" $LoneUndefined
+  (ALT $LoneSkip
+    (OUTPUT lone-skip "a band with one block gives no window")
+    (RULE &defect
+      ;; A span with no cell between its blocks.
+      (OR ((&span *B1 *B2)
+           (NOT (&window.box (:key B1 B2))))
+          ((&crossed))))
+    (ALT $OuterSpan
+      ;; A span with no cell between its blocks.
+      (RULE &defect
+        (&span *B1 *B2)
+        (NOT (&window.box (:key B1 B2)))))))
+
+(ALTS $crowd "what a band with more than two blocks gives" $TwoPerBand
+  (ALT $OuterSpan
+    (OUTPUT window "a band with more than two blocks gives one window, from its first block to its last, and the blocks between are copied"
+      ;; The first and the last block of a band.
+      (RULE &span
+        (&beyond *B1 *B2 *D)
+        (NOT (&beyond (:B2 B1) D))
+        (NOT (&beyond (:B1 B2) D))))
+    (RULE &defect
+      ;; A span with no cell between its blocks.
+      (OR ((&span *B1 *B2)
+           (NOT (&window.box (:key B1 B2))))
+          ((&block *B)
+           (NOT (&beyond (:B1 B))))))))
+
+(RULE &defect
+  ;; A span with no cell between its blocks.
+  (OR ((&span *B1 *B2)
+       (NOT (&window.box (:key B1 B2))))
+      ((&block *B)
+       (NOT (&beyond (:B1 B))))
+      ((&crossed))))
+
+(RULE &slot
+  (&band_stack.rank (:key *D) (:t *W *Line) (:R *K1))
+  (&band_stack.dual_rank (:key D) (:t W Line) (:R *K2))
+  (axis_inset D K1 K2 (:B *P_row)))
+
+(RULE &output
+  (&window_cell *W *P_col *Line *Col)
+  (&slot W Line *P_row)
+  (compose (:A P_row) (:B P_col) (:C *P))
+  (NOT (&defect)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,79 @@
+;; inputs 517bd2ac392f2127703a8bf787e66f27a1f3ed2f1ffe71f90c9412c222c9f822 programs/solvers/8dab14c2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8dab14c2
+
+(DET &bg DominantColor)
+
+(DET &shape RarestColor)
+
+(RULE &shape_cell
+  (input *P *Col)
+  (&shape (:C Col)))
+
+;; The shape's edge cells, with the direction they face.
+(INIT &edge Boundary
+  (cell (P)
+    (&shape_cell *P)))
+
+(RULE &dent
+  (input *P *Col)
+  (&bg (:C Col))
+  (opposite (:D *Opening) (:Opp *D_in))
+  (neighbor P (:D Opening) (:Q *O))
+  (NOT (&shape_cell (:P O)))
+  (neighbor P (:D D_in) (:Q *B))
+  (&shape_cell (:P B))
+  (perp_dir (:D Opening) (:D2 *D1))
+  (opposite (:D D1) (:Opp *D2))
+  (neighbor P (:D D1) (:Q *F1))
+  (&edge.exposed (:P F1) (:D Opening))
+  (neighbor P (:D D2) (:Q *F2))
+  (&edge.exposed (:P F2) (:D Opening)))
+
+(RULE &filled
+  (OR ((&shape_cell *P))
+      ((&dent P))))
+
+;; A bump touches the filled shape in one direction only: its root.
+(INIT &attach Singleton
+  (key ((&shape_cell ^P))
+    (member ((:v D))
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&filled (:P Q)))))
+
+;; An anomaly crosses the clean shape along its line, from where it enters
+;; the shape to the far edge.
+(INIT &cross Ray
+  (source (P)
+    (&filled *P)
+    (NOT (&attach.value (:key P))))
+  (node (P)
+    (&filled *P)
+    (NOT (&attach.value (:key P))))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &taken
+  (&attach.value (:key (:P *P2)) (:v *D))
+  (neighbor (:P P2) D (:Q *R))
+  (&cross.end *P D (:Origin R)))
+
+(RULE &added
+  (&dent (:P *P2) (:Opening *D_open))
+  (opposite (:D D_open) (:Opp *D))
+  (&cross.end (:P *Q) D (:Origin P2))
+  (neighbor (:P Q) D (:Q *P))
+  (input P))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&taken P)
+       (&bg (:C *Col)))
+      ((&added P)
+       (&shape (:C Col)))
+      ((NOT (&taken P))
+       (NOT (&added P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

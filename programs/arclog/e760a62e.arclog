@@ -1,0 +1,306 @@
+;; inputs 9ef157e02e822eb21f1272aae0f6354d05abc6674f0d46116f3ee3ba598923d1 programs/solvers/e760a62e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e760a62e
+
+(INPUT divider-tiling "full rows and full columns of divider_color cut the grid into rooms of one size, with a gap of one line between each two; the last row of rooms and the last column of rooms can be cut short by the bottom and right edges."
+
+  (DET &divider_color_stored UnchangedColor)
+
+  (DET_OR_RULE &divider_color SharedColor
+    (&divider_color_stored *C))
+
+  ;; The one color of each line that holds one color alone.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &rooms_divider
+    (&divider_color (:C *Col))
+    (&line_color.value (:key *A *L) (:v Col)))
+
+  (RULE &rooms_on_divider
+    (input *P)
+    (&rooms_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &rooms_rank Order
+    (key ((OR ((&rooms_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&rooms_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&rooms_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &rooms_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&rooms_on_divider P A))
+    (margin (:B P) D *K)
+    (&rooms_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &rooms_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&rooms_part_idx *P D (:N *N1))
+    (&rooms_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  ;; The lines each part spans.
+  (INIT &part_size Cardinality
+    (key ((&rooms_part_of ^A ^P_part))
+      (member ((:m L))
+        (&rooms_part_of *P A P_part)
+        (split P A (:Along *L)))
+      (domain ()
+        (&rooms_part_of A P_part)))))
+
+(INPUT background-rooms "every room cell that holds no dot is background."
+
+  (RULE &rooms_tile_of
+    (&rooms_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&rooms_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &bg_mode_count Cardinality
+    (key ((&rooms_tile_of *P)
+          (input P ^Col))
+      (member ((:m P))
+        (&rooms_tile_of *P)
+        (input P Col))))
+
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  ;; The commonest color, absent on a tie.
+  (INIT &bg_pick Singleton
+    (member ((:v Col))
+      (&bg_mode.maximal (:t *Col)))))
+
+(INPUT one-dot-per-room "a marked room holds exactly one dot cell, and the rest of that room is background.")
+
+(INPUT dot-offset "every dot sits at one place within its room, the same place for every dot of the input.")
+
+(INPUT two-dot-colors "each dot has one of the two colors of cross_color's key.")
+
+(OUTPUT join-aligned-dots "for each two dots of one color in one row of rooms, or in one column of rooms, every room from the room of one dot to the room of the other, both included, fills whole with that color.")
+
+(OUTPUT cross-mix "a room that bars of both dot colors fill takes cross_color.")
+
+(OUTPUT keep-rest "the dividers and every room that no bar fills stay as in the input."
+
+  (DET &background SharedColor)
+
+  (RULE &bg_color
+    (&background (:C *Col)))
+
+  (RULE &room_of
+    (&rooms_tile_of (:P *P_grid) *P_tile))
+
+  (RULE &ink
+    (&room_of *P_grid *P_tile)
+    (input (:P P_grid) *Col)
+    (&bg_color)
+    (NOT (&bg_color Col)))
+
+  (RULE &crowded
+    (&ink *P_tile (:P_grid *P1))
+    (&ink P_tile (:P_grid *P2))
+    (!= P1 P2))
+
+  (RULE &dot
+    (&ink *P_tile *P_grid *Col)
+    (NOT (&crowded P_tile)))
+
+  (RULE &past
+    (&room_of (:P_tile *P_tile1))
+    (&room_of (:P_tile *P_tile2))
+    (&room_of *P_tile)
+    (same_line *A (:P P_tile1) (:Q P_tile2))
+    (same_line A (:P P_tile1) (:Q P_tile))
+    (nearer *D (:P P_tile) (:Q P_tile1))
+    (nearer D (:P P_tile) (:Q P_tile2)))
+
+  (RULE &span
+    (&room_of (:P_tile *P_tile1))
+    (&room_of (:P_tile *P_tile2))
+    (&room_of *P_tile)
+    (same_line *A (:P P_tile1) (:Q P_tile2))
+    (same_line A (:P P_tile1) (:Q P_tile))
+    (NOT (&past P_tile P_tile1 P_tile2 A)))
+
+  (RULE &line_family
+    (axis_elem *A))
+
+  (RULE &aligned
+    (&dot (:P_tile *P_tile1) *Col)
+    (&dot (:P_tile *P_tile2) Col)
+    (!= P_tile1 P_tile2)
+    (&line_family *A)
+    (same_line A (:P P_tile1) (:Q P_tile2)))
+
+  (RULE &joined
+    (&aligned *P_tile1 *P_tile2 *A *Col))
+
+  ;; The bar colors that fill each room, and the one color where there is one.
+  (INIT &fills Singleton
+    (key ((&joined *P_tile1 *P_tile2 *A *Col)
+          (&span ^P_tile P_tile1 P_tile2 A))
+      (member ((:v Col))
+        (&joined *P_tile1 *P_tile2 *A *Col)
+        (&span P_tile P_tile1 P_tile2 A))))
+
+  (DET &painted_color
+    (ex_output *E *P (:Col *C))
+    (ex_input E P (:Col *C0))
+    (!= C0 C))
+
+  ;; The crossing color: painted, and in no input.
+  (INIT &ids Quotient
+    (equivalent ((:a C) (:b C))
+      (&painted_color *C)
+      (NOT (ex_input (:Col C)))))
+
+  (DET &cross_color_key
+    (&ids.class *Id)
+    (&painted_color (:C *Col))
+    (ex_input Col))
+
+  (INIT &cross Inclusion
+    (pattern ((:pattern Id) (:m Col))
+      (&cross_color_key *Id *Col))
+    (observed ((:observed P_tile) (:m Col))
+      (&fills.member (:key *P_tile) (:v *Col))))
+
+  (DET &cross_color
+    (&ids.class (:a *Col) *Id))
+
+  (RULE &room_color
+    (OR ((&fills.value (:key *P_tile) (:v *Col)))
+        ((&cross.equal (:observed P_tile) (:pattern *Id))
+         (&cross_color Id Col)))))
+
+(ALTS $al "which two dots count as aligned" $RoomAligned
+  (ALT $CellAligned
+    (OUTPUT join-aligned-dots "two dots join only where they also share a grid row or a grid column of cells; the bar fills every room on its run."
+      (RULE &aligned
+        (&dot (:P_tile *P_tile1) (:P_grid *P1) *Col)
+        (&dot (:P_tile *P_tile2) (:P_grid *P2) Col)
+        (!= P_tile1 P_tile2)
+        (&line_family *A)
+        (same_line A (:P P_tile1) (:Q P_tile2))
+        (same_line A (:P P1) (:Q P2))))))
+
+(ALTS $ln "the line families along which dots join" $RowsCols
+  (ALT $DiagonalJoin
+    (OUTPUT join-aligned-dots "two dots of one color on one diagonal of rooms join too, and their bar fills the rooms on that diagonal."
+      (RULE &line_family
+        (axis4_elem *A)))))
+
+(ALTS $pr "which two same-colored dots on one room line join" $EveryPair
+  (ALT $ExactlyTwo
+    (OUTPUT join-aligned-dots "the dots of one color on a room line join only when that line holds exactly two of them."
+      (RULE &third
+        (&aligned *P_tile1 *P_tile2 *A *Col)
+        (&aligned P_tile1 (:P_tile2 *P_tile3) A Col)
+        (!= P_tile3 P_tile2))
+
+      (RULE &joined
+        (&aligned *P_tile1 *P_tile2 *A *Col)
+        (NOT (&third P_tile1 P_tile2 A Col)))))
+  (ALT $NoPassThroughDot
+    (OUTPUT join-aligned-dots "two dots join only when no room strictly between them holds a dot of any color."
+      (RULE &passed
+        (&span *P_tile *P_tile1 *P_tile2 *A)
+        (!= P_tile P_tile1)
+        (!= P_tile P_tile2)
+        (&dot P_tile))
+
+      (RULE &joined
+        (&aligned *P_tile1 *P_tile2 *A *Col)
+        (NOT (&passed P_tile1 P_tile2 A))))))
+
+(ALTS $dt "what the dot cell of a room becomes where a bar fills the room" $DotCellFills
+  (ALT $DotCellKeeps
+    (OUTPUT join-aligned-dots "a dot cell keeps its own color, and the rest of its room takes the fill.")
+    (RULE &painted
+      (&room_color *P_tile (:Col *Col_fill))
+      (&room_of *P_grid P_tile)
+      (OR ((&dot P_tile P_grid *Col))
+          ((NOT (&dot P_tile P_grid))
+           (= Col Col_fill))))))
+
+(ALTS $cr "what color a room takes where bars of two colors cross" $KeyedCross
+  (ALT $OneCrossColor
+    (OUTPUT cross-mix "one stored color, one_cross_color, fills every room that bars of two or more colors fill, whatever the colors are."
+      (DET &one_cross_color AnyOutNewColor)
+
+      (RULE &room_color
+        (OR ((&fills.plural (:key *P_tile))
+             (&one_cross_color (:C *Col)))
+            ((&fills.value (:key P_tile) (:v Col))))))))
+
+(ALTS $bg "where the background comes from" $StoredBackground
+  (ALT $DerivedBackground
+    (INPUT background-rooms "the background is the commonest color among the cells off the divider lines; undefined on a tie."
+      (RULE &bg_color
+        (&bg_pick.value (:v *Col))))))
+
+(ALTS $ct "whether the cut-short strips at the bottom and right edges are rooms" $CutRoomsJoin
+  (ALT $CutRoomsInert
+    (INPUT divider-tiling "a room narrower than the other rooms of its axis is no room: a dot there joins nothing and stays, and no bar fills it."
+      (RULE &cut_part
+        (&part_size.size (:key *A *P_part) (:N *N1))
+        (&part_size.size (:key A) (:N *N2))
+        (< N1 N2))
+
+      (RULE &cut_tile
+        (&rooms_tile_of *P *P_tile)
+        (&rooms_part_of P *A *P_part)
+        (&cut_part A P_part))
+
+      (RULE &room_of
+        (&rooms_tile_of (:P *P_grid) *P_tile)
+        (NOT (&cut_tile P_tile))))))
+
+(RULE &crowded_cell
+  (&crowded *P_tile)
+  (&room_of *P_grid P_tile))
+
+(RULE &painted
+  (&room_color *P_tile *Col)
+  (&room_of *P_grid P_tile))
+
+(RULE &filled
+  (&fills.member (:key *P_tile))
+  (&room_of *P_grid P_tile))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (&bg_color)
+  (NOT (&crowded_cell (:P_grid P)))
+  (OR ((&painted (:P_grid P) *Col))
+      ((NOT (&filled (:P_grid P)))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

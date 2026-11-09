@@ -1,0 +1,72 @@
+;; inputs 3366f9d142af613ae59b7258ad89ca83661ca87e124a6d252a648e5ef5dfbf2f programs/solvers/465b7d93.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 465b7d93
+
+(DET &bg DominantColor)
+
+(DET &frame UnchangedColor)
+
+(RULE &frame_cell
+  (input *P *Col)
+  (&frame (:C Col)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&frame_cell *P)))
+
+;; The field the frame encloses. The frame's ring is closed, so the field's rim
+;; toward d is the interior line against the frame's d side.
+(INIT &field Boundary
+  (cell (P)
+    (&bbox.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&frame_cell P))))
+
+(RULE &corner
+  (&mark *P)
+  (diag_opposite *D *Opp)
+  (diag_dirs (:D Opp) *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (&mark (:P Q1))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&mark (:P Q2)))
+
+(RULE &paint
+  (&corner (:D *Diag))
+  (corner_dir (:C Diag) *D)
+  (&field.exposed *P D))
+
+(ALTS $choice "which sides get the rim" $Corner
+  (ALT $Stretch
+    (INIT &shape_box BoundingBox
+      (cell (P)
+        (&mark *P)))
+
+    (RULE &edge_hole
+      (&shape_box.box *B)
+      (input *P)
+      (inside (:A P) B)
+      (same_dist *D (:P1 P) (:P2 B))
+      (NOT (&mark P)))
+
+    (RULE &paint
+      (&field.exposed *P *D)
+      (NOT (&edge_hole D)))))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&mark *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&paint P))
+       (OR ((&mark P)
+            (&bg (:C Col)))
+           ((NOT (&mark P))
+            (= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

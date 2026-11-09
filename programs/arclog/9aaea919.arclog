@@ -1,0 +1,156 @@
+;; inputs cef50823de1fe9fc404d7dc8ca15141b5ef6a2e273e173d649498688c86108e9 programs/solvers/9aaea919.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9aaea919
+
+(INPUT field "the commonest color is the background")
+
+(INPUT stacks "same-shaped diamonds pile in stacks that stand on the base edge, one blank row between stacked diamonds")
+
+(INPUT bars "a bar lies on the base edge under a stack, spanning its width")
+
+(OUTPUT spend "the diamonds of a stack under a spend bar turn the spent color")
+
+(OUTPUT transfer "a stack under a gain bar grows by one diamond per spent diamond, each new diamond stacked on the one below it with the same blank gap, in the stack's own color"
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The edge the bars lie on; stacks grow away from it.
+  (DET &base DirDomain)
+
+  ;; Blank rows between stacked diamonds.
+  (DET &gap DivisorRatio)
+
+  ;; The bar color that spends the stack above it.
+  (DET &spend SharedColor)
+
+  ;; The bar color that gains the spent diamonds.
+  (DET &gain VanishedColor)
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (RULE &grow
+    (&base (:D *B))
+    (opposite (:D B) (:Opp *D)))
+
+  (RULE &stack_axis
+    (&base (:D *B))
+    (axis_of (:D B) *A))
+
+  (INIT &shapes Connectivity
+    (key ((input *P ^Col)
+          (NOT (&palette.maximal (:t Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&palette.maximal (:t Col))))))
+
+  (INIT &bbox BoundingBox
+    (key ((&shapes.component ^Id *P))
+      (cell (P)
+        (&shapes.component Id *P))))
+
+  (RULE &bar
+    (&shapes.component *Id *P)
+    (&base (:D *B))
+    (margin (:B P) (:D B) (:K 0)))
+
+  (RULE &diamond
+    (&shapes.component *Id)
+    (NOT (&bar Id)))
+
+  (RULE &span
+    (&bbox.box (:key *Id) *B)
+    (&stack_axis *A)
+    (split (:P B) A (:Across *S)))
+
+  (RULE &under
+    (&diamond *Id)
+    (&bar (:Id *M))
+    (&span Id *S)
+    (&span (:Id M) S))
+
+  (RULE &spent
+    (&under *Id *M)
+    (&shapes.component (:Id M) (:key *Col))
+    (&spend (:C Col)))
+
+  (RULE &gaining
+    (&under *Id *M)
+    (&shapes.component (:Id M) (:key *Col))
+    (&gain (:C Col)))
+
+  ;; The diamonds of a gaining stack, nearest the grow edge first.
+  (INIT &stack_order Order
+    (key ((&gaining *Id ^M))
+      (member ((:t Id))
+        (&gaining *Id M))
+      (score ((:t Id) (:S K))
+        (&gaining *Id M)
+        (&bbox.box (:key Id) *B)
+        (&grow *D)
+        (margin B D *K))))
+
+  (RULE &height
+    (&stack_order.minimal (:t *T))
+    (&bbox.box (:key (:Id T)) *B)
+    (&shapes.component (:Id T) *P)
+    (&stack_axis *A)
+    (box_extent B P A *N))
+
+  (RULE &lift
+    (&height *T *N)
+    (&grow *D)
+    (input *P)
+    (jump P D (:K N) (:Q *Q1))
+    (&gap (:K *G))
+    (jump (:P Q1) D (:K G) *Q))
+
+  (INIT &spent_count Cardinality
+    (member ((:m Id))
+      (&spent *Id)))
+
+  ;; The top diamond lifted once per spent diamond.
+  (INIT &grown Walk
+    (key ((OR ((&lift ^T *P *Q))
+              ((&stack_order.minimal (:t T))
+               (&spent_count.size *N))))
+      (successor ((:p P) (:p_next Q))
+        (&lift T *P *Q))
+      (steps (N)
+        (&stack_order.minimal (:t T))
+        (&spent_count.size *N)))))
+
+(OUTPUT erase "the bars are erased")
+
+;; The color a spent diamond takes.
+(DET &spent_color AnyOutNewColor)
+
+(RULE &added
+  (&stack_order.minimal (:t *T))
+  (&shapes.component (:Id T) (:P *P2))
+  (&grown.walk (:key T) (:p0 P2) (:N *K) (:p *P))
+  (!= K 0))
+
+(RULE &render
+  (OR ((&added *T *P)
+       (&shapes.component (:Id T) (:key *Col)))
+      ((&shapes.component *Id P)
+       (&diamond Id)
+       (IF ((&spent Id))
+           ((&spent_color (:C Col)))
+           ((input P Col))))))
+
+(RULE &output
+  (OR ((input *P)
+       (&render P *Col))
+      ((input P)
+       (NOT (&render P))
+       (&palette.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

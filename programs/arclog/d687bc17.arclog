@@ -1,0 +1,180 @@
+;; inputs 032811d4828000c0ae9876afb10a06dad9ece0f41c29228a32a136729de7cb6d programs/solvers/d687bc17.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d687bc17
+
+(INPUT four-walls "the grid's border is four walls, one per edge, each a solid line of one color across that edge, with the four corner cells &background (0)"
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (DET &uneven
+    (&palette.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&palette.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&palette.maximal (:t *C))
+    (NOT (&uneven (:Col C)))))
+
+(INPUT distinct-wall-colors "the four walls have four different colors")
+
+(INPUT scattered-dots "the interior is &background with single-cell dots scattered in it, no two dots touching")
+
+(INPUT no-landing-clash "no two dots of one wall's color share a line perpendicular to that wall")
+
+(OUTPUT dot-to-wall "a dot whose color is a wall's color moves, along its row or column perpendicular to that wall, to the interior cell next to that wall; other dots do not block it"
+
+  (RULE &inner
+    (input *P)
+    (interior (:A P) (:B 0)))
+
+  (RULE &dot
+    (&inner *P)
+    (input P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &dot_id Quotient
+    (equivalent ((:a P) (:b P))
+      (&dot *P)))
+
+  (RULE &piece
+    (&dot *P *Col)
+    (&dot_id.class (:a P) (:Id *Pc)))
+
+  (RULE &corner
+    (input *P)
+    (inside (:A P) (:B 0))
+    (same_corner (:P1 P) (:P2 0)))
+
+  (RULE &wall
+    (input *P *Col)
+    (inside (:A P) (:B 0))
+    (same_dist *D (:P1 P) (:P2 0))
+    (NOT (&corner P)))
+
+  (RULE &aim
+    (&piece *Pc *Col)
+    (&wall *D Col))
+
+  ;; Each piece falls alone toward each wall it aims at, and stops against it.
+  (INIT &drop Distance
+    (key ((&aim ^Pc ^D))
+      (source_distance (K)
+        (OR ((&piece Pc *P)
+             (margin (:B P) D *K))
+            ((&piece Pc (:P *P3))
+             (input (:P *P2))
+             (NOT (&inner (:P P2)))
+             (gap D (:P P3) (:Q P2) K))))))
+
+  (INIT &object Connectivity
+    (key ((&dot *P ^Col))
+      (node (P)
+        (&dot *P Col))))
+
+  ;; Each piece's distance to each wall of its color: its least over its cells.
+  (INIT &nearest Order
+    (key ((&piece (:Pc ^B) *P *Col)
+          (&wall *D Col)
+          (margin (:B P) D *K))
+      (member ((:t (:V D) (:S K)))
+        (&piece (:Pc B) *P *Col)
+        (&wall *D Col)
+        (margin (:B P) D *K))
+      (score ((:t (:V D) (:S K)) (:S K))
+        (&piece (:Pc B) *P *Col)
+        (&wall *D Col)
+        (margin (:B P) D *K))))
+
+  ;; The pieces aiming at one wall fall toward it together.
+  (INIT &pile Distance
+    (key ((&aim ^D))
+      (weight ((:a B2) (:b B) (:W K))
+        (&aim (:Pc *B) D)
+        (&piece (:Pc B) *P)
+        (&aim (:Pc *B2) D)
+        (&piece (:Pc B2) (:P *P2))
+        (!= B B2)
+        (gap D P (:Q P2) *K))
+      (source_distance ((:n B) K)
+        (OR ((&aim (:Pc *B) D)
+             (&piece (:Pc B) *P)
+             (margin (:B P) D *K))
+            ((&aim (:Pc B) D)
+             (&piece (:Pc B) (:P *P3))
+             (input (:P *P2))
+             (NOT (&inner (:P P2)))
+             (gap D (:P P3) (:Q P2) K)))))))
+
+(OUTPUT unmatched-dot-erased "a dot whose color is no wall's color becomes &background")
+
+(OUTPUT walls-kept "the walls and the corner cells stay as they are")
+
+(ALTS $l "what happens when dots of one color meet on their way to the wall" $Merge
+  (ALT $Stack
+    (OUTPUT dot-to-wall "the dots of one wall's color fall together toward that wall, and a dot stops against one already landed in its line"
+
+      (RULE &pile_travel_full
+        (&pile.distance (:key (:D *V0)) (:n *V1) *K)
+        (&aim (:D V0))
+        (jump_offset (:D V0) K (:V *V2))))
+    (RULE &landed
+      (&pile_travel_full (:V1 *B) (:V2 *V))
+      (&piece (:Pc B) (:P *P2) *Col)
+      (compose (:A P2) (:B V) (:C *P)))))
+
+(ALTS $m "what moves as one unit" $Dots
+  (ALT $MoveObjects
+    (INPUT scattered-dots "the interior holds one-color objects of any shape")
+    (OUTPUT dot-to-wall "each one-color 4-connected object moves rigidly toward the wall of its color until it touches the wall"
+      (RULE &piece
+        (&object.component (:key *Col) *P (:Id *Pc))))))
+
+(ALTS $w "which walls of a dot's color it goes to" $EveryWall
+  (ALT $NearerWall
+    (INPUT distinct-wall-colors "dropped")
+    (OUTPUT dot-to-wall "a dot goes only to the nearer wall of its color; undefined where two walls of its color are at equal distance from it"
+      (RULE &aim
+        (&nearest.minimal (:key (:B *Pc)) (:t (:V *D))))
+
+      (RULE &tie
+        (&nearest.minimal (:key *B) (:t (:V *D1)))
+        (&nearest.minimal (:key B) (:t (:V *D2)))
+        (!= D1 D2)))
+    (RULE &live
+      (NOT (&tie)))))
+
+(RULE &drop_travel_full
+  (&drop.distance (:key *D (:Pc *B)) *K)
+  (&aim D (:Pc B))
+  (jump_offset D K (:V *V2)))
+
+(RULE &live)
+
+(RULE &landed
+  (&drop_travel_full *B (:V2 *V))
+  (&piece (:Pc B) (:P *P2) *Col)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&live)
+       (input *P *Col)
+       (NOT (&inner P)))
+      ((&live)
+       (&landed P Col))
+      ((&live)
+       (&inner P)
+       (NOT (&landed P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

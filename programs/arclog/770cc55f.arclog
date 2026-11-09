@@ -1,0 +1,64 @@
+;; inputs d318e383172cade8f5da9245c39888ede3600c4967e18a0a95e8514e02e0b688 programs/solvers/770cc55f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 770cc55f
+
+(DET &bg DominantColor)
+
+(DET &sep RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &axis AxisDomain)
+
+(RULE &bar
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&axis *A)
+  (axis_of *D A)
+  (margin (:B P) D (:K 0)))
+
+(INIT &bar_size Cardinality
+  (key ((&bar ^D *P))
+    (member ((:m P))
+      (&bar D *P))))
+
+(INIT &longer Order
+  (member ((:t (:V D) (:S N)))
+    (&bar_size.size (:key *D) *N))
+  (score ((:t (:V D) (:S N)) (:S N))
+    (&bar_size.size (:key *D) *N)))
+
+(RULE &flow_blocked
+  (input *P *Col)
+  (&sep (:C Col)))
+
+(INIT &flow Ray
+  (source (P)
+    (&longer.maximal (:t (:V *D)))
+    (&bar D *P)
+    (opposite D (:Opp *D2))
+    (&bar (:D D2) (:P *Q))
+    (&axis *A)
+    (same_line A P Q))
+  (node (P)
+    (input *P)
+    (NOT (&flow_blocked P)))
+  (dir ((:D O))
+    (&longer.maximal (:t (:V *D)))
+    (opposite D (:Opp *O))))
+
+(RULE &flow_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &filled
+  (&flow.ray *P)
+  (&flow_cell P))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

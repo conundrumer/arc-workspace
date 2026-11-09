@@ -1,0 +1,55 @@
+;; inputs 2909e1878c58110634bff12905421e0b4e6c7f760af5499393ca7650acc7c10f programs/solvers/46442a0e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 46442a0e
+
+(DET &tile_d4 TileD4)
+
+(INIT &output_tiling Tiling
+  (key ((OR ((&tile_d4 (:Pt *P_tile) (:T ^D)))
+            ((input (:P *P_in))
+             (&tile_d4 (:T D))
+             (apply D (:P P_in) (:P_out *P_intile)))))
+    (outer ((:P P_tile))
+      (&tile_d4 (:Pt *P_tile) (:T D)))
+    (inner ((:P P_intile))
+      (input (:P *P_in))
+      (&tile_d4 (:T D))
+      (apply D (:P P_in) (:P_out *P_intile)))))
+
+(ALTS $choice "data-equivalent on this task" $Lookup
+  (ALT $Rot
+    (DET &anchor DiagDirDomain)
+
+    (DET &arr_dim ScaleRatio)
+
+    (INIT &arr_pos_frame Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&arr_dim (:K *N))))
+
+    (RULE &anchor_tile
+      (&arr_pos_frame.cell *P)
+      (&anchor (:D *Diag))
+      (same_corner (:D Diag) (:P1 P) (:P2 0)))
+
+    (INIT &output_tiling2 Tiling
+      (key ((c4_elem (:D ^R)))
+        (outer ((:P T2))
+          (&anchor_tile (:P *T))
+          (apply (:D R) (:P T) (:P_out *T2)))
+        (inner ((:P P2))
+          (input *P)
+          (apply (:D R) P (:P_out *P2)))))
+
+    (RULE &output
+      (&output_tiling2.cell (:key *R) (:P_inner *P2) *P)
+      (input (:P *P3) *Col)
+      (apply (:D R) (:P P3) (:P_out P2)))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&tile_d4 (:Pt *P_tile) (:T *D))
+  (apply D (:P P_in) (:P_out *P_intile))
+  (&output_tiling.cell (:key D) (:P_outer P_tile) (:P_inner P_intile) *P))
+
+(OUT (&output ^P ^Col))

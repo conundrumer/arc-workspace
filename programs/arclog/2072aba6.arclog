@@ -1,0 +1,96 @@
+;; inputs d369d2d243896baad96215e0d728975ed8949951c53e3347478ade6c79e562fa programs/solvers/2072aba6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2072aba6
+
+(DET &scale ScaleRatio)
+
+(INIT &intile_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&scale (:K *N))))
+
+(INIT &cell_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&intile_frame.cell (:P *P_intile))))
+
+(DET &ink VanishedColor)
+
+(INIT &inked_tiling Tiling
+  (outer ((:P P_tile))
+    (ex_input *E (:P *P_tile) (:Col *Ink))
+    (&ink (:C Ink))
+    (ex_output E))
+  (inner ((:P P_intile))
+    (&intile_frame.cell (:P *P_intile))))
+
+(DET &bg ChangedColor)
+
+(RULE &inked2
+  (&cell_tiling.cell (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+  (input (:P P_tile) (:Col *Ink))
+  (&ink (:C Ink)))
+
+(DET &inked
+  (ex_input *E (:P *P_tile) (:Col *Ink))
+  (&ink (:C Ink))
+  (&inked_tiling.cell (:P_outer P_tile) (:P_inner *P_intile) (:P *P_grid))
+  (ex_output E (:P P_grid) *Col))
+
+(DET &template
+  (&inked (:P_intile *P) *Col))
+
+(ALTS $choice "Two models of the checker phase, tagged on out's Choice. They coincide at scale 2: every tile anchors at even parity." $Table
+  (ALT $Checker
+    ;; Even frame dims: both corners of seed_diag seed the same phase.
+    (DET &seed_diag DiagAxisDomain)
+
+    (RULE &corner
+      (&seed_diag (:Da *DA))
+      (diag_axis_of *D (:Da DA)))
+
+    ;; The cycle is as long as the colors the silhouette holds.
+    (INIT &phases Cardinality
+      (member ((:m Col))
+        (&inked *Col))
+      (domain ()))
+
+    (DET &phase_color
+      (&inked (:P_grid *P) *Col)
+      (&corner (:D *Diag))
+      (corner_dist P Diag (:K *T))
+      (&phases.size *N)
+      (divide T (:Side N) (:Gap 0) (:Remainder *K)))
+
+    ;; The length of the color cycle.
+    (INIT &phases2 Cardinality
+      (member ((:m K))
+        (&phase_color *K))
+      (domain ()))
+
+    (RULE &checker
+      (&cell_tiling.cell *P)
+      (&corner (:D *Diag))
+      (corner_dist P Diag (:K *T))
+      (&phases2.size *N)
+      (divide T (:Side N) (:Gap 0) (:Remainder *K))
+      (&phase_color K *Col))
+
+    (RULE &output
+      (OR ((&inked2 (:P_grid *P))
+           (&checker P *Col))
+          ;; Blank outside the silhouette — shared.
+          ((&cell_tiling.cell P)
+           (NOT (&inked2 (:P_grid P)))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  ;; Blank outside the silhouette — shared.
+  (OR ((&cell_tiling.cell *P)
+       (NOT (&inked2 (:P_grid P)))
+       (&bg (:C *Col)))
+      ((&inked2 (:P_grid P) *P_intile)
+       (&template (:P P_intile) Col))))
+
+(OUT (&output ^P ^Col))

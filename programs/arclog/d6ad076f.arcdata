@@ -1,0 +1,115 @@
+;; inputs 41c8fc0a7781dfff3b5ff85f432cd666b9313f449699394d7942e457cdfca63b programs/solvers/d6ad076f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d6ad076f
+
+(param &bg Color (0))
+(param &fill Color (8))
+(param &inset number (1))
+
+(alts $span
+  (alt $NarrowerFace
+    (witness staggered variant concept
+      (separates "The narrower block's span runs past the wider block's span. The concept bridges the overlap less one line at each end, cols 4-5; NarrowerFace bridges the narrower block's span less one line at each end, cols 4-7; NarrowerFaceClipped clips that to the overlap, cols 4-6.")
+      (input (grid
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)))
+      (output $Overlap (grid
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (0 0 0 0 8 8 0 0 0 0)
+        (0 0 0 0 8 8 0 0 0 0)
+        (0 0 0 0 8 8 0 0 0 0)
+        (0 0 0 0 8 8 0 0 0 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)))
+      (output $NarrowerFace (grid
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (0 0 0 0 8 8 8 8 0 0)
+        (0 0 0 0 8 8 8 8 0 0)
+        (0 0 0 0 8 8 8 8 0 0)
+        (0 0 0 0 8 8 8 8 0 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)))
+      (output $NarrowerFaceClipped (grid
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (2 2 2 2 2 2 2 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)
+        (0 0 0 7 7 7 7 7 7 0)))))
+  (alt $NarrowerFaceClipped
+    (witness staggered variant concept)))
+
+(alts $block_count
+  (alt $EveryFacingPair
+    (witness three-blocks variant $EveryFacingPair
+      (relaxed two-blocks)
+      (separates "Three blocks stand in a column, each facing the next across a gap. The concept, which reads exactly two blocks, is undefined; EveryFacingPair bridges each facing pair.")
+      (input (grid
+        (0 2 2 2 2 2 2 0 0 0)
+        (0 2 2 2 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (4 4 4 4 4 4 4 4 0 0)
+        (4 4 4 4 4 4 4 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 6 6 6 6 0 0 0 0)
+        (0 0 6 6 6 6 0 0 0 0)))
+      (output $Two undefined)
+      (output $EveryFacingPair (grid
+        (0 2 2 2 2 2 2 0 0 0)
+        (0 2 2 2 2 2 2 0 0 0)
+        (0 0 8 8 8 8 0 0 0 0)
+        (0 0 8 8 8 8 0 0 0 0)
+        (4 4 4 4 4 4 4 4 0 0)
+        (4 4 4 4 4 4 4 4 0 0)
+        (0 0 0 8 8 0 0 0 0 0)
+        (0 0 0 8 8 0 0 0 0 0)
+        (0 0 6 6 6 6 0 0 0 0)
+        (0 0 6 6 6 6 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant concept
+      (separates "A block holds more cells than the background. The concept bridges the gap with the background 0; the derived background is the block's color 3, under which the cells of 0 and the other block touch, so that branch is undefined.")
+      (input (grid
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 9 9 9 9 9 9 0 0)
+        (0 0 9 9 9 9 9 9 0 0)
+        (0 0 9 9 9 9 9 9 0 0)))
+      (output &bg=$Stored (grid
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3)
+        (0 0 0 8 8 8 8 0 0 0)
+        (0 0 0 8 8 8 8 0 0 0)
+        (0 0 9 9 9 9 9 9 0 0)
+        (0 0 9 9 9 9 9 9 0 0)
+        (0 0 9 9 9 9 9 9 0 0)))
+      (output &bg=$Derived undefined))))

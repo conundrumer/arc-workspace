@@ -1,0 +1,102 @@
+;; inputs 0465396360dd8bdaf87452bdde3ba145256ae5a605ab383f99db348c070eafd3 programs/solvers/be94b721.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; be94b721
+
+(param &background Color (0))
+
+(alts $shape
+  (alt $Conn8
+    (witness diagonal-link variant $Conn8
+      (relaxed colored-shapes)
+      (separates "a 4-cell block of 3 touches a 2-cell bar of 3 at one corner only, beside a 5-cell shape of 1: the concept reads two shapes of 3 (4 and 2 cells) and crops the 1; joining corner neighbors, or taking each color whole, reads one 6-cell shape of 3 and crops it")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 3 3 0 0 1 1 0)
+        (0 3 3 0 0 1 1 1)
+        (0 0 0 3 0 0 0 0)
+        (0 0 0 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $Conn4 $AnyColorComponent (grid
+        (1 1 0)
+        (1 1 1)))
+      (output $Conn8 $ColorClass (grid
+        (3 3 0)
+        (3 3 0)
+        (0 0 3)
+        (0 0 3)))))
+  (alt $ColorClass
+    (witness two-pieces-one-color borderline concept
+      (relaxed colored-shapes)
+      (separates "color 3 forms two shapes apart from each other (4 and 2 cells) beside a 5-cell shape of 1: every component reading crops the 1; taking each color whole counts 6 cells of 3 and crops the box spanning both pieces")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 3 3 0 0 0 0 3 0)
+        (0 3 3 0 1 1 0 3 0)
+        (0 0 0 0 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $Conn4 $Conn8 $AnyColorComponent (grid
+        (1 1 0)
+        (1 1 1)))
+      (output $ColorClass (grid
+        (3 3 0 0 0 0 3)
+        (3 3 0 0 0 0 3)))))
+  (alt $AnyColorComponent
+    (witness touching-colors borderline concept
+      (relaxed colored-shapes)
+      (separates "a 4-cell shape of 2 and a 3-cell shape of 7 touch along a side, beside a 5-cell shape of 1: the concept keeps colors apart and crops the 1; components that ignore color join 2 and 7 into one 7-cell piece and crop it in both colors")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 2 2 7 0 0 0 0)
+        (0 2 2 7 0 1 1 0)
+        (0 0 0 7 0 1 1 1)
+        (0 0 0 0 0 0 0 0)))
+      (output $Conn4 $Conn8 $ColorClass (grid
+        (1 1 0)
+        (1 1 1)))
+      (output $AnyColorComponent (grid
+        (2 2 7)
+        (2 2 7)
+        (0 0 7))))))
+
+(alts $content
+  (alt $BoxRegion
+    (witness cell-in-box variant concept
+      (separates "a cell of 6 sits inside the bounding box of the biggest shape, an L of 4, touching it nowhere: the concept draws only the L's cells and leaves that corner 0; copying the input's box region keeps the 6")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 4 0 0 6 0 0)
+        (0 4 0 0 0 0 0)
+        (0 4 0 0 0 0 0)
+        (0 4 4 4 4 0 0)
+        (0 0 0 0 0 0 2)
+        (0 0 0 0 0 0 2)))
+      (output $ShapeCells (grid
+        (4 0 0 0)
+        (4 0 0 0)
+        (4 0 0 0)
+        (4 4 4 4)))
+      (output $BoxRegion (grid
+        (4 0 0 6)
+        (4 0 0 0)
+        (4 0 0 0)
+        (4 4 4 4))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "the shape of 5 has more cells than the 0 field: the stored background 0 crops the 5; the background derived as the commonest color takes 5 as the field and crops the 2-cell run of 0")
+      (input (grid
+        (5 5 5 0)
+        (5 5 5 0)
+        (5 5 0 2)))
+      (output &background=$Stored (grid
+        (5 5 5)
+        (5 5 5)
+        (5 5 0)))
+      (output ($Conn4 &background=$Derived) (grid
+        (0)
+        (0)))
+      (output ($Conn8 &background=$Derived) (grid
+        (5 0)
+        (5 0)
+        (0 5))))))

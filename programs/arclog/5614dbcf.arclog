@@ -1,0 +1,86 @@
+;; inputs 3cfc7c730ea841699efd5b3da7a678466227f16efda4ddfa8079c7b6daad2668 programs/solvers/5614dbcf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5614dbcf
+
+(DET &divisor
+  (ex_output *P)
+  (frame_extent P *A *N))
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (axis_elem *A)
+    (&divisor *N)))
+
+(RULE &tile
+  (&tile_division.tile (:P *P_grid) (:P_outer *P_tile)))
+
+(ALTS $f "what fixes a tile's color" $Vote
+  (ALT $Solid
+    (INIT &noise_division Division
+      (key ((&divisor ^N))
+        (parts (A N)
+          (axis_elem *A)))
+      (cell ((:P P_grid))
+        (ex_input (:P *P_grid))))
+
+    (DET &noise
+      (ex_input *E (:P *P_grid) (:Col *C))
+      (&noise_division.tile (:P P_grid) (:P_outer *P_tile))
+      (ex_output E (:P P_tile) *Col)
+      (!= Col C))
+
+    (INIT &solid Singleton
+      (key ((&tile *P_grid ^P_tile)
+            (input (:P P_grid) *Col)
+            (NOT (&noise (:C Col))))
+        (member ((:v Col))
+          (&tile *P_grid P_tile)
+          (input (:P P_grid) *Col)
+          (NOT (&noise (:C Col))))))
+
+    (RULE &output
+      (&solid.value (:key (:P_tile *P)) (:v *Col)))))
+
+(ALTS $d "what fixes the tiling" $Count
+  (ALT $Size
+    (INIT &tile_size_division Division
+      (key ((&divisor ^N))
+        (parts ((:A A2) N)
+          (axis_elem (:A *A2))))
+      (cell ((:P P_grid))
+        (ex_input (:P *P_grid))))
+
+    (DET &tile_size
+      (&tile_size_division.tile (:P_inner *P_intile))
+      (frame_extent (:P P_intile) *A (:N *K)))
+
+    (INIT &tile_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_size *K)))
+
+    (RULE &tile
+      (&tile_division2.tile (:P *P_grid) (:P_outer *P_tile)))))
+
+(INIT &vote_count Cardinality
+  (key ((&tile *P_grid ^P_tile)
+        (input (:P P_grid) ^Col))
+    (member ((:m P_grid))
+      (&tile *P_grid P_tile)
+      (input (:P P_grid) Col))))
+
+(INIT &vote Order
+  (key ((&vote_count.size (:key ^P_tile *Col)))
+    (member ((:t Col))
+      (&vote_count.size (:key P_tile *Col)))
+    (score ((:t Col) (:S N))
+      (&vote_count.size (:key P_tile *Col) *N))))
+
+(RULE &output
+  (&vote.maximal (:key (:P_tile *P)) (:t *Col)))
+
+(OUT (&output ^P ^Col))

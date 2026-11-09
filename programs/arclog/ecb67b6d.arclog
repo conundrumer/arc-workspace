@@ -1,0 +1,107 @@
+;; inputs a16aa698174edd0a2d42330be8bab4cc71c51602da8be6cb1268d845c4c40e73 programs/solvers/ecb67b6d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ecb67b6d
+
+(INPUT marks-on-field "every input is a field of 7 with cells of mark_color scattered over it, and holds no other color")
+
+(INPUT clumps "the mark_color cells group into clumps, each a set of cells joined through side and corner contact (8-adjacency)")
+
+(OUTPUT diagonal-run "a clump holds a diagonal run when min_run of its cells lie one after another along a diagonal line of either diagonal axis, each next to the one before it at a corner"
+
+  (DET &changed
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_out C_in))
+
+  (DET_OR_RULE &mark_color RarestColor
+    (&changed (:C_in *C)))
+
+  (INIT &clump Connectivity
+    (node (P)
+      (input *P *Col)
+      (&mark_color (:C Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &line_frame Frame
+    (extent (A N)
+      (&clump.node *P)
+      (frame_extent P *A *N)))
+
+  (RULE &line_blocked
+    (input *P *Col)
+    (NOT (&mark_color (:C Col))))
+
+  ;; The mark cells in line with each mark cell toward each corner, up to
+  ;; the first cell of another color.
+  (INIT &line Ray
+    (source (P)
+      (&clump.node *P))
+    (node (P)
+      (&line_frame.cell *P)
+      (NOT (&line_blocked P)))
+    (dir (D)
+      (input)
+      (diag_dir_elem *D)))
+
+  (INIT &run_size Cardinality
+    (key ((&line.ray *P ^D (:Origin ^Src))
+          (input P)
+          (diag_dir_elem D))
+      (member ((:m P))
+        (&line.ray *P D (:Origin Src))
+        (input P)
+        (diag_dir_elem D)))))
+
+(OUTPUT recolor-clump "every cell of a clump that holds a diagonal run takes fill_color")
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(RULE &run
+  (&run_size.size (:key *Src) *N)
+  (&clump.component (:P Src) *Id))
+
+(DET &recolored
+  (&changed *E *P)
+  (&clump.component E P *Id))
+
+(DET &cand
+  (&recolored *E *Id)
+  (&run E Id *N))
+
+(DET &reaches
+  (&cand *N)
+  (&run *E *Id (:N *N2))
+  (>= N2 N))
+
+(DET &defect
+  (&cand *N)
+  (ex_output *E)
+  (OR ((&reaches E *Id N)
+       (NOT (&recolored E Id)))
+      ((&recolored E Id)
+       (NOT (&reaches E Id N)))))
+
+(DET &min_run
+  (&cand *N)
+  (NOT (&defect N)))
+
+(RULE &recolored2
+  (&run *Id *N)
+  (&min_run (:N *M))
+  (>= N M)
+  (&clump.component *P Id))
+
+(DET &fill_color
+  (&changed (:C_out *C)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&recolored2 P))
+      ((&fill_color (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

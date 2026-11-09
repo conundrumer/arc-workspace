@@ -1,0 +1,139 @@
+;; inputs 06356639acfb15885bb15bf9f254d49b8500581b346eab1faf4c3b276afa8de1 programs/solvers/c6141b15.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c6141b15
+
+(param &bg Color (7))
+
+(alts $l
+  (alt $LineByStraightness
+    (witness one-copy borderline $LineByStraightness
+      (relaxed shape-copies)
+      (separates "One copy of the shape beside the line. Reading the line as the one straight run of two or more cells finds it and stamps the copy at both ends, with no line to draw; reading the line as the color that forms one object finds two such colors and is undefined.")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 9 7 7 7 7 7 7 7 7)
+        (7 7 9 7 7 7 7 7 7 7 7)
+        (7 7 9 7 7 7 7 1 7 7 7)
+        (7 7 9 7 7 7 1 1 1 7 7)
+        (7 7 9 7 7 7 7 1 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)))
+      (output $OneObjectColor undefined)
+      (output $LineByStraightness (grid
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 7)
+        (7 1 1 1 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 7)
+        (7 1 1 1 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7))))))
+
+(alts $j
+  (alt $JoinAligned
+    (witness unaligned-centers foreign $JoinAligned
+      (relaxed aligned-centers)
+      (separates "Three shape centers where two share no row, column, or diagonal. Joining only the centers that share a line draws the two that do; joining every two centers is undefined.")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 1 7 7)
+        (7 1 1 1 7 7 7 1 1 1 7)
+        (7 7 1 7 7 7 7 7 1 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 7)
+        (7 1 1 1 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 2 2 2 2 2 7)
+        (7 7 7 7 7 7 7 7 7 7 7)))
+      (output $JoinAll undefined)
+      (output $JoinAligned (grid
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 2 2 2 2 2 2 2 7 7)
+        (7 7 2 7 7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 1 7 7 7 1 7)
+        (7 7 7 7 1 1 1 7 1 1 1)
+        (7 7 7 7 7 1 7 7 7 1 7))))))
+
+(alts $o
+  (alt $LinesOverStamps
+    (witness stamp-meets-line borderline any
+      (separates "A stamp at a line end reaches a cell of the line between two centers. Stamps drawn over lines give that cell the shape's color; lines drawn over stamps give it the line's color.")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 1 7 7 7 7 7 7 7 1 7 7)
+        (7 1 1 1 7 7 7 7 7 1 1 1 7)
+        (7 7 1 7 7 7 2 7 7 7 1 7 7)
+        (7 7 7 7 7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 2 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)))
+      (output $StampsOverLines (grid
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 2 2 2 2 1 2 2 2 2 7 7)
+        (7 7 7 7 7 1 1 1 7 7 7 7 7)
+        (7 7 7 7 7 7 1 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 1 7 7 7 7 7 7)
+        (7 7 7 7 7 1 1 1 7 7 7 7 7)
+        (7 7 7 7 7 7 1 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)))
+      (output $LinesOverStamps (grid
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 2 2 2 2 2 2 2 2 2 7 7)
+        (7 7 7 7 7 1 1 1 7 7 7 7 7)
+        (7 7 7 7 7 7 1 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 1 7 7 7 7 7 7)
+        (7 7 7 7 7 1 1 1 7 7 7 7 7)
+        (7 7 7 7 7 7 1 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed background)
+      (separates "The train1 input on a field of 3 in place of 7. The background derived as the commonest color reads 3 and gives the swap on that field; the stored background 7 makes the field an object, and the parse is undefined.")
+      (input (grid
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 9 3 3 3 3 3 3 3 3)
+        (3 3 9 3 3 3 3 3 3 3 3)
+        (3 3 9 3 3 3 3 3 3 3 3)
+        (3 3 9 3 3 5 3 3 3 5 3)
+        (3 3 9 3 3 3 3 3 3 3 3)
+        (3 3 9 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 5 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 9 9 9 9 9 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 5 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3))))))

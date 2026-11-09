@@ -1,0 +1,337 @@
+;; inputs 3a39c6779ad352c42f7a195e03e5cd380e2a0be7cdcedae04c3b6b4df0e984cf programs/solvers/b2862040.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b2862040
+
+(param &shape_color Color (1))
+(param &background Color (9))
+(param &closed_color Color (8))
+(param &hole_count number (1))
+(param &count_color (number Color) (0 1) (1 8))
+(param &min_hole_size number (1))
+
+(alts $conn
+  (alt $Shapes8
+    (witness corner-touch borderline concept
+      (separates "a dot touches a ring at a corner: the concept recolors the ring alone, $Shapes8 joins the dot to the ring and recolors both")
+      (input (grid
+        (9 9 9 9 9 9)
+        (9 1 1 1 9 9)
+        (9 1 9 1 9 9)
+        (9 1 1 1 9 9)
+        (9 9 9 9 1 9)
+        (9 9 9 9 9 9)))
+      (output $Shapes4 (grid
+        (9 9 9 9 9 9)
+        (9 8 8 8 9 9)
+        (9 8 9 8 9 9)
+        (9 8 8 8 9 9)
+        (9 9 9 9 1 9)
+        (9 9 9 9 9 9)))
+      (output $Shapes8 (grid
+        (9 9 9 9 9 9)
+        (9 8 8 8 9 9)
+        (9 8 9 8 9 9)
+        (9 8 8 8 9 9)
+        (9 9 9 9 8 9)
+        (9 9 9 9 9 9))))))
+
+(alts $escape
+  (alt $DiagEscape
+    (witness cut-corner-ring borderline concept
+      (separates "a ring lacks one corner cell, so its hole meets the outside only at a corner: the concept recolors the ring, $DiagEscape lets the hole escape diagonally and keeps it")
+      (input (grid
+        (9 9 9 9 9)
+        (9 1 1 1 9)
+        (9 1 9 1 9)
+        (9 1 1 9 9)
+        (9 9 9 9 9)))
+      (output $Escape4 (grid
+        (9 9 9 9 9)
+        (9 8 8 8 9)
+        (9 8 9 8 9)
+        (9 8 8 9 9)
+        (9 9 9 9 9)))
+      (output $DiagEscape (grid
+        (9 9 9 9 9)
+        (9 1 1 1 9)
+        (9 1 9 1 9)
+        (9 1 1 9 9)
+        (9 9 9 9 9))))))
+
+(alts $walls
+  (alt $AllInk
+    (witness nested-shape borderline concept
+      (separates "a dot stands inside a ring's hole: the concept recolors the ring alone, $AllInk also recolors the dot, which bounds a region the ink closes off")
+      (input (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 9 9 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 9 9 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9)))
+      (output $OwnWalls (grid
+        (9 9 9 9 9 9 9)
+        (9 8 8 8 8 8 9)
+        (9 8 9 9 9 8 9)
+        (9 8 9 1 9 8 9)
+        (9 8 9 9 9 8 9)
+        (9 8 8 8 8 8 9)
+        (9 9 9 9 9 9 9)))
+      (output $AllInk (grid
+        (9 9 9 9 9 9 9)
+        (9 8 8 8 8 8 9)
+        (9 8 9 9 9 8 9)
+        (9 8 9 8 9 8 9)
+        (9 8 9 9 9 8 9)
+        (9 8 8 8 8 8 9)
+        (9 9 9 9 9 9 9))))))
+
+(alts $ink
+  (alt $AnyInk
+    (witness other-color-ring borderline concept
+      (relaxed shapes)
+      (separates "a ring of a second ink color stands beside a ring of the shape color: the concept recolors the shape-color ring alone, $AnyInk recolors both, and shape_color=RarestColor finds a tie and is undefined")
+      (input (grid
+        (9 9 9 9 9 9 9 9 9)
+        (9 1 1 1 9 2 2 2 9)
+        (9 1 9 1 9 2 9 2 9)
+        (9 1 1 1 9 2 2 2 9)
+        (9 9 9 9 9 9 9 9 9)))
+      (output ($ShapeInk &shape_color=$Stored) (grid
+        (9 9 9 9 9 9 9 9 9)
+        (9 8 8 8 9 2 2 2 9)
+        (9 8 9 8 9 2 9 2 9)
+        (9 8 8 8 9 2 2 2 9)
+        (9 9 9 9 9 9 9 9 9)))
+      (output $AnyInk &shape_color=$Derived (grid
+        (9 9 9 9 9 9 9 9 9)
+        (9 8 8 8 9 8 8 8 9)
+        (9 8 9 8 9 8 9 8 9)
+        (9 8 8 8 9 8 8 8 9)
+        (9 9 9 9 9 9 9 9 9))))))
+
+(alts $cond
+  (alt $OneHole
+    (witness two-hole-shape ordinary concept
+      (separates "one shape closes off two regions: the concept recolors it, $OneHole keeps it since its count of regions is not the stored count, and $HoleCountTable has no entry for two and is undefined")
+      (input (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9)))
+      (output $AnyHole $MinHoleSize &hole_count=$Derived (grid
+        (9 9 9 9 9 9 9)
+        (9 8 8 8 8 8 9)
+        (9 8 9 8 9 8 9)
+        (9 8 8 8 8 8 9)
+        (9 9 9 9 9 9 9)))
+      (output $HoleCountTable undefined)
+      (output ($OneHole &hole_count=$Stored) (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9)))))
+  (alt $HoleCountTable
+    (witness two-hole-shape ordinary concept)
+    (witness two-hole-table ordinary concept
+      (separates "one shape closes off two regions, and the table maps a count of two to 3: the concept recolors the shape with 8, $OneHole keeps it, and $HoleCountTable recolors it with 3")
+      (assign &count_color (0 1) (1 8) (2 3))
+      (input (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9)))
+      (output $AnyHole $MinHoleSize &hole_count=$Derived (grid
+        (9 9 9 9 9 9 9)
+        (9 8 8 8 8 8 9)
+        (9 8 9 8 9 8 9)
+        (9 8 8 8 8 8 9)
+        (9 9 9 9 9 9 9)))
+      (output $HoleCountTable (grid
+        (9 9 9 9 9 9 9)
+        (9 3 3 3 3 3 9)
+        (9 3 9 3 9 3 9)
+        (9 3 3 3 3 3 9)
+        (9 9 9 9 9 9 9)))
+      (output ($OneHole &hole_count=$Stored) (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9)))))
+  (alt $MinHoleSize
+    (witness one-cell-hole ordinary concept
+      (separates "a ring closes off a one-cell hole: the concept recolors the ring, and $MinHoleSize at a least hole size of 2 keeps it")
+      (assign &min_hole_size (2))
+      (input (grid
+        (9 9 9 9 9)
+        (9 1 1 1 9)
+        (9 1 9 1 9)
+        (9 1 1 1 9)
+        (9 9 9 9 9)))
+      (output $AnyHole $HoleCountTable &min_hole_size=$Derived $OneHole (grid
+        (9 9 9 9 9)
+        (9 8 8 8 9)
+        (9 8 9 8 9)
+        (9 8 8 8 9)
+        (9 9 9 9 9)))
+      (output ($MinHoleSize &min_hole_size=$Stored) (grid
+        (9 9 9 9 9)
+        (9 1 1 1 9)
+        (9 1 9 1 9)
+        (9 1 1 1 9)
+        (9 9 9 9 9))))))
+
+(alts &shape_color
+  (alt &shape_color=$Derived
+    (witness shape_color=RarestColor variant &shape_color=$Derived
+      (relaxed shapes)
+      (separates "`shape_color=RarestColor` from the stored value: train 0 with 1 and 0 swapped")
+      (input (grid
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 0 0 0 9 9 9 0 9 9 9)
+        (9 0 9 0 9 9 9 0 9 9 9)
+        (9 0 9 0 9 9 0 0 0 0 9)
+        (9 0 0 0 9 9 9 0 9 9 9)
+        (9 9 9 9 9 9 9 0 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)))
+      (output ($ShapeInk &shape_color=$Stored) (grid
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 0 0 0 9 9 9 0 9 9 9)
+        (9 0 9 0 9 9 9 0 9 9 9)
+        (9 0 9 0 9 9 0 0 0 0 9)
+        (9 0 0 0 9 9 9 0 9 9 9)
+        (9 9 9 9 9 9 9 0 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)))
+      (output $AnyInk ($AnyHole &shape_color=$Derived) (grid
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 8 8 8 9 9 9 0 9 9 9)
+        (9 8 9 8 9 9 9 0 9 9 9)
+        (9 8 9 8 9 9 0 0 0 0 9)
+        (9 8 8 8 9 9 9 0 9 9 9)
+        (9 9 9 9 9 9 9 0 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)))
+      (output ($HoleCountTable &shape_color=$Derived) (grid
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 8 8 8 9 9 9 1 9 9 9)
+        (9 8 9 8 9 9 9 1 9 9 9)
+        (9 8 9 8 9 9 1 1 1 1 9)
+        (9 8 8 8 9 9 9 1 9 9 9)
+        (9 9 9 9 9 9 9 1 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background-field)
+      (separates "`background=DominantColor` from the stored value: train 0 with 9 and 0 swapped")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 0 0 0 1 0 0 0)
+        (0 1 0 1 0 0 0 1 0 0 0)
+        (0 1 0 1 0 0 1 1 1 1 0)
+        (0 1 1 1 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $ShapeInk &background=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 0 0 0 1 0 0 0)
+        (0 8 0 8 0 0 0 1 0 0 0)
+        (0 8 0 8 0 0 1 1 1 1 0)
+        (0 8 8 8 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($AnyInk &background=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 0 0 0 1 0 0 0)
+        (0 1 0 1 0 0 0 1 0 0 0)
+        (0 1 0 1 0 0 1 1 1 1 0)
+        (0 1 1 1 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &hole_count
+  (alt &hole_count=$Derived
+    (witness hole_count=TileDim ordinary concept
+      (separates "`hole_count=TileDim` from the stored value: the input of `two-hole-shape`")
+      (input (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9)))
+      (output $AnyHole $MinHoleSize &hole_count=$Derived (grid
+        (9 9 9 9 9 9 9)
+        (9 8 8 8 8 8 9)
+        (9 8 9 8 9 8 9)
+        (9 8 8 8 8 8 9)
+        (9 9 9 9 9 9 9)))
+      (output $HoleCountTable undefined)
+      (output ($OneHole &hole_count=$Stored) (grid
+        (9 9 9 9 9 9 9)
+        (9 1 1 1 1 1 9)
+        (9 1 9 1 9 1 9)
+        (9 1 1 1 1 1 9)
+        (9 9 9 9 9 9 9))))))
+
+(alts &min_hole_size
+  (alt &min_hole_size=$Derived
+    (witness min_hole_size=TileDim ordinary concept
+      (separates "a ring closes off a one-cell hole in a 12x12 grid, whose tile dims do not include 1: the concept recolors the ring, min_hole_size=TileDim takes 2 as the least hole size and keeps it, and hole_count=TileDim has no count of 1 and keeps it")
+      (input (grid
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 1 1 1 9 9 9 9 9)
+        (9 9 9 9 1 9 1 9 9 9 9 9)
+        (9 9 9 9 1 1 1 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)))
+      (output (&hole_count=$Stored &min_hole_size=$Stored) (grid
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 8 8 8 9 9 9 9 9)
+        (9 9 9 9 8 9 8 9 9 9 9 9)
+        (9 9 9 9 8 8 8 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)))
+      (output &min_hole_size=$Derived &hole_count=$Derived (grid
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 1 1 1 9 9 9 9 9)
+        (9 9 9 9 1 9 1 9 9 9 9 9)
+        (9 9 9 9 1 1 1 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9)
+        (9 9 9 9 9 9 9 9 9 9 9 9))))))

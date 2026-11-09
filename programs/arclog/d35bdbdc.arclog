@@ -1,0 +1,170 @@
+;; inputs 735db5b8f0dad612f93a663a7c8b67a477e8c13615fa373088a6261d7e78fdc9 programs/solvers/d35bdbdc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d35bdbdc
+
+(INPUT boxes "separate shapes on a field of &background, each a 3×3 ring or a plus of 5 cells around one center cell, and possibly cut off by the grid edge; the outer cells of a box are one color, and no two boxes have the same outer color"
+
+  (DET &recolored
+    (ex_input *E *P (:Col *C))
+    (ex_output E P *Col)
+    (!= C Col))
+
+  (DET_OR_RULE &background DominantColor
+    (&recolored *E *P (:Col *C))
+    (neighbor P *Q)
+    (&recolored E (:P Q) (:Col C))))
+
+(INPUT wire "one line of &wire_color, of cells joined at sides or corners, that overlaps no box and has two ends; each end is next to the middle cell of one side of a box"
+
+  (DET &background_determined
+    (&recolored *E *P (:Col *C))
+    (neighbor P *Q)
+    (&recolored E (:P Q) (:Col C)))
+
+  (DET &kept
+    (ex_input *E *P *Col)
+    (ex_output E P Col))
+
+  (DET &linked_center
+    (&recolored *E (:P *C))
+    (perp_dir (:D *D1) *D2)
+    (opposite (:D D1) (:Opp *D3))
+    (opposite (:D D2) (:Opp *D4))
+    (neighbor (:P C) (:D D1) (:Q *Q1))
+    (&kept E (:P Q1))
+    (neighbor (:P C) (:D D2) (:Q *Q2))
+    (&kept E (:P Q2))
+    (neighbor (:P C) (:D D3) (:Q *Q3))
+    (&kept E (:P Q3))
+    (neighbor (:P C) (:D D4) (:Q *Q4))
+    (&kept E (:P Q4)))
+
+  (DET &wire_color
+    (&linked_center *E (:C *C2))
+    (dir_elem *D)
+    (neighbor (:P C2) D (:Q *M))
+    (neighbor (:P M) D *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (&background_determined (:C *Bg))
+    (!= C Bg)))
+
+(INPUT unhooked-ends "each end of the wire has one neighbor in the wire, where two wire cells that touch at a corner are neighbors only when no wire cell touches both of them by a side")
+
+(OUTPUT linked-boxes "a box is linked when a wire end is next to the middle cell of one of its sides, and its center color is the outer color of another box; a wire end is a wire cell with at most one neighbor in the wire")
+
+(OUTPUT center-lookup "a linked box's center takes the center color of the box whose outer color equals the linked box's center color")
+
+(OUTPUT erase-others "every cell of a box that is not linked becomes &background")
+
+(OUTPUT keep-rest "the wire and the outer cells of the linked boxes stay as they are"
+
+  (RULE &wire
+    (input *P *Col)
+    (&wire_color (:C Col)))
+
+  (RULE &wire_link
+    (&wire *P)
+    (neighbor P *D *Q)
+    (&wire (:P Q))
+    (OR ((dir_elem D))
+        ((diag_dirs D *D1 *D2)
+         (neighbor P (:D D1) (:Q *R1))
+         (NOT (&wire (:P R1)))
+         (neighbor P (:D D2) (:Q *R2))
+         (NOT (&wire (:P R2))))))
+
+  (RULE &wire_through
+    (&wire_link *P (:Q *Q1))
+    (&wire_link P (:Q *Q2))
+    (!= Q1 Q2))
+
+  (RULE &wire_end
+    (&wire *P)
+    (NOT (&wire_through P)))
+
+  ;; The pieces of one color: a box's outer cells are one piece, joined at
+  ;; sides or corners.
+  (INIT &piece Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col)))
+          (NOT (&wire_color (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))
+        (NOT (&wire_color (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &cand
+    (&piece.component *P *Id)
+    (input (:P *C))
+    (OR ((= C P))
+        ((neighbor P *D (:Q C)))))
+
+  (RULE &adjacent
+    (&cand *C)
+    (neighbor (:P C) *D (:Q *P)))
+
+  (RULE &open_side
+    (&cand *Id *C)
+    (dir_elem *D)
+    (neighbor (:P C) D *Q)
+    (input (:P Q))
+    (NOT (&piece.component (:P Q) Id)))
+
+  (RULE &far
+    (&cand *Id *C)
+    (&piece.component *P Id)
+    (!= P C)
+    (NOT (&adjacent C P)))
+
+  (RULE &center
+    (&cand *Id *C)
+    (NOT (&open_side Id C))
+    (NOT (&far Id C)))
+
+  (RULE &center_color
+    (&center *Id *C)
+    (input (:P C) *Col))
+
+  (RULE &touched
+    (&center *Id *C)
+    (dir_elem *D)
+    (neighbor (:P C) D (:Q *M))
+    (neighbor (:P M) D (:Q *E))
+    (&wire_end (:P E))))
+
+(ALTS $choice "which boxes the lookup of a box at a wire end may return" $OtherBox
+  (ALT $SelfLookup
+    (OUTPUT linked-boxes "the lookup may return the box itself, so a box at a wire end whose center color is its own outer color is linked and keeps its center")
+    (RULE &linked
+      (&touched *Id)
+      (&center_color Id (:Col *C))
+      (&piece.component (:Id *Id2) (:key (:Col C)))
+      (&center_color (:Id Id2) *Col))))
+
+(RULE &linked
+  (&touched *Id)
+  (&center_color Id (:Col *C))
+  (&piece.component (:Id *Id2) (:key (:Col C)))
+  (!= Id2 Id)
+  (&center_color (:Id Id2) *Col))
+
+(RULE &changed
+  (OR ((&linked *Id *Col)
+       (&center Id (:C *P)))
+      ((&center (:Id *Id2) *C)
+       (NOT (&linked (:Id Id2)))
+       (&background (:C Col))
+       (OR ((&piece.component P (:Id Id2)))
+           ((= P C))))))
+
+(RULE &output
+  (OR ((&changed *P *Col))
+      ((input P Col)
+       (NOT (&changed P)))))
+
+(OUT (&output ^P ^Col))

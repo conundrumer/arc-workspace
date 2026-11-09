@@ -1,0 +1,8 @@
+;; inputs 6a8fe66097c07cee3db9d2aa00f7a18712a19aeb18ccd97bda9a63f57df418b0 programs/solvers/834ec97d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 834ec97d
+
+(param &bg Color (0))
+(param &dir Dir (DIR_B))
+(param &fill Color (4))
+(param &period number (2))

@@ -1,0 +1,328 @@
+;; inputs 1b2d75dd5612343726d210dfb62ffb87fd77bb707928cf412bf783bba37994c8 programs/solvers/b9e38dc0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b9e38dc0
+
+(INPUT background "the most common color fills the rest of the grid")
+
+(INPUT cup "one outline of one color, the largest object, whose cells join at sides or corners into one chain with two ends, where its two walls end. The flow is the direction the last step into each end advances along. The cup closes off a region on every side but the flow's; the mouth is the line of the end further back along the flow.")
+
+(INPUT liquid "one or more cells of one other color lie inside the cup, and no cell of that color lies outside it")
+
+(INPUT walls-repeat "each wall, walked back from its end, has one cell on each line across the flow for at least one step, and steps outward or straight, up to where it turns inward or has two cells on a line")
+
+(INPUT obstacles "other cells of colors other than the cup's and the liquid's lie on the background, some of them inside the cup or in front of the mouth")
+
+(OUTPUT fill-cup "each background cell the liquid reaches by side steps, without passing a wall or the mouth line, takes the liquid color"
+
+  (INIT &common_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &common Order
+    (member ((:t Col))
+      (&common_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&common_count.size (:key *Col) *N)))
+
+  ;; The objects: same-color cells joined at sides or corners.
+  (INIT &object Connectivity
+    (key ((input *P ^Col)
+          (NOT (&common.maximal (:t Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&common.maximal (:t Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &object_size Cardinality
+    (key ((&object.component *P ^Id))
+      (member ((:m P))
+        (&object.component *P Id))))
+
+  (INIT &largest Order
+    (member ((:t (:V Id) (:S N)))
+      (&object_size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&object_size.size (:key *Id) *N)))
+
+  (RULE &cup
+    (&largest.maximal (:t (:V *Id)))
+    (&object.component *P Id))
+
+  (RULE &cup_color
+    (&cup *P)
+    (input P *Col))
+
+  (RULE &cup_touch
+    (&cup *P)
+    (neighbor P *Q)
+    (&cup (:P Q)))
+
+  (RULE &wall_end
+    (&cup_touch (:P *E1) *Q)
+    (ALL ((&cup_touch (:P E1) (:Q *Q1))
+          (&cup_touch (:P E1) (:Q *Q2)))
+         ((= Q1 Q2))))
+
+  (RULE &flow
+    (&wall_end *E1 (:Q *Q1))
+    (&wall_end (:E1 *E2) (:Q *Q2))
+    (!= E1 E2)
+    (dir_elem *D)
+    (nearer D (:P E1) (:Q Q1))
+    (nearer D (:P E2) (:Q Q2)))
+
+  (RULE &wall
+    (&wall_end *E1)
+    (&wall_end (:E1 *E2))
+    (&flow *D)
+    (perp_dir D (:D2 *O))
+    (nearer (:D O) (:P E1) (:Q E2)))
+
+  (RULE &mouth
+    (&wall (:E1 *M))
+    (&flow *D)
+    (&wall (:E1 *E))
+    (!= E M)
+    (NOT (nearer D (:P M) (:Q E))))
+
+  ;; The region the cup and the mouth line close off.
+  (INIT &hollow Enclosure
+    (cell (P)
+      (input *P)
+      (NOT (&cup P))
+      (&mouth *M)
+      (&flow *D)
+      (nearer D (:P M) (:Q P))))
+
+  (RULE &outside_color
+    (input *P *Col)
+    (NOT (&hollow.enclosed P)))
+
+  (RULE &liquid_color
+    (input *Col)
+    (NOT (&outside_color Col)))
+
+  (RULE &obstacle
+    (input *P *Col)
+    (NOT (&common.maximal (:t Col)))
+    (NOT (&cup_color Col))
+    (NOT (&liquid_color Col)))
+
+  (RULE &back_touch
+    (&cup_touch (:P *C) (:Q *B))
+    (&flow *D)
+    (nearer D (:P C) (:Q B)))
+
+  ;; Each wall walked back from its end while the line behind holds one cup cell
+  ;; that touches it, no further out.
+  (INIT &run Propagation
+    (key ((OR ((&wall (:E1 *E) ^O))
+              ((&wall O)
+               (&back_touch *C *B)
+               (ALL ((&back_touch C (:B *B1))
+                     (&back_touch C (:B *B2)))
+                    ((= B1 B2)))
+               (NOT (nearer (:D O) (:P B) (:Q C))))))
+      (source ((:n E))
+        (&wall (:E1 *E) O))
+      (edge ((:a C) (:b B))
+        (&wall O)
+        (&back_touch *C *B)
+        (ALL ((&back_touch C (:B *B1))
+              (&back_touch C (:B *B2)))
+             ((= B1 B2)))
+        (NOT (nearer (:D O) (:P B) (:Q C))))))
+
+  (RULE &pattern_cand
+    (&wall (:E1 *E) *O)
+    (&run.reached (:key O) (:n *C))
+    (!= C E)
+    (relative (:Base E) (:X C) (:X_rel *W)))
+
+  (RULE &pattern_break
+    (&pattern_cand *O *C *W)
+    (&flow *D)
+    (&run.reached (:key O) (:n *Q))
+    (NOT (nearer D (:P C) Q))
+    (compose (:A Q) (:B W) (:C *Q2))
+    (NOT (&run.reached (:key O) (:n Q2)))
+    (&run.reached (:key O) (:n *S))
+    (NOT (nearer D (:P S) (:Q Q2))))
+
+  (RULE &pattern_fit
+    (&pattern_cand *O *C)
+    (NOT (&pattern_break O C)))
+
+  (RULE &pattern_longer
+    (&pattern_fit *O *C)
+    (&pattern_fit O (:C *C2))
+    (&flow *D)
+    (nearer D (:P C2) (:Q C)))
+
+  (RULE &pattern
+    (&pattern_fit *O *C)
+    (NOT (&pattern_longer O C))
+    (&wall (:E1 *E) O)
+    (relative (:Base C) (:X E) (:X_rel *V)))
+
+  ;; Each wall continued past its end by repeats of its pattern, while on the
+  ;; grid.
+  (INIT &extend Propagation
+    (key ((OR ((&pattern ^O *C)
+               (&run.reached (:key O) (:n *Q))
+               (&flow *D)
+               (nearer D (:P Q) (:Q C)))
+              ((&pattern O *V)
+               (input *P)
+               (compose (:A P) (:B V) (:C Q))
+               (input (:P Q)))))
+      (source ((:n Q))
+        (&pattern O *C)
+        (&run.reached (:key O) (:n *Q))
+        (&flow *D)
+        (nearer D (:P Q) (:Q C)))
+      (edge ((:a P) (:b Q))
+        (&pattern O *V)
+        (input *P)
+        (compose (:A P) (:B V) (:C *Q))
+        (input (:P Q)))))
+
+  (RULE &wall_cell
+    (OR ((&run.reached (:key *O) (:n *P)))
+        ((&extend.reached (:key O) (:n P)))))
+
+  (RULE &beyond_wall
+    (input (:P *X))
+    (&wall_cell *O (:P *Q))
+    (&flow *D)
+    (same_dist D (:P1 Q) (:P2 X))
+    (NOT (nearer (:D O) (:P Q) (:Q X))))
+
+  (RULE &between
+    (input (:P *X))
+    (NOT (&beyond_wall X)))
+
+  (RULE &stream
+    (input (:P *X) *Col)
+    (&common.maximal (:t Col))
+    (&mouth *M)
+    (&flow *D)
+    (NOT (nearer D (:P M) (:Q X)))
+    (&between X))
+
+  (INIT &pool Flood
+    (node (P)
+      (OR ((&hollow.enclosed *P)
+           (input P *Col)
+           (&common.maximal (:t Col)))
+          ((input P (:Col *Col2))
+           (&liquid_color (:Col Col2)))))
+    (source (P)
+      (input *P *Col)
+      (&liquid_color Col)))
+
+  ;; The cells straight behind an obstacle, through the cup and the stream.
+  (INIT &cup_shade Propagation
+    (source ((:n P))
+      (&obstacle *P))
+    (edge ((:a B) (:b X))
+      (input (:P *X) *Col)
+      (&common.maximal (:t Col))
+      (OR ((&pool.reached (:P X)))
+          ((&stream X)))
+      (&flow *D)
+      (opposite D (:Opp *D_back))
+      (neighbor (:P X) (:D D_back) (:Q *B)))))
+
+(OUTPUT flow "the stream moves straight out of the mouth, away from the cup, to the grid edge")
+
+(OUTPUT widen "each wall is continued past its end, to the grid edge, by repeating the shortest pattern of its last steps that the steps before it repeat, as far back as `walls-repeat` walks; on each line across the flow, from the mouth line on, the stream holds the cells strictly between the two walls")
+
+(OUTPUT pour "a background stream cell takes the liquid color when the cell straight behind it along the flow holds the liquid; where that cell is a wall, drawn or continued, or lies beyond one, it takes the liquid color when the nearest cell between the walls on the line behind holds the liquid. An obstacle holds no liquid, so it leaves a straight shadow behind it."
+
+  (RULE &feed
+    (&stream *X)
+    (&flow *D)
+    (opposite D (:Opp *D_back))
+    (neighbor (:P X) (:D D_back) (:Q *B))
+    (OR ((&wall_cell *O (:P *Q))
+         (same_dist D (:P1 Q) (:P2 B))
+         (NOT (nearer (:D O) (:P Q) (:Q B)))
+         (opposite (:D O) (:Opp *D_in))
+         (neighbor (:P Q) (:D D_in) (:Q *F)))
+        ((&between (:X B))
+         (= F B))))
+
+  (RULE &wet_cup
+    (&pool.reached *P))
+
+  (INIT &pour Propagation
+    (source ((:n P))
+      (&wet_cup *P))
+    (edge ((:a F) (:b X))
+      (&feed *X *F)))
+
+  ;; The cells straight behind an obstacle between the walls.
+  (INIT &shade Propagation
+    (source ((:n P))
+      (&obstacle *P))
+    (edge ((:a B) (:b X))
+      (&stream *X)
+      (&flow *D)
+      (opposite D (:Opp *D_back))
+      (neighbor (:P X) (:D D_back) (:Q *B))
+      (&between (:X B)))))
+
+(OUTPUT keep "every other cell keeps its color")
+
+(ALTS $f "how a stream cell takes the liquid" $FedStream
+  (ALT $GeometricStream
+    (OUTPUT pour "every background stream cell takes the liquid color, except the cells straight behind an obstacle, whether or not the liquid reaches it")
+    (RULE &liquid
+      (OR ((&stream (:X *P))
+           (NOT (&shade.reached (:n P))))
+          ((&wet_cup P))))
+    (ALT $CupShadow
+      (RULE &liquid
+        (OR ((&stream (:X *P))
+             (NOT (&shade.reached (:n P)))
+             (NOT (&dry P)))
+            ((&wet_cup P)))))))
+
+(ALTS $s "where a shadow starts" $CupFill
+  (ALT $CupShadow
+    (OUTPUT fill-cup "a cup cell straight behind an obstacle in the cup keeps its color")
+    (OUTPUT pour "a stream cell straight behind an obstacle in the cup keeps its color"
+      (RULE &dry
+        (&cup_shade.reached (:n *P))
+        (input P *Col)
+        (&common.maximal (:t Col)))
+
+      (RULE &wet_cup
+        (&pool.reached *P)
+        (NOT (&dry P)))
+
+      (INIT &pour Propagation
+        (source ((:n P))
+          (&wet_cup *P))
+        (edge ((:a F) (:b X))
+          (&feed *X *F)
+          (NOT (&dry (:P X))))))))
+
+(RULE &liquid
+  (OR ((&wet_cup *P))
+      ((&pour.reached (:n P)))))
+
+(RULE &output
+  (OR ((&liquid *P)
+       (&liquid_color *Col))
+      ((input P Col)
+       (&liquid_color)
+       (NOT (&liquid P)))))
+
+(OUT (&output ^P ^Col))

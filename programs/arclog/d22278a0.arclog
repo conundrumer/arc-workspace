@@ -1,0 +1,120 @@
+;; inputs fcd07e3e6fb55437e48cb894bda44a1a28df96a6aa510b1a732d252671ef4954 programs/solvers/d22278a0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d22278a0
+
+(INPUT square-grid "the grid is square, filled with &background"
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (DET &outvoted
+    (ex_input *Col)
+    (ex_output *E)
+    (NOT (&palette.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&outvoted (:Col C)))))
+
+(INPUT corner-seeds "a single non-background cell sits at each of two or more corners of the grid, each of its own color, and every other cell is &background")
+
+(OUTPUT nearest-seed "each cell belongs to the seed at the least taxicab distance from it (the row distance plus the column distance); a cell at that least distance from two or more seeds belongs to no seed and is &background"
+
+  (RULE &seed
+    (input (:P *O) *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &from_seed
+    (&seed *O)
+    (input *P)
+    (relative (:Base O) (:X P) (:X_rel *V)))
+
+  (RULE &taxicab
+    (&from_seed *O *P *V)
+    (diag_dist (:P V) *Diag *K1 *K2)
+    (>= K1 0)
+    (>= K2 0)
+    (corner_dist (:P V) Diag (:K *N)))
+
+  (RULE &ring
+    (&from_seed *O *P *V)
+    (margin (:B V) *D *K)
+    (uniform_outset K (:B *B_out))
+    (compose (:A O) (:B B_out) (:C *B))
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (INIT &by_steps Order
+    (key ((&taxicab ^P *N))
+      (member ((:t N))
+        (&taxicab P *N))
+      (score ((:t N) (:S N))
+        (&taxicab P *N))))
+
+  (RULE &nearest
+    (&by_steps.minimal (:key *P) (:t *N))
+    (&taxicab *O P N))
+
+  (INIT &by_ring Order
+    (key ((&ring ^P *K))
+      (member ((:t K))
+        (&ring P *K))
+      (score ((:t K) (:S K))
+        (&ring P *K))))
+
+  ;; Among the seeds nearest by ring, the least taxicab distance.
+  (INIT &ring_steps Order
+    (key ((&by_ring.minimal (:key ^P) (:t *K))
+          (&ring *O P K)
+          (&taxicab O P *N))
+      (member ((:t N))
+        (&by_ring.minimal (:key P) (:t *K))
+        (&ring *O P K)
+        (&taxicab O P *N))
+      (score ((:t N) (:S N))
+        (&by_ring.minimal (:key P) (:t *K))
+        (&ring *O P K)
+        (&taxicab O P *N))))
+
+  ;; The seed a cell belongs to, and the cells two or more seeds tie for.
+  (INIT &owner Singleton
+    (key ((&nearest ^P *O))
+      (member ((:v O))
+        (&nearest P *O)))))
+
+(OUTPUT alternating-rings "a cell that belongs to a seed takes the seed's color when its Chebyshev distance from the seed (the larger of the row distance and the column distance) is a multiple of &ring_period, and is &background otherwise"
+
+  ;; the step between one ring of a seed and the next
+  (DET &ring_period SepTileCount))
+
+(ALTS $choice "which distance picks a cell's seed" $Taxicab
+  (ALT $RingThenTaxicab
+    (OUTPUT nearest-seed "a cell goes to the seed at the least Chebyshev distance, and among the seeds tied there, to the one at the least taxicab distance; it is &background where both tie"
+      (RULE &nearest
+        (&by_ring.minimal (:key *P) (:t *K))
+        (&ring *O P K)
+        (&ring_steps.minimal (:key P) (:t *N))
+        (&taxicab O P N)))))
+
+(RULE &output
+  (OR ((&owner.value (:key *P) (:v *O))
+       (&ring O P *K)
+       (&ring_period *N)
+       (divide (:T K) (:Side N) (:Gap 0) (:Remainder *J))
+       (OR ((= J 0)
+            (&seed O *Col))
+           ((!= J 0)
+            (&background (:C Col)))))
+      ((&owner.plural (:key P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

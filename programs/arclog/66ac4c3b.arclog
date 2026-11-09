@@ -1,0 +1,59 @@
+;; inputs 29c5f12f594666b412a7326249d57b4ebcf678d9547b7de4e9c17ca851570f06 programs/solvers/66ac4c3b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 66ac4c3b
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(RULE &line_ink
+  (&ink *P *Col)
+  (split P *A (:Along *P_line) (:Across *P_along)))
+
+;; A monochrome line's color.
+(INIT &line_color Singleton
+  (key ((&line_ink ^A ^P_line *Col))
+    (member ((:v Col))
+      (&line_ink A P_line *Col))))
+
+;; Lines with the same ink positions.
+(INIT &line_set Inclusion
+  (pattern ((:pattern (:A L_a) (:P_line L_p_line)) (:m P_along))
+    (&line_ink (:A *L_a) (:P_line *L_p_line) *P_along))
+  (observed ((:observed (:A L_a) (:P_line L_p_line)) (:m P_along))
+    (&line_ink (:A *L_a) (:P_line *L_p_line) *P_along)))
+
+(RULE &marker_pair
+  (&line_color.value (:key *A *P_line) (:v *Col))
+  (&line_color.value (:key A (:P_line *P_line2)) (:v *Col2))
+  (!= Col Col2)
+  (&line_set.equal (:observed A P_line) (:pattern A (:P_line P_line2))))
+
+(RULE &painted
+  (OR ((&ink *P *Col))
+      ((&ink (:P *P2) (:Col *Col3))
+       (&marker_pair *A *P_line *P_line2 (:Col Col3) (:Col2 Col))
+       (axis_inversion A (:T *F))
+       (relative (:Base P_line) (:X P2) (:X_rel *V))
+       (apply (:D F) (:P V) (:P_out *V_img))
+       (compose (:A P_line2) (:B V_img) (:C P))
+       (input P))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

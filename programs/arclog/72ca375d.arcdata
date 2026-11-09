@@ -1,0 +1,6 @@
+;; inputs de7fa9fa87b6fc2f344c8158fea99634b6671abccd5e1f6ea1932eb9523c197a programs/solvers/72ca375d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 72ca375d
+
+(param &bg Color (0))
+(param &sym D4 (D4_LR))

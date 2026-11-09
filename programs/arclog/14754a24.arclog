@@ -1,0 +1,116 @@
+;; inputs be30d751b251e7578fa9775bb350ea1cb41ba8af4dbdc0aa4ab0d3a2bbff5ce3 programs/solvers/14754a24.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 14754a24
+
+(DET &mark RarestColor)
+
+(DET &fill SharedColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &fill_cell
+  (input *P *Col)
+  (&fill (:C Col)))
+
+;; $Plus — the cell and its four cardinal neighbors.
+(RULE &footprint
+  (input (:P *P_place))
+  (OR ((dir_elem *D)
+       (neighbor (:P P_place) D (:Q *P))
+       (input P))
+      ((= P P_place))))
+
+(INIT &obj Connectivity
+  (node (P)
+    (&mark_cell *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(ALTS $fp "the footprint" $Plus
+  (ALT $Shape
+    (DET &inst_cell
+      (OR ((ex_input *E *P *Col)
+           (&mark (:C Col))
+           (ex_output E))
+          ((ex_input E P (:Col *C1))
+           (ex_output E P (:Col *C2))
+           (!= C1 C2))))
+
+    (INIT &inst Connectivity
+      (key ((&inst_cell ^E *P))
+        (node (P)
+          (&inst_cell E *P))))
+
+    (INIT &bbox BoundingBox
+      (key ((&inst.component (:key ^E) *P ^Id))
+        (cell (P)
+          (&inst.component (:key E) *P Id))))
+
+    (DET &shape
+      (&bbox.cell (:key (:E *K_e) (:Id *K_id)) (:P *P2))
+      (&bbox.box (:key (:E K_e) (:Id K_id)) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P))
+      (interior (:A B) (:B 0)))
+
+    ;; $Shape — the stored cells.
+    (RULE &footprint
+      (input *P)
+      (&shape (:P *S))
+      (relative (:Base S) (:X P) (:X_rel *P_place)))))
+
+(ALTS $a "which placements act" $Fragment
+  (ALT $Maximal
+    ;; Placements compared against each other: both sides are mark sets.
+    (INIT &maximal Inclusion
+      (pattern ((:pattern P) (:m Q))
+        (&cand_mark (:P_place *P) (:P *Q)))
+      (observed ((:observed P) (:m Q))
+        (&cand_mark (:P_place *P) (:P *Q))))
+
+    (RULE &dominated
+      (&maximal.superset (:observed *P2) (:pattern *P_place))
+      (NOT (&maximal.equal (:observed P2) (:pattern P_place))))
+
+    (RULE &placement
+      (&cand_mark *P_place)
+      (NOT (&dominated P_place)))))
+
+(RULE &blocked
+  (&footprint *P_place (:P *Q))
+  (NOT (&mark_cell (:P Q)))
+  (NOT (&fill_cell (:P Q))))
+
+(RULE &cand_mark
+  (&mark_cell *P)
+  (&footprint *P_place P)
+  (NOT (&blocked P_place)))
+
+(INIT &fragment Inclusion
+  (pattern ((:pattern Id) (:m P))
+    (&obj.component *P *Id))
+  (observed ((:observed P) (:m Q))
+    (&cand_mark (:P_place *P) (:P *Q))))
+
+(RULE &placement
+  (&fragment.equal (:observed *P_place)))
+
+(RULE &painted
+  (&placement (:P_place *P2))
+  (&footprint (:P_place P2) *P)
+  (&fill_cell P))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

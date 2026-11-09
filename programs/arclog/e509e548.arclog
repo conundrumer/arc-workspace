@@ -1,0 +1,237 @@
+;; inputs a6a43d70a62ff9add77b948fe30508323238565b5e3634030590d5d7d2f36473 programs/solvers/e509e548.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e509e548
+
+(INPUT thin-drawings "the input holds drawings of color 3 on a field of `bg`, each a connected set of 1-wide straight segments, and no two drawings touch, even at a corner."
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col C)))
+
+  (RULE &cell
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &drawing8 Connectivity
+    (node (P)
+      (&cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT three-kinds "each drawing is an L (a path with one bend), a U (a path with two bends that turn the same way, so both ends point to the same side), or a branched drawing (a path with a side segment that leaves it at a T junction).")
+
+(OUTPUT recolor-by-kind "the output is the input with each drawing's cells in the color of the drawing's kind: `l_color` for an L, `u_color` for a U, and `other_color` for any other drawing."
+
+  (RULE &link
+    (&cell *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&cell (:P Q)))
+
+  (RULE &junction
+    (&link *P *D)
+    (opposite D (:Opp *O))
+    (&link P (:D O))
+    (perp_dir D (:D2 *D3))
+    (&link P (:D D3)))
+
+  (INIT &drawing4 Connectivity
+    (node (P)
+      (&cell *P)))
+
+  (DET &drawing2
+    (&drawing4.component (:E *K) *P *Id))
+
+  (RULE &drawing
+    (&drawing4.component *P (:Id *D)))
+
+  (RULE &bend_dir
+    (&link *P *D)
+    (&link P (:D *D2))
+    (perp_dir D D2)
+    (opposite D (:Opp *O1))
+    (NOT (&link P (:D O1)))
+    (opposite (:D D2) (:Opp *O2))
+    (NOT (&link P (:D O2))))
+
+  (DET &bend2
+    (&drawing2 *K *Id *P)
+    (&bend_dir (:E K) P))
+
+  (RULE &bend
+    (&drawing *D *P)
+    (&bend_dir P))
+
+  (DET &two_bends2
+    (&bend2 *K *Id (:P *P1))
+    (&bend2 K Id (:P *P2))
+    (!= P1 P2))
+
+  (RULE &two_bends
+    (&bend *D (:P *P1))
+    (&bend D (:P *P2))
+    (!= P1 P2))
+
+  (DET &branched2
+    (&drawing2 *K *Id *P)
+    (&junction (:E K) P))
+
+  (RULE &branched
+    (&drawing *D *P)
+    (&junction P))
+
+  (DET &l_drawing2
+    (&bend2 *K *Id)
+    (NOT (&two_bends2 K Id))
+    (NOT (&branched2 K Id)))
+
+  (RULE &l_drawing
+    (&bend *D)
+    (NOT (&two_bends D))
+    (NOT (&branched D)))
+
+  (DET &three_bends2
+    (&bend2 *K *Id (:P *P1))
+    (&bend2 K Id (:P *P2))
+    (&bend2 K Id (:P *P3))
+    (!= P1 P2)
+    (!= P1 P3)
+    (!= P2 P3))
+
+  (RULE &three_bends
+    (&bend *D (:P *P1))
+    (&bend D (:P *P2))
+    (&bend D (:P *P3))
+    (!= P1 P2)
+    (!= P1 P3)
+    (!= P2 P3))
+
+  (DET &u_drawing2
+    (&bend2 *K *Id (:P *P1))
+    (&bend2 K Id (:P *P2))
+    (!= P1 P2)
+    (&bend_dir (:E K) (:P P1) *D)
+    (&bend_dir (:E K) (:P P2) D)
+    (NOT (&three_bends2 K Id))
+    (NOT (&branched2 K Id)))
+
+  (INIT &corners Cardinality
+    (key ((&drawing (:D ^Id) *P)
+          (diag_dirs (:D *Dg) *D1 *D2)
+          (&link P (:D D1))
+          (&link P (:D D2)))
+      (member ((:m P (:D Dg)))
+        (&drawing (:D Id) *P)
+        (diag_dirs (:D *Dg) *D1 *D2)
+        (&link P (:D D1))
+        (&link P (:D D2)))))
+
+  (INIT &corners2 Cardinality
+    (key ((&drawing2 ^K ^Id *P)
+          (diag_dirs (:D *Dg) *D1 *D2)
+          (&link (:E K) P (:D D1))
+          (&link (:E K) P (:D D2)))
+      (member ((:m P (:D Dg)))
+        (&drawing2 K Id *P)
+        (diag_dirs (:D *Dg) *D1 *D2)
+        (&link (:E K) P (:D D1))
+        (&link (:E K) P (:D D2)))))
+
+  (DET &drawing_color
+    (&drawing2 (:K *E) *Id *P)
+    (ex_output E P (:Col *C)))
+
+  (DET &l_color
+    (&l_drawing2 (:K *E) *Id)
+    (&drawing_color E Id *C))
+
+  (DET &other_color
+    (&drawing_color *E *Id *C)
+    (NOT (&l_drawing2 (:K E) Id))
+    (NOT (&u_drawing2 (:K E) Id)))
+
+  (DET &u_color
+    (&u_drawing2 (:K *E) *Id)
+    (&drawing_color E Id *C)))
+
+(ALTS $c "What decides a drawing's color." $Kind
+  (ALT $CornerCount
+    (INPUT three-kinds "dropped: a drawing may be any shape.")
+    (OUTPUT recolor-by-kind "the color is `corner_color` at the drawing's corner count: at each cell, the pairs of one vertical and one horizontal neighbor. A T junction counts two. Undefined on a drawing whose count has no entry."
+      (DET &corner_color
+        (&corners2.size (:key (:K *E) *Id) *N)
+        (&drawing_color E Id *C)))
+    (RULE &output
+      (OR ((&drawing (:D *Id) *P)
+           (&corners.size (:key Id) *N)
+           (&corner_color N (:C *Col)))
+          ((input P Col)
+           (&bg (:C Col))))))
+  (ALT $AnyTwoBends
+    (INPUT three-kinds "dropped: a drawing may be any shape.")
+    (OUTPUT recolor-by-kind "every unbranched path with two bends is `u_color`, whichever way the bends turn."
+      (RULE &two_bend_path
+        (&two_bends *D)
+        (NOT (&three_bends D))
+        (NOT (&branched D))))
+    (RULE &output
+      (OR ((&drawing (:D *Id) *P)
+           (OR ((&l_drawing (:D Id))
+                (&l_color (:C *Col)))
+               ((&two_bend_path (:D Id))
+                (&u_color (:C Col)))
+               ((NOT (&l_drawing (:D Id)))
+                (NOT (&two_bend_path (:D Id)))
+                (&other_color (:C Col)))))
+          ((input P Col)
+           (&bg (:C Col))))))
+  (ALT $PathNotL
+    (INPUT three-kinds "dropped: a drawing may be any shape.")
+    (OUTPUT recolor-by-kind "a drawing with a junction is `other_color`, an L is `l_color`, and every other drawing is `u_color`.")
+    (RULE &output
+      (OR ((&drawing (:D *Id) *P)
+           (OR ((&branched (:D Id))
+                (&other_color (:C *Col)))
+               ((&l_drawing (:D Id))
+                (&l_color (:C Col)))
+               ((NOT (&branched (:D Id)))
+                (NOT (&l_drawing (:D Id)))
+                (&u_color (:C Col)))))
+          ((input P Col)
+           (&bg (:C Col)))))))
+
+(ALTS $j "Which cells join into one drawing." $Edge4
+  (ALT $Corner8
+    (INPUT thin-drawings "cells that touch at a corner join into one drawing, which is classed as the `Class` branch classes it."
+      (RULE &drawing
+        (&drawing8.component *P (:Id *D))))))
+
+(RULE &u_drawing
+  (&bend *D (:P *P1))
+  (&bend D (:P *P2))
+  (!= P1 P2)
+  (&bend_dir (:P P1) (:D *D2))
+  (&bend_dir (:P P2) (:D D2))
+  (NOT (&three_bends D))
+  (NOT (&branched D)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&drawing (:D *Id) P)
+       (OR ((&l_drawing (:D Id))
+            (&l_color (:C Col)))
+           ((&u_drawing (:D Id))
+            (&u_color (:C Col)))
+           ((NOT (&l_drawing (:D Id)))
+            (NOT (&u_drawing (:D Id)))
+            (&other_color (:C Col)))))))
+
+(DET &bg_determined
+  (ex_input *E *P (:Col *C))
+  (ex_output E P (:Col C)))
+
+(OUT (&output ^P ^Col))

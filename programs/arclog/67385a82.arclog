@@ -1,0 +1,25 @@
+;; inputs f5d473c1652144ebc3745c07bc916ae5d49ecbee871e1dcc30187b00a882259c programs/solvers/67385a82.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67385a82
+
+(DET &ink SharedColor)
+
+(DET &mark AnyOutNewColor)
+
+(RULE &ink2
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(RULE &grouped
+  (&ink2 *P)
+  (dir_elem *D)
+  (neighbor P D (:Q *P2))
+  (&ink2 (:P P2)))
+
+(RULE &output
+  (OR ((&grouped *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&grouped P)))))
+
+(OUT (&output ^P ^Col))

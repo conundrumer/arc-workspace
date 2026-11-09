@@ -1,0 +1,153 @@
+;; inputs bc46e60fbd3243b938671277c37049f98ad4b10942ff8981dc3d06774b28a025 programs/solvers/84ba50d3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 84ba50d3
+
+(DET &bg DominantColor)
+
+(DET &shape ChangedColor)
+
+(DET &divider ColorDomain)
+
+(DET &fall_dir DirDomain)
+
+(RULE &fall_axis
+  (&fall_dir *D)
+  (axis_of D *A))
+
+(RULE &line_of
+  (input *P)
+  (&fall_axis *A)
+  (split P A (:Along *L)))
+
+;; The color of each line across the fall, when the line is uniform.
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (&line_of P ^L))
+    (member ((:v Col))
+      (input *P *Col)
+      (&line_of P L))))
+
+(RULE &divider2
+  (&line_color.value (:key *L) (:v *Col))
+  (&divider (:C Col)))
+
+(RULE &divider_cell
+  (&line_of *P *L)
+  (&divider2 L))
+
+(INIT &shapes Connectivity
+  (node (P)
+    (input *P *Col)
+    (&shape (:C Col))))
+
+(RULE &shape_row_cell
+  (&shapes.component *P *Id)
+  (&line_of P (:L *Row)))
+
+(RULE &wide
+  (&shape_row_cell *Id *Row *P)
+  (&shape_row_cell Id Row (:P *Q))
+  (!= P Q))
+
+(INIT &width Cardinality
+  (key ((&shape_row_cell ^Id (:Row ^R) *P))
+    (member ((:m P))
+      (&shape_row_cell Id (:Row R) *P))))
+
+(INIT &widest Order
+  (key ((&width.size (:key ^Id *R) *N))
+    (member ((:t (:V R) (:S N)))
+      (&width.size (:key Id *R) *N))
+    (score ((:t (:V R) (:S N)) (:S N))
+      (&width.size (:key Id *R) *N))))
+
+;; The widest row, when no other row ties it.
+(INIT &unique_widest Singleton
+  (key ((&widest.maximal (:key ^Id) (:t (:V *R))))
+    (member ((:v R))
+      (&widest.maximal (:key Id) (:t (:V *R))))))
+
+(RULE &stopped
+  (&unique_widest.value (:key *Id) (:v *Row))
+  (&wide Id Row))
+
+(RULE &shift
+  (input *P)
+  (&fall_dir *D)
+  (&fall_axis *A)
+  (margin (:B P) D (:K 0))
+  (perp_dir D *D2)
+  (margin (:B P) (:D D2) (:K 0))
+  (sub_extent P A *K)
+  (jump_offset D K (:V *Delta)))
+
+(RULE &off_grid
+  (&shift *Delta)
+  (&shape_row_cell *Id *P)
+  (compose (:A P) (:B Delta) (:C *Q))
+  (NOT (input (:P Q))))
+
+(ALTS $choice "which row of a shape the divider stops it by" $Widest
+  (ALT $Sieve
+    (RULE &stopped
+      (&wide *Id *Row))))
+
+(RULE &through
+  (&stopped *Id (:Row *R))
+  (&shift *Delta)
+  (compose (:A R) (:B Delta) (:C *R2))
+  (&divider2 *L)
+  (&fall_dir *D)
+  (margin (:B R2) D *K)
+  (margin (:B L) D (:K *K_div))
+  (<= K K_div))
+
+(RULE &fall_node
+  (OR ((&shapes.component (:Id *Key))
+       (&shift (:Delta *P))
+       (NOT (&off_grid (:Id Key) (:Delta P)))
+       (NOT (&through (:Id Key) (:Delta P))))
+      ((&shapes.component (:Id Key))
+       (= P 0))))
+
+(INIT &fall Ray
+  (key ((OR ((&fall_node (:Key ^Id) *P))
+            ((&shapes.component Id)
+             (&fall_dir *D))))
+    (source (P)
+      (&fall_node (:Key Id) *P))
+    (node (P)
+      (&fall_node (:Key Id) *P))
+    (dir (D)
+      (&shapes.component Id)
+      (&fall_dir *D))))
+
+(RULE &landed
+  (&fall.end (:key *Id) (:P *Delta) (:Origin 0))
+  (&shape_row_cell Id (:P *P2))
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &pierced
+  (&divider_cell *P)
+  (&landed (:P *Q))
+  (&fall_axis *A)
+  (same_line A P Q)
+  (&fall_dir *D)
+  (nearer D (:P Q) (:Q P)))
+
+(RULE &standing
+  (&divider_cell *P)
+  (NOT (&pierced P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&landed P)
+       (&shape (:C *Col)))
+      ((&standing P)
+       (NOT (&landed P))
+       (&divider (:C Col)))
+      ((NOT (&landed P))
+       (NOT (&standing P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

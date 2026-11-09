@@ -1,0 +1,67 @@
+;; inputs 1073f9d10e1ef5d8edea6d655fd850b22a5513624162fedbf4bcf0b3ac70f750 programs/solvers/689c358e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 689c358e
+
+(DET &bg DominantColor)
+
+;; The color the far edge cell takes.
+(DET &far AnyOutNewColor)
+
+(RULE &cross_cell
+  (input *P (:Col *C))
+  (NOT (&bg C))
+  (interior (:A P) (:B 0)))
+
+(INIT &bbox BoundingBox
+  (key ((&cross_cell ^C *P))
+    (cell (P)
+      (&cross_cell C *P))))
+
+(INIT &rim Boundary
+  (key ((&cross_cell ^C *P))
+    (cell (P)
+      (&cross_cell C *P))))
+
+(RULE &center
+  (&cross_cell *C *P)
+  (NOT (&rim.boundary (:key C) P)))
+
+(RULE &points
+  (&bbox.cell (:key *C) *P)
+  (&bbox.box (:key C) *B)
+  (box_extent B P *A (:N *N1))
+  (perp A *A2)
+  (box_extent B P (:A A2) (:N *N2))
+  (> N1 N2)
+  (axis_of *D A)
+  (dist_pair (:P B) D (:K *K1) *K2)
+  (< K1 K2))
+
+(ALTS $choice "the side that takes the cross's color" $Nearer
+  (ALT $Pointer
+    (RULE &points
+      (&center *C *P)
+      (&bbox.box (:key C) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (dist_pair (:P P_inner) *D (:K *K1) *K2)
+      (< K1 K2))))
+
+(RULE &mark
+  (&points *C *D)
+  (&center C (:P *P2))
+  (axis_of D *A)
+  (input *P)
+  (same_line A (:P P2) (:Q P))
+  (OR ((opposite D *Opp)
+       (margin (:B P) (:D Opp) (:K 0))
+       (&far (:C *Col)))
+      ((margin (:B P) D (:K 0))
+       (= Col C))))
+
+(RULE &output
+  (OR ((&mark *P *Col))
+      ((input P Col)
+       (NOT (&mark P)))))
+
+(OUT (&output ^P ^Col))

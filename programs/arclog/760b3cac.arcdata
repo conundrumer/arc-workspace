@@ -1,0 +1,9 @@
+;; inputs 76aaa11cb6d521fa158159d50d3b65ef1d98d8a371a03bdcac4dd8afb483900b programs/solvers/760b3cac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 760b3cac
+
+(param &pattern Color (8))
+(param &marker Color (4))
+(param &tile_dim number (3))
+(param &axis Axis (AXIS_H))
+(param &facing Dir (DIR_T))

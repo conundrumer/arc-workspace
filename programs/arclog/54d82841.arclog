@@ -1,0 +1,75 @@
+;; inputs 5193760537f76dc16436077c71dccdbc70afc09d149c723c60655926f3f15821 programs/solvers/54d82841.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 54d82841
+
+(DET &bg DominantColor)
+
+(DET &mark AnyOutNewColor)
+
+(DET &fall DirDomain)
+
+(RULE &walled
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &free
+  (input *P *Col)
+  (&bg (:C Col))
+  (dir_elem *D)
+  (NOT (&walled P D)))
+
+;; The cell a cup holds has one free side alone, so its free sides agree.
+(INIT &lone_free Singleton
+  (key ((&free ^P *D))
+    (member ((:v D))
+      (&free P *D))))
+
+(RULE &aim
+  (&lone_free.value (:key *P) (:v *D)))
+
+(ALTS $choice "the cases differ on the line the mark sits in and the edge that line runs to" $Opening
+  (ALT $Fall
+    (RULE &aim
+      (&lone_free.value (:key *P))
+      (&fall *D)))
+  (ALT $Center
+    ;; A cup is one color's connected ink: cups of unlike color touch.
+    (INIT &cup Connectivity
+      (key ((input *P ^Col)
+            (NOT (&bg (:C Col))))
+        (node (P)
+          (input *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &bbox BoundingBox
+      (key ((&cup.component *P ^Id))
+        (cell (P)
+          (&cup.component *P Id))))
+
+    ;; The cast cell is a cup cell midway between the two sides of its box.
+    (RULE &aim
+      (&bbox.cell (:key *Id) *P)
+      (&bbox.box (:key Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&fall *D)
+      (perp_dir D *D2)
+      (dist_pair (:P P_inner) (:D D2) *K (:K2 K)))))
+
+(RULE &mark_cell
+  (&aim (:P *P2) *D)
+  (axis_of D *A)
+  (input *P)
+  (same_line A (:P P2) (:Q P))
+  (margin (:B P) D (:K 0)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&mark_cell P))
+      ((&mark (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

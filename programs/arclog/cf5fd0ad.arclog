@@ -1,0 +1,177 @@
+;; inputs 6b0bf13b443382a8ac1aff08e67c3617ccd143350a0338c2317323e8f7b5fe1b programs/solvers/cf5fd0ad.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cf5fd0ad
+
+(INPUT square-input "the input is a square of side 3.")
+
+(OUTPUT quadrant-turn "the output has four quadrants, and each one takes the input under the turn &quadrant_transform gives it."
+
+  (DET &side
+    (ex_input *E *P)
+    (frame_extent P *A (:N *K)))
+
+  (INIT &half_division Division
+    (key ((OR ((ex_output ^E *P)
+               (&side E)
+               (axis_elem ^A))
+              ((&side E *K)
+               (axis_elem A))))
+      (cell (P)
+        (ex_output E *P)
+        (&side E)
+        (axis_elem A))
+      (side (A K)
+        (&side E *K)
+        (axis_elem A))))
+
+  (INIT &half Cardinality
+    (key ((&half_division.tile (:key ^E) (:P_outer *P_tile))
+          (dist_pair (:P P_tile) ^D (:K *K1) *K2)
+          (< K1 K2))
+      (member ((:m P_tile))
+        (&half_division.tile (:key E) (:P_outer *P_tile))
+        (dist_pair (:P P_tile) D (:K *K1) *K2)
+        (< K1 K2))))
+
+  (DET &copies
+    (&half.size *N))
+
+  (INIT &out_tile_division Division
+    (key ((&side ^E ^K))
+      (cell ((:P P_grid))
+        (ex_output E (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A))))
+
+  (DET &out_tile
+    (ex_output *E (:P *P_grid) *Col)
+    (&out_tile_division.tile (:key E) (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+  (INIT &tile_cell_division Division
+    (cell ((:P P_tile))
+      (&out_tile *P_tile))
+    (side (A (:K N))
+      (axis_elem *A)
+      (&copies *N)))
+
+  (DET &tile_cell
+    (&out_tile *E *P_tile *P_intile *Col)
+    (&tile_cell_division.tile (:P P_tile) (:P_outer *P_quad)))
+
+  (INIT &quadrant_fit Agreement
+    (key ((OR ((&tile_cell ^E ^P_quad)
+               (ex_input E *P *Col))
+              ((&tile_cell E P_quad *P_intile Col))))
+      (source (P (:v Col))
+        (&tile_cell E P_quad)
+        (ex_input E *P *Col))
+      (target ((:P P_intile) (:v Col))
+        (&tile_cell E P_quad *P_intile *Col))))
+
+  (DET &quadrant_fit_src
+    (&tile_cell *E (:P_quad *Key_p))
+    (ex_input E *P (:Col *V)))
+
+  (DET &quadrant_transform
+    (&quadrant_fit_src (:Key_p *P))
+    (d4_elem *D)
+    (NOT (&quadrant_fit.mismatch (:key (:P_quad P)) D))
+    (NOT (&quadrant_fit.mismatch (:key (:P_quad P)) D))))
+
+(OUTPUT quadrant-repeat "in each quadrant, the turned input repeats &copies times on each axis, so the output side is 2 × copies × side.")
+
+(ALTS $choice "the grain of the arrangement" $Quadrants
+  (ALT $Quadrants
+    (ALTS $source "where each quadrant's turn comes from" $Stored
+      (ALT $CounterSpin
+        (OUTPUT quadrant-turn "the quadrant at &anchor holds the input, and each quadrant one clockwise step further around the arrangement holds it turned one more quarter turn counterclockwise. Undefined on a non-square input."
+          (DET &turned
+            (&tile_cell *E *P_quad (:P_intile *P) *Col)
+            (NOT (ex_input E P Col)))
+          (DET &shown
+            (&tile_cell *E *P_quad)
+            (NOT (&turned E P_quad)))
+          (DET &missed
+            (&shown *P_quad)
+            (ex_output *E)
+            (NOT (&shown E P_quad)))
+          (DET &anchor
+            (&shown (:P_quad *P))
+            (NOT (&missed (:P_quad P)))))
+        ;; A rotation carries the anchor to a quadrant and turns the input back by it.
+        (RULE &quadrant_turn
+          (&anchor (:P *P_anchor))
+          (c4_elem (:D *R))
+          (apply (:D R) (:P P_anchor) (:P_out *P_quad))
+          (d4_inverse (:D R) (:D_inv *D))))))
+  (ALT $TileTable
+    (OUTPUT quadrant-turn "a per-tile D4 table &tile_transform over a 4 × 4 layout of input-sized tiles. Undefined on a non-square input."
+      (INIT &tile_fit Agreement
+        (key ((OR ((&out_tile ^E ^P_tile)
+                   (ex_input E *P *Col))
+                  ((&out_tile E P_tile *P_intile Col))))
+          (source (P (:v Col))
+            (&out_tile E P_tile)
+            (ex_input E *P *Col))
+          (target ((:P P_intile) (:v Col))
+            (&out_tile E P_tile *P_intile *Col))))
+
+      (DET &tile_fit_src
+        (&out_tile *E (:P_tile *Key_p))
+        (ex_input E *P (:Col *V)))
+
+      (DET &tile_transform
+        (&tile_fit_src (:Key_p *P))
+        (d4_elem *D)
+        (NOT (&tile_fit.mismatch (:key (:P_tile P)) D))
+        (NOT (&tile_fit.mismatch (:key (:P_tile P)) D)))
+
+      (INIT &output_tiling3 Tiling
+        (key ((OR ((&tile_transform (:P *P_tile) ^D))
+                  ((&tile_transform D)
+                   (input (:P *P_in))
+                   (apply D (:P P_in) (:P_out *P_intile)))))
+          (outer ((:P P_tile))
+            (&tile_transform (:P *P_tile) D))
+          (inner ((:P P_intile))
+            (&tile_transform D)
+            (input (:P *P_in))
+            (apply D (:P P_in) (:P_out *P_intile))))))
+    (OUTPUT quadrant-repeat "the table's layout fixes the repeat at two copies.")
+    (RULE &output
+      (&tile_transform (:P *P_tile) *D)
+      (input (:P *P_in) *Col)
+      (apply D (:P P_in) (:P_out *P_intile))
+      (&output_tiling3.cell (:key D) (:P_outer P_tile) (:P_inner P_intile) *P))))
+
+;; The copies × copies layout of one quadrant.
+(INIT &layout Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&copies *N)))
+
+(RULE &quadrant_turn
+  (&quadrant_transform (:P *P_quad) *D))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&layout.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&quadrant_turn *D)
+    (input (:P *P_in))
+    (apply D (:P P_in) (:P_out *P_intile))))
+
+(INIT &output_tiling2 Tiling
+  (outer ((:P P_quad))
+    (&quadrant_turn *P_quad))
+  (inner ((:P P_inquad))
+    (&output_tiling.cell (:P *P_inquad))))
+
+(RULE &output
+  (&quadrant_turn *P_quad *D)
+  (input (:P *P_in) *Col)
+  (apply D (:P P_in) (:P_out *P_intile))
+  (&output_tiling.cell (:P_inner P_intile) (:P *P_inquad))
+  (&output_tiling2.cell (:P_outer P_quad) (:P_inner P_inquad) *P))
+
+(OUT (&output ^P ^Col))

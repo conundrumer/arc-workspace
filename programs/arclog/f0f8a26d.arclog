@@ -1,0 +1,232 @@
+;; inputs 01a4f452d96f87c33b7970e68db69ac6632448281733edfba09794e79ebc3682 programs/solvers/f0f8a26d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0f8a26d
+
+(INPUT background-field "a field of `background` 7.")
+
+(INPUT one-mark-color "every non-background cell holds one color, the same across the input."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &mark
+    (input *P (:Col *C))
+    (NOT (&background C)))
+
+  (INIT &mark_color Singleton
+    (member ((:v C))
+      (&mark *C))))
+
+(INPUT straight-bars "the marked cells form 4-connected parts, each a straight 1-wide bar along a row or a column, a lone cell included."
+
+  (INIT &runs Ray
+    (key ((OR ((&mark *P ^C))
+              ((&mark C)
+               (dir_elem *D))))
+      (source (P)
+        (&mark *P C))
+      (node (P)
+        (&mark *P C))
+      (dir (D)
+        (&mark C)
+        (dir_elem *D)))))
+
+(INPUT odd-length "every bar has an odd length, so it has one middle cell."
+
+  (INIT &parts Connectivity
+    (key ((&mark *P ^C))
+      (node (P)
+        (&mark *P C))))
+
+  (INIT &part_box BoundingBox
+    (key ((&parts.component *P ^Id))
+      (cell (P)
+        (&parts.component *P Id)))))
+
+(INPUT turn-inside-frame "every bar's quarter turn about its middle cell lies inside the frame.")
+
+(OUTPUT quarter-turn "each bar is redrawn on the other axis, with the same length and the same middle cell, in the mark color.")
+
+(OUTPUT union "the output is the background with the union of the turned bars, so bars that cross after the turn share their cell.")
+
+(OUTPUT same-frame "the output has the input's size, and off the scene, a turned bar's cells past the frame are dropped."
+
+  (RULE &turned_by
+    (c4_turn *S (:T *D))))
+
+(ALTS $parts "what a part of the marked cells is" $Components
+  (ALT $Components
+    (ALTS $scope "which parts turn" $Straight
+      (ALT $ObjectD4
+        (INPUT straight-bars "every part, of any shape, is a part; undefined where a part's box height and width differ in parity.")
+        (OUTPUT quarter-turn "each part is redrawn under each `obj_turn` element about its box centre; undefined where those elements give different outputs."
+          (RULE &square
+            (&part_box.box (:key *Id) *B)
+            (&parts.component *P Id)
+            (OR ((sub_extent P *A *K)
+                 (axis_of *D A)
+                 (axis_outset D (:K1 K) (:K2 K) (:B *X))
+                 (compose (:A B) (:B X) (:C *S)))
+                ((= S B)))
+            (perp (:A *A1) *A2)
+            (box_extent (:B S) P (:A A1) *N)
+            (box_extent (:B S) P (:A A2) N))
+          (INIT &ex_parts Connectivity
+            (key ((ex_input ^E *P (:Col ^C))
+                  (NOT (&background C)))
+              (node (P)
+                (ex_input E *P (:Col C))
+                (NOT (&background C)))))
+          (INIT &ex_box BoundingBox
+            (key ((&ex_parts.component (:key ^E ^C) ^Id *P))
+              (cell (P)
+                (&ex_parts.component (:key E C) Id *P))))
+          (DET &ex_square
+            (&ex_box.box (:key *E *C *Id) *B)
+            (&ex_parts.component (:key E C) Id *P)
+            (OR ((sub_extent P *A *K)
+                 (axis_of *D A)
+                 (axis_outset D (:K1 K) (:K2 K) (:B *X))
+                 (compose (:A B) (:B X) (:C *S)))
+                ((= S B)))
+            (perp (:A *A1) *A2)
+            (box_extent (:B S) P (:A A1) *N)
+            (box_extent (:B S) P (:A A2) N))
+          ;; the D4 elements that take each part of a train input onto the output
+          ;; cells of its color, within the part's square
+          (INIT &part_map Agreement
+            (key ((OR ((&ex_parts.component (:key ^E ^C) ^Id *P)
+                       (&ex_square E C Id *S)
+                       (inside (:A P) (:B S))
+                       (relative (:Base S) (:X P) (:X_rel *P_rel)))
+                      ((&ex_square E C Id S)
+                       (ex_output E (:P *Q) (:Col *C2))
+                       (inside (:A Q) (:B S))
+                       (relative (:Base S) (:X Q) (:X_rel *Q_rel)))))
+              (source ((:P P_rel) (:v C))
+                (&ex_parts.component (:key E C) Id *P)
+                (&ex_square E C Id *S)
+                (inside (:A P) (:B S))
+                (relative (:Base S) (:X P) (:X_rel *P_rel)))
+              (target ((:P Q_rel) (:v C2))
+                (&ex_square E C Id *S)
+                (ex_output E (:P *Q) (:Col *C2))
+                (inside (:A Q) (:B S))
+                (relative (:Base S) (:X Q) (:X_rel *Q_rel)))))
+          (DET &turn_defect
+            (&part_map.mismatch (:key *E) *D)
+            (ex_output E))
+          (DET &obj_turn
+            (d4_elem *D)
+            (NOT (&turn_defect D)))
+          (RULE &turned_by
+            (&obj_turn *D)))
+        (RULE &drawn
+          (&parts.component (:key *C) *P *Id)
+          (&square Id *S)
+          (&turned_by *D)
+          (inside (:A P) (:B S))
+          (relative (:Base S) (:X P) (:X_rel *P_rel))
+          (apply D (:P P_rel) (:P_out *Q_rel))
+          (compose (:A S) (:B Q_rel) (:C *Q)))
+        (RULE &undefined
+          (OR ((&parts.component *Id)
+               (NOT (&square Id)))
+              ((&mark_color.plural))))
+        (ALT $PartColors
+          (RULE &undefined
+            (&parts.component *Id)
+            (NOT (&square Id)))))))
+  (ALT $Runs
+    (INPUT straight-bars "the parts are the maximal row runs and column runs of two or more cells, and the lone cells; a cell can lie in two runs, and each run turns about its own middle; undefined where a run has even length."
+      (INIT &runs_rim Boundary
+        (key ((&mark *P ^C))
+          (cell (P)
+            (&mark *P C)))
+        (dir (D)
+          (dir_elem *D)))
+
+      (RULE &runs_rim_dir
+        (&runs_rim.exposed (:key (:C *Key)) *P *D)
+        (&mark (:C Key))
+        (dir_elem D))
+
+      (RULE &joined
+        (&mark *P *C)
+        (dir_elem *D)
+        (NOT (&runs_rim_dir (:Key C) P D)))
+
+      (RULE &run
+        (&runs.end (:key *C) (:P *E1) *D)
+        (opposite D (:Opp *D2))
+        (&runs.end (:key C) (:P *E2) (:D D2) (:Origin E1))
+        (OR ((!= E1 E2))
+            ((NOT (&joined (:P E1))))))
+
+      (RULE &run_middle
+        (&run *C *D *E1 *E2)
+        (&runs.end (:key C) (:P E1) D (:Origin *M))
+        (relative (:Base E1) (:X M) (:X_rel *V))
+        (compose (:A M) (:B V) (:C E2))))
+    (RULE &bar_cell
+      (&run_middle *C *D (:E1 *E) *M)
+      (&runs.end (:key C) (:P E) D (:Origin *P)))
+
+    (RULE &undefined
+      (OR ((&run *C *D (:E1 *E))
+           (NOT (&run_middle C D (:E1 E))))
+          ((&mark_color.plural))))
+    (ALT $PartColors
+      (RULE &undefined
+        (&run *C *D (:E1 *E))
+        (NOT (&run_middle C D (:E1 E)))))))
+
+(ALTS $colors "how many mark colors an input holds" $OneColor
+  (ALT $PartColors
+    (INPUT one-mark-color "the parts are taken per color, and each part turns in its own color; undefined where two colors land on one cell.")
+    (RULE &undefined
+      (&parts.component *Id)
+      (OR ((ALL ((axis_elem (:A *Am)))
+                ((&bent Id (:A Am)))))
+          ((NOT (&middle Id)))))))
+
+(RULE &middle
+  (&parts.component (:P *M) *Id)
+  (&part_box.box (:key Id) *B)
+  (inside (:A M) B)
+  (relative (:Base B) (:X M) (:X_rel *M_rel))
+  (centered (:P M_rel)))
+
+(RULE &bar_cell
+  (&parts.component (:key *C) *P *Id)
+  (&middle Id *M))
+
+(RULE &drawn
+  (&bar_cell *C *M *P)
+  (&turned_by *D)
+  (relative (:Base M) (:X P) (:X_rel *V))
+  (apply D (:P V) (:P_out *W))
+  (compose (:A M) (:B W) (:C *Q)))
+
+(RULE &bent
+  (&parts.component *P *Id)
+  (&parts.component (:P *Q) Id)
+  (perp *A *A2)
+  (axis_of *D (:A A2))
+  (NOT (same_dist D (:P1 P) (:P2 Q))))
+
+(RULE &undefined
+  (OR ((&mark_color.plural))
+      ((&parts.component *Id)
+       (OR ((ALL ((axis_elem (:A *Am)))
+                 ((&bent Id (:A Am)))))
+           ((NOT (&middle Id)))))))
+
+(RULE &output
+  (NOT (&undefined))
+  (input *P)
+  (OR ((&drawn (:C *Col) (:Q P)))
+      ((&turned_by *D)
+       (NOT (&drawn D (:Q P)))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

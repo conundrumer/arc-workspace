@@ -1,0 +1,62 @@
+;; inputs 5b7e4df394be9e6c667c2fd50eaeb2662eafda1c34d2f648f0b2913f9063141a programs/solvers/1c02dbbe.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1c02dbbe
+
+(DET &bg UnchangedColor)
+
+;; The color the slab is filled with.
+(DET &slab SharedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&slab (:C Col))))
+
+;; A mark on a slab corner hides that slab cell, so the slab is the bounding
+;; box of the cells that keep its color.
+(INIT &slab_box BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&slab (:C Col))))
+
+(RULE &slab_cell
+  (input *P)
+  (&slab_box.box *B)
+  (inside (:A P) B))
+
+(INIT &mark_box BoundingBox
+  (key ((&mark ^Col *P))
+    (cell (P)
+      (&mark Col *P))))
+
+(RULE &paint
+  (&slab_cell *P)
+  (&mark_box.box (:key *Col) *B)
+  (inside (:A P) B))
+
+(ALTS $choice "how the three marks pick the rectangle" $Span
+  (ALT $Cut
+    (RULE &separated
+      (&slab_cell *P)
+      (&mark *Col (:P *A))
+      (&slab_cell (:P A))
+      (&mark Col (:P *M))
+      (dir_elem *D)
+      (nearer D (:P A) (:Q M))
+      (nearer D (:P M) (:Q P)))
+
+    (RULE &paint
+      (&slab_cell *P)
+      (&mark *Col)
+      (NOT (&separated Col P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&paint P *Col))
+      ((&slab_cell P)
+       (NOT (&paint P))
+       (&slab (:C Col)))
+      ((NOT (&slab_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

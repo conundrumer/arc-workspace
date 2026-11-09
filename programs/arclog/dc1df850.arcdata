@@ -1,0 +1,16 @@
+;; inputs 6c878d14021fec461f843ec1bac9a4ed271a3aba0a90d2c81936f635787de3da programs/solvers/dc1df850.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc1df850
+
+(param &marker Color (2))
+(param &halo Color (1))
+(param &template (Color Offset)
+  (1 (-1 1 -1 1))
+  (1 (-1 1 0 0))
+  (1 (-1 1 1 -1))
+  (1 (0 0 -1 1))
+  (2 (0 0 0 0))
+  (1 (0 0 1 -1))
+  (1 (1 -1 -1 1))
+  (1 (1 -1 0 0))
+  (1 (1 -1 1 -1)))

@@ -1,0 +1,152 @@
+;; inputs 60c413a1489a04511a6b999ad439929390f7c2dde7df3551ab1d1f2aa495d542 programs/solvers/bb52a14b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bb52a14b
+
+(INPUT scattered-cells "on a field of background, cells of 1 and 8 lie scattered over the grid, singly and in small clumps")
+
+(INPUT one-key "the cells of fill_color all lie in one 3 by 3 box, the key, and the other cells of that box are of 1 and 8")
+
+(INPUT bare-copies "the key's non-fill_color cells occur again, at the same offsets from one another, at one or more places, each with background at the offsets of the key's marks")
+
+(OUTPUT copy-input "each cell of the output is the input's cell, except as the next rule says")
+
+(OUTPUT fill-copies "the key is the bounding box of the fill_color cells; at each other place where a box of the key's extent has the key's cells at every offset other than the marks, and the cells at the offsets of its marks are background, those cells take fill_color"
+
+  (DET &change
+    (ex_input *E *P (:Col *Col_in))
+    (ex_output E P (:Col *Col_out))
+    (!= Col_in Col_out))
+
+  (DET_OR_RULE &background DominantColor
+    (&change (:Col_in *C)))
+
+  (DET_OR_RULE &fill_color "the color of the key's marks, and of the cells the output fills" RarestColor
+    (&change (:Col_out *C)))
+
+  (RULE &mark
+    (input *P (:Col *C))
+    (&fill_color C))
+
+  (INIT &marks BoundingBox
+    (cell (P)
+      (&mark *P)))
+
+  (RULE_OR_DET &key_dim "The key's extent on each axis."
+    (&marks.box *B)
+    (input *P)
+    (box_extent B P *A *N))
+
+  (INIT &key_frame Frame
+    (extent (A N)
+      (&key_dim *A *N)))
+
+  (RULE &key_cand
+    (&mark *P)
+    (&key_frame.cell (:P *S))
+    (relative (:Base S) (:X P) (:X_rel *B))
+    (inside (:A B) (:B 0))
+    (&marks.box (:B *B_marks))
+    (inside (:A B_marks) B))
+
+  (RULE &holds_bg
+    (&key_cand *B)
+    (input *P (:Col *C))
+    (&background C)
+    (inside (:A P) B))
+
+  (RULE &rival
+    (&key_cand *B)
+    (&key_cand (:B *B2))
+    (!= B B2))
+
+  (RULE &bare_rival
+    (&rival *B *B2)
+    (NOT (&holds_bg (:B B2))))
+
+  (RULE &key
+    (&key_cand *B)
+    (OR ((NOT (&rival B)))
+        ((NOT (&holds_bg B))
+         (NOT (&bare_rival B)))))
+
+  (RULE &key_cell
+    (&key *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &key_mark
+    (&key_cell *P_inner (:Col *C))
+    (&fill_color C))
+
+  (INIT &copy Occurrences
+    (cell (P (:v C))
+      (input *P (:Col *C)))
+    (shape ((:P P_inner) (:v C))
+      (OR ((&key_cell *P_inner (:Col *C))
+           (NOT (&fill_color C))
+           (NOT (&background C)))
+          ((&key_mark P_inner)
+           (&background C))
+          ((&key_cell P_inner (:Col C))
+           (&background C)))))
+
+  (RULE &mark_place
+    (&copy.occurrence (:P *B))
+    (&key_mark *P_inner)
+    (compose (:A B) (:B P_inner) (:C *P))))
+
+(ALTS $under "what a place must hold at the key's mark offsets to count as a copy" $BareMarks
+  (ALT $AnyUnderMarks
+    (INPUT bare-copies "the key's other cells may occur with any colors at the offsets of its marks"
+      (INIT &copy Occurrences
+        (cell (P (:v C))
+          (input *P (:Col *C)))
+        (shape ((:P P_inner) (:v C))
+          (OR ((&key_cell *P_inner (:Col *C))
+               (NOT (&fill_color C))
+               (NOT (&background C)))
+              ((&key_cell P_inner (:Col C))
+               (&background C))))))
+    (OUTPUT fill-copies "a place matches whatever its mark offsets hold, and every mark offset takes fill_color")
+    (ALT $InkOnlyMatch
+      (OUTPUT fill-copies "a place needs only the key's ink at the ink's offsets, and any color at the key's background offsets"
+        (INIT &copy Occurrences
+          (cell (P (:v C))
+            (input *P (:Col *C)))
+          (shape ((:P P_inner) (:v C))
+            (&key_cell *P_inner (:Col *C))
+            (NOT (&fill_color C))
+            (NOT (&background C))))))
+    (ALTS $fill "what a matched place's mark offsets take when they hold a scatter cell" $FillEveryMark
+      (ALT $KeepUnderMarks
+        (OUTPUT fill-copies "only the mark offsets that hold background take fill_color, and a scatter cell there stays")
+        (RULE &filled
+          (&mark_place *P)
+          (input P (:Col *C))
+          (&background C))))))
+
+(ALTS $blank "what a place must hold at an offset where the key has background" $MatchBlanks
+  (ALT $InkOnlyMatch
+    (OUTPUT fill-copies "a place needs only the key's ink at the ink's offsets, and any color at the key's background offsets"
+      (INIT &copy Occurrences
+        (cell (P (:v C))
+          (input *P (:Col *C)))
+        (shape ((:P P_inner) (:v C))
+          (OR ((&key_cell *P_inner (:Col *C))
+               (NOT (&fill_color C))
+               (NOT (&background C)))
+              ((&key_mark P_inner)
+               (&background C))))))))
+
+(RULE &filled
+  (&mark_place *P))
+
+(RULE &output
+  (&key)
+  (input *P (:Col *Col_in))
+  (IF ((&filled P))
+      ((&fill_color (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

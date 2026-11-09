@@ -1,0 +1,350 @@
+;; inputs 413db2a9181ae6c97422c28a44e5fdbf4894556a9e9c577ef5721004cab7d600 programs/solvers/ef26cbf6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ef26cbf6
+
+(INPUT divider-lines "full rows or columns of divider_color cut the grid into equal 3×3 tiles laid out two deep on one axis and one or more long on the other."
+
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; the commonest color of each input
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &uncommon
+    (&commonest.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&uncommon C)))
+
+  (INIT &line_fill2 Singleton
+    (member ((:v Col))
+      (&line_color.value (:v *Col))
+      (NOT (&background (:C Col))))))
+
+(INPUT tile-pairs "each pair of tiles that share a line across the two-deep axis holds one key tile and one pattern tile.")
+
+(INPUT key-tile "a key tile holds exactly one cell other than background, at its center, of a color that is neither pattern_color nor divider_color."
+
+  (DET &off_line
+    (ex_input *E *P (:Col *C))
+    (split P *A (:Along *L))
+    (ex_input E (:P *Q) (:Col *Col2))
+    (split (:P Q) A (:Along L))
+    (!= C Col2))
+
+  (DET &line_fill
+    (ex_input *E *P (:Col *C))
+    (split P *A (:Along *L))
+    (NOT (&off_line E A L C)))
+
+  (DET &unfilled
+    (&line_fill *C)
+    (ex_input *E)
+    (NOT (&line_fill E C)))
+
+  (DET &divider_color
+    (&line_fill *C)
+    (NOT (&unfilled C)))
+
+  (RULE &divider
+    (&divider_color (:C *Col)))
+
+  (RULE &tiles_divider
+    (&line_color.value (:key *A *L) (:v *Col))
+    (&divider Col))
+
+  (RULE &tiles_on_divider
+    (input *P)
+    (&tiles_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiles_rank Order
+    (key ((OR ((&tiles_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiles_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiles_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiles_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&tiles_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiles_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiles_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiles_part_idx *P D (:N *N1))
+    (&tiles_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &tiles_tile_of
+    (&tiles_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiles_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiles_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&tiles_tile_of *P (:P_tile T))))))
+
+(INPUT pattern-tile "a pattern tile holds only background and pattern_color cells, at least one of them pattern_color."
+
+  (INIT &ink_count_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col)))
+          (&divider)
+          (NOT (&divider Col)))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&background (:C Col)))
+        (&divider)
+        (NOT (&divider Col)))))
+
+  (INIT &ink_count Order
+    (member ((:t Col))
+      (&ink_count_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&ink_count_count.size (:key *Col) *N)))
+
+  (INIT &commonest2 Singleton
+    (member ((:v Col))
+      (&ink_count.maximal (:t *Col)))))
+
+(INPUT key-side "every key tile sits on the same side of the two-deep axis.")
+
+(OUTPUT paint-pattern "each pattern_color cell of a pattern tile takes the color of the key cell in the tile paired with it.")
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  (RULE &tile_cell
+    (&tiles_tile_of *P (:P_tile *T))
+    (input P *Col))
+
+  (DET &pattern_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *Col2))
+    (!= C Col2))
+
+  (RULE &pattern
+    (&pattern_color (:C *Col)))
+
+  (RULE &key_color
+    (&tile_cell *T *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&pattern Col))))
+
+(ALTS $pg "which key tile a pattern tile takes its color from" $Across
+  (ALT $AdjacentKey
+    (INPUT tile-pairs "a pattern tile is a tile with no key color, over any tile layout; undefined where it has no key tile beside it, or more than one")
+    (INPUT key-side "every key tile sits on the same side of the two-deep axis.")
+    (OUTPUT paint-pattern "a pattern tile takes the color of the one key tile that shares a divider with it"
+      (RULE &beset
+        (&tile_cell *T)
+        (dir_elem (:D *D1))
+        (neighbor (:P T) (:D D1) (:Q *K1))
+        (&key_color (:T K1))
+        (dir_elem (:D *D2))
+        (neighbor (:P T) (:D D2) (:Q *K2))
+        (&key_color (:T K2))
+        (!= D1 D2)))
+    (RULE &source
+      (&tile_cell *T)
+      (NOT (&key_color T))
+      (NOT (&beset T))
+      (dir_elem *D)
+      (neighbor (:P T) D (:Q *K))
+      (&key_color (:T K)))
+
+    (RULE &defect
+      (OR ((&key_color *T (:Col *Col1))
+           (&key_color T (:Col *Col2))
+           (!= Col1 Col2))
+          ((OR ((&tile_cell (:T *T2))
+                (NOT (&key_color (:T T2)))
+                (NOT (&source (:T T2))))
+               ((NOT (&divider)))))
+          ((NOT (&pattern))))))
+  (ALT $ReadingOrder
+    (OUTPUT paint-pattern "the pattern tiles in reading order take the colors of the key tiles in reading order, one each; undefined where a pattern tile has no key tile of its rank"
+      ;; the corner reading order starts from, and the axis it reads first
+      (DET &reading_corner DiagDirDomain)
+
+      (DET &reading_axis AxisDomain)
+
+      (INIT &key_order Order
+        (member ((:t P))
+          (&key_color (:T *P)))
+        (score ((:t P) (:S K1))
+          (&key_color (:T *P))
+          (&reading_corner (:D *Diag))
+          (&reading_axis *A)
+          (diag_dist P Diag A *K1 *K2))
+        (secondary_score ((:t P) (:S K2))
+          (&key_color (:T *P))
+          (&reading_corner (:D *Diag))
+          (&reading_axis *A)
+          (diag_dist P Diag A *K1 *K2)))
+
+      (RULE &pattern_order_cell
+        (&tile_cell (:T *P))
+        (NOT (&key_color (:T P))))
+
+      (INIT &pattern_order Order
+        (member ((:t P))
+          (&pattern_order_cell *P))
+        (score ((:t P) (:S K1))
+          (&pattern_order_cell *P)
+          (&reading_corner (:D *Diag))
+          (&reading_axis *A)
+          (diag_dist P Diag A *K1 *K2))
+        (secondary_score ((:t P) (:S K2))
+          (&pattern_order_cell *P)
+          (&reading_corner (:D *Diag))
+          (&reading_axis *A)
+          (diag_dist P Diag A *K1 *K2))))
+    (RULE &source
+      (&pattern_order.rank (:t *T) *R)
+      (&key_order.rank (:t *K) R))
+
+    (RULE &defect
+      (OR ((&key_color *T (:Col *Col1))
+           (&key_color T (:Col *Col2))
+           (!= Col1 Col2))
+          ((OR ((&tile_cell (:T *T2))
+                (NOT (&key_color (:T T2)))
+                (NOT (&source (:T T2))))
+               ((NOT (&divider)))))
+          ((NOT (&pattern)))))))
+
+(ALTS $ky "which tile of a pair is the key, and its color" $ExtraColor
+  (ALT $DotKey
+    (INPUT key-tile "the key tile is the tile holding exactly one non-background cell, of any color; undefined where both tiles of a pair, or neither, hold a lone cell"
+      (RULE &ink
+        (&tile_cell *T *P *Col)
+        (NOT (&background (:C Col))))
+
+      (RULE &crowded
+        (&ink *T *P)
+        (&ink T (:P *Q))
+        (!= P Q))
+
+      (RULE &key_color
+        (&ink *T *P)
+        (NOT (&crowded T))
+        (input P *Col)))
+    (ALTS $paint "which cells of the pattern tile are repainted" $PatternCells
+      (ALT $PaintAllInk
+        (INPUT key-side "every key tile sits on the same side of the two-deep axis.")
+        (OUTPUT paint-pattern "every non-background cell of the pattern tile takes the key color; undefined where $DotKey is")
+        (RULE &paint_cell
+          (&ink *T *P)
+          (NOT (&key_color T))))))
+  (ALT $CenterKey
+    (INPUT key-tile "the key tile is the tile whose center cell is neither background nor pattern_color, and its color is that cell's; undefined where both tiles of a pair, or neither, have such a center"
+      (RULE &key_color
+        (&tile_box.box (:key *T) *B)
+        (&tile_cell T *P *Col)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (centered (:P P_inner))
+        (NOT (&background (:C Col)))
+        (NOT (&pattern Col))))))
+
+(ALTS $ps "the source of pattern_color" $StoredPattern
+  (ALT $CommonestInk
+    (INPUT pattern-tile "pattern_color is the commonest color of the input other than background and divider_color; undefined where that count ties"
+      (RULE &pattern
+        (&commonest2.value (:v *Col))))))
+
+(ALTS $dv "the source of divider_color" $StoredDivider
+  (ALT $LineDivider
+    (INPUT divider-lines "divider_color is the one non-background color that fills whole rows or columns; undefined where no such color exists or several do"
+      (RULE &divider
+        (&line_fill2.value (:v *Col))))))
+
+(RULE &partner
+  (&tile_cell *T)
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (margin (:B T) (:D D2) (:K 0))
+  (neighbor (:P T) D (:Q *T2))
+  (margin (:B T2) D (:K 0)))
+
+(RULE &axis_defect
+  (&partner *A *T *T2)
+  (OR ((&key_color T)
+       (&key_color (:T T2)))
+      ((NOT (&key_color T))
+       (NOT (&key_color (:T T2))))))
+
+(RULE &paired_axis
+  (&partner *A)
+  (NOT (&axis_defect A)))
+
+(RULE &source
+  (&paired_axis *A)
+  (&partner A *T (:T2 *K))
+  (&key_color (:T K))
+  (NOT (&key_color T)))
+
+(RULE &paint_cell
+  (&tile_cell *T *P *Col)
+  (&pattern Col)
+  (NOT (&key_color T)))
+
+(RULE &defect
+  (OR ((&key_color *T (:Col *Col1))
+       (&key_color T (:Col *Col2))
+       (!= Col1 Col2))
+      ((OR ((&tile_cell (:T *T2))
+            (NOT (&key_color (:T T2)))
+            (NOT (&source (:T T2))))
+           ((NOT (&divider)))))
+      ((NOT (&pattern)))
+      ((NOT (&paired_axis)))))
+
+(RULE &output
+  (OR ((&paint_cell *T *P)
+       (&source T *K)
+       (&key_color (:T K) *Col)
+       (NOT (&defect)))
+      ((input P Col)
+       (NOT (&paint_cell P))
+       (NOT (&defect)))))
+
+(OUT (&output ^P ^Col))

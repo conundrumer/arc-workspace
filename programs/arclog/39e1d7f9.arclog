@@ -1,0 +1,158 @@
+;; inputs 1f95d1e0660dceb45327d2302f0c42e54d1c31dfd1ee8fe5942f0f631851fc1e programs/solvers/39e1d7f9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 39e1d7f9
+
+(DET &bg SharedColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &tiling_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&tiling_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A divider is a drawn line that spans the grid.
+(INIT &tiling_rank Order
+  (key ((OR ((&tiling_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiling_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiling_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &tile_color Singleton
+  (key ((&tiling_tile_of *P ^P_tile)
+        (input P *Col))
+    (member ((:v Col))
+      (&tiling_tile_of *P P_tile)
+      (input P *Col))))
+
+(RULE &ink
+  (&tile_color.value (:key *P_tile) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(INIT &obj Connectivity
+  (node ((:P P_tile))
+    (&ink *P_tile))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+;; An object's cell, when the object has just one; the motif clashes.
+(INIT &obj_cell Singleton
+  (key ((&obj.component (:P *P_tile) ^Id))
+    (member ((:v P_tile))
+      (&obj.component (:P *P_tile) Id))))
+
+(RULE &motif
+  (&obj.component (:P *P_tile) *Id)
+  (&obj_cell.plural (:key Id))
+  (&ink P_tile *Col))
+
+;; $Whole — every cell of the motif.
+(RULE &footprint
+  (&motif (:P_tile *P_tile_seat))
+  (&motif (:P_tile *P_tile_motif) *Col)
+  (relative (:Base P_tile_seat) (:X P_tile_motif) (:X_rel *V)))
+
+;; $Match — the motif cell carrying the single cell's color.
+(RULE &seat
+  (&obj_cell.value (:v *P_tile_seed))
+  (&ink (:P_tile P_tile_seed) *Col)
+  (&motif (:P_tile *P_tile_seat) Col))
+
+(ALTS $sp "what a copy carries" $Whole
+  (ALT $Ring
+    ;; $Ring — the cells beside the seating cell.
+    (RULE &footprint
+      (&motif (:P_tile *P_tile_seat))
+      (neighbor (:P P_tile_seat) *D (:Q *P_tile_motif))
+      (&motif (:P_tile P_tile_motif) *Col)
+      (step_offset D *V))))
+
+(ALTS $st "which motif cell seats a copy" $Match
+  (ALT $Unique
+    ;; $Unique — the motif cell whose color no other motif cell carries.
+    (INIT &color_cell Singleton
+      (key ((&motif *P_tile ^Col))
+        (member ((:v P_tile))
+          (&motif *P_tile Col))))
+
+    (RULE &seat
+      (&obj_cell.value (:v *P_tile_seed))
+      (&color_cell.value (:v *P_tile_seat))))
+  (ALT $Center
+    ;; $Center — the motif cell at the center of the motif's box.
+    (INIT &motif_box BoundingBox
+      (cell ((:P P_tile))
+        (&motif *P_tile)))
+
+    (RULE &seat
+      (&obj_cell.value (:v *P_tile_seed))
+      (&motif (:P_tile *P_tile_seat))
+      (&motif_box.box *B)
+      (inside (:A P_tile_seat) B)
+      (relative (:Base B) (:X P_tile_seat) (:X_rel *P_inner))
+      (centered (:P P_inner)))))
+
+(RULE &paint
+  (&seat *P_tile_seed *P_tile_seat)
+  (&footprint P_tile_seat *V *Col)
+  (compose (:A P_tile_seed) (:B V) (:C *P_tile)))
+
+(RULE &paint_cell
+  (&tiling_tile_of *P *P_tile)
+  (&paint P_tile *Col))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&paint_cell P *Col))
+      ((NOT (&paint_cell P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

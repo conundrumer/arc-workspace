@@ -1,0 +1,54 @@
+;; inputs e5ade7e5457348bf6016be3168183c19833797d78ba7c82c2fb20eb3481e5047 programs/solvers/be03b35f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; be03b35f
+
+(DET &frame_dim ConstOutDim)
+
+(INIT &frame_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&frame_dim *N)))
+
+;; Each quadrant's anchored cells must map onto the whole output.
+(INIT &d4m Agreement
+  (key ((OR ((diag_dir_elem (:D ^Diag))
+             (ex_input ^E (:P *P_in) *Col)
+             (ex_output E)
+             (&frame_frame.cell (:P *P_anchor))
+             (same_corner (:D Diag) (:P1 P_anchor) (:P2 P_in)))
+            ((diag_dir_elem (:D Diag))
+             (ex_output E *P Col))))
+    (source ((:P P_anchor) (:v Col))
+      (ex_input E (:P *P_in) *Col)
+      (ex_output E)
+      (&frame_frame.cell (:P *P_anchor))
+      (same_corner (:D Diag) (:P1 P_anchor) (:P2 P_in)))
+    (target (P (:v Col))
+      (diag_dir_elem (:D Diag))
+      (ex_output E *P *Col))))
+
+(DET &broken
+  (&d4m.mismatch (:key *E *Diag) (:D *D4))
+  (ex_output E))
+
+(DET &d4m_src
+  (ex_input *E (:P *P_in) (:Col *V))
+  (ex_output E)
+  (&frame_frame.cell *P)
+  (same_corner (:D *Diag) (:P1 P) (:P2 P_in)))
+
+(DET &template
+  (&d4m_src *E *Diag)
+  (d4_elem (:D *D4))
+  (NOT (&d4m.mismatch (:key E Diag) (:D D4)))
+  (ex_output E)
+  (NOT (&broken Diag D4)))
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&template *Diag (:D4 *D))
+  (&frame_frame.cell (:P *P_anchor))
+  (same_corner (:D Diag) (:P1 P_anchor) (:P2 P_grid_in))
+  (apply D (:P P_anchor) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

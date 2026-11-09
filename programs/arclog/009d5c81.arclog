@@ -1,0 +1,63 @@
+;; inputs 0175100f7110f3ebdc927ed6283292851aa14e5e78de6f0c3ccbcf2ec93bf55d programs/solvers/009d5c81.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 009d5c81
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(DET &ink ChangedColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&marker (:C Col))))
+
+(RULE &key_shape
+  (&bbox.cell *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inkey)))
+
+;; Examples whose keys share a pattern share an entry.
+(INIT &same Inclusion
+  (pattern ((:pattern E) (:m P_inkey))
+    (&key_shape *E *P_inkey)
+    (ex_output E))
+  (observed ((:observed E) (:m P_inkey))
+    (&key_shape *E *P_inkey)
+    (ex_output E)))
+
+(INIT &entry Quotient
+  (equivalent ((:a E) (:b E2))
+    (&same.equal (:observed *E) (:pattern *E2))))
+
+(DET &key_member
+  (&entry.class (:a *E) *Id)
+  (ex_output E)
+  (&key_shape E (:P_inkey *P)))
+
+(INIT &key_match Inclusion
+  (pattern ((:pattern Id) (:m P_inkey))
+    (&key_member *Id (:P *P_inkey)))
+  (observed ((:m P_inkey))
+    (&key_shape *P_inkey)))
+
+(RULE &ink_cell
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(DET &key_out
+  (&entry.class (:a *E) *Id)
+  (ex_output E (:Col *C))
+  (NOT (&bg C)))
+
+(RULE &output
+  (OR ((&ink_cell *P)
+       (&key_match.equal (:pattern *Id))
+       (&key_out Id (:C *Col)))
+      ((input P)
+       (NOT (&ink_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

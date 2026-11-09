@@ -1,0 +1,291 @@
+;; inputs 40a93729ed5579deab8832f7e094baeef95876049c0e5384a58f95cf2791327b programs/solvers/b20f7c8b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b20f7c8b
+
+(INPUT legend-strip "a strip of &panel_color, 6 cells wide, runs the full length of one side edge of the grid, and the rest of the grid is the board, of &board_color"
+
+  (DET_OR_RULE &board_color DominantColor)
+
+  (RULE &board_edge
+    (input *P *Col)
+    (&board_color (:C Col))
+    (margin (:B P) *D (:K 0)))
+
+  (INIT &edge_mode_count Cardinality
+    (key ((input *P ^Col)
+          (dir_elem ^D)
+          (margin (:B P) D (:K 0))
+          (NOT (&board_edge D)))
+      (member ((:m P))
+        (input *P Col)
+        (margin (:B P) D (:K 0))
+        (NOT (&board_edge D)))))
+
+  (DET &panel_color UnchangedColor)
+
+  (INIT &edge_mode Order
+    (key ((&edge_mode_count.size (:key ^D *Col)))
+      (member ((:t Col))
+        (&edge_mode_count.size (:key D *Col)))
+      (score ((:t Col) (:S N))
+        (&edge_mode_count.size (:key D *Col) *N))))
+
+  (INIT &edge_panel Singleton
+    (member ((:v Col))
+      (&edge_mode.maximal (:t *Col)))))
+
+(INPUT legend-glyphs "the strip holds glyphs, each the cells of one color that fill a 3 × 3 box, with each glyph its own color, none of them &panel_color, and no two glyphs the same under &match_group"
+
+  (DET &match_group SymDomain)
+
+  (RULE &board_line
+    (input (:P *Q) *Col)
+    (&board_color (:C Col))
+    (split (:P Q) *A (:Across *L)))
+
+  (RULE &panel
+    (&panel_color (:C *Col)))
+
+  (RULE &strip_line
+    (&panel *Col)
+    (input (:P *Q) Col)
+    (split (:P Q) *A (:Across *L))
+    (NOT (&board_line A L)))
+
+  (RULE &strip
+    (&strip_line *A *L)
+    (input *P)
+    (split P A (:Across L)))
+
+  (RULE &legend_cell
+    (&strip *P)
+    (input P *Col)
+    (NOT (&panel Col)))
+
+  (INIT &part Connectivity
+    (key ((&legend_cell *P ^Col))
+      (node (P)
+        (&legend_cell *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &part_bbox BoundingBox
+    (key ((&part.component *P ^Id))
+      (cell (P)
+        (&part.component *P Id)))))
+
+(INPUT board-boxes "the board holds 5 × 5 boxes, apart from one another on &board_color, one box for each glyph of the legend")
+
+(INPUT box-forms "each box is either a glyph box, a 1-wide frame of &frame_color whose interior is &frame_color with &ink_color cells that fill the interior and equal one legend glyph under &match_group, or a solid box of one legend glyph's color, and no two boxes stand for the same glyph"
+
+  (RULE &boxed
+    (&panel)
+    (input *P *Col)
+    (NOT (&board_color (:C Col)))
+    (NOT (&strip P)))
+
+  (INIT &boxes Connectivity
+    (node (P)
+      (&boxed *P)))
+
+  (INIT &box_color Singleton
+    (key ((&boxes.component ^Id *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&boxes.component Id *P)
+        (input P *Col))))
+
+  (INIT &box_bbox BoundingBox
+    (key ((&boxes.component ^Id *P))
+      (cell (P)
+        (&boxes.component Id *P))))
+
+  (RULE &box_inner
+    (&boxes.component (:Id *Bx) *P)
+    (&box_bbox.box (:key (:Id Bx)) *B)
+    (interior (:A P) B))
+
+  (DET &changed
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET &edge_change
+    (&changed *E *P *C_in *C_out)
+    (neighbor P *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (ex_output E (:P Q) (:Col C)))
+
+  (DET &frame_defect
+    (ex_output *Col)
+    (&edge_change *C_in *C_out)
+    (!= C_in Col)
+    (!= C_out Col))
+
+  (DET &frame_color
+    (ex_output (:Col *C))
+    (NOT (&frame_defect (:Col C))))
+
+  (DET &ink_defect
+    (ex_output *Col)
+    (&frame_color (:C *F))
+    (!= Col F)
+    (&changed *C_in *C_out)
+    (!= C_in Col)
+    (!= C_out Col)
+    (!= C_in F)
+    (!= C_out F))
+
+  (DET &ink_color
+    (ex_output (:Col *C))
+    (&frame_color (:C *F))
+    (!= C F)
+    (NOT (&ink_defect (:Col C))))
+
+  (INIT &frame_read Singleton
+    (member ((:v Col))
+      (&box_color.plural (:key *Id))
+      (&boxes.component Id *P)
+      (NOT (&box_inner (:Bx Id) P))
+      (input P *Col)))
+
+  (INIT &ink_read Singleton
+    (member ((:v Col))
+      (&frame_read.value (:v *F))
+      (&box_color.plural (:key *Id))
+      (&boxes.component Id *P)
+      (input P *Col)
+      (!= Col F))))
+
+(OUTPUT glyph-to-solid "a glyph box becomes a solid box, all of the color of the legend glyph that its &ink_color cells equal under &match_group"
+
+  (INIT &inner_bbox BoundingBox
+    (key ((&box_inner (:Bx ^Id) *P))
+      (cell (P)
+        (&box_inner (:Bx Id) *P))))
+
+  (RULE &colors
+    (&panel)
+    (&frame_color (:C *C_frame))
+    (&ink_color (:C *C_ink)))
+
+  (RULE &ink
+    (&colors (:C_ink *I))
+    (&inner_bbox.box (:key (:Id *Bx)) *B)
+    (input (:P *P2) (:Col I))
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &class_bbox BoundingBox
+    (key ((&legend_cell *P ^Col))
+      (cell (P)
+        (&legend_cell *P Col))))
+
+  (RULE &glyph_cell
+    (&legend_cell (:P *P2) *Col)
+    (&class_bbox.box (:key Col) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &pose Inclusion
+    (pattern ((:pattern (:Col G_col) (:B G_b) D) (:m P_turned))
+      (&glyph_cell (:Col *G_col) (:B *G_b) *P)
+      (&match_group *S)
+      (sym_member S *D)
+      (apply D P (:P_out *P_turned)))
+    (observed ((:observed Bx) (:m P))
+      (&ink *Bx *P)))
+
+  ;; The one legend color a glyph box takes.
+  (INIT &match_color Singleton
+    (key ((&pose.equal (:observed ^Bx) (:pattern *Col)))
+      (member ((:v Col))
+        (&pose.equal (:observed Bx) (:pattern *Col)))))
+
+  (INIT &plain Inclusion
+    (pattern ((:pattern (:Col G_col) (:B G_b)) (:m P))
+      (&glyph_cell (:Col *G_col) (:B *G_b) *P))
+    (observed ((:observed Bx) (:m P))
+      (&ink *Bx *P))))
+
+(OUTPUT solid-to-glyph "a solid box of a color becomes a glyph box: its 1-wide frame and interior take &frame_color, and the interior takes &ink_color at the cells of that color's legend glyph, untransformed"
+
+  ;; The one glyph of each legend color.
+  (INIT &color_glyph Singleton
+    (key ((&glyph_cell ^Col *B))
+      (member ((:v Col B))
+        (&glyph_cell Col *B)))))
+
+(OUTPUT rest-unchanged "every cell outside the boxes keeps its color")
+
+(ALTS $parse "which strip cells form one glyph" $ColorGlyph
+  (ALT $GlyphByComponent
+    (INPUT legend-glyphs "the strip holds glyphs, each one 8-connected piece of one color, none of them &panel_color; undefined where a solid box's color has several glyphs, and where a glyph box matches glyphs of two colors"
+      (RULE &glyph_cell
+        (&part.component (:key *Col) (:P *P2) *Id)
+        (&part_bbox.box (:key Id) *B)
+        (inside (:A P2) B)
+        (relative (:Base B) (:X P2) (:X_rel *P))))))
+
+(ALTS $panel "where the strip's color comes from" $StoredPanel
+  (ALT $PanelColorRead
+    (INPUT legend-strip "the strip's color is the commonest color of the edge line of the grid that holds no &board_color cell; undefined where no such edge line exists, and where those lines give more than one color"
+      (RULE &panel
+        (&edge_panel.value (:v *Col))))))
+
+(ALTS $matching "which legend color a glyph box takes" $AnyPose
+  (ALT $ExactFirst
+    (OUTPUT glyph-to-solid "a glyph box takes the color of the legend glyph that its ink cells equal untransformed, where there is one, and otherwise of the glyph they equal under &match_group; undefined where none equals them untransformed and glyphs of two colors equal them under &match_group"
+
+      ;; The one legend color a glyph box takes.
+      (INIT &match_color Singleton
+        (key ((&pose.equal (:observed ^Bx) (:pattern *Col))
+              (OR ((&plain.equal (:observed Bx) (:pattern Col)))
+                  ((NOT (&plain.equal (:observed Bx))))))
+          (member ((:v Col))
+            (&pose.equal (:observed Bx) (:pattern *Col))
+            (OR ((&plain.equal (:observed Bx) (:pattern Col)))
+                ((NOT (&plain.equal (:observed Bx)))))))))))
+
+(ALTS $colors "where the frame and ink colors come from" $StoredBoxColors
+  (ALT $BoxColorsRead
+    (INPUT box-forms "the frame color is the border color of the boxes of several colors, and the ink color is their other color; undefined where no box has several colors, and where those boxes give more than one frame color or more than one ink color"
+      (RULE &colors
+        (&frame_read.value (:v *C_frame))
+        (&ink_read.value (:v *C_ink))))))
+
+(RULE &solid_box
+  (&colors)
+  (&box_color.value (:key (:Id *Bx)) (:v *Col)))
+
+(RULE &drawn
+  (&solid_box *Bx (:Col *C_box))
+  (&color_glyph.value (:key (:Col C_box)) (:v (:Col *G_col) (:B *G_b)))
+  (&glyph_cell (:Col G_col) (:B G_b) (:P *P_inner))
+  (&inner_bbox.box (:key (:Id Bx)) *B)
+  (compose (:A B) (:B P_inner) (:C *P)))
+
+(RULE &paint
+  ;; A glyph box turns solid.
+  (OR ((&box_color.plural (:key *Id))
+       (&match_color.value (:key (:Bx Id)) (:v *Col))
+       (&boxes.component Id *P))
+      ;; A solid box draws its glyph.
+      ((&solid_box (:Bx *Id2) (:Col *C_box))
+       (&color_glyph.value (:key (:Col C_box)))
+       (&colors (:C_frame *F) (:C_ink *I))
+       (&boxes.component (:Id Id2) P)
+       (IF ((&drawn (:Bx Id2) P))
+           ((= Col I))
+           ((= Col F))))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&colors)
+       (input P Col)
+       (NOT (&boxed P)))))
+
+(OUT (&output ^P ^Col))

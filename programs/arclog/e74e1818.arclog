@@ -1,0 +1,129 @@
+;; inputs 6e9c6c69bb3d00c73d93dcb9a2e678cbaf795ff60c75b785e02a03bb3df4f317 programs/solvers/e74e1818.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e74e1818
+
+(INPUT layer-per-color "each color other than &bg forms one layer, and the layer's cells are all the cells of that color."
+
+  (DET &shared_line
+    (ex_input *E (:P *P1) (:Col *Col1))
+    (ex_input E (:P *P2) (:Col *Col2))
+    (!= Col1 Col2)
+    (ex_output E)
+    (split (:P P1) *A (:Along *L))
+    (split (:P P2) A (:Along L))
+    (ex_input E *Col)
+    (!= Col Col1)
+    (!= Col Col2))
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input (:Col *C))
+    (axis_elem *A)
+    (NOT (&shared_line (:Col C) A))))
+
+(INPUT stacked-layers "along &axis, the layers occupy disjoint, consecutive spans of lines, and each line that a layer covers holds a cell of that layer."
+
+  ;; the axis along which the layers stack and are flipped
+  (DET &axis AxisDomain))
+
+(INPUT background "every other cell has &bg.")
+
+(OUTPUT flip-in-span "each layer is reflected across the center of its own span along &axis: a cell at line k of a span from line a to line b moves to line a + b - k, and keeps its position across the axis."
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &ink_line
+    (&ink *P *Col)
+    (&axis *A)
+    (split P A (:Along *L)))
+
+  ;; The one ink color of each line.
+  (INIT &line_color Singleton
+    (key ((&ink_line *Col ^L))
+      (member ((:v Col))
+        (&ink_line *Col L))))
+
+  (INIT &bands Connectivity
+    (key ((&line_color.value (:key *L) (:v ^Col)))
+      (node ((:P L))
+        (&line_color.value (:key *L) (:v Col)))))
+
+  (INIT &band_box BoundingBox
+    (key ((&ink_line *P *Col *L)
+          (&bands.component (:key Col) (:P L) ^Id))
+      (cell (P)
+        (&ink_line *P *Col *L)
+        (&bands.component (:key Col) (:P L) Id)))))
+
+(OUTPUT background-fill "every cell that no reflected layer covers has &bg."
+
+  (INIT &color_box BoundingBox
+    (key ((&ink *P ^Col))
+      (cell (P)
+        (&ink *P Col))))
+
+  (RULE &layer_box
+    (&ink *P *Col)
+    (&color_box.box (:key Col) *B))
+
+  (RULE &layer_span
+    (&layer_box *P *B)
+    (&axis *A)
+    (split (:P B) A (:Along *S)))
+
+  (RULE &half_turn
+    (axis_inversion *A (:T *F1))
+    (perp A *A2)
+    (axis_inversion (:A A2) (:T *F2))
+    (d4_compose (:A F1) (:B F2) (:C *D))))
+
+(ALTS $layer "what a layer is" $ColorLayer
+  (ALT $RowBandLayer
+    (INPUT layer-per-color "a layer is a maximal run of consecutive lines whose cells other than &bg all have one color; undefined where a line holds two such colors"
+      (RULE &layer_box
+        (&band_box.cell (:key *Id) *P)
+        (&band_box.box (:key Id) *B)))
+    (INPUT stacked-layers "two runs may share a color")
+    (RULE &layering
+      (NOT (&line_color.plural)))))
+
+(ALTS $transform "what moves each layer's cells" $FlipInSpan
+  (ALT $Rot180InBox
+    (OUTPUT flip-in-span "each layer turns a half turn within its bounding box")
+    (RULE &framed
+      (&layer_box *P (:B *F)))
+
+    (RULE &transform
+      (&half_turn *D)))
+  (ALT $Rot180InSpan
+    (OUTPUT flip-in-span "each layer turns a half turn within its span of lines, across the whole grid")
+    (RULE &transform
+      (&half_turn *D))))
+
+(RULE &framed
+  (&layer_span *P (:S *F)))
+
+(RULE &transform
+  (&axis *A)
+  (axis_inversion A (:T *D)))
+
+(RULE &moved
+  (&framed (:P *P2) *F)
+  (&ink (:P P2) *Col)
+  (&transform *D)
+  (inside (:A P2) (:B F))
+  (relative (:Base F) (:X P2) (:X_rel *P_rel))
+  (apply D (:P P_rel) (:P_out *Q_rel))
+  (compose (:A F) (:B Q_rel) (:C *P)))
+
+(RULE &layering)
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P)
+       (&layering)
+       (NOT (&moved P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

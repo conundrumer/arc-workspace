@@ -1,0 +1,216 @@
+;; inputs 7f17f89ec792f5f97d80b29df18e1824468dbcc65a8fd30ec42eb7e704bf7493 programs/solvers/b527c5c6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b527c5c6
+
+(INPUT bars "the input holds solid rectangles of &bar_color on &background, apart from one another, each at least two cells thick and longer along one axis than across it"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &bar_color UnchangedColor))
+
+(INPUT one-mark-per-bar "each bar holds exactly one cell of &mark_color, on one of its long sides, with at least the bar's thickness less one cells of that side on each side of it; the bar holds no other color"
+
+  (DET &mark_color RarestColor))
+
+(INPUT clear-paths "the beam of each bar crosses only &background cells, so no beam meets another bar or another beam")
+
+(OUTPUT beam-direction "a bar's beam leaves the side of the bar that holds its mark, toward the grid edge that side faces, and runs from the cell next to the bar up to that grid edge; where the mark sits on more than one side, the model is undefined")
+
+(OUTPUT beam-core "the beam's center line is the mark's line across the bar; outside the bar, each of its cells takes &mark_color")
+
+(OUTPUT beam-flanks "on each side of the center line, the beam is as wide as the bar's extent across the marked side less one (the distance from the mark to the bar's far side), and each flank cell takes &bar_color; a flank cell past the grid edge is dropped")
+
+(OUTPUT keep-rest "every cell outside the beams keeps its input color"
+
+  ;; The pieces: the components of the non-background cells.
+  (INIT &piece Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id))))
+
+  (RULE &mark_cand
+    (&piece.component *P *Id)
+    (input P *Col)
+    (&mark_color (:C Col)))
+
+  (INIT &mark Singleton
+    (key ((&mark_cand ^Id *P))
+      (member ((:v P))
+        (&mark_cand Id *P))))
+
+  (RULE &body_cand
+    (&piece_box.box (:key *Id))
+    (&bar_color (:C *Col)))
+
+  (INIT &body Singleton
+    (key ((&body_cand ^Id *Col))
+      (member ((:v Col))
+        (&body_cand Id *Col))))
+
+  (RULE &mark_side
+    (&mark.value (:key *Id) (:v *Q))
+    (&piece_box.box (:key Id) *B)
+    (inside (:A Q) B)
+    (same_dist *D (:P1 Q) (:P2 B)))
+
+  (INIT &side Singleton
+    (key ((&mark_side ^Id *D))
+      (member ((:v D))
+        (&mark_side Id *D))))
+
+  (RULE &beam
+    (&side.value (:key *Id) (:v *D))
+    (&mark.value (:key Id) (:v *Q))
+    (&piece_box.box (:key Id) *B))
+
+  ;; The foot lies within the bar's rows or columns across the marked side.
+  (RULE &foot
+    (&beam *Q *B *D)
+    (axis_of D *A)
+    (split (:P B) A (:Along *B_slab))
+    (input (:P *F))
+    (inside (:A F) (:B B_slab))
+    (diag_axis_elem *Da)
+    (same_line (:A Da) (:P Q) (:Q F)))
+
+  (RULE &beam_cell
+    (&foot *Q *F)
+    (&beam Q *D)
+    (axis_of D *A)
+    (input *P)
+    (same_line A (:P F) (:Q P))
+    (nearer D P Q))
+
+  (RULE &stroke
+    (&beam_cell *Q *F *P))
+
+  (RULE &flank
+    (&stroke *Q *F *P)
+    (!= F Q)
+    (&piece.component (:P Q) *Id)
+    (&body.value (:key Id) (:v *Col))))
+
+(ALTS $side "which side of the bar the beam leaves" $MarkSide
+  (ALT $LongSide
+    (OUTPUT beam-direction "the beam leaves the long side of the bar that holds the mark, and the flank width is the bar's thickness less one; undefined on a square bar, on a mark on a short side away from the corners, and on a bar one cell thick"
+      ;; A long side: the bar is thinner across it than along it.
+      (RULE &mark_side
+        (&mark.value (:key *Id) (:v *Q))
+        (&piece_box.box (:key Id) *B)
+        (inside (:A Q) B)
+        (same_dist *D (:P1 Q) (:P2 B))
+        (axis_of D *A)
+        (perp A *A2)
+        (box_extent B (:P Q) A (:N *N1))
+        (box_extent B (:P Q) (:A A2) (:N *N2))
+        (< N1 N2)))))
+
+(ALTS $span "how far the flanks reach along the marked side" $PastEnd
+  (ALT $ClipToBar
+    (OUTPUT beam-flanks "a flank line outside the bar's span along the marked side is dropped; undefined where the concept is"
+      ;; The foot lies within the bar.
+      (RULE &foot
+        (&beam *Q *B)
+        (input (:P *F))
+        (inside (:A F) B)
+        (diag_axis_elem *Da)
+        (same_line (:A Da) (:P Q) (:Q F))))))
+
+(ALTS $block "what a beam does at a non-background cell on its path" $PaintOver
+  (ALT $Underlay
+    (OUTPUT beam-core "a beam cell takes its color only where the input is &background, and the beam runs on past the cell; undefined where the concept is"
+      (RULE &stroke
+        (&beam_cell *Q *F *P)
+        (input P *Col)
+        (&background (:C Col))))
+    (OUTPUT beam-flanks "a flank cell takes &bar_color only where the input is &background"))
+  (ALT $Blocked
+    (OUTPUT beam-direction "each line of the beam ends at the cell before its first non-background cell; undefined where the concept is"
+      (RULE &stopped
+        (&beam_cell *Q *F *D *P)
+        (&beam_cell Q F D (:P *P2))
+        (input (:P P2) *Col)
+        (NOT (&background (:C Col)))
+        (NOT (nearer D (:P P2) (:Q P))))
+
+      (RULE &stroke
+        (&beam_cell *Q *F *P)
+        (NOT (&stopped Q F P))))))
+
+(ALTS $overlap "the color of a cell where two beams give different colors" $NoOverlap
+  (ALT $CoreOnTop
+    (OUTPUT core-on-top "where beams overlap, a core cell covers a flank cell; undefined where two flanks or two cores of different colors overlap"
+      (RULE &core
+        (&stroke *Q (:F Q) *P)))
+    (RULE &paint
+      (OR ((&flank *P *Col)
+           (NOT (&core P)))
+          ((&stroke *Q (:F Q) P)
+           (input (:P Q) Col))))))
+
+(ALTS $colors "where the beam's colors come from" $StoredColors
+  (ALT $OwnColors
+    (INPUT bars "each non-background piece is a solid rectangle of one color with one cell of another color; undefined where a piece is not such a rectangle")
+    (INPUT one-mark-per-bar "the mark is the piece's one cell of the other color")
+    (OUTPUT beam-core "the core takes the mark's color"
+      (RULE &repeated
+        (&piece.component (:P *P1) *Id)
+        (input (:P P1) *Col)
+        (&piece.component (:P *P2) Id)
+        (input (:P P2) Col)
+        (!= P1 P2))
+
+      (RULE &mark_cand
+        (&piece.component *P *Id)
+        (input P *Col)
+        (NOT (&repeated Id Col)))
+
+      (RULE &body_cand
+        (&repeated *Id *Col)))
+    (OUTPUT beam-flanks "the flanks take the rectangle's color")
+    (RULE &bad_piece
+      (OR ((&hollow *Id))
+          ((&piece_box.box (:key Id))
+           (OR ((NOT (&mark.value (:key Id))))
+               ((NOT (&body.value (:key Id))))))))))
+
+(RULE &hollow
+  (&piece_box.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&piece.component P Id)))
+
+(RULE &bad_piece
+  (OR ((&hollow *Id))
+      ((&piece_box.box (:key Id))
+       (OR ((NOT (&mark.value (:key Id))))
+           ((NOT (&body.value (:key Id))))))
+      ;; A piece with a cell of neither color.
+      ((&piece.component *P Id)
+       (input P *Col)
+       (NOT (&mark_color (:C Col)))
+       (NOT (&bar_color (:C Col))))))
+
+(RULE &undefined
+  (OR ((&bad_piece))
+      ((&mark.value (:key *Id))
+       (NOT (&side.value (:key Id))))))
+
+(RULE &paint
+  (OR ((&stroke *Q (:F Q) *P)
+       (input (:P Q) *Col))
+      ((&flank P Col))))
+
+(RULE &output
+  (NOT (&undefined))
+  (input *P (:Col *Col_in))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

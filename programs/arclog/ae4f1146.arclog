@@ -1,0 +1,83 @@
+;; inputs bc785e55b0b5454f4d15ee4d6e207f0e6af2eb9f946e5f65c38e04d0c7e3bef8 programs/solvers/ae4f1146.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ae4f1146
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(DET &mark RarestColor)
+
+(INIT &comp_winner_count Cardinality
+  (key ((&comps.component *P ^Id)
+        (input P *Col)
+        (&mark (:C Col)))
+    (member ((:m P))
+      (&comps.component *P Id)
+      (input P *Col)
+      (&mark (:C Col)))))
+
+(INIT &comp_winner Order
+  (member ((:t Id))
+    (&comp_winner_count.size (:key *Id)))
+  (score ((:t Id) (:S N))
+    (&comp_winner_count.size (:key *Id) *N)))
+
+;; Crop to the winner's bounding box.
+(INIT &view BoundingBox
+  (cell (P)
+    (&comp_winner.maximal (:t *Id))
+    (&comps.component *P Id)))
+
+(ALTS $choice "what structure counts as a block" $Object
+  (ALT $Window
+    (DET &dim ConstOutDim)
+
+    (INIT &shape_frame Frame
+      (extent (A N)
+        (axis_elem *A)
+        (&dim *N)))
+
+    ;; Placements where the square lands all-ink.
+    (INIT &occ Occurrences
+      (cell (P)
+        (input *P *Col)
+        (NOT (&bg (:C Col))))
+      (shape (P)
+        (&shape_frame.cell *P)))
+
+    (RULE &window_cell
+      (&occ.occurrence (:P *Anchor))
+      (&shape_frame.cell (:P *P_inner))
+      (compose (:A Anchor) (:B P_inner) (:C *P_grid)))
+
+    (INIT &window_winner_count Cardinality
+      (key ((&window_cell (:Anchor ^A) (:P_grid *P))
+            (input P *Col)
+            (&mark (:C Col)))
+        (member ((:m P))
+          (&window_cell (:Anchor A) (:P_grid *P))
+          (input P *Col)
+          (&mark (:C Col)))))
+
+    (INIT &window_winner Order
+      (member ((:t A))
+        (&window_winner_count.size (:key *A)))
+      (score ((:t A) (:S N))
+        (&window_winner_count.size (:key *A) *N)))
+
+    (RULE &output
+      (&window_winner.maximal (:t *A))
+      (&window_cell (:Anchor A) (:P_inner *P) (:P_grid *P2))
+      (input (:P P2) *Col))))
+
+(RULE &output
+  (input (:P *P2) *Col)
+  (&view.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

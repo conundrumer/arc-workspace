@@ -1,0 +1,39 @@
+;; inputs c2526a106df552cd207cd23f66337a271ce9d3100bef453f2fdbcce1a9e1d50d programs/solvers/09c534e7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 09c534e7
+
+(DET &bg DominantColor)
+
+(DET &outline SharedColor)
+
+(RULE &ink
+  (input *P (:Col *C))
+  (NOT (&bg C)))
+
+(INIT &comp Connectivity
+  (node (P)
+    (&ink *P)))
+
+(INIT &border Boundary
+  (cell (P)
+    (&ink *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &seed
+  (&comp.component *P *Id)
+  (input P *Col)
+  (NOT (&outline (:C Col))))
+
+(RULE &fill
+  (&ink *P)
+  (NOT (&border.boundary P))
+  (&comp.component P *Id)
+  (&seed Id *Col))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

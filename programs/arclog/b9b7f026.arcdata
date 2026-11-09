@@ -1,0 +1,123 @@
+;; inputs 782abd7288122275a15c31ac19a444250f070bc174dd58202158339291a18f34 programs/solvers/b9b7f026.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b9b7f026
+
+(param &bg Color (0))
+(param &out_dim (Axis number) (AXIS_V 1) (AXIS_H 1))
+
+(alts $pick
+  (alt $NotSolid
+    (witness not-solid borderline $NotSolid
+      (relaxed one-holed)
+      (separates "a rectangle whose hole opens to the outside through one wall: the concept finds no closed hole and gives nothing; $NotSolid gives that rectangle's color")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 0 0 0 0 0)
+        (0 3 0 3 0 4 4 4 0)
+        (0 3 0 3 0 4 4 4 0)
+        (0 3 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $Closure undefined)
+      (output $NotSolid (grid
+        (3))))))
+
+(alts $walk
+  (alt $HoleNeighbors
+    (witness hole-neighbors borderline concept
+      (separates "a dot of another color stands inside the hole: the concept gives the frame's color; $HoleNeighbors takes both the frame and the dot, since the dot touches the hole, and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 6 6 6 6 6 0 0 0)
+        (0 6 0 0 0 6 0 4 4)
+        (0 6 0 1 0 6 0 4 4)
+        (0 6 0 0 0 6 0 0 0)
+        (0 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $BgWalk $OwnEnclosure $NotSolid (grid
+        (6)))
+      (output $HoleNeighbors undefined)))
+  (alt $OwnEnclosure
+    (witness own-enclosure borderline $OwnEnclosure
+      (relaxed one-holed)
+      (separates "a hollow rectangle whose hole another rectangle fills whole: the concept finds no closed background and gives nothing; $OwnEnclosure gives the frame's color")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0)
+        (0 5 2 2 5 0 3 3)
+        (0 5 2 2 5 0 3 3)
+        (0 5 5 5 5 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $BgWalk $HoleNeighbors undefined)
+      (output $OwnEnclosure $NotSolid (grid
+        (5))))))
+
+(alts $adj
+  (alt $Walk8
+    (witness walk8 foreign concept
+      (relaxed rectangles)
+      (relaxed one-holed)
+      (separates "an outline whose missing corner meets its hole diagonally, beside a holed rectangle: the concept counts that hole, takes both rectangles, and is undefined; $Walk8 walks out through the corner and gives only the closed rectangle's color")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 4 4 4 4 0 0 0 0 0)
+        (0 4 0 0 0 4 0 3 3 3 0)
+        (0 4 0 0 0 4 0 3 0 3 0)
+        (0 4 4 4 4 4 0 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Walk4 $NotSolid undefined)
+      (output $Walk8 (grid
+        (3))))))
+
+(alts $object
+  (alt $ColorClass
+    (witness color-class variant concept
+      (relaxed rectangles)
+      (separates "two solid rectangles of one color at opposite corners, whose joint box holds the hole of the holed rectangle: the concept gives the holed rectangle's color; $ColorClass also takes the repeated color, and is undefined")
+      (input (grid
+        (2 2 0 0 0 0 0 0)
+        (2 2 0 0 0 0 0 0)
+        (0 0 0 5 5 5 0 0)
+        (0 0 0 5 0 5 0 0)
+        (0 0 0 5 5 5 0 0)
+        (0 0 0 0 0 0 2 2)
+        (0 0 0 0 0 0 2 2)))
+      (output $Component $Object8 (grid
+        (5)))
+      (output $ColorClass undefined)))
+  (alt $Object8
+    (witness object8 borderline concept
+      (relaxed rectangles)
+      (separates "two solid rectangles of one color that touch at a corner, whose joint box holds the hole of the holed rectangle: the concept gives the holed rectangle's color; $Object8 joins the two, also takes their color, and is undefined")
+      (input (grid
+        (2 2 2 2 0 5 5 5)
+        (2 2 2 2 0 5 0 5)
+        (2 2 2 2 0 5 5 5)
+        (2 2 2 2 0 0 0 0)
+        (0 0 0 0 2 2 2 2)
+        (0 0 0 0 2 2 2 2)
+        (0 0 0 0 2 2 2 2)
+        (0 0 0 0 2 2 2 2)))
+      (output ($Component &bg=$Stored) $OwnEnclosure (grid
+        (5)))
+      (output ($BgWalk &bg=$Derived) $ColorClass $Object8 ($NotSolid &bg=$Derived) undefined))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor borderline concept
+      (separates "a solid rectangle with more cells than the background: the concept gives the holed rectangle's color; bg=DominantColor takes the rectangle's color as background and gives 0")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 6 6 6)
+        (0 3 3 3 3 3 3 3 3 0 6 0 6)
+        (0 3 3 3 3 3 3 3 3 0 6 6 6)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &bg=$Stored (grid
+        (6)))
+      (output ($BgWalk &bg=$Derived) (grid
+        (0)))
+      (output ($OwnEnclosure &bg=$Derived) ($NotSolid &bg=$Derived) undefined))))

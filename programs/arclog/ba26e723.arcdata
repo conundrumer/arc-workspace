@@ -1,0 +1,8 @@
+;; inputs 397ac52041ed7ba7637b95a0a577b5f88d7295aaf8f0d483e9c4951ae5bf00c9 programs/solvers/ba26e723.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ba26e723
+
+(param &anchor Dir (DIR_L))
+(param &period number (3))
+(param &phase number (0))
+(param &mapping (Color Color) (4 6))

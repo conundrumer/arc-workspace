@@ -1,0 +1,42 @@
+;; inputs 18b46262bb1e9f90de79d2c3cc3723033278afc91f71305ea9f63b79c92b06d3 programs/solvers/178fcbfb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 178fcbfb
+
+(DET &bg DominantColor)
+
+;; The family that shows at a crossing.
+(DET &top_axis AxisDomain)
+
+(DET &bare
+  (ex_output *E *P)
+  (axis_elem *A)
+  (ex_output E (:P *Q) (:Col *Bg))
+  (&bg (:C Bg))
+  (same_line A P Q))
+
+(DET &line_axis
+  (ex_input *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (ex_output E P)
+  (axis_elem *A)
+  (NOT (&bare E P A)))
+
+(RULE &painted
+  (input (:P *Q) *Col)
+  (&line_axis Col *A)
+  (input *P)
+  (same_line A (:P Q) (:Q P)))
+
+(RULE &top_paint
+  (&top_axis *A)
+  (&painted *P A *Col))
+
+(RULE &output
+  (input *P)
+  (OR ((&top_paint P *Col))
+      ((NOT (&top_paint P))
+       (&painted P Col))
+      ((NOT (&painted P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

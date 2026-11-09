@@ -1,0 +1,191 @@
+;; inputs d5b4143228d35b61c4d20996334503419f78763184375bdf0ed85a589ecc7a6f programs/solvers/4e34c42c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4e34c42c
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the color that covers most of the grid.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &frags Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg_mode.maximal (:t Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&frags.component *P (:Id ^K)))
+    (cell (P)
+      (&frags.component *P (:Id K)))))
+
+(RULE &content
+  (input *P *Col)
+  (&bbox.box (:key *K) *B)
+  (inside (:A P) B))
+
+(RULE &motif
+  (&content *K *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &occ Occurrences
+  (key ((OR ((&motif (:K ^K1) ^Col *P)
+             (&motif (:K ^K2) Col)
+             (!= K1 K2))
+            ((&motif (:K K2) Col P)
+             (&motif (:K K1) Col)
+             (!= K1 K2))))
+    (cell (P)
+      (&motif (:K K1) Col *P)
+      (&motif (:K K2) Col)
+      (!= K1 K2))
+    (shape (P)
+      (&motif (:K K2) Col *P)
+      (&motif (:K K1) Col)
+      (!= K1 K2))))
+
+(RULE &fitted
+  (&occ.occurrence (:key (:K1 *K) (:K2 *K_other)) (:P *V_occ))
+  (OR ((= *K1 K_other)
+       (= *K2 K)
+       (relative (:Base V_occ) (:X 0) (:X_rel *V)))
+      ((= K1 K)
+       (= K2 K_other)
+       (= V V_occ))))
+
+(RULE &disagree
+  (&fitted *K1 *K2 *V)
+  (&content (:K K2) (:P *P2) (:Col *Col2))
+  (compose (:A P2) (:B V) (:C *P1))
+  (&content (:K K1) (:P P1) (:Col *Col1))
+  (!= Col1 Col2))
+
+(INIT &seam_cell Singleton
+  (key ((&fitted ^K1 ^K2 ^V))
+    (member ((:v P))
+      (&motif (:K K2) *Col (:P *P2))
+      (compose (:A P2) (:B V) (:C *P))
+      (&motif (:K K1) Col P))))
+
+(RULE &join
+  (&seam_cell.plural (:key *K1 *K2 *V))
+  (NOT (&disagree K1 K2 V)))
+
+(INIT &span Cardinality
+  (key ((&content *K *P)
+        (axis_elem ^A)
+        (split P A (:Along *P_along)))
+    (member ((:m K P_along))
+      (&content *K *P)
+      (split P A (:Along *P_along)))))
+
+;; The fragment held still: the one with the most ink, and each of those at a
+;; tie. The crop takes the choice back out.
+(INIT &ink_size Cardinality
+  (key ((&motif ^K *P))
+    (member ((:m P))
+      (&motif K *P))))
+
+(INIT &largest Order
+  (member ((:t (:V K) (:S N)))
+    (&ink_size.size (:key *K) *N))
+  (score ((:t (:V K) (:S N)) (:S N))
+    (&ink_size.size (:key *K) *N)))
+
+(RULE &room
+  (&largest.maximal (:t (:V *Base)))
+  (&bbox.box (:key (:K Base)) (:B *B_base))
+  (&span.size (:key (:A *A_v)) (:N *N_v))
+  (axis_of (:D *D_v) (:A A_v))
+  (axis_outset (:D D_v) (:K1 N_v) (:K2 N_v) (:B *B_v))
+  (perp (:A A_v) (:A2 *A_h))
+  (&span.size (:key (:A A_h)) (:N *N_h))
+  (axis_of (:D *D_h) (:A A_h))
+  (axis_outset (:D D_h) (:K1 N_h) (:K2 N_h) (:B *B_h))
+  (compose (:A B_v) (:B B_h) (:C *B_grow))
+  (compose (:A B_base) (:B B_grow) (:C *B)))
+
+(INIT &room_frame Frame
+  (key ((&room ^Base *B)
+        (input *P)
+        (box_extent B P *A *N)
+        (&room Base (:B *B2))
+        (input (:P *P2))
+        (box_extent (:B B2) (:P P2) (:A *A2) (:N *N2))
+        (perp A A2))
+    (extent (A N)
+      (&room Base *B)
+      (input *P)
+      (box_extent B P *A *N))))
+
+(RULE &roomy
+  (&room *Base (:B *B_room))
+  (&room_frame.cell (:key Base) (:P *Q_rel))
+  (compose (:A B_room) (:B Q_rel) (:C *Q))
+  (&bbox.box (:key *K) (:B *B_k))
+  (&content K (:P *P0))
+  (inside (:A P0) (:B B_k))
+  (same_corner (:P1 P0) (:P2 B_k))
+  (relative (:Base P0) (:X Q) (:X_rel *V))
+  (compose (:A B_k) (:B V) (:C *B_placed))
+  (inside (:A B_placed) (:B B_room)))
+
+(INIT &layout Propagation
+  (key ((OR ((&largest.maximal (:t (:V ^Base))))
+            ((&roomy Base (:K *K1) (:V *V1))
+             (&join K1 *K2 (:V *V2))
+             (compose (:A V1) (:B V2) (:C *V))
+             (&roomy Base (:K K2) V))))
+    (source ((:n (:K Base) V))
+      (&largest.maximal (:t (:V Base)))
+      (= *V 0))
+    (edge ((:a (:K K1) (:V V1)) (:b (:K K2) V))
+      (&roomy Base (:K *K1) (:V *V1))
+      (&join K1 *K2 (:V *V2))
+      (compose (:A V1) (:B V2) (:C *V))
+      (&roomy Base (:K K2) V))))
+
+(RULE &scene
+  (&layout.reached (:key *Base) (:n *K *V))
+  (&content K (:P *P0) *Col)
+  (compose (:A P0) (:B V) (:C *P)))
+
+;; The scene's box. Every fragment box hugs its own ink, so the cells the
+;; fragments cover reach as far as the scene's ink does.
+(INIT &view BoundingBox
+  (key ((&scene ^Base *P))
+    (cell (P)
+      (&scene Base *P))))
+
+;; The output sheet is that box as a frame of its own.
+(INIT &sheet Frame
+  (key ((&view.cell (:key ^Base) *P)
+        (&view.box (:key Base) *B)
+        (box_extent B P *A *N)
+        (&view.cell (:key Base) (:P *P2))
+        (&view.box (:key Base) (:B *B2))
+        (box_extent (:B B2) (:P P2) (:A *A2) (:N *N2))
+        (perp A A2))
+    (extent (A N)
+      (&view.cell (:key Base) *P)
+      (&view.box (:key Base) *B)
+      (box_extent B P *A *N))))
+
+(RULE &paint
+  (&scene *Base *P *Col)
+  (&view.box (:key Base) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &output
+  (&sheet.cell (:key *Base) *P)
+  (OR ((&paint Base (:P_inner P) *Col))
+      ((NOT (&paint Base (:P_inner P)))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,94 @@
+;; inputs 5dcca60403a0f76b66feac295dae8f92af2c62be347551d592dda9be559bd6b1 programs/solvers/8a004b2b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8a004b2b
+
+(DET &bg DominantColor)
+
+;; The color of the cells that bound the frame.
+(DET &marker SharedColor)
+
+;; The frame is the box the markers bound; the output is its interior.
+(INIT &frame BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&marker (:C Col))))
+
+(RULE &frame_view
+  (input *P)
+  (&frame.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+;; The ink outside the frame, in its own box.
+(INIT &blueprint BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&frame_view P))))
+
+(RULE &frame_cell
+  (&frame_view (:P *P2) (:P_inner *P))
+  (input (:P P2) *Col))
+
+(RULE &block_ink
+  (&frame_cell *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&marker (:C Col))))
+
+(INIT &block Connectivity
+  (key ((&block_ink *P ^Col))
+    (node (P)
+      (&block_ink *P Col))))
+
+(INIT &block_box BoundingBox
+  (key ((&block.component *P ^Id))
+    (cell (P)
+      (&block.component *P Id))))
+
+;; A tile is a square with a block's side.
+(INIT &tile Frame
+  (extent (A (:N K))
+    (&block_box.cell (:key *Id) *P)
+    (&block_box.box (:key Id) *B)
+    (box_extent B P *A (:N *K))
+    (perp A *A2)
+    (box_extent B P (:A A2) (:N K))))
+
+(INIT &drawing_tiling Tiling
+  (outer ((:P P_tile))
+    (&blueprint.cell *P)
+    (input P)
+    (&blueprint.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_tile)))
+  (inner ((:P P_intile))
+    (&tile.cell (:P *P_intile))))
+
+(RULE &drawing
+  (&blueprint.cell (:P *P2))
+  (input (:P P2) *Col)
+  (&blueprint.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P_tile))
+  (&drawing_tiling.cell (:P_outer P_tile) *P))
+
+;; The drawing sits where every block cell lands on a drawing cell of its
+;; color.
+(INIT &seat Occurrences
+  (cell (P (:v Col))
+    (&drawing *P *Col))
+  (shape (P (:v Col))
+    (&block_ink *P *Col)))
+
+(RULE &painted
+  (&seat.occurrence (:P *P_seat))
+  (&frame_cell *P)
+  (compose (:A P_seat) (:B P) (:C *P_draw))
+  (&drawing (:P P_draw) *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((&frame_cell P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,81 @@
+;; inputs 17c9cf30ab3acdb0cb84e601883d9e48a10033e5650363e77a376c40e1014289 programs/solvers/99caaf76.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 99caaf76
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &edge Boundary
+  (key ((&comps.component ^Id *P))
+    (cell (P)
+      (&comps.component Id *P))))
+
+(RULE &center
+  (&comps.component *Id *P)
+  (NOT (&edge.boundary (:key Id) P)))
+
+(RULE &arm
+  (&center *Id (:P *C))
+  (dir_elem *D)
+  (neighbor (:P C) D (:Q *P)))
+
+(RULE &fletching
+  (&comps.component *Id *P)
+  (NOT (&center Id P))
+  (NOT (&arm Id P)))
+
+(RULE &stray
+  (&fletching *Id *P)
+  (&center Id (:P *C))
+  (dir_elem *D)
+  (NOT (nearer D (:P C) (:Q P))))
+
+;; the flight: the arrow travels away from its fletching until its leading arm
+;; comes to rest on the grid edge
+(INIT &flight Distance
+  (key ((&fletching ^Id))
+    (source_distance (K)
+      (&comps.component Id *P)
+      (margin (:B P) *D *K)
+      (NOT (&stray Id D)))))
+
+(RULE &flight_dir
+  (&fletching (:Id *Key))
+  (dir_elem *D)
+  (NOT (&stray (:Id Key) D)))
+
+(RULE &flight_travel_full
+  (&flight.distance (:key (:Id *V0)) *K)
+  (&flight_dir (:Key V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &turned
+  (OR ((&arm *Id *D *P)
+       (opposite D (:Opp *D2))
+       (&arm Id (:D D2) (:P *P_src))
+       (input (:P P_src) *Col))
+      ((&comps.component Id P)
+       (NOT (&arm Id P))
+       (input P Col))))
+
+(RULE &landing
+  (&turned *Id (:P *P2) *Col)
+  (&flight_travel_full (:V0 Id) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&landing *P *Col))
+      ((input P)
+       (NOT (&landing P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

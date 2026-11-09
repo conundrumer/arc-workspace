@@ -1,0 +1,263 @@
+;; inputs 8a8fd02132b98e1afc819456d77f205452ee599a02b07fa10b0ca4da7dd678f1 programs/solvers/e7b06bea.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e7b06bea
+
+(INPUT background-field "every cell that is not in the bar or in a stripe is `background` (0).")
+
+(INPUT corner-bar "one bar of color 5 lies along the left edge, starts at the corner of that edge with the `start_edge` edge, and is shorter than that edge."
+
+  (DET &stripe_edge DirDomain)
+
+  (DET_OR_RULE &background DominantColor
+    (ex_output *P (:Col *C))
+    (&stripe_edge *D)
+    (margin (:B P) D (:K 0)))
+
+  ;; Full-length lines of one non-background color.
+  (INIT &uniform Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &ink_line
+    (&uniform.value (:key *A *L) (:v *Col))
+    (NOT (&background (:C Col))))
+
+  (RULE &stripe_dir
+    (&stripe_edge *D))
+
+  (RULE &block_node
+    (&stripe_dir *D)
+    (axis_of D *A)
+    (&ink_line A (:L *P)))
+
+  ;; The stripe block: the ink lines reached from the stripe edge's line, line by line.
+  (INIT &block Ray
+    (source (P)
+      (&block_node *P))
+    (node (P)
+      (&block_node *P))
+    (dir ((:D D_in))
+      (&stripe_dir *D)
+      (opposite D (:Opp *D_in))))
+
+  (RULE &block_run_full
+    (&block.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &stripe_line
+    (&block_node (:P *L0))
+    (&stripe_dir *D)
+    (margin (:B L0) D (:K 0))
+    (OR ((&block_run_full (:V1 L0) (:V3 *L)))
+        ((= L L0))))
+
+  (RULE &line_cell
+    (&stripe_dir *D)
+    (axis_of D *A)
+    (input *P)
+    (split P A (:Along *L)))
+
+  (RULE &stripe_cell
+    (&stripe_line *L)
+    (&line_cell L *P))
+
+  (RULE &bar
+    (&stripe_dir)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&stripe_cell P)))
+
+  ;; The edges across the stripe edge that the bar touches.
+  (INIT &bar_end Singleton
+    (member ((:v D))
+      (&stripe_dir (:D *D_s))
+      (perp_dir (:D D_s) (:D2 *D))
+      (&bar *P)
+      (margin (:B P) D (:K 0)))))
+
+(INPUT edge-stripes "two or more adjacent full-length lines parallel to the `stripe_edge` edge fill the grid up to that edge; each stripe is one color, the stripe colors are different from each other, and none is `background` or the bar's color."
+
+  ;; The edges whose line is an ink line.
+  (INIT &edge_line Singleton
+    (member ((:v D))
+      (axis_of *D *A)
+      (&ink_line A *L)
+      (margin (:B L) D (:K 0)))))
+
+(INPUT stripe-gap "at least one line of `background` stands between the bar and the line next to the stripes on the bar side.")
+
+(OUTPUT keep-bar "the bar stays as it is.")
+
+(OUTPUT clear-stripes "each stripe cell becomes `background`.")
+
+(OUTPUT folded-line "the line next to the stripe block on the bar side takes the stripe colors in turn, starting with the stripe nearest to it and moving toward the `stripe_edge` edge, then starting again; each color fills a run of cells as long as the bar, and the runs start at the `start_edge` edge."
+
+  (DET &start_edge DirDomain)
+
+  (RULE &fold_line
+    (&stripe_line (:L *L2))
+    (&stripe_dir *D)
+    (opposite D (:Opp *D_in))
+    (neighbor (:P L2) (:D D_in) (:Q *L))
+    (NOT (&stripe_line L)))
+
+  (RULE &fold_cell
+    (&fold_line *L)
+    (&line_cell L *P))
+
+  ;; The run length.
+  (INIT &bar_len Cardinality
+    (member ((:m P))
+      (&bar *P)))
+
+  ;; The stripes of the cycle, each a class of stripe lines.
+  (INIT &units Quotient
+    (equivalent ((:a L) (:b L))
+      (&stripe_line *L)))
+
+  (RULE &first_unit
+    (&fold_line (:L *F))
+    (&stripe_dir *D)
+    (neighbor (:P F) D (:Q *L))
+    (&units.class (:a L) *Id))
+
+  (RULE &edge_unit
+    (&units.class (:a *L) *Id)
+    (&stripe_dir *D)
+    (margin (:B L) D (:K 0)))
+
+  (RULE &unit_next
+    (OR ((&units.class (:a *L1) *Id)
+         (&stripe_dir *D)
+         (neighbor (:P L1) D (:Q *L2))
+         (&units.class (:a L2) (:Id *Id2))
+         (!= Id Id2))
+        ((&edge_unit Id)
+         (&first_unit (:Id Id2)))))
+
+  (RULE &start_dir
+    (&stripe_dir)
+    (&start_edge *D))
+
+  (RULE &run_index
+    (&fold_cell *P)
+    (&start_dir *D)
+    (margin (:B P) D (:K *T))
+    (&bar_len.size (:N *Len))
+    (divide T (:Side Len) (:Gap 0) (:Part *N)))
+
+  (INIT &cycle Walk
+    (successor ((:p I1) (:p_next I2))
+      (&unit_next (:Id *I1) (:Id2 *I2)))
+    (steps (N)
+      (&run_index *N)))
+
+  (INIT &back Walk
+    (successor ((:p I2) (:p_next I1))
+      (&unit_next (:Id *I1) (:Id2 *I2)))))
+
+(ALTS $s "where the runs start" $StoredStart
+  (ALT $DerivedStart
+    (INPUT corner-bar "the bar starts at the corner of its edge with the edge perpendicular to the stripe edge that it touches; undefined where the bar touches both or neither of those edges.")
+    (OUTPUT folded-line "the runs start at that edge."
+      (RULE &start_dir
+        (&bar_end.value (:v *D))))))
+
+(ALTS $ph "where the run count starts" $EdgePhase
+  (ALT $BarPhase
+    (OUTPUT folded-line "the first run covers the bar's first cell and runs on from there, and the cells before the bar take the cycle backward."
+      (RULE &anchor
+        (&bar *P)
+        (&start_dir *D)
+        (neighbor P D *Q)
+        (NOT (&bar (:P Q))))
+
+      ;; From the bar's first cell on.
+      (RULE &run_index
+        (&fold_cell *P)
+        (&anchor (:P *A))
+        (&start_dir *D)
+        (relative (:Base A) (:X P) (:X_rel *R))
+        (margin (:B R) D (:K *T))
+        (&bar_len.size (:N *Len))
+        (divide T (:Side Len) (:Gap 0) (:Part *N)))
+
+      (RULE &back_index
+        (&fold_cell *P)
+        (&anchor (:P *A))
+        (&start_dir *D)
+        (neighbor (:P A) D *Q)
+        (relative (:Base Q) (:X P) (:X_rel *R))
+        (opposite D (:Opp *D_back))
+        (margin (:B R) (:D D_back) (:K *T))
+        (&bar_len.size (:N *Len))
+        (divide T (:Side Len) (:Gap 0) (:Part *N)))
+
+      (INIT &back Walk
+        (successor ((:p I2) (:p_next I1))
+          (&unit_next (:Id *I1) (:Id2 *I2)))
+        (steps (N)
+          (&back_index *N))))
+    (RULE &fold_color
+      (OR ((&run_index *P *N)
+           (&first_unit (:Id *I0))
+           (&cycle.walk (:p0 I0) N (:p *I))
+           (&unit_color (:Id I) *Col))
+          ((&back_index P (:N *N2))
+           (&edge_unit (:Id *I02))
+           (&back.walk (:p0 I02) (:N N2) (:p *I2))
+           (&unit_color (:Id I2) Col))))))
+
+(ALTS $e "which edge the stripes fill up to" $StoredStripeEdge
+  (ALT $DerivedStripeEdge
+    (INPUT edge-stripes "the stripes fill up to the one edge whose line is a full-length line of one non-background color; undefined where no edge, or more than one edge, has such a line."
+      (RULE &stripe_dir
+        (&edge_line.value (:v *D))))))
+
+(ALTS $u "what one stripe of the cycle is" $LineStripes
+  (ALT $BandStripes
+    (OUTPUT folded-line "each maximal block of adjacent lines of one color is one stripe of the cycle."
+      ;; The stripes of the cycle, each a class of stripe lines.
+      (INIT &units Quotient
+        (equivalent ((:a L) (:b L))
+          (&stripe_line *L))
+        (edge ((:a L1) (:b L2))
+          (&stripe_line (:L *L1))
+          (&stripe_dir *D)
+          (neighbor (:P L1) D (:Q *L2))
+          (&stripe_line (:L L2))
+          (axis_of D *A)
+          (&ink_line A (:L L1) *Col)
+          (&ink_line A (:L L2) Col))))))
+
+(RULE &unit_color
+  (&units.class (:a *L) *Id)
+  (&stripe_dir *D)
+  (axis_of D *A)
+  (&ink_line A L *Col))
+
+(RULE &fold_color
+  (&run_index *P *N)
+  (&first_unit (:Id *I0))
+  (&cycle.walk (:p0 I0) N (:p *I))
+  (&unit_color (:Id I) *Col))
+
+(RULE &output
+  (OR ((&fold_color *P *Col))
+      ((&fold_cell)
+       (&start_dir)
+       (input P (:Col *Col0))
+       (OR ((&stripe_cell P)
+            (&background (:C Col)))
+           ((&bar P)
+            (= Col Col0))
+           ((NOT (&stripe_cell P))
+            (NOT (&bar P))
+            (NOT (&fold_cell P))
+            (= Col Col0))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,57 @@
+;; inputs 6b0e489b4140c91a9e26edc2cda1a596249caea1621535ee496bd6fe97ee4686 programs/solvers/a87f7484.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a87f7484
+
+(DET &bg SharedColor)
+
+(DET &tile_dim ConstOutDim)
+
+(INIT &tile_val_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (axis_elem *A)
+    (&tile_dim (:N *K))))
+
+(RULE &tile_val
+  (input (:P *P_grid) *Col)
+  (&tile_val_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(RULE &ink
+  (&tile_val *P_tile *P_intile *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &densest_count Cardinality
+  (key ((&ink (:P_tile ^T) (:P_intile *P)))
+    (member ((:m P))
+      (&ink (:P_tile T) (:P_intile *P)))))
+
+(INIT &densest Order
+  (member ((:t T))
+    (&densest_count.size (:key *T)))
+  (score ((:t T) (:S N))
+    (&densest_count.size (:key *T) *N)))
+
+(ALTS $choice "which tile the output selects" $Count
+  (ALT $Shape
+    (INIT &shape_cmp Inclusion
+      (pattern ((:pattern T) (:m P))
+        (&ink (:P_tile *T) (:P_intile *P)))
+      (observed ((:observed T) (:m P))
+        (&ink (:P_tile *T) (:P_intile *P))))
+
+    (RULE &shared
+      (&ink (:P_tile *T2))
+      (&shape_cmp.equal (:observed *P_tile) (:pattern T2))
+      (!= P_tile T2))
+
+    (RULE &output
+      (&tile_val (:P_tile *T) (:P_intile *P) *Col)
+      (&ink (:P_tile T))
+      (NOT (&shared (:P_tile T))))))
+
+(RULE &output
+  (&tile_val (:P_tile *T) (:P_intile *P) *Col)
+  (&densest.maximal (:t T)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,6 @@
+;; inputs cc57c006ac3295d6d1684cf355adcd024a0d444086387a34087bc2da7cc4035b programs/solvers/8f215267.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8f215267
+
+(param &dot_dir Dir (DIR_R))
+(param &spacing number (2))

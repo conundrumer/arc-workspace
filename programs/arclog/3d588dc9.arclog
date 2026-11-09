@@ -1,0 +1,177 @@
+;; inputs 63982599f8710ed9ac834bf5464726ad4e0a62f14d5136f489400c0e103f8ea4 programs/solvers/3d588dc9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3d588dc9
+
+(DET &bg DominantColor)
+
+(DET &face AnyOutNewColor)
+
+;; The axis a wedge's corner is read on.
+(DET &face_axis AxisDomain)
+
+(DET &shed
+  (ex_input *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (ex_output E P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(INIT &flood Flood
+  (key ((&shed ^E (:P ^P0)))
+    (node (P)
+      (ex_input E (:P P0) *Col)
+      (ex_input E *P Col))
+    (source ((:P P0)))))
+
+;; Each shed key is one copy of the chart, in its own pose.
+(INIT &bbox BoundingBox
+  (key ((&flood.reached (:key ^E (:P0 ^P)) (:P *P2)))
+    (cell ((:P P2))
+      (&flood.reached (:key E (:P0 P)) (:P *P2)))))
+
+(DET &chart_view
+  (&bbox.cell (:key *E (:P *K_p)) *P)
+  (&bbox.box (:key E (:P K_p)) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(DET &key_shed
+  (&flood.reached (:key *E (:P0 *K_p)) *P)
+  (&shed E P))
+
+(DET &block
+  (&chart_view *E (:K_p *P0) (:P *P2) (:P_inner *P))
+  (NOT (&key_shed E (:K_p P0) (:P P2))))
+
+(DET &stem
+  (&key_shed *E (:K_p *P0) (:P *P2))
+  (&chart_view E (:K_p P0) (:P P2) (:P_inner *P)))
+
+(RIGID_DET &key
+  (instance ((OR ((&block ^E ^P0)) ((&stem E P0))))
+    (&block E P0 *P)
+    (&stem E P0 *P)))
+
+(INIT &objects Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &obj_box BoundingBox
+  (key ((&objects.component ^Id *P))
+    (cell (P)
+      (&objects.component Id *P))))
+
+(INIT &foot_box BoundingBox
+  (key ((OR ((&key.block (:Pose ^D) (:P *P_shape)))
+            ((&key.stem (:Pose D) (:P P_shape)))))
+    (cell ((:P P_shape))
+      (OR ((&key.block (:Pose D) (:P *P_shape)))
+          ((&key.stem (:Pose D) (:P P_shape)))))))
+
+(RULE &foot_view
+  (&foot_box.cell (:key *D) (:P *P_shape))
+  (&foot_box.box (:key D) *B)
+  (inside (:A P_shape) B)
+  (relative (:Base B) (:X P_shape) (:X_rel *P_inner)))
+
+(INIT &key_match Inclusion
+  (pattern ((:pattern D) (:m P_inner))
+    (&foot_view *D *P_inner))
+  (observed ((:observed Id) (:m P_inner))
+    (&objects.component *Id *P)
+    (&obj_box.box (:key Id) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(RULE &key_cell
+  (&key_match.equal (:observed *Id) (:pattern *D))
+  (input *P)
+  (&obj_box.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&foot_view D *P_shape P_inner))
+
+(RULE &stem_cell
+  (&key_cell *Id *D *P *P_shape)
+  (&key.stem (:Pose D) (:P P_shape)))
+
+(RULE &notch
+  (diag_dir_elem (:D *Dg))
+  (&objects.component *Id *P)
+  (&obj_box.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (input (:P *Q))
+  (inside (:A Q) B)
+  (relative (:Base B) (:X Q) (:X_rel *Q_inner))
+  (nearer (:D Dg) (:P Q_inner) (:Q P_inner))
+  (NOT (&objects.component Id (:P Q))))
+
+;; A wedge is packed into exactly one corner, so the far diagonal is its slant.
+(INIT &wedge Singleton
+  (key ((&objects.component ^Id))
+    (member ((:v Dg))
+      (diag_dir_elem (:D *Dg))
+      (NOT (&notch Id Dg)))))
+
+(RULE &short
+  (&wedge.value (:key (:Id *T)) (:v *Dg))
+  (&key_match.equal (:observed *K))
+  (corner_dir (:C Dg) *D)
+  (&obj_box.box (:key (:Id T)) (:B *B_t))
+  (margin (:B B_t) D (:K *N_t))
+  (&obj_box.box (:key (:Id K)) (:B *B_k))
+  (margin (:B B_k) D (:K *N_k))
+  (<= N_k N_t))
+
+(INIT &side Singleton
+  (key ((&key_match.equal (:observed ^K)))
+    (member ((:v D))
+      (&wedge.value (:key (:Id *T)) (:v *Dg))
+      (NOT (&short T K))
+      (&face_axis *A)
+      (corner_dir (:C Dg) A *D))))
+
+(INIT &block_box BoundingBox
+  (key ((&key_cell ^Id *D *P *P_shape)
+        (&key.block (:Pose D) (:P P_shape)))
+    (cell (P)
+      (&key_cell Id *D *P *P_shape)
+      (&key.block (:Pose D) (:P P_shape)))))
+
+(RULE &block_edge
+  (&block_box.cell (:key *Id) *P)
+  (&block_box.box (:key Id) *B)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B)))
+
+(RULE &stem_blocks
+  (&block_edge *Id *D *P)
+  (neighbor P D *Q)
+  (&stem_cell Id (:P Q)))
+
+(RULE &open
+  (&side.value (:key (:K *Id)) (:v *D))
+  (NOT (&stem_blocks Id D)))
+
+(RULE &cleared
+  (&open *Id)
+  (&stem_cell Id *P))
+
+(RULE &faced
+  (&open *Id *D)
+  (&block_edge Id D *P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&faced P)
+       (&face (:C *Col)))
+      ((&cleared P)
+       (&bg (:C Col)))
+      ((NOT (&faced P))
+       (NOT (&cleared P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

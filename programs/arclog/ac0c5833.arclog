@@ -1,0 +1,225 @@
+;; inputs af328e16fffc650b1c62f6d4598c17d91140a338994b73e6fcc41b405765d64f programs/solvers/ac0c5833.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac0c5833
+
+(INPUT markers "several markers of &marker_color sit on a background of &bg. Each marker is three isolated cells at three corners of a square box whose corners are &marker_stride cells apart. The fourth corner of the box, the marker's empty corner, does not hold the marker color."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (DET_OR_RULE &marker_stride "The distance between adjacent corners of a marker's box." TileCount SepTileCount)
+
+  (DET &marker_color UnchangedColor))
+
+(INPUT template "one shape of &template_color has a bounding-box corner at the empty corner of one marker, the template's marker, and lies on the far side of that corner from the marker's three cells."
+
+  (DET_OR_RULE &template_color RarestColor)
+
+  (RULE_OR_DET &hue_cand "A color the marker-color branch admits as the marker color."
+    (&marker_color (:C *Col)))
+
+  (RULE &line_dir
+    (&hue_cand)
+    (dir_elem *D))
+
+  ;; The cells of each branch's marker colors in line with each such cell.
+  (INIT &line Ray
+    (source (P)
+      (&hue_cand *Col)
+      (input *P Col))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&line_dir *D)))
+
+  (RULE &line_cell
+    (&hue_cand *Col)
+    (input *P Col))
+
+  (RULE &triple
+    (&hue_cand *Col)
+    (input (:P *C) Col)
+    (diag_dirs (:D *X) *D1 *D2)
+    (&line.ray *P (:D D1) (:K *K1) (:Origin C))
+    (&line_cell P)
+    (> K1 0)
+    (input P Col)
+    (&line.ray (:P *Q) (:D D2) (:K *K2) (:Origin C))
+    (&line_cell (:P Q))
+    (> K2 0)
+    (input (:P Q) Col)
+    (jump P (:D D2) (:K K2) (:Q *E1))
+    (input (:P E1))
+    (NOT (input (:P E1) Col)))
+
+  (RULE &square
+    (&marker_stride *N))
+
+  (RULE &box_triple
+    (&square *N)
+    (&triple *Col *E1 *X *C *P *Q (:K1 N) (:K2 N)))
+
+  (RULE &triple_cell
+    (&box_triple *N *Col *E1 *C (:P *P1) (:Q *Q1))
+    (OR ((= *P C))
+        ((= P P1))
+        ((= P Q1))))
+
+  (RULE &split_fault
+    (OR ((&box_triple *N *Col)
+         (input *P Col)
+         (NOT (&triple_cell N Col P)))
+        ((&triple_cell N Col (:E1 *E) *C (:P *P2))
+         (&triple_cell N Col (:E1 *E2) (:C *C2) (:P P2))
+         (OR ((!= E E2))
+             ((!= C C2)))))))
+
+(OUTPUT copy-per-marker "at each other marker, the template is drawn with its bounding-box corner at that marker's empty corner, extending away from the marker's three cells. Copy cells outside the grid are dropped. Undefined where no marker, or more than one, is the template's marker.")
+
+(OUTPUT mirror "the copy is the template mirrored across each axis on which the target marker's empty corner lies on the other side of its box from the template marker's empty corner.")
+
+(OUTPUT overlay "only the template's cells are written; every other cell keeps its input color."
+
+  (RULE &reading_cand
+    (&box_triple *N *Col))
+
+  (RULE &rival
+    (&reading_cand *N *Col)
+    (&reading_cand N (:Col *Col2))
+    (!= Col Col2))
+
+  (RULE &reading
+    (&reading_cand *N *Col)
+    (NOT (&rival N)))
+
+  (RULE &marker_at
+    (&reading *N *Col)
+    (&box_triple N Col *E1 *X))
+
+  (RULE &tmpl
+    (&reading (:N *K))
+    (&template_color (:C *Col))
+    (input *P Col))
+
+  (INIT &tmpl_box BoundingBox
+    (key ((&tmpl (:K ^N) *P))
+      (cell (P)
+        (&tmpl (:K N) *P))))
+
+  (RULE &source_cand
+    (&tmpl_box.box (:key (:N *K)) *B)
+    (&marker_at (:N K) *E1 *X)
+    (diag_opposite (:D X) (:Opp *X_o))
+    (inside (:A E1) B)
+    (same_corner (:D X_o) (:P1 E1) (:P2 B)))
+
+  (RULE &source_clash
+    (&source_cand *K (:E1 *E) *X)
+    (&source_cand K (:E1 *E2) (:X *X2))
+    (OR ((!= E E2))
+        ((!= X X2))))
+
+  (RULE &source
+    (&source_cand *K *E1 *X)
+    (NOT (&source_clash K))))
+
+(ALTS $extent "how a marker's box is sized" $StoredStride
+  (ALT $DerivedStride
+    (INPUT markers "the stride is the one side s at which the marker-color cells split exactly into three-corner triples of s-sided square boxes. Undefined where no side gives such a split, or more than one does."
+      ;; The cells of color Col split exactly into the branches' triples at n.
+      (RULE &reading_cand
+        (&box_triple *N *Col)
+        (NOT (&split_fault N Col)))
+
+      (RULE &rival
+        (OR ((&reading_cand *N)
+             (&reading_cand (:N *N2))
+             (!= N N2))
+            ((&reading_cand N *Col)
+             (&reading_cand N (:Col *Col2))
+             (!= Col Col2))))
+
+      ;; A length a side of a marker's box can take.
+      (RULE &square
+        (input *P)
+        (margin (:B P) *D (:K *N))
+        (> N 0)))))
+
+(ALTS $mcolor "where the marker color comes from" $StoredMarkerColor
+  (ALT $DerivedMarkerColor
+    (INPUT markers "the marker color is the one non-background color whose cells split exactly into the marker triples of the extent branch. Undefined where no such color does, or more than one does."
+      ;; The cells of color Col split exactly into the branches' triples at n.
+      (RULE &reading_cand
+        (&box_triple *N *Col)
+        (NOT (&split_fault N Col)))
+
+      (RULE &hue_cand
+        (input *Col)
+        (NOT (&bg (:C Col)))))))
+
+(ALTS $tcolor "which cells form the template" $StoredTemplateColor
+  (ALT $AnyColorTemplate
+    (INPUT template "the template is every cell that is neither background nor marker color.")
+    (OUTPUT overlay "each template cell is copied in its own color. Undefined where two copies write different colors to one cell."
+      (RULE &tmpl
+        (&reading (:N *K))
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&reading (:N K) Col))))))
+
+(ALTS $transform "how the copy is turned" $Mirror
+  (ALT $Rotate
+    (OUTPUT mirror "the copy is the template turned by the rotation that carries the template marker's corner onto the target marker's corner.")
+    (RULE &carry
+      (c4_elem (:D *G))
+      (apply_diag_dir (:D G) (:Dir *X) (:Dir_out *X2)))))
+
+(ALTS $stamp "which cells a copy writes" $InkOnly
+  (ALT $BoxStamp
+    (OUTPUT overlay "the copy writes the template's whole bounding box, and its background cells overwrite what they cover. Undefined where one copy's background meets another copy's template cell.")
+    (RULE &footprint
+      (&source *K (:E1 *E))
+      (&tmpl_box.box (:key (:N K)) *B)
+      (input *P)
+      (inside (:A P) B)
+      (relative (:Base E) (:X P) (:X_rel *V))
+      (OR ((&tmpl K P *Col))
+          ((NOT (&tmpl K P))
+           (&bg (:C Col)))))))
+
+(RULE &split_reading
+  (&marker_at *N (:E1 *E) *X)
+  (&reading (:N *N2))
+  (NOT (&marker_at (:N N2) (:E1 E) X)))
+
+(RULE &axis_swap
+  (apply_dir (:D *G) (:Dir *D) (:Dir_out *D2))
+  (axis_of D *A)
+  (NOT (axis_of (:D D2) A)))
+
+(RULE &carry
+  (apply_diag_dir (:D *G) (:Dir *X) (:Dir_out *X2))
+  (NOT (&axis_swap G)))
+
+(RULE &footprint
+  (&source *K (:E1 *E))
+  (&tmpl K *P *Col)
+  (relative (:Base E) (:X P) (:X_rel *V)))
+
+(RULE &copy
+  (&source *K *X)
+  (&marker_at (:N K) (:E1 *E2) (:X *X2))
+  (NOT (&source K (:E1 E2)))
+  (&carry X X2 *G)
+  (&footprint K *V *Col)
+  (apply (:D G) (:P V) (:P_out *V2))
+  (compose (:A E2) (:B V2) (:C *P)))
+
+(RULE &output
+  (&source (:K *N))
+  (NOT (&split_reading))
+  (input *P (:Col *C0))
+  (OR ((&copy (:K N) P *Col))
+      ((NOT (&copy (:K N) P))
+       (= Col C0))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,131 @@
+;; inputs e3acdc9968d58e54494a1fa1b23b0b4295ca07f8497735d01b59639f0a7f1b6b programs/solvers/1478ab18.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1478ab18
+
+(DET &mark RarestColor)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+;; Marks cast along the diagonals, seeing only marks.
+(INIT &diag Ray
+  (source (P)
+    (&mark2 *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (diag_dir_elem *D)))
+
+(RULE &aligned
+  (&diag.ray (:P *Q) *K (:Origin *P))
+  (&mark2 (:P Q))
+  (!= K 0))
+
+;; $Longest — the widest separation any diagonal mark pair reaches.
+(INIT &far Order
+  (member ((:t (:V P) (:S K)))
+    (&aligned *P *K))
+  (score ((:t (:V P) (:S K)) (:S K))
+    (&aligned *P *K)))
+
+(RULE &hyp
+  (&far.maximal (:t (:V *P))))
+
+(RULE &corner_cell
+  (&aligned *P *Q)
+  (split P *A (:Along *P_along))
+  (split (:P Q) A (:Across *Q_across))
+  (compose (:A P_along) (:B Q_across) (:C *Cor)))
+
+(DET &ink AnyOutNewColor)
+
+(ALTS $l "which mark pair spans the hypotenuse" $Longest
+  (ALT $Cornered
+    ;; $Cornered — a mark sits at one of the pair's two box corners.
+    (RULE &hyp
+      (&aligned *P *Q)
+      (&corner_cell P Q *Cor)
+      (&mark2 (:P Cor)))))
+
+(ALTS $v "which box corner carries the right angle" $Free
+  (ALT $Pointed
+    ;; $Pointed — the corner a mark stands diagonally next to.
+    (RULE &right_angle
+      (&corner_cand (:Cor *P))
+      (diag_dir_elem *D)
+      (neighbor P D (:Q *P_near))
+      (&mark2 (:P P_near))))
+  (ALT $Inside
+    ;; $Inside — the corner whose closed triangle holds a non-vertex mark. Viewed
+    ;; from the hypotenuse pair's box, the hypotenuse is the diagonal from a
+    ;; corner next to Cor's, and the triangle is the cells on Cor's side of it:
+    ;; no farther from the edge the two corners share than from the other edge
+    ;; of that next corner.
+    (INIT &tri BoundingBox
+      (cell (P)
+        (&hyp *P)))
+
+    (RULE &right_angle
+      (&corner_cand (:Cor *P))
+      (&tri.box *B)
+      (inside (:A P) B)
+      (same_corner (:D *Dc) (:P1 P) (:P2 B))
+      (diag_dirs (:D Dc) *A *D1)
+      (diag_dirs (:D *Dh) A D1)
+      (!= Dh Dc)
+      (&mark2 (:P *M))
+      (NOT (&hyp (:P M)))
+      (!= M P)
+      (inside (:A M) B)
+      (relative (:Base B) (:X M) (:X_rel *P_inner))
+      (diag_dist (:P P_inner) (:Diag Dh) A *K1 *K2)
+      (<= K1 K2))))
+
+(RULE &corner_cand
+  (&hyp *P)
+  (&hyp (:P *Q))
+  (&corner_cell P Q *Cor))
+
+;; $Free — the corner the marks left open.
+(RULE &right_angle
+  (&corner_cand (:Cor *P))
+  (NOT (&mark2 P)))
+
+(RULE &vertex
+  (OR ((&hyp *P))
+      ((&right_angle P))))
+
+(INIT &span_frame Frame
+  (extent (A N)
+    (&vertex *P)
+    (frame_extent P *A *N)))
+
+;; The three vertices cast at each other: a cell with vertices on both sides of
+;; one of its lines lies on the side joining them.
+(INIT &span Ray
+  (source (P)
+    (&vertex *P))
+  (node (P)
+    (&span_frame.cell *P))
+  (dir (D)
+    (axis4_of *D *A)))
+
+(RULE &span_between
+  (input *P)
+  (axis4_of *D *A)
+  (dir8_opposite D (:D2 *O))
+  (&span.ray P D)
+  (&span.ray P (:D O)))
+
+(RULE &paint
+  (&span_between *P)
+  (NOT (&mark2 P)))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&ink (:C *Col)))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

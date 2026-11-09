@@ -1,0 +1,8 @@
+;; inputs 7248e515407b9fe1552b154dbe666dc22ba0affaef3c3824dbe452899b3731a7 programs/solvers/9473c6fb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9473c6fb
+
+(param &bg Color (7))
+(param &order_corner DiagDir (DIAG_TL))
+(param &cycle_succ (Color Color) (2 8) (8 5) (5 2))
+(param &cycle_start Color (2))

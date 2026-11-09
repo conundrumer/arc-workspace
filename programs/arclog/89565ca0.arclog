@@ -1,0 +1,138 @@
+;; inputs 6ea5d70e216a44855233c0022d9239bfce2c68ad4a43911ef3ff5c4a8da718cc programs/solvers/89565ca0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 89565ca0
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &piece Connectivity
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col))))
+
+(INIT &scattered_count Cardinality
+  (key ((&piece.component (:key ^Col) *Id))
+    (member ((:m Id))
+      (&piece.component (:key Col) *Id))))
+
+;; The chart's layout: rows counted from rank_dir, bars growing from the edge a quarter turn away.
+(DET &rank_dir DirDomain)
+
+(DET &bar_sense SenseDomain)
+
+;; The specks are the color that lies in the most pieces.
+(INIT &scattered Order
+  (member ((:t Col))
+    (&scattered_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&scattered_count.size (:key *Col) *N)))
+
+(RULE &frame
+  (&ink *Col)
+  (NOT (&scattered.maximal (:t Col))))
+
+(RULE &run_on_blocked
+  (&frame)
+  (input *P *Col)
+  (&bg (:C Col)))
+
+;; A line of frame f runs on toward d from a cell of f with another cell of f
+;; behind it, over hidden cells, until background stops it.
+(INIT &run_on Ray
+  (key ((&frame (:Col ^F))
+        (dir_elem ^D))
+    (source (P)
+      (&ink *P (:Col F))
+      (opposite D (:Opp *O))
+      (neighbor P (:D O) *Q)
+      (&ink (:P Q) (:Col F)))
+    (dir (D)))
+  (node (P)
+    (input *P)
+    (NOT (&run_on_blocked P))))
+
+(RULE &line
+  (OR ((&frame (:Col *F))
+       (&ink *P (:Col F)))
+      ((&run_on.ray (:key F) P))))
+
+;; The space a frame's lines leave.
+(INIT &closed Enclosure
+  (key ((&frame (:Col ^F)))
+    (cell (P)
+      (input *P)
+      (NOT (&line F P)))))
+
+(INIT &size Cardinality
+  (key ((OR ((&closed.enclosed (:key ^F) *Id))
+            ((&frame (:Col F)))))
+    (member ((:m Id))
+      (&closed.enclosed (:key F) *Id))
+    (domain ()
+      (&frame (:Col F)))))
+
+(RULE &bar_dir
+  (&rank_dir (:D *D3))
+  (&bar_sense *S)
+  (turn S (:D D3) (:D2 *D)))
+
+(INIT &frames Cardinality
+  (member ((:m F))
+    (&frame (:Col *F))))
+
+(INIT &widest Order
+  (member ((:t N))
+    (&size.size *N))
+  (score ((:t N) (:S N))
+    (&size.size *N)))
+
+(INIT &chart Frame
+  (extent (A N)
+    (OR ((&rank_dir *D)
+         (axis_of D *A)
+         (&frames.size *N))
+        ((&bar_dir (:D *D2))
+         (axis_of (:D D2) A)
+         (&widest.maximal (:t N))))))
+
+(RULE &row
+  (&chart.cell *P)
+  (&rank_dir *D)
+  (margin (:B P) D *K))
+
+(INIT &fewer Order
+  (member ((:t F))
+    (&frame (:Col *F)))
+  (score ((:t F) (:S N))
+    (&size.size (:key *F) *N)))
+
+(RULE &seat
+  (&row *K)
+  (&fewer.rank (:t *F) *R)
+  (<= R K))
+
+(CHOOSE &ties
+  (for ((&seat ^K))
+    (from (&seat *F K)))
+  (never
+    (&seat *F *K)
+    (&seat F (:K *K2))
+    (!= K K2)))
+
+(RULE &output
+  (&chart.cell *P)
+  (&rank_dir *D)
+  (margin (:B P) D *K)
+  (&ties K *F)
+  (&size.size (:key F) *N)
+  (&bar_dir (:D *Db))
+  (margin (:B P) (:D Db) (:K *K2))
+  (OR ((>= K2 N)
+       (&scattered.maximal (:t *Col)))
+      ((< K2 N)
+       (= Col F))))
+
+(OUT (&output ^P ^Col))

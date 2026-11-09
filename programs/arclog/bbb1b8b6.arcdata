@@ -1,0 +1,9 @@
+;; inputs 8957e501774a6f1c296988599cdf8efd44cb2a4a167313d0b947ed0b722ba95b programs/solvers/bbb1b8b6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bbb1b8b6
+
+(param &bg Color (0))
+(param &base_dir Dir (DIR_L))
+(param &gap number (1))
+(param &tile_count number (2))
+(param &tile_size number (4))

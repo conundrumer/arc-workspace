@@ -1,0 +1,57 @@
+;; inputs 9a7bcb93bc2d4012441ff17ea593a3fde82d690b023823688c97efc37b9f5b66 programs/solvers/42a15761.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 42a15761
+
+(DET &gap DivisorRatio)
+
+(DET &order_dir DirDomain)
+
+(DET &panel_size SepTileDim)
+
+(INIT &panel_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (side (A K)
+    (&order_dir *D)
+    (axis_of D *A)
+    (&panel_size (:D *K)))
+  (gap (A G)
+    (&order_dir *D)
+    (axis_of D *A)
+    (&gap (:K *G))))
+
+(DET &mark RarestColor)
+
+;; Marks per panel; a panel carrying none counts 0.
+(INIT &marks Cardinality
+  (key ((&panel_division.tile (:P_outer ^P_tile)))
+    (member ((:m P_grid))
+      (&panel_division.tile (:P *P_grid) (:P_outer P_tile))
+      (input (:P P_grid) *Col)
+      (&mark (:C Col)))
+    (domain ()
+      (&panel_division.tile (:P_outer P_tile)))))
+
+;; Dense rank over the distinct mark counts, fewest first.
+(INIT &count_order Order
+  (member ((:t N))
+    (&marks.size *N))
+  (score ((:t N) (:S N))
+    (&marks.size *N)))
+
+(RULE &place
+  (&marks.size (:key (:P_tile *P_src_tile)) *N)
+  (&count_order.rank (:t N) *R)
+  (&panel_division.tile (:P_outer *P_dst_tile))
+  (&order_dir *D)
+  (margin (:B P_dst_tile) D (:K R)))
+
+(RULE &output
+  (OR ((&panel_division.tile *P (:P_outer *P_dst_tile) (:P_inner *P_intile))
+       (&place *P_src_tile P_dst_tile)
+       (&panel_division.tile (:P *P_grid_in) (:P_outer P_src_tile) (:P_inner P_intile))
+       (input (:P P_grid_in) *Col))
+      ((input P Col)
+       (NOT (&panel_division.tile P)))))
+
+(OUT (&output ^P ^Col))

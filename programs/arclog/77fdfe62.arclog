@@ -1,0 +1,139 @@
+;; inputs 5f097ca98081ec8e441d8c515b8cdc0e1703b3d6e060ead6bf576c22b8768c34 programs/solvers/77fdfe62.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 77fdfe62
+
+(DET &line VanishedColor)
+
+(RULE &off_line
+  (input *P *Col)
+  (NOT (&line (:C Col)))
+  (split P *A (:Along *L)))
+
+(RULE &cut_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&off_line A L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The parts the separator lines cut the grid into.
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D (:K *K2)))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K2))
+      (input *P)
+      (margin (:B P) D (:K *K2)))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&cut_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &screened
+  (&cut_part_idx *P *D *N)
+  (!= N 0))
+
+(RULE &fenced
+  (input *P)
+  (ALL ((dir_elem *D))
+       ((&screened P D))))
+
+(INIT &fence_box BoundingBox
+  (cell (P)
+    (&fenced *P)))
+
+(RULE &interior_cell
+  (&fenced *P)
+  (&fence_box.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(DET &ink VanishedColor)
+
+(RULE &corner_color
+  (input *P *Col)
+  (corner_dist P *Diag (:K 0)))
+
+(ALTS $interior "how the interior is found" $Lines
+  (ALT $Margin
+    (DET &margin
+      (&fence_box.box *B)
+      (margin B *D *K))
+
+    (RULE &interior_cell
+      (input *P)
+      (&margin *K)
+      (uniform_inset K *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(ALTS $blank "how non-ink interior cells render" $Pass
+  (ALT $Bg
+    (DET &bg SharedColor)
+
+    (RULE &output
+      (OR ((input (:P *P2) (:Col *C0))
+           (NOT (&ink (:C C0)))
+           (&interior_cell (:P P2) (:P_inner *P))
+           (&bg (:C *Col)))
+          ;; Ink takes the corner color of its quadrant.
+          ((input (:P *P22) (:Col *Ink))
+           (&ink (:C Ink))
+           (&interior_cell (:P P22) (:P_inner P))
+           (&quad_quadrant P *Diag)
+           (&corner_color Diag Col))))))
+
+(RULE &quad_nearer
+  (&interior_cell (:P_inner *P))
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(RULE &quad_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&quad_nearer *P (:D D1))
+  (&quad_nearer P (:D D2)))
+
+(RULE &output
+  ;; Ink takes the corner color of its quadrant.
+  (OR ((input (:P *P2) (:Col *Ink))
+       (&ink (:C Ink))
+       (&interior_cell (:P P2) (:P_inner *P))
+       (&quad_quadrant P *Diag)
+       (&corner_color Diag *Col))
+      ((input (:P *P22) Col)
+       (NOT (&ink (:C Col)))
+       (&interior_cell (:P P22) (:P_inner P)))))
+
+(OUT (&output ^P ^Col))

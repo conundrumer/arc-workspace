@@ -1,0 +1,79 @@
+;; inputs 0b054192b56c4f5226c095742c4b6a7fea238b06a396140d6c962959f5b7e839 programs/solvers/b190f7f5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b190f7f5
+
+(param &bg Color (0))
+(param &half_count number (2))
+(param &template_color Color (8))
+
+(exclude ($MonoTemplate $WholeHalf) "Every combination but the one-color shape copied as its whole half, which gives the fewer-colors shape's output wherever it is defined.")
+
+(alts $s
+  (alt $EqualHalves
+    (witness rectangle-halves borderline $EqualHalves
+      (relaxed two-square-halves)
+      (separates "The input is 3x8, so its halves are 3x4 and not squares. The square reading finds no squares that divide the input and is undefined. The equal-halves reading cuts it into two 3x4 halves and stamps the 3x4 shape at each pattern cell, giving 9x16.")
+      (input (grid
+        (2 0 4 0 0 8 8 0)
+        (0 3 0 1 8 8 8 8)
+        (0 0 2 0 0 8 8 0)))
+      (output $SquareHalves undefined)
+      (output $EqualHalves (grid
+        (0 2 2 0 0 0 0 0 0 4 4 0 0 0 0 0)
+        (2 2 2 2 0 0 0 0 4 4 4 4 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 4 4 0 0 0 0 0)
+        (0 0 0 0 0 3 3 0 0 0 0 0 0 1 1 0)
+        (0 0 0 0 3 3 3 3 0 0 0 0 1 1 1 1)
+        (0 0 0 0 0 3 3 0 0 0 0 0 0 1 1 0)
+        (0 0 0 0 0 0 0 0 0 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 2 2 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 2 2 0 0 0 0 0))))))
+
+(alts $t
+  (alt $MonoTemplate
+    (witness template-in-other-color variant $MonoTemplate
+      (relaxed template-half)
+      (separates "The shape is drawn in 5, not 8. The concept finds no half that holds only 8 and background, and is undefined. The one-color and fewer-colors readings take the 5 half as the shape and stamp it in each pattern color.")
+      (input (grid
+        (2 0 4 0 5 0)
+        (0 3 0 5 5 5)
+        (0 0 0 0 5 0)))
+      (output $OnlyTemplateColor undefined)
+      (output $FewerColorsTemplate $MonoTemplate (grid
+        (0 2 0 0 0 0 0 4 0)
+        (2 2 2 0 0 0 4 4 4)
+        (0 2 0 0 0 0 0 4 0)
+        (0 0 0 0 3 0 0 0 0)
+        (0 0 0 3 3 3 0 0 0)
+        (0 0 0 0 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))))
+  (alt $FewerColorsTemplate
+    (witness template-in-other-color variant $MonoTemplate)))
+
+(alts $f
+  (alt $TemplateBbox
+    (witness shape-short-of-square ordinary concept
+      (separates "The 8 shape fills only the top-left 2x2 of its 3x3 half. The concept stamps the whole 3x3 half, giving 9x9. The bounding-box reading stamps the 2x2 box of the shape, giving 6x6.")
+      (input (grid
+        (2 0 4 8 8 0)
+        (0 3 0 8 0 0)
+        (0 0 0 0 0 0)))
+      (output $WholeHalf (grid
+        (2 2 0 0 0 0 4 4 0)
+        (2 0 0 0 0 0 4 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 3 3 0 0 0 0)
+        (0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $TemplateBbox (grid
+        (2 2 0 0 4 4)
+        (2 0 0 0 4 0)
+        (0 0 3 3 0 0)
+        (0 0 3 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0))))))

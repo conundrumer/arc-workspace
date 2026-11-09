@@ -1,0 +1,145 @@
+;; inputs 58fefcb5b3879466fdec7ea407fb9f366485e53f5f8740c8f8a618e25635172d programs/solvers/44d8ac46.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 44d8ac46
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &shape Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &shape_box BoundingBox
+  (key ((&shape.component *P ^Id))
+    (cell (P)
+      (&shape.component *P Id))))
+
+(INIT &boxed Connectivity
+  (node (P)
+    (&shape_box.box *B)
+    (&bg_cell *P)
+    (inside (:A P) B)))
+
+(RULE &hole
+  (&boxed.component *P (:Id *H)))
+
+(ALTS $r "what a hole is" $Box
+  (ALT $Enclose
+    (INIT &closed Enclosure
+      (cell (P)
+        (&bg_cell *P)))
+
+    (RULE &hole
+      (&closed.enclosed *P (:Id *H)))))
+
+(ALTS $t "which holes take the fill" $Block
+  (ALT $Sym
+    ;; The output's fill cells; their components are the filled holes.
+    (INIT &regions Connectivity
+      (key ((ex_output ^E *P *Col)
+            (&fill (:C Col)))
+        (node (P)
+          (ex_output E *P *Col)
+          (&fill (:C Col)))))
+
+    (INIT &bbox2 BoundingBox
+      (key ((&regions.component (:key ^E) ^Id *P))
+        (cell (P)
+          (&regions.component (:key E) Id *P))))
+
+    (RULE &sym_src
+      (&hole (:H *Key) (:P *P2))
+      (&bbox.box (:key (:Id Key)) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (INIT &sym Agreement
+      (key ((OR ((&hole (:H ^Id) *P)
+                 (&bbox.box (:key Id) *B)
+                 (inside (:A P) B)
+                 (relative (:Base B) (:X P) (:X_rel *P_inner)))
+                ((&sym_src (:Key Id) P))))
+        (source ((:P P_inner))
+          (&hole (:H Id) *P)
+          (&bbox.box (:key Id) *B)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner)))
+        (target (P)
+          (&sym_src (:Key Id) *P))))
+
+    (DET &sym_src2
+      (&regions.component (:key *E) *Id (:P *P2))
+      (&bbox2.box (:key E Id) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (INIT &sym2 Agreement
+      (key ((OR ((&regions.component (:key ^E) ^Id *P)
+                 (&bbox2.box (:key E Id) *B)
+                 (inside (:A P) B)
+                 (relative (:Base B) (:X P) (:X_rel *P_inner)))
+                ((&sym_src2 E Id P))))
+        (source ((:P P_inner))
+          (&regions.component (:key E) Id *P)
+          (&bbox2.box (:key E Id) *B)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner)))
+        (target (P)
+          (&sym_src2 E Id *P))))
+
+    ;; The transforms every filled hole survives, named as a subgroup.
+    (INIT &named Inclusion
+      (pattern ((:pattern S) (:m D))
+        (sym_member *S *D))
+      (observed ((:m D))
+        (d4_elem *D)
+        (NOT (&sym2.mismatch D))))
+
+    (DET &hole_sym
+      (&named.equal (:pattern *S)))
+
+    (RULE &sym_gap
+      (&hole_sym *S)
+      (sym_member S *D)
+      (&sym.mismatch (:key (:Id *H)) D))
+
+    (RULE &filled
+      (&hole *H)
+      (NOT (&sym_gap H)))))
+
+(INIT &bbox BoundingBox
+  (key ((&hole (:H ^Id) *P))
+    (cell (P)
+      (&hole (:H Id) *P))))
+
+(RULE &box_gap
+  (&bbox.box (:key (:Id *H)) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&hole H P)))
+
+(RULE &filled
+  (&hole *H *P)
+  (&bbox.box (:key (:Id H)) *B)
+  (box_extent B P *A *N)
+  (perp A *A2)
+  (box_extent B P (:A A2) N)
+  (NOT (&box_gap H)))
+
+(RULE &painted
+  (&hole (:H *Id) *P)
+  (&filled (:H Id)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

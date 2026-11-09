@@ -1,0 +1,8 @@
+;; inputs 6c83b3aa3c7bf832b90ae84e8d573151905962196b4f3d70c336758ca355f0a5 programs/solvers/7e2bad24.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7e2bad24
+
+(param &bg Color (0))
+(param &ray Color (1))
+(param &transparent Color (3))
+(param &reflective Color (2))

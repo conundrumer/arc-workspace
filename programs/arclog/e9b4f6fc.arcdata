@@ -1,0 +1,176 @@
+;; inputs 8ec51f8555b52e721ce2d5a125ec79833d609301f3bae440e4628170231139e4 programs/solvers/e9b4f6fc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9b4f6fc
+
+(param &background Color (0))
+(param &new_side Dir (DIR_L))
+
+(alts $r
+  (alt $KeyOldInPicture
+    (witness key-old-in-picture variant $KeyOldInPicture
+      (relaxed key-names-picture-color)
+      (separates "every key stands mirrored, its picture color on the left: the concept's stored new-side takes the right cell as the old color, so no key color is in the picture and the picture is cut out unchanged; $KeyOldInPicture takes the cell whose color the picture holds as the old color and recolors 4 to 1 and 3 to 2")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 3 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 4 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 8 8 8 8 8 0 0 0 0)
+        (0 0 0 8 8 8 4 8 8 0 0 0 0)
+        (0 0 0 8 8 4 4 4 8 0 0 0 0)
+        (0 0 0 8 8 3 4 3 8 0 0 0 0)
+        (0 0 0 8 8 3 3 3 8 0 0 0 0)
+        (0 0 0 8 8 8 8 8 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $KeyNewSide (grid
+        (8 8 8 8 8 8)
+        (8 8 8 4 8 8)
+        (8 8 4 4 4 8)
+        (8 8 3 4 3 8)
+        (8 8 3 3 3 8)
+        (8 8 8 8 8 8)))
+      (output $KeyOldInPicture (grid
+        (8 8 8 8 8 8)
+        (8 8 8 1 8 8)
+        (8 8 1 1 1 8)
+        (8 8 2 1 2 8)
+        (8 8 2 2 2 8)
+        (8 8 8 8 8 8))))))
+
+(alts $a
+  (alt $Picture8Adjacent
+    (witness diagonal-key borderline concept
+      (relaxed domino-keys)
+      (separates "a key touches the picture's corner diagonally: the concept joins cells at a side only, keeps the key apart and recolors 2 to 3; $Picture8Adjacent joins the key to the picture, so the cut-out reaches the key and 2 keeps its color")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 8 8 8 8 8 8 0 0 0 0)
+        (0 0 8 8 2 4 8 8 8 0 0 0 0)
+        (0 0 8 2 2 4 4 4 8 0 0 0 0)
+        (0 0 8 8 8 8 8 8 8 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 3 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 4 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $SideAdjacent (grid
+        (8 8 8 8 8 8 8)
+        (8 8 3 1 8 8 8)
+        (8 3 3 1 1 1 8)
+        (8 8 8 8 8 8 8)))
+      (output $Picture8Adjacent (grid
+        (8 8 8 8 8 8 8 0 0)
+        (8 8 2 1 8 8 8 0 0)
+        (8 2 2 1 1 1 8 0 0)
+        (8 8 8 8 8 8 8 0 0)
+        (0 0 0 0 0 0 0 3 2))))))
+
+(alts $s
+  (alt $PictureLargest
+    (witness two-pictures foreign $PictureLargest
+      (relaxed one-picture)
+      (separates "a second object of more than two cells, a 2x2 block, stands beside the picture: the concept and every branch that keeps its picture claim are undefined; $PictureLargest cuts out the larger object recolored")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 4 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 8 8 8 8 0 0 0)
+        (0 0 0 0 8 8 4 8 8 8 0 0 0)
+        (0 0 0 0 8 4 4 4 8 8 0 0 0)
+        (0 0 0 0 8 3 4 3 8 8 0 0 0)
+        (8 3 0 0 8 3 3 3 8 8 0 0 0)
+        (8 8 0 0 8 8 8 8 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $OnlyLargeObject undefined)
+      (output $PictureLargest (grid
+        (8 8 8 8 8 8)
+        (8 8 1 8 8 8)
+        (8 1 1 1 8 8)
+        (8 2 1 2 8 8)
+        (8 2 2 2 8 8)
+        (8 8 8 8 8 8))))))
+
+(alts $t
+  (alt $RecolorTransitive
+    (witness chained-keys borderline concept
+      (relaxed key-names-picture-color)
+      (separates "the new color of one key, 4, is the old color of the other: the concept recolors once, 3 to 4 and 4 to 1; $RecolorTransitive follows the chain and paints 3 cells 1; $KeyOldInPicture finds a key both of whose colors the picture holds and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 4 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 4 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 8 8 8 8 0 0 0)
+        (0 0 0 0 8 8 4 8 8 8 0 0 0)
+        (0 0 0 0 8 4 4 4 8 8 0 0 0)
+        (0 0 0 0 8 3 4 3 8 8 0 0 0)
+        (0 0 0 0 8 3 3 3 8 8 0 0 0)
+        (0 0 0 0 8 8 8 8 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($KeyNewSide $RecolorOnce) (grid
+        (8 8 8 8 8 8)
+        (8 8 1 8 8 8)
+        (8 1 1 1 8 8)
+        (8 4 1 4 8 8)
+        (8 4 4 4 8 8)
+        (8 8 8 8 8 8)))
+      (output $RecolorTransitive (grid
+        (8 8 8 8 8 8)
+        (8 8 1 8 8 8)
+        (8 1 1 1 8 8)
+        (8 1 1 1 8 8)
+        (8 1 1 1 8 8)
+        (8 8 8 8 8 8)))
+      (output $KeyOldInPicture undefined))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "the scene's background is 8 and the picture's field is 0: the concept takes 0 as background, finds two objects of more than two cells and is undefined; background=DominantColor takes 8, the commonest color, as background and cuts out the 0-field picture recolored; $PictureLargest cuts out the whole 8 region unchanged")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 2 3 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 1 4 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 0 0 0 0 0 0 8 8 8)
+        (8 8 8 8 0 0 4 0 0 0 8 8 8)
+        (8 8 8 8 0 4 4 4 0 0 8 8 8)
+        (8 8 8 8 0 3 4 3 0 0 8 8 8)
+        (8 8 8 8 0 3 3 3 0 0 8 8 8)
+        (8 8 8 8 0 0 0 0 0 0 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)))
+      (output ($OnlyLargeObject &background=$Stored) undefined)
+      (output &background=$Derived (grid
+        (0 0 0 0 0 0)
+        (0 0 1 0 0 0)
+        (0 1 1 1 0 0)
+        (0 2 1 2 0 0)
+        (0 2 2 2 0 0)
+        (0 0 0 0 0 0)))
+      (output $PictureLargest (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 2 3 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 1 4 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 0 0 0 0 0 0 8 8 8)
+        (8 8 8 8 0 0 4 0 0 0 8 8 8)
+        (8 8 8 8 0 4 4 4 0 0 8 8 8)
+        (8 8 8 8 0 3 4 3 0 0 8 8 8)
+        (8 8 8 8 0 3 3 3 0 0 8 8 8)
+        (8 8 8 8 0 0 0 0 0 0 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8))))))

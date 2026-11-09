@@ -1,0 +1,52 @@
+;; inputs 571c54c6831cb23a7c515a3225ef9c18b01627253913936dacf126b0b69b6d3f programs/solvers/36fdfd69.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 36fdfd69
+
+(DET &mark RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+;; Marks cluster across a gap of at most one cell: a cluster step is two
+;; steps in any directions.
+(INIT &cluster Connectivity
+  (node (P)
+    (input *P *Col)
+    (&mark (:C Col)))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((step_offset (:D *D1) (:V *S1))
+         (step_offset (:D *D2) (:V *S2))
+         (compose (:A S1) (:B S2) (:C S)))
+        ((dir_elem (:D *D3))
+         (step_offset (:D D3) (:V S))))))
+
+(INIT &bbox BoundingBox
+  (key ((&cluster.component *P ^Id))
+    (cell (P)
+      (&cluster.component *P Id))))
+
+(RULE &unmarked
+  (input *P *Col)
+  (NOT (&mark (:C Col)))
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(RULE &repaint
+  (&unmarked *P))
+
+(ALTS $choice "what the fill spares within a box. No box the pairs exhibit covers a &bg cell, so on the pairs the cases agree." $Solid
+  (ALT $Recolor
+    (DET &bg SharedColor)
+
+    (RULE &repaint
+      (&unmarked *P *Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &output
+  (OR ((&repaint *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&repaint P)))))
+
+(OUT (&output ^P ^Col))

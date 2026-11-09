@@ -1,0 +1,53 @@
+;; inputs b5767a9605b8d19fe1671a0a198d67f6d2beb1071a9ac520c7f82621d1274d34 programs/solvers/60d73be6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 60d73be6
+
+(INIT &bg_mode_count Cardinality
+  (key ((ex_input ^E *P ^Col))
+    (member ((:m P))
+      (ex_input E *P Col))))
+
+;; A line of one color is a line of the cross: a full line meets the cross's
+;; other line, so it carries that line's color.
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &flip
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_inversion A (:T *F))
+  (relative (:Base L) (:X P) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V2))
+  (compose (:A L) (:B V2) (:C *Q))
+  (input (:P Q)))
+
+(INIT &bg_mode Order
+  (key ((&bg_mode_count.size (:key ^E *Col)))
+    (member ((:t Col))
+      (&bg_mode_count.size (:key E *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key E *Col) *N))))
+
+(DET &bg
+  (&bg_mode.maximal (:t *C)))
+
+(RULE &image
+  (input (:P *P2) *Col)
+  (NOT (&bg (:C Col)))
+  (OR ((&flip (:P P2) (:Q *P)))
+      ((= P P2))
+      ((&flip *A (:P P2) (:Q *Q1))
+       (perp A *A2)
+       (&flip (:A A2) (:P Q1) (:Q P)))))
+
+(RULE &output
+  (OR ((&image *P *Col))
+      ((input P Col)
+       (NOT (&image P)))))
+
+(OUT (&output ^P ^Col))

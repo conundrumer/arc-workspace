@@ -1,0 +1,149 @@
+;; inputs 4fe3b933ddd625a1dcc3931ab7157c918ffbb11dff9df5607b188b47d04c2b09 programs/solvers/bc93ec48.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bc93ec48
+
+(INPUT background-field "the grid is a field of background, with one-color shapes on it")
+
+(OUTPUT corner-shape "the shape of a corner is the 4-connected one-color component of non-background cells that holds the corner cell; a corner whose cell is background has no shape"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &conn8 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT next-corner "each corner's shape is copied to the next corner in the sense direction, translated with no turn or flip, so that its bounding box touches that corner's two edges"
+
+  (INIT &conn4 Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &shape
+    (&conn4.component (:key *Col) *P (:Id *X)))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape ^X *P))
+      (cell (P)
+        (&shape X *P)))))
+
+(OUTPUT overlay "the copies are drawn over the input; each cell no copy covers keeps its input color, the cells of the shape that moved away included")
+
+(ALTS $shape "which cells make up one shape" $Conn4
+  (ALT $Conn8
+    (OUTPUT corner-shape "the shape is the 8-connected one-color component"
+      (RULE &shape
+        (&conn8.component (:key *Col) *P (:Id *X))))))
+
+(ALTS $pick "which shape a corner holds" $CornerCell
+  (ALT $EdgePair
+    (OUTPUT corner-shape "the shape of a corner is the shape that reaches both of the corner's edges; undefined where two shapes do")
+    (RULE &held2
+      (&shape *X (:P *P1))
+      (&shape X (:P *P2))
+      (diag_dirs (:D *C) *D1 *D2)
+      (margin (:B P1) (:D D1) (:K 0))
+      (margin (:B P2) (:D D2) (:K 0)))))
+
+(ALTS $step "how the target corner of each corner is encoded" $SenseStep
+  (ALT $CornerD4
+    (OUTPUT next-corner "each corner's shape is copied to the corner that the stored D4 element corner_d4 takes that corner to"
+      (DET &corner_d4 D4Domain))
+    (RULE &target
+      (&corner_d4 (:D *G))
+      (apply_diag_dir (:D G) (:Dir *C) (:Dir_out *C2))))
+  (ALT $CornerMap
+    (OUTPUT next-corner "each corner's shape is copied to the corner that the stored map corner_target gives"
+      ;; The one-color shapes of the train inputs.
+      (INIT &piece Connectivity
+        (key ((ex_input ^E *P ^Col)
+              (ex_output E)
+              (NOT (&background (:C Col))))
+          (node (P)
+            (ex_input E *P Col)
+            (ex_output E)
+            (NOT (&background (:C Col))))))
+
+      (DET &held
+        (&piece.component (:key *E *Col) (:P *Q) (:Id *X))
+        (inside (:A Q) (:B 0))
+        (same_corner (:D *C) (:P1 Q) (:P2 0))
+        (&piece.component (:key E Col) *P (:Id X)))
+
+      (INIT &held_box BoundingBox
+        (key ((&held ^E ^C *P))
+          (cell (P)
+            (&held E C *P))))
+
+      ;; Where each corner's shape stands in its train output.
+      (INIT &found Occurrences
+        (key ((OR ((&held ^E ^C)
+                   (ex_output E *P *Col))
+                  ((&held E C P Col))))
+          (cell (P (:v Col))
+            (&held E C)
+            (ex_output E *P *Col))
+          (shape (P (:v Col))
+            (&held E C *P *Col))))
+
+      (DET &found_at
+        (&found.occurrence (:key *E *C) (:P *V))
+        (&held_box.box (:key E C) *B)
+        (compose (:A V) B (:C *B_out))
+        (corner_dist (:P B_out) (:Diag *C2) (:K 0)))
+
+      (DET &missed
+        (&found_at *C *C2)
+        (&held *E C)
+        (NOT (&found_at E C C2)))
+
+      (DET &corner_target
+        (&found_at *C *C2)
+        (NOT (&missed C C2))))
+    (RULE &target
+      (&corner_target *C *C2))))
+
+(DET &sense SenseDomain)
+
+(RULE &held2
+  (&shape *X *P)
+  (inside (:A P) (:B 0))
+  (same_corner (:D *C) (:P1 P) (:P2 0)))
+
+(RULE &ambiguous
+  (&held2 *C (:X *X1))
+  (&held2 C (:X *X2))
+  (!= X1 X2))
+
+(RULE &target
+  (&sense *S)
+  (c4_turn S (:T *R))
+  (apply_diag_dir (:D R) (:Dir *C) (:Dir_out *C2)))
+
+(RULE &copy
+  (&held2 *C *X)
+  (&target C *C2)
+  (&shape X *P *Col)
+  (&shape_box.box (:key X) *B)
+  (diag_dist (:P B) (:Diag C2) *A *K1 *K2)
+  (diag_dirs (:D C2) A *D1 *D2)
+  (jump P (:D D1) (:K K1) (:Q *Q1))
+  (jump (:P Q1) (:D D2) (:K K2) *Q))
+
+(RULE &output
+  (OR ((&copy (:Q *P) *Col))
+      ((input P Col)
+       (NOT (&copy (:Q P)))))
+  (NOT (&ambiguous)))
+
+(OUT (&output ^P ^Col))

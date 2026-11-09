@@ -1,0 +1,8 @@
+;; inputs 5f097ca98081ec8e441d8c515b8cdc0e1703b3d6e060ead6bf576c22b8768c34 programs/solvers/77fdfe62.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 77fdfe62
+
+(param &ink Color (8))
+(param &line Color (1))
+(param &margin number (2))
+(param &bg Color (0))

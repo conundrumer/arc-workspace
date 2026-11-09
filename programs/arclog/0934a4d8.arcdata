@@ -1,0 +1,12 @@
+;; inputs 9e346bd2e93b6d82e381eff8b66ec149e4c8d59df948166ac3f1235a5e58a16c programs/solvers/0934a4d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0934a4d8
+
+(param &mask Color (8))
+(param &mosaic_margin Box ((0 2 0 2)))
+(param &tile_sym (Position Sym)
+  (grid
+    (SYM_BOX SYM_D4 SYM_D4 SYM_BOX)
+    (SYM_D4 SYM_BOX SYM_BOX SYM_D4)
+    (SYM_D4 SYM_BOX SYM_BOX SYM_D4)
+    (SYM_BOX SYM_D4 SYM_D4 SYM_BOX)))

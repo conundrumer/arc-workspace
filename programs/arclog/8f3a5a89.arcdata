@@ -1,0 +1,8 @@
+;; inputs 0d28b9fc2e825a6eb9157558b51c3de107743a76af18abdbe1e4c379032dcace programs/solvers/8f3a5a89.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8f3a5a89
+
+(param &bg Color (8))
+(param &wall Color (1))
+(param &start Color (6))
+(param &paint Color (7))

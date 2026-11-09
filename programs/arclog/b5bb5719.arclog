@@ -1,0 +1,170 @@
+;; inputs f7ee0892d2460dc55e73f7f3c9a6fad0b978b5fb23febabb0670f944da2fcfa2 programs/solvers/b5bb5719.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b5bb5719
+
+(INPUT seed-row "the line at the edge opposite &grow_dir holds cells of the two colors of &swap, with &background cells among them, and every other cell is &background"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &grow_dir DirDomain)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (DET &swap
+    (ex_input *Col)
+    (NOT (&background (:C Col)))
+    (ex_input (:Col *Col2))
+    (NOT (&background (:C Col2)))
+    (!= Col Col2))
+
+  (RULE &off_edge
+    (dir_elem *D)
+    (&ink *P)
+    (NOT (margin (:B P) D (:K 0))))
+
+  (INIT &seed_edge Singleton
+    (member ((:v D))
+      (dir_elem *D)
+      (NOT (&off_edge D)))))
+
+(OUTPUT fill-under-pair "row by row in &grow_dir, a &background cell whose two diagonal neighbors in the row before it are both filled becomes filled"
+
+  (RULE &grow
+    (&grow_dir *D))
+
+  (RULE &span_axis
+    (&grow *D)
+    (axis_of D (:A *A_grow))
+    (perp (:A A_grow) (:A2 *A)))
+
+  (INIT &span Ray
+    (source (P)
+      (&grow)
+      (&ink *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&span_axis *A)
+      (axis4_of *D A))))
+
+(OUTPUT swap-side-neighbor "a filled cell takes the color that &swap pairs with the color of its diagonal neighbor in the row before it on the read side, the side a quarter turn in &read_sense from &grow_dir"
+
+  ;; the turn from the grow direction to the read side
+  (DET &read_sense SenseDomain)
+
+  (RULE &bearing
+    (&grow (:D *D_grow))
+    (opposite (:D D_grow) (:Opp *D_back))
+    (&read_sense *S)
+    (turn S (:D D_grow) (:D2 *D_read)))
+
+  (RULE &above
+    (&bearing *D_back *D_read)
+    (opposite (:D D_read) (:Opp *D_far))
+    (input (:P *Q))
+    (neighbor (:P Q) (:D D_back) (:Q *Q0))
+    (neighbor (:P Q0) (:D D_read) (:Q *P_read))
+    (neighbor (:P Q0) (:D D_far) (:Q *P_far)))
+
+  (RULE &seed
+    (&grow)
+    (&ink *P))
+
+  (INIT &fill Propagation
+    (source ((:n P))
+      (&seed *P))
+    (join ((:a P_read) (:b P_far) (:c Q))
+      (&above *Q *P_read *P_far)
+      (input (:P Q) *Col)
+      (&background (:C Col))))
+
+  (RULE &filled
+    (&fill.reached (:n *Q))
+    (NOT (&seed (:P Q))))
+
+  (RULE &head
+    (&filled *Q)
+    (&bearing *D_back *D_read)
+    (diag_dirs *D (:D1 D_back) (:D2 D_read))
+    (margin (:B Q) (:D D_back) *K)
+    (jump (:P Q) D K (:Q *P)))
+
+  (INIT &flips Walk
+    (successor ((:p Col) (:p_next Col2))
+      (&swap *Col *Col2))
+    (steps ((:N K))
+      (&head *K))))
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (INIT &paint Propagation
+    (source ((:n P Col))
+      (&seed *P)
+      (input P *Col))
+    (edge ((:a (:P P_read) Col) (:b (:P Q) (:Col Col2)))
+      (&filled *Q)
+      (&above Q *P_read)
+      (&swap *Col *Col2))))
+
+(ALTS $s "which cells fill" $UnderPair
+  (ALT $SpanTriangle
+    (OUTPUT fill-under-pair "the &background cells of the triangle under the span from the seed row's first to its last filled cell fill, row by row in &grow_dir; undefined where a triangle cell's read side diagonal neighbor is &background"
+      (RULE &span_between
+        (&grow)
+        (input *P)
+        (&span_axis *A)
+        (axis4_of *D A)
+        (dir8_opposite D (:D2 *O))
+        (&span.ray P D)
+        (&span.ray P (:D O)))
+
+      (RULE &seed
+        (&span_between *P)))))
+
+(ALTS $pa "which color a filled cell takes" $SwapSide
+  (ALT $MixedTakesOtherSide
+    (OUTPUT swap-side-neighbor "under two cells of one color, a filled cell takes that color's &swap partner, and under two cells of different colors, it takes the color of the neighbor opposite the read side; undefined where both neighbors have one color outside &swap"
+      (RULE &hue
+        (OR ((input *Col))
+            ((&swap (:Col2 Col)))))
+
+      (INIT &paint Propagation
+        (source ((:n P Col))
+          (&seed *P)
+          (input P *Col))
+        (join ((:a (:P P_read) (:Col Col1)) (:b (:P P_far) (:Col Col2)) (:c (:P Q) Col))
+          (&filled *Q)
+          (&above Q *P_read *P_far)
+          (&hue (:Col *Col1))
+          (&hue (:Col *Col2))
+          (OR ((= Col1 Col2)
+               (&swap (:Col Col1) (:Col2 *Col)))
+              ((!= Col1 Col2)
+               (= Col Col2)))))))
+  (ALT $DiagonalHead
+    (OUTPUT swap-side-neighbor "a filled cell takes the color of the seed row cell at the head of its read side diagonal, passed through &swap once per row between the two; undefined where that head is a color outside &swap")
+    (RULE &tint
+      (&head *Q *K *P)
+      (input P (:Col *Col0))
+      (&flips.walk (:p0 Col0) (:N K) (:p *Col)))))
+
+(ALTS $h "where the grow direction comes from" $StoredGrow
+  (ALT $GrowFromSeedEdge
+    (INPUT seed-row "the line at one edge holds every cell outside &background, and the pyramid grows away from that edge; undefined where no edge line or more than one holds every such cell"
+      (RULE &grow
+        (&seed_edge.value (:v *D_edge))
+        (opposite (:D D_edge) (:Opp *D))))))
+
+(RULE &tint
+  (&paint.reached (:n (:P *Q) *Col)))
+
+(RULE &output
+  (&grow)
+  (input *P (:Col *Col_in))
+  (IF ((&filled (:Q P)))
+      ((&tint (:Q P) *Col))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

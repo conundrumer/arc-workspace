@@ -1,0 +1,26 @@
+;; inputs 1504a04ba8bc0ee7fc7172df6de75df14c2dc3a581080f87a2d9367e43d15029 programs/solvers/0d3d703e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0d3d703e
+
+;; The color pairs the examples trade, each pair one class.
+(INIT &pair Quotient
+  (edge ((:a Col_in) (:b Col_out))
+    (ex_input *E *P (:Col *Col_in))
+    (ex_output E P (:Col *Col_out))
+    (!= Col_in Col_out)))
+
+(DET &swap
+  (&pair.class (:a *Col) (:Id *K)))
+
+(RULE &mapping
+  (&swap (:Col *C_from) *K)
+  (&swap (:Col *C_to) K)
+  (!= C_from C_to))
+
+(RULE &output
+  (OR ((input *P (:Col *Col_in))
+       (&mapping (:C_from Col_in) (:C_to *Col)))
+      ((input P Col)
+       (NOT (&mapping (:C_from Col))))))
+
+(OUT (&output ^P ^Col))

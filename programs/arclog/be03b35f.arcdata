@@ -1,0 +1,6 @@
+;; inputs e5ade7e5457348bf6016be3168183c19833797d78ba7c82c2fb20eb3481e5047 programs/solvers/be03b35f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; be03b35f
+
+(param &frame_dim number (2))
+(param &template (DiagDir D4) (DIAG_TL D4_CC) (DIAG_TR D4_HT) (DIAG_BL D4_CW))

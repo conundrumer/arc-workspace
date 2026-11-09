@@ -1,0 +1,51 @@
+;; inputs a8ae879e086354f47024668e22f666cad1ca0beb77f4de920cceedd1a550d97f programs/solvers/9a4bb226.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9a4bb226
+
+(param &bg Color (0))
+(param &palette number (3))
+
+(alts $choice
+  (alt $Fixed
+    (witness four-colors variant concept
+      (relaxed counts)
+      (separates "One block has four colors and the others two. $Most and $Odd pick the four-color block; $Fixed finds no block with three colors.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 1 2 3 0 0 5 5 6 0)
+        (0 4 1 2 0 0 6 5 5 0)
+        (0 3 4 1 0 0 5 6 6 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 7 8 8 0 0 9 4 4 0)
+        (0 7 7 8 0 0 4 4 9 0)
+        (0 8 7 8 0 0 9 9 4 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output concept $Odd (grid
+        (1 2 3)
+        (4 1 2)
+        (3 4 1)))
+      (output $Fixed undefined))
+    (witness two-odd variant concept
+      (relaxed counts)
+      (separates "The blocks have two, two, three, and four colors. $Most picks the four-color block; $Fixed picks the three-color block; $Odd finds two blocks with an unshared count.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 1 2 3 0 0 5 5 6 0)
+        (0 4 1 2 0 0 6 5 5 0)
+        (0 3 4 1 0 0 5 6 6 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 7 8 8 0 0 9 4 4 0)
+        (0 7 3 8 0 0 4 4 9 0)
+        (0 8 7 8 0 0 9 9 4 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output concept (grid
+        (1 2 3)
+        (4 1 2)
+        (3 4 1)))
+      (output $Fixed (grid
+        (7 8 8)
+        (7 3 8)
+        (8 7 8)))
+      (output $Odd undefined)))
+  (alt $Odd
+    (witness two-odd variant concept)))

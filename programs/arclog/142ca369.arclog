@@ -1,0 +1,185 @@
+;; inputs 887463308a1901e1a3bb4afef530141ef03cb28735ccbed1bc14691efea0246a programs/solvers/142ca369.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 142ca369
+
+(DET &bg DominantColor)
+
+(INIT &exposed Boundary
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &no_arm
+  (corner_dir (:C *G) *D)
+  (&exposed.exposed (:key *Col) *P D))
+
+(RULE &elbow
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (diag_dir_elem (:D *Gap))
+  (NOT (&no_arm P Col (:G Gap)))
+  (neighbor P (:D Gap) (:Q *P_gap))
+  (input (:P P_gap) (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &mark
+  (&elbow (:P *P2) (:Gap *G))
+  (OR ((corner_dir (:C G) *D)
+       (neighbor (:P P2) D (:Q *P)))
+      ((= P P2))))
+
+(RULE &launch2
+  (&elbow *P *Col (:Gap *G))
+  (diag_opposite (:D G) (:Opp *D)))
+
+(RULE &hue
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(ALTS $choice "what a marker is" $Gap
+  (ALT $Glyph
+    (DET &painted
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col)))
+      (ex_input E P (:Col *Bg))
+      (&bg (:C Bg)))
+
+    (DET &beside_ink
+      (&painted *E (:P *Q) *Col)
+      (dir_elem *D)
+      (neighbor (:P Q) D (:Q *W))
+      (ex_input E (:P W) Col))
+
+    (DET &launch_cell
+      (&painted *E (:P *Q) *Col)
+      (NOT (&beside_ink E Q Col))
+      (diag_opposite *D (:Opp *D_back))
+      (neighbor (:P Q) (:D D_back) (:Q *P_l))
+      (ex_input E (:P P_l) Col))
+
+    (DET &aim
+      (&launch_cell *E *P_l *D))
+
+    (INIT &flood Flood
+      (key ((&launch_cell ^E ^P_l))
+        (node (P)
+          (&launch_cell E P_l *Col)
+          (ex_input E *P Col))
+        (source ((:P P_l))
+          (&launch_cell E P_l))))
+
+    (INIT &bbox BoundingBox
+      (key ((&flood.reached (:key ^E (:P_l ^P)) (:P *P2)))
+        (cell ((:P P2))
+          (&flood.reached (:key E (:P_l P)) (:P *P2)))))
+
+    (DET &glyph
+      (&bbox.cell (:key *E (:P *P_l)) (:P *P2))
+      (&bbox.box (:key E (:P P_l)) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+
+    (DET &launch
+      (&bbox.box (:key *E (:P *P_l)) *B)
+      (inside (:A P_l) B)
+      (relative (:Base B) (:X P_l) (:X_rel *P)))
+
+    ;; The marker: its shape, the cell a ray leaves from, and where it heads.
+    (RIGID_DET &marker
+      (instance ((OR ((&glyph ^E ^P_l)) ((&launch E P_l)) ((&aim E P_l))))
+        (&glyph E P_l *P)
+        (&launch E P_l *P)
+        (&aim E P_l *D)))
+
+    (INIT &occ Occurrences
+      (key ((OR ((d4_elem ^D)
+                 (input *P ^Col)
+                 (NOT (&bg (:C Col))))
+                ((input Col)
+                 (NOT (&bg (:C Col)))
+                 (&marker.glyph (:Pose D) (:P *P2)))))
+        (cell (P)
+          (d4_elem D)
+          (input *P Col)
+          (NOT (&bg (:C Col))))
+        (shape ((:P P2))
+          (input Col)
+          (NOT (&bg (:C Col)))
+          (&marker.glyph (:Pose D) (:P *P2)))))
+
+    (RULE &mark
+      (&occ.occurrence (:key *D *Col) (:P *A))
+      (&occ.shape (:key D Col) (:P *P_m2))
+      (compose A (:B P_m2) (:C *P)))
+
+    (RULE &launch2
+      (&occ.occurrence (:key (:D *D2) *Col) (:P *A))
+      (&marker.launch (:Pose D2) (:P *P_l))
+      (compose A (:B P_l) (:C *P))
+      (&marker.aim (:Pose D2) *D))))
+
+(RULE &wall
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&mark P)))
+
+(RULE &side_wall
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D (:Q *P_side))
+  (&wall (:P P_side) *Col))
+
+(RULE &hit
+  (corner_dir (:C *D) (:D *D_cmp))
+  (&side_wall *P (:D D_cmp) *Col))
+
+(RULE &leave_dir
+  (&side_wall *P)
+  (dir_elem (:D *D_cmp))
+  (IF ((&side_wall P (:D D_cmp)))
+      ((opposite (:D D_cmp) (:Opp *D_out)))
+      ((= D_out D_cmp))))
+
+(RULE &bounce
+  (&hit *P *D)
+  (diag_dirs D *A *D1 *D2)
+  (&leave_dir P (:D_cmp D1) (:D_out *D_out1))
+  (&leave_dir P (:D_cmp D2) (:D_out *D_out2))
+  (diag_dirs (:D *D_out) A (:D1 D_out1) (:D2 D_out2)))
+
+;; The rays' walk from the launches: a ray that reaches p heading d with color
+;; col leaves it, reflected with the wall's color at a hit or carried on
+;; unchanged elsewhere, and reaches the next cell when that cell is empty.
+(INIT &walk Propagation
+  (source ((:n P D Col))
+    (&launch2 *P *D *Col))
+  (edge ((:a P D Col) (:b (:P P_next) (:D D_out) (:Col Col_out)))
+    (input *P)
+    (diag_dir_elem *D)
+    (&hue *Col)
+    (OR ((&hit P D (:Col *Col_out))
+         (&bounce P D *D_out))
+        ((NOT (&hit P D))
+         (= D_out D)
+         (= Col_out Col)))
+    (neighbor P (:D D_out) (:Q *P_next))
+    (input (:P P_next) (:Col *Bg))
+    (&bg (:C Bg))))
+
+;; A ray paints an empty cell with the color it leaves that cell with.
+(RULE &paint
+  (&walk.reached (:n *P *D (:Col *C)))
+  (input P (:Col *Bg))
+  (&bg (:C Bg))
+  (OR ((&hit P D *Col))
+      ((NOT (&hit P D))
+       (= Col C))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

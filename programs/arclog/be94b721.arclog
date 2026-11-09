@@ -1,0 +1,110 @@
+;; inputs 0465396360dd8bdaf87452bdde3ba145256ae5a605ab383f99db348c070eafd3 programs/solvers/be94b721.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; be94b721
+
+(INPUT colored-shapes "on a field of &background, the input holds a few shapes, each a 4-connected group of cells of one color, no two of a color and no two touching"
+
+  (DET &absent
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&absent C)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &conn8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &color_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col)))
+
+  (INIT &any_conn Connectivity
+    (node (P)
+      (&ink *P))))
+
+(INPUT one-biggest "exactly one shape has more cells than every other shape")
+
+(OUTPUT crop-biggest "the output is the bounding box of the shape with the most cells, its cells in its color and every other cell of the box &background"
+
+  (INIT &conn4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &member
+    (&conn4.component *P *Id))
+
+  (INIT &size Cardinality
+    (key ((&member ^Id *P))
+      (member ((:m P))
+        (&member Id *P))))
+
+  (INIT &biggest Order
+    (member ((:t (:V Id) (:S N)))
+      (&size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&size.size (:key *Id) *N)))
+
+  (INIT &unique Singleton
+    (member ((:v Id))
+      (&biggest.maximal (:t (:V *Id)))))
+
+  (RULE &kept
+    (&unique.value (:v *Id))
+    (&member Id *P))
+
+  (INIT &box BoundingBox
+    (cell (P)
+      (&kept *P)))
+
+  (RULE &in_box
+    (&box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+(ALTS $shape "what counts as one shape" $Conn4
+  (ALT $Conn8
+    (INPUT colored-shapes "shapes are 8-connected groups of cells of one color, so cells of one color that touch only at a corner make one shape")
+    (OUTPUT crop-biggest "the 8-connected shape with the most cells is cropped; undefined on a tie for the most cells or with no shape"
+      (RULE &member
+        (&conn8.component *P *Id))))
+  (ALT $ColorClass
+    (INPUT colored-shapes "all the cells of one color make one shape, wherever they lie")
+    (OUTPUT crop-biggest "the color with the most cells is cropped, the box spanning all its cells; undefined on a tie for the commonest such color or with no non-background cell"
+      (RULE &member
+        (&ink *P *Col)
+        (&color_id.class (:a Col) *Id))))
+  (ALT $AnyColorComponent
+    (INPUT colored-shapes "shapes are 4-connected groups of non-background cells of any colors")
+    (OUTPUT crop-biggest "the crop keeps each cell of the shape in its own color; undefined on a tie for the most cells or with no shape"
+      (RULE &member
+        (&any_conn.component *P *Id)))))
+
+(ALTS $content "what fills the cropped box" $ShapeCells
+  (ALT $BoxRegion
+    (OUTPUT crop-biggest "the output is the input's subgrid over the biggest shape's bounding box, other shapes' cells included")
+    (RULE &output
+      (&in_box (:P *P2) (:P_inner *P))
+      (input (:P P2) *Col))))
+
+(RULE &output
+  (&in_box (:P *P2) (:P_inner *P))
+  (IF ((&kept (:P P2)))
+      ((input (:P P2) *Col))
+      ((&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

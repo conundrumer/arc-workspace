@@ -1,0 +1,81 @@
+;; inputs 58327c87e3b2a050a57ac539f10a365710fb5b4d1fd03f3dea7de3a5bc60fbd2 programs/solvers/5623160b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5623160b
+
+;; The color that stays put and points.
+(DET &anchor UnchangedColor)
+
+(DET &bg DominantColor)
+
+(RULE &part
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&anchor (:C Col))))
+
+(INIT &hue Quotient
+  (equivalent ((:a P) (:b Q))
+    (&part *P *Col)
+    (&part (:P *Q) Col)))
+
+(RULE &group
+  (&hue.class (:a *P) *Id))
+
+(ALTS $choice "what one piece is" $ByColor
+  (ALT $ByRun
+    (INIT &run Connectivity
+      (key ((&part *P ^Col))
+        (node (P)
+          (&part *P Col))))
+
+    (RULE &group
+      (&run.component *P *Id)))
+  (ALT $ByLayer
+    ;; The anchors glue the assembly, so they join the region they hold together.
+    (INIT &assembly Connectivity
+      (node (P)
+        (input *P *Col)
+        (NOT (&bg (:C Col)))))
+
+    (RULE &group
+      (&assembly.component *P *Id))))
+
+(RULE &piece_cell
+  (&group *P *Id)
+  (&part P *Col))
+
+(RULE &move_dir
+  (&piece_cell *Id *Col *P)
+  (neighbor P (:D *D_anchor) *Q)
+  (input (:P Q) (:Col *Col_a))
+  (&anchor (:C Col_a))
+  (opposite *D (:Opp D_anchor)))
+
+;; Each piece travels until it reaches the edge ahead.
+(INIT &slide Distance
+  (key ((&piece_cell ^Id ^Col *P)
+        (&move_dir Id Col *D)
+        (margin (:B P) D *K))
+    (source_distance (K)
+      (&piece_cell Id Col *P)
+      (&move_dir Id Col *D)
+      (margin (:B P) D *K))))
+
+(RULE &slide_travel_full
+  (&slide.distance (:key *Id *Col) *K)
+  (&move_dir Id Col *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &ink
+  (OR ((input *P *Col)
+       (&anchor (:C Col)))
+      ((&piece_cell (:Id *Pc_id) Col (:P *P2))
+       (&slide_travel_full (:Id Pc_id) Col (:V2 *V))
+       (compose (:A P2) (:B V) (:C P)))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&ink P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,184 @@
+;; inputs 4fb439be0cc7e6fbd314ed0abfdf270645ee108885c3b866e717fc4be3a392f3 programs/solvers/baf41dbf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; baf41dbf
+
+(param &background Color (0))
+(param &frame_color Color (3))
+(param &marker_color Color (6))
+(param &marker_gap number (0))
+
+(exclude ($Beyond $NearestMarker))
+
+(alts $side
+  (alt $InLineMarkers
+    (witness diagonal-marker borderline concept
+      (separates "a marker beyond the bottom and right sides, in line with neither: the concept moves both sides to it; the in-line reading leaves those sides")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 3 0 3 0 0 0 0 0 0 0 0 0)
+        (0 6 0 0 0 3 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 3 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Beyond (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0 3 0 0 0 0)
+        (0 6 3 0 0 0 0 0 0 0 0 0 3 0 0 0 0)
+        (0 0 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0 3 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0 3 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0 3 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 0 0 3 0 0 0 0)
+        (0 0 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $InLineMarkers (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 6 3 0 0 0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 3 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $pick
+  (alt $NearestMarker
+    (witness two-markers-one-side borderline concept
+      (separates "two markers beyond the bottom side at different distances: the concept moves the side to the farther one and keeps the nearer one inside the frame; the nearest reading moves the side to the nearer one; the clearing reading moves it to the farther one and clears the nearer one")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 3 0 0 0 0 0 0 0 0)
+        (0 6 0 0 3 0 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 6 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Farthest $MarkersStay) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 0 0 0 0 0 0 0 0)
+        (0 6 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 6 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $EnclosedMarkersCleared (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 0 0 0 0 0 0 0 0)
+        (0 6 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $NearestMarker (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 0 0 0 0 0 0 0 0)
+        (0 6 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 3 0 0 0 0 0 0 0 0)
+        (0 0 3 3 3 3 3 0 0 0 0 0 0 0 0)
+        (0 0 0 0 6 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $enc
+  (alt $EnclosedMarkersCleared
+    (witness two-markers-one-side borderline concept)))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "a frame whose cells outnumber the background cells: the derived background is the frame color")
+      (input (grid
+        (3 3 3 3 3 0 0)
+        (3 0 3 0 3 0 0)
+        (3 3 3 3 3 0 6)
+        (3 0 3 0 3 0 0)
+        (3 3 3 3 3 0 0)
+        (0 0 0 0 0 0 0)))
+      (output &background=$Stored (grid
+        (3 3 3 3 3 3 0)
+        (3 0 3 0 0 3 0)
+        (3 3 3 3 3 3 6)
+        (3 0 3 0 0 3 0)
+        (3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0)))
+      (output &background=$Derived (grid
+        (3 3 3 3 3 3 0)
+        (3 0 3 0 3 3 0)
+        (3 3 3 3 3 3 6)
+        (3 0 3 0 3 3 0)
+        (3 3 3 3 3 3 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &marker_color
+  (alt &marker_color=$Derived
+    (witness marker_color=RarestColor borderline concept
+      (separates "a 2x2 frame and five markers, so the frame color alone is rarest: the derived marker color is the frame's, no cell outside the frame's box takes it, and the frame stays where it is")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 0 0 6)
+        (0 6 0 0 3 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output &marker_color=$Stored (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 6 6 0 0 0)
+        (0 0 3 3 3 3 3 3 0)
+        (0 0 3 0 0 0 0 3 0)
+        (0 0 3 0 0 0 0 3 6)
+        (0 6 3 0 0 0 0 3 0)
+        (0 0 3 3 3 3 3 3 0)
+        (0 0 0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output &marker_color=$Derived (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 0 0 6)
+        (0 6 0 0 3 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0))))))

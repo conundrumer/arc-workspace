@@ -1,0 +1,7 @@
+;; inputs ade16eced00e9bd6264a95bb867eb64b71dc2ab66f51f8a13a1378347b7efddc programs/solvers/83302e8f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 83302e8f
+
+(param &bg Color (0))
+(param &sealed Color (3))
+(param &leaky Color (4))

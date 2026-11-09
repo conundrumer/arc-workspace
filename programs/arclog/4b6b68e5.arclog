@@ -1,0 +1,75 @@
+;; inputs 44861aa9df41dbeb9fa6c042d148881a2ce643ec76cd88285561b7c6945def0b programs/solvers/4b6b68e5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4b6b68e5
+
+(DET &bg DominantColor)
+
+;; Touching cells of one color make an object; a lone cell is a speck.
+(INIT &objects Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(RULE &outline
+  (&objects.component (:key *Col) *P *Id)
+  (&objects.component (:key Col) (:P *Q) Id)
+  (!= P Q))
+
+;; The cells each outline closes off from the grid edge.
+(INIT &closed Enclosure
+  (key ((&outline ^Id))
+    (cell (P)
+      (input *P)
+      (NOT (&outline Id P)))))
+
+(RULE &trapped
+  (&closed.enclosed (:key *Id) *P (:Id *Region))
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &shape_specks_count Cardinality
+  (key ((&trapped ^Id *P ^Col))
+    (member ((:m P))
+      (&trapped Id *P Col))))
+
+(INIT &shape_specks Order
+  (key ((&shape_specks_count.size (:key ^Id *Col)))
+    (member ((:t Col))
+      (&shape_specks_count.size (:key Id *Col)))
+    (score ((:t Col) (:S N))
+      (&shape_specks_count.size (:key Id *Col) *N))))
+
+(RULE &fill
+  (&closed.enclosed (:key *Id) *P)
+  (&shape_specks.maximal (:key Id) (:t *Col)))
+
+(ALTS $choice "whether the commonest color is tallied over a whole outline or per cavity" $Shape
+  (ALT $Region
+    (INIT &region_specks_count Cardinality
+      (key ((&trapped ^Id (:Region ^R) *P ^Col))
+        (member ((:m P))
+          (&trapped Id (:Region R) *P Col))))
+
+    (INIT &region_specks Order
+      (key ((&region_specks_count.size (:key ^Id (:R ^Region) *Col)))
+        (member ((:t Col))
+          (&region_specks_count.size (:key Id (:R Region) *Col)))
+        (score ((:t Col) (:S N))
+          (&region_specks_count.size (:key Id (:R Region) *Col) *N))))
+
+    (RULE &fill
+      (&closed.enclosed (:key *Id) *P (:Id *R))
+      (&region_specks.maximal (:key Id (:Region R)) (:t *Col)))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&fill P *Col))
+      ((&outline P)
+       (= Col Col_in))
+      ((NOT (&outline P))
+       (NOT (&fill P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

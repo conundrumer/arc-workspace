@@ -1,0 +1,144 @@
+;; inputs c93e445c12522bc9019bcd8745fc335715e936d8037a5c9d86ae941eef97c0f6 programs/solvers/16de56c4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 16de56c4
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (split P *A *Across))
+
+(RULE &seed
+  (&mark *A *Across (:P *P1) *Col)
+  (&mark A Across (:P *P2) Col)
+  (!= P1 P2)
+  (ALL ((&mark A Across (:P *P1m) Col)
+        (&mark A Across (:P *P2m) Col)
+        (&mark A Across (:P *P3) Col)
+        (!= P1m P2m)
+        (!= P1m P3))
+       ((= P2m P3))))
+
+(RULE &crowded
+  (&seed *A *Across *Col)
+  (&mark A Across (:P *P1) (:Col *Col1))
+  (!= Col1 Col)
+  (&mark A Across (:P *P2) (:Col *Col2))
+  (!= Col2 Col)
+  (!= P1 P2))
+
+(RULE &rhythm
+  (&seed *A *Across *Col *P1 *P2)
+  (NOT (&crowded A Across)))
+
+(RULE &rhythm_cell
+  (&rhythm *A *Across *P1 *P2)
+  (relative (:Base P1) (:X P2) (:X_rel *V))
+  (axis_of *D A)
+  (margin (:B V) D *K)
+  (> K 0)
+  (input *P)
+  (split P A Across)
+  (margin (:B P1) D (:K *T1))
+  (divide (:T T1) (:Side K) (:Gap 0) (:Remainder *Phase))
+  (margin (:B P) D (:K *Tq))
+  (divide (:T Tq) (:Side K) (:Gap 0) (:Remainder Phase)))
+
+(RULE &intruder
+  (&rhythm *A *Across (:Col *Col3))
+  (&rhythm_cell A Across *P)
+  (&mark A Across P *Col)
+  (!= Col Col3))
+
+(RULE &cast_blocked
+  (&intruder *A *Across (:Col *Col2))
+  (&mark A Across *P (:Col Col2))
+  (&rhythm_cell A Across P))
+
+;; The rhythm advancing from the seed both ways, through the intruder's cell
+;; and no further.
+(INIT &cast Ray
+  (key ((OR ((&rhythm ^A ^Across (:P1 *P)))
+            ((&rhythm A Across)
+             (axis_of *D A))))
+    (source (P)
+      (&rhythm A Across (:P1 *P)))
+    (node (P)
+      (&rhythm A Across)
+      (axis_of *D A)
+      (input *P)
+      (NOT (&cast_blocked A Across P)))
+    (dir (D)
+      (&rhythm A Across)
+      (axis_of *D A))))
+
+(INIT &cast_full Ray
+  (key ((OR ((&rhythm ^A ^Across (:P1 *P)))
+            ((&rhythm A Across)
+             (axis_of *D A))))
+    (source (P)
+      (&rhythm A Across (:P1 *P)))
+    (node (P)
+      (&rhythm A Across)
+      (axis_of *D A)
+      (input *P))
+    (dir (D)
+      (&rhythm A Across)
+      (axis_of *D A))))
+
+(RULE &cast_stop_full
+  (&cast.end (:key *A *Across) (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&cast_full.ray (:key A Across) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &fill
+  (OR ((&cast.ray (:key *A *Across) *P)
+       (&rhythm_cell A Across P))
+      ((&cast_stop_full A Across (:V1 P)))))
+
+(ALTS $choice "how far the intruder's paint reaches" $Cast
+  (ALT $Span
+
+    (INIT &span Ray
+      (key ((OR ((&mark ^A ^Across *P))
+                ((&rhythm_cell A Across)
+                 (axis4_of *D A))
+                ((&rhythm_cell A Across)
+                 (input P))))
+        (source (P)
+          (&mark A Across *P))
+        (node (P)
+          (&rhythm_cell A Across)
+          (input *P))
+        (dir (D)
+          (&rhythm_cell A Across)
+          (axis4_of *D A))))
+
+    (RULE &span_between
+      (&rhythm_cell *A *Across *P)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&span.ray (:key A Across) P D)
+      (&span.ray (:key A Across) P (:D O)))
+
+    (RULE &fill
+      (&rhythm_cell *A *Across *P)
+      (OR ((NOT (&intruder A Across)))
+          ((&intruder A Across)
+           (&span_between A Across P))))))
+
+(RULE &paint
+  (&fill (:A *Ln_a) (:Across *Ln_across) *P)
+  (OR ((&intruder (:A Ln_a) (:Across Ln_across) *Col))
+      ((&rhythm (:A Ln_a) (:Across Ln_across) Col)
+       (NOT (&intruder (:A Ln_a) (:Across Ln_across)))
+       (input P (:Col *Bg))
+       (&bg (:C Bg)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

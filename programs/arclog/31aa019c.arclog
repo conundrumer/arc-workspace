@@ -1,0 +1,70 @@
+;; inputs 457c421165af797e0c501c00454b6c0746a1f23fff17773a20e8fe6905d4ce98 programs/solvers/31aa019c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 31aa019c
+
+(DET &bg DominantColor)
+
+(DET &border SharedColor)
+
+(DET &mark_count DivisorRatio)
+
+(INIT &color_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; $ByCount — the color with the stored count.
+(RULE &mark
+  (input *P *Col)
+  (&mark_count *K)
+  (&color_count.size (:key Col) (:N K)))
+
+(ALTS $f "which cell is marked out" $ByCount
+  (ALT $Minority
+    ;; $Minority — the rarest color.
+    (INIT &rarest Order
+      (member ((:t (:V Col) (:S N)))
+        (&color_count.size (:key *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&color_count.size (:key *Col) *N)))
+
+    (RULE &mark
+      (input *P *Col)
+      (&rarest.minimal (:t (:V Col))))))
+
+(ALTS $fp "the ring" $Ring
+  (ALT $Shape
+    (DET &shape
+      (ex_output *E *P *Col)
+      (NOT (&border (:C Col)))
+      (NOT (&bg (:C Col)))
+      (ex_output E (:P *Q) (:Col *B))
+      (&border (:C B))
+      (relative (:Base P) (:X Q) (:X_rel *Delta)))
+
+    (RULE &footprint
+      (&mark (:P *P_mark))
+      (&shape (:Delta *V))
+      (compose (:A P_mark) (:B V) (:C *P))
+      (input P))))
+
+(RULE &footprint
+  (&mark (:P *P_mark))
+  (neighbor (:P P_mark) *D (:Q *P))
+  (input P))
+
+(RULE &ink
+  (OR ((&mark (:P *P2))
+       (&footprint (:P_mark P2) *P)
+       (&border (:C *Col)))
+      ((&mark P Col))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((input P)
+       (NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

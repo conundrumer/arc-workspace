@@ -1,0 +1,6 @@
+;; inputs c9022f337cb39caf10f30e47b379a14205ad61cebbadc32e8abe4fabdf21a87f programs/solvers/917bccba.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 917bccba
+
+(param &bg Color (0))
+(param &corner DiagDir (DIAG_TR))

@@ -1,0 +1,58 @@
+;; inputs 0d28b9fc2e825a6eb9157558b51c3de107743a76af18abdbe1e4c379032dcace programs/solvers/8f3a5a89.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8f3a5a89
+
+(DET &bg DominantColor)
+
+(DET &wall UnchangedColor)
+
+(DET &start RarestColor)
+
+(DET &paint AnyOutNewColor)
+
+(INIT &region Flood
+  (node (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col))))
+  (source (P)
+    (input *P *Col)
+    (&start (:C Col))))
+
+;; The candidate outside cells. Those closed off from the grid edge are
+;; obstacles inside the region.
+(INIT &barrier Enclosure
+  (cell (P)
+    (input *P *Col)
+    (&wall (:C Col))))
+
+(ALTS $choice "what the outside is" $Walls
+  (ALT $Beyond
+    ;; The candidate outside cells. Those closed off from the grid edge are
+    ;; obstacles inside the region.
+    (INIT &barrier Enclosure
+      (cell (P)
+        (input *P)
+        (NOT (&region.reached P))))))
+
+;; The inside: the grid minus the outside.
+(INIT &within Boundary
+  (cell (P)
+    (input *P)
+    (OR ((NOT (&barrier.cell P)))
+        ((&barrier.enclosed P))))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &painted
+  (&within.boundary *P)
+  (&region.reached P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

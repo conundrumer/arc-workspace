@@ -1,0 +1,7 @@
+;; inputs 2577ffec1838919472dcbc5c3b5838d73f843d346b4dc1dd557e07c2cd383967 programs/solvers/762cd429.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 762cd429
+
+(param &bg Color (0))
+(param &factor number (2))
+(param &grow Dir (DIR_R))

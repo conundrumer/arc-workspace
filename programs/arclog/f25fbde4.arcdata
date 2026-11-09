@@ -1,0 +1,221 @@
+;; inputs 52da242c98eb2ad4552fca551bcc5a5f9af87eee250c507a25642c62f413fd3d programs/solvers/f25fbde4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f25fbde4
+
+(param &bg Color (0))
+(param &ink Color (4))
+(param &factor number (2))
+(param &axis_factor (Axis number) (AXIS_V 2) (AXIS_H 2))
+
+(alts $cells
+  (alt $CropInkColor
+    (witness second-color-joined variant concept
+      (relaxed one-drawing)
+      (separates "a cell of another color joins the drawing at a corner: the concept crops the box of every non-background cell and doubles it; $CropInkColor crops the box of the ink cells alone; $FactorColorCount counts three colors and triples it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 4 0 0 0 0)
+        (0 0 0 4 4 0 0 0 0)
+        (0 0 0 0 0 4 0 0 0)
+        (0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $FactorPerAxis ($NonBg $SharedFactor) (grid
+        (0 0 4 4 0 0 0 0)
+        (0 0 4 4 0 0 0 0)
+        (4 4 4 4 0 0 0 0)
+        (4 4 4 4 0 0 0 0)
+        (0 0 0 0 4 4 0 0)
+        (0 0 0 0 4 4 0 0)
+        (0 0 0 0 0 0 3 3)
+        (0 0 0 0 0 0 3 3)))
+      (output ($CropInkColor &ink=$Stored) (grid
+        (0 0 4 4 0 0)
+        (0 0 4 4 0 0)
+        (4 4 4 4 0 0)
+        (4 4 4 4 0 0)
+        (0 0 0 0 4 4)
+        (0 0 0 0 4 4)))
+      (output &ink=$Derived (grid
+        (3 3)
+        (3 3)))
+      (output $FactorColorCount (grid
+        (0 0 0 4 4 4 0 0 0 0 0 0)
+        (0 0 0 4 4 4 0 0 0 0 0 0)
+        (0 0 0 4 4 4 0 0 0 0 0 0)
+        (4 4 4 4 4 4 0 0 0 0 0 0)
+        (4 4 4 4 4 4 0 0 0 0 0 0)
+        (4 4 4 4 4 4 0 0 0 0 0 0)
+        (0 0 0 0 0 0 4 4 4 0 0 0)
+        (0 0 0 0 0 0 4 4 4 0 0 0)
+        (0 0 0 0 0 0 4 4 4 0 0 0)
+        (0 0 0 0 0 0 0 0 0 3 3 3)
+        (0 0 0 0 0 0 0 0 0 3 3 3)
+        (0 0 0 0 0 0 0 0 0 3 3 3))))))
+
+(alts $extent
+  (alt $CropObject8
+    (witness second-drawing-apart variant concept
+      (relaxed one-drawing)
+      (separates "a second drawing sits apart from the first, joined to it by no edge or corner: the concept crops the box of both and doubles it; $CropObject8 crops the larger drawing alone")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 4 4 0 0 0 0 0)
+        (0 4 4 4 4 0 0 0 0)
+        (0 0 4 4 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 4 4 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $AllSelected (grid
+        (0 0 4 4 4 4 0 0 0 0 0 0 0 0)
+        (0 0 4 4 4 4 0 0 0 0 0 0 0 0)
+        (4 4 4 4 4 4 4 4 0 0 0 0 0 0)
+        (4 4 4 4 4 4 4 4 0 0 0 0 0 0)
+        (0 0 4 4 4 4 0 0 0 0 0 0 0 0)
+        (0 0 4 4 4 4 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 4 4 4 4)
+        (0 0 0 0 0 0 0 0 0 0 4 4 4 4)))
+      (output $CropObject8 (grid
+        (0 0 4 4 4 4 0 0)
+        (0 0 4 4 4 4 0 0)
+        (4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4)
+        (0 0 4 4 4 4 0 0)
+        (0 0 4 4 4 4 0 0))))))
+
+(alts $factor
+  (alt $FactorColorCount
+    (witness two-color-drawing variant concept
+      (relaxed one-drawing)
+      (separates "one cell of the drawing has another color: the concept doubles the drawing; $FactorColorCount counts three colors and triples it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 4 0 0 0 0)
+        (0 0 0 4 4 0 0 0 0)
+        (0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $FactorPerAxis ($NonBg $SharedFactor) (grid
+        (0 0 4 4 0 0)
+        (0 0 4 4 0 0)
+        (4 4 4 4 0 0)
+        (4 4 4 4 0 0)
+        (0 0 0 0 3 3)
+        (0 0 0 0 3 3)))
+      (output ($CropInkColor &ink=$Stored) (grid
+        (0 0 4 4)
+        (0 0 4 4)
+        (4 4 4 4)
+        (4 4 4 4)))
+      (output &ink=$Derived (grid
+        (3 3)
+        (3 3)))
+      (output $FactorColorCount (grid
+        (0 0 0 4 4 4 0 0 0)
+        (0 0 0 4 4 4 0 0 0)
+        (0 0 0 4 4 4 0 0 0)
+        (4 4 4 4 4 4 0 0 0)
+        (4 4 4 4 4 4 0 0 0)
+        (4 4 4 4 4 4 0 0 0)
+        (0 0 0 0 0 0 3 3 3)
+        (0 0 0 0 0 0 3 3 3)
+        (0 0 0 0 0 0 3 3 3))))
+    (witness second-color-joined variant concept))
+  (alt $FactorPerAxis
+    (witness uneven-scale ordinary $FactorPerAxis
+      (separates "at an assignment that scales the columns by 3 and the rows by 2: $FactorPerAxis stretches the drawing unevenly; the concept, at its one factor, doubles it on both axes")
+      (assign &axis_factor (AXIS_V 2) (AXIS_H 3))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 4 4 0 0 0 0 0)
+        (0 4 4 4 4 0 0 0 0)
+        (0 0 4 4 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $SharedFactor $FactorColorCount (grid
+        (0 0 4 4 4 4 0 0)
+        (0 0 4 4 4 4 0 0)
+        (4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4)
+        (0 0 4 4 4 4 0 0)
+        (0 0 4 4 4 4 0 0)))
+      (output $FactorPerAxis (grid
+        (0 0 0 4 4 4 4 4 4 0 0 0)
+        (0 0 0 4 4 4 4 4 4 0 0 0)
+        (4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4)
+        (0 0 0 4 4 4 4 4 4 0 0 0)
+        (0 0 0 4 4 4 4 4 4 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor borderline concept
+      (relaxed one-drawing)
+      (relaxed blank-field)
+      (separates "the drawing outnumbers the background: the concept crops the box of the 4 cells; bg=DominantColor takes 4 as the background and crops the box of the 0 cells")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output (&bg=$Stored &ink=$Stored) (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output &ink=$Derived &bg=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &ink
+  (alt &ink=$Derived
+    (witness ink=RarestColor variant concept
+      (relaxed one-drawing)
+      (separates "`ink=RarestColor` from the stored value: train 0 with 4 and 1 swapped")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 1 1 0 0 0 0 0)
+        (0 1 1 1 1 0 0 0 0)
+        (0 0 1 1 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output &ink=$Derived $NonBg (grid
+        (0 0 1 1 1 1 0 0)
+        (0 0 1 1 1 1 0 0)
+        (1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1)
+        (0 0 1 1 1 1 0 0)
+        (0 0 1 1 1 1 0 0)))
+      (output ($CropInkColor &ink=$Stored) undefined))))

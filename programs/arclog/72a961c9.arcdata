@@ -1,0 +1,8 @@
+;; inputs d61cd8b4aa6bcb7b11649ae5d0e75cd0e06ee3d938a19e84cc9ab5e5ba0fe5b1 programs/solvers/72a961c9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 72a961c9
+
+(param &bg Color (0))
+(param &dir Dir (DIR_T))
+(param &reach (number Color) (4 2) (3 8))
+(param &line Color (1))

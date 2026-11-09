@@ -1,0 +1,225 @@
+;; inputs d5aeebde6a2a127856b01c0aa4a0b37bd5cf28f3df882121c450c38d81351edc programs/solvers/ec883f72.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ec883f72
+
+(param &background Color (0))
+
+(alts $s
+  (alt $ConvexBendsOnly
+    (witness stepped-wall borderline $ConvexBendsOnly
+      (relaxed wall-gap)
+      (separates "the wall steps in at (3,3), a bend whose outward diagonal points into the pocket: every bend casts, inward one included, painting over the bottom arm; only convex bends cast; inward ray stops at the arm; inward ray skips the arm; rays from the core's corner cross the step and paint over the arm's bend")
+      (input (grid
+        (3 3 0 9 0 0 0 0 0 0)
+        (3 3 0 9 0 0 0 0 0 0)
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 0 0 0 9 0 0 0 0)
+        (9 9 9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($EveryBend $PaintThrough) (grid
+        (3 3 0 9 0 0 0 0 3 0)
+        (3 3 0 9 0 0 0 3 0 0)
+        (0 0 0 9 0 0 3 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 3 0 0 9 0 0 0 0)
+        (9 3 9 9 9 9 0 0 0 0)
+        (3 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output ($EveryBend $RayKeepsInk) (grid
+        (3 3 0 9 0 0 0 0 3 0)
+        (3 3 0 9 0 0 0 3 0 0)
+        (0 0 0 9 0 0 3 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 3 0 0 9 0 0 0 0)
+        (9 9 9 9 9 9 0 0 0 0)
+        (3 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output ($EveryBend $RayStopsAtInk) (grid
+        (3 3 0 9 0 0 0 0 3 0)
+        (3 3 0 9 0 0 0 3 0 0)
+        (0 0 0 9 0 0 3 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 3 0 0 9 0 0 0 0)
+        (9 9 9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output $ConvexBendsOnly (grid
+        (3 3 0 9 0 0 0 0 3 0)
+        (3 3 0 9 0 0 0 3 0 0)
+        (0 0 0 9 0 0 3 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 0 0 0 9 0 0 0 0)
+        (9 9 9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output ($CoreCornerRays $PaintThrough) (grid
+        (3 3 0 9 0 0 0 0 0 0)
+        (3 3 0 9 0 0 0 0 0 0)
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 0 0 3 9 0 0 0 0)
+        (9 9 9 9 9 3 0 0 0 0)
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output ($CoreCornerRays $RayKeepsInk) (grid
+        (3 3 0 9 0 0 0 0 0 0)
+        (3 3 0 9 0 0 0 0 0 0)
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 0 0 3 9 0 0 0 0)
+        (9 9 9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 0 0 3 0)
+        (0 0 0 0 0 0 0 0 0 3)))
+      (output ($CoreCornerRays $RayStopsAtInk) (grid
+        (3 3 0 9 0 0 0 0 0 0)
+        (3 3 0 9 0 0 0 0 0 0)
+        (0 0 0 9 0 0 0 0 0 0)
+        (0 0 0 9 9 9 0 0 0 0)
+        (0 0 0 0 3 9 0 0 0 0)
+        (9 9 9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $o
+  (alt $CoreCornerRays
+    (witness uneven-gap borderline concept
+      (relaxed wall-gap)
+      (separates "the core sits two rows above the bottom arm and one column from each side arm, so its corner diagonals cross the side arms at (2,2) and (2,6), above the bends (3,2) and (3,6): rays from the wall's bends start at (4,1) and (4,7); rays from the core's corners start at (3,1) and (3,7)")
+      (input (grid
+        (0 0 8 0 6 0 8 0)
+        (0 0 8 0 0 0 8 0)
+        (0 0 8 0 0 0 8 0)
+        (0 0 8 8 8 8 8 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $WallBends (grid
+        (0 0 8 0 6 0 8 0)
+        (0 0 8 0 0 0 8 0)
+        (0 0 8 0 0 0 8 0)
+        (0 0 8 8 8 8 8 0)
+        (0 6 0 0 0 0 0 6)
+        (6 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $CoreCornerRays (grid
+        (0 0 8 0 6 0 8 0)
+        (0 0 8 0 0 0 8 0)
+        (0 0 8 0 0 0 8 0)
+        (0 6 8 8 8 8 8 6)
+        (6 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0))))))
+
+(alts $b
+  (alt $RayStopsAtInk
+    (witness stepped-wall borderline $ConvexBendsOnly))
+  (alt $RayKeepsInk
+    (witness stepped-wall borderline $ConvexBendsOnly)))
+
+(alts $c
+  (alt $WallByShape
+    (witness bent-core variant $WallByShape
+      (relaxed core)
+      (separates "the core is a 2x2 block with one more cell under it, not a solid rectangle: the solid-core models find two non-solid objects and are undefined; the wall found as the 1-wide bent object casts the ray from its bend (4,3) in the core's color")
+      (input (grid
+        (3 3 0 9 0 0 0 0)
+        (3 3 0 9 0 0 0 0)
+        (3 0 0 9 0 0 0 0)
+        (0 0 0 9 0 0 0 0)
+        (9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $SolidCore undefined)
+      (output ($EveryBend $WallByShape) (grid
+        (3 3 0 9 0 0 0 0)
+        (3 3 0 9 0 0 0 0)
+        (3 0 0 9 0 0 0 0)
+        (0 0 0 9 0 0 0 0)
+        (9 9 9 9 0 0 0 0)
+        (0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 3 0 0)
+        (0 0 0 0 0 0 3 0)))
+      (output ($CoreCornerRays $WallByShape) (grid
+        (3 3 0 9 0 0 0 0)
+        (3 3 0 9 0 0 0 0)
+        (3 0 0 9 0 0 0 0)
+        (0 0 0 9 0 0 0 0)
+        (9 9 9 9 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0))))
+    (witness thick-wall foreign any
+      (relaxed wall)
+      (separates "the other object is a 2x2 block with one more cell, not a 1-wide wall: the solid-core models take it as the wall, so the bend models cast from its bends and the core-corner models cast from the core's corner past (4,4); the models that find the wall as the 1-wide bent object find none and are undefined")
+      (input (grid
+        (3 3 0 0 0 0)
+        (3 3 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 9 9)
+        (0 0 0 0 9 9)
+        (0 0 0 0 9 0)))
+      (output ($EveryBend $SolidCore) (grid
+        (3 3 0 0 0 0)
+        (3 3 3 0 0 0)
+        (0 0 3 3 0 0)
+        (0 0 0 3 9 9)
+        (0 0 0 0 9 9)
+        (0 0 0 3 9 0)))
+      (output $WallByShape undefined)
+      (output $ConvexBendsOnly (grid
+        (3 3 0 0 0 0)
+        (3 3 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 9 9)
+        (0 0 0 0 9 9)
+        (0 0 0 0 9 0)))
+      (output ($CoreCornerRays $SolidCore) (grid
+        (3 3 0 0 0 0)
+        (3 3 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 9 9)
+        (0 0 0 0 9 9)
+        (0 0 0 0 9 3))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "the field is 7, not the stored background 0: the stored-background models find two non-solid objects and are undefined; the derived background reads 7 and casts the ray from the bend")
+      (input (grid
+        (3 3 7 9 7 7)
+        (3 3 7 9 7 7)
+        (7 7 7 9 7 7)
+        (9 9 9 9 7 7)
+        (7 7 7 7 7 7)
+        (7 7 7 7 7 7)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (3 3 7 9 7 7)
+        (3 3 7 9 7 7)
+        (7 7 7 9 7 7)
+        (9 9 9 9 7 7)
+        (7 7 7 7 3 7)
+        (7 7 7 7 7 3))))))

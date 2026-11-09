@@ -1,0 +1,92 @@
+;; inputs d3e5085c72115a62947ee9d8b31bed64f8c633432d24562cf1a55d80c1860e85 programs/solvers/137eaa0f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 137eaa0f
+
+(DET &bg DominantColor)
+
+(DET &frame_dim ConstOutDim)
+
+(INIT &frame_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&frame_dim *N)))
+
+;; An ink color the overlay draws fewer times than the input holds it:
+;; the key cells of every fragment land on one output cell.
+(INIT &surplus Excess
+  (key ((OR ((ex_output ^E)
+             (ex_input E *P ^Col)
+             (NOT (&bg (:C Col))))
+            ((ex_output E P Col))))
+    (plus ((:m P))
+      (ex_output E)
+      (ex_input E *P Col)
+      (NOT (&bg (:C Col))))
+    (minus ((:m P))
+      (ex_output E *P Col))))
+
+(DET &key
+  (&surplus.excess (:key (:Col *C))))
+
+(RULE &mark
+  (input *P *Col)
+  (&key (:C Col)))
+
+(DET &anchor
+  (ex_output *P *Col)
+  (&key (:C Col)))
+
+(RULE &paint
+  (input (:P *P2) *Col)
+  (NOT (&bg (:C Col)))
+  (&mark (:P *A))
+  (relative (:Base A) (:X P2) (:X_rel *P_rel))
+  (&anchor (:P *Anc))
+  (compose (:A Anc) (:B P_rel) (:C *P))
+  (&frame_frame.cell P))
+
+(ALTS $choice "what collects into a fragment, and the output frame" $Frame
+  (ALT $Object
+    (INIT &comp8 Connectivity
+      (node (P)
+        (input *P *Col)
+        (NOT (&bg (:C Col))))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &obj_off
+      (&mark (:P *A))
+      (&comp8.component (:P A) *Id)
+      (input *P *Col)
+      (&comp8.component P Id)
+      (relative (:Base A) (:X P) (:X_rel *P_rel)))
+
+    (INIT &obox BoundingBox
+      (cell ((:P P_rel))
+        (&obj_off *P_rel)))
+
+    (RULE &view
+      (&mark (:P *A))
+      (input *P)
+      (relative (:Base A) (:X P) (:X_rel *P_rel))
+      (&obox.box *B)
+      (inside (:A P_rel) B)
+      (relative (:Base B) (:X P_rel) (:X_rel *P_inner)))
+
+    (RULE &output
+      (OR ((&obj_off *P_rel *Col)
+           (&view P_rel (:P_inner *P)))
+          ((&view (:P_rel *P_rel2) (:P_inner P))
+           (NOT (&obj_off (:P_rel P_rel2)))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&frame_frame.cell P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,710 @@
+;; inputs e9b0bba414ac82e7b2c8c3da0af25e86a6e1295b2e6494da549c92ab41523723 programs/solvers/e6de6e8f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e6de6e8f
+
+(INPUT pieces-in-a-strip "the input is a strip of 2 rows holding pieces of &pipe_color on &bg, with one blank column between each two pieces"
+
+  (DET_OR_RULE &pipe_color "the color of the input pieces and of the output pipe" DominantColor)
+
+  (DET_OR_RULE &bg RarestColor))
+
+(INPUT three-glyphs "each piece is one of the glyphs of the &piece_glyph table: a bar one column wide and 2 rows high, or a two-column L whose top row is blank on one side"
+
+  ;; the input edge the pieces are read from
+  (DET &read_from DirDomain)
+
+  (DET &line_cell
+    (ex_input *E *P *Col)
+    (&read_from *D)
+    (axis_of D *A)
+    (split P A (:Along *L)))
+
+  ;; A run of lines that hold the pipe color.
+  (INIT &runs Connectivity
+    (key ((&line_cell ^E *Col *L)
+          (&pipe_color (:C Col)))
+      (node ((:P L))
+        (&line_cell E *Col *L)
+        (&pipe_color (:C Col)))))
+
+  (DET &piece_cell
+    (&line_cell *E *P *L)
+    (&runs.component (:key E) (:P L) (:Id *T)))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece_cell ^E ^T *P))
+      (cell (P)
+        (&piece_cell E T *P))))
+
+  (DET &glyph_cell
+    (&piece_cell *E *T *P)
+    (ex_input E P *Col)
+    (&pipe_color (:C Col))
+    (&piece_box.box (:key E T) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *Q)))
+
+  ;; Pieces with one glyph.
+  (INIT &same_glyph Inclusion
+    (pattern ((:pattern (:E Pc_e) (:T Pc_t)) (:m Q))
+      (&glyph_cell (:E *Pc_e) (:T *Pc_t) *Q))
+    (observed ((:observed (:E Pc_e) (:T Pc_t)) (:m Q))
+      (&glyph_cell (:E *Pc_e) (:T *Pc_t) *Q)))
+
+  (INIT &glyph_class Quotient
+    (equivalent ((:a (:E Pc_e) (:T Pc_t)) (:b (:E Pc2_e) (:T Pc2_t)))
+      (&same_glyph.equal (:observed (:E *Pc_e) (:T *Pc_t)) (:pattern (:E *Pc2_e) (:T *Pc2_t)))))
+
+  (DET &piece_glyph
+    (&glyph_class.class (:a (:E *Pc_e) (:T *Pc_t)) *Id)
+    (&glyph_cell (:E Pc_e) (:T Pc_t) (:Q *P))))
+
+(INPUT pipe-fits-frame "the pipe the pieces make stays inside an output frame of &out_dims"
+
+  (DET &out_dims ConstOutDimAxis))
+
+(OUTPUT source-mark "the output is a frame of &out_dims filled with &bg, and the cell at &source_at on the edge opposite &flow_dir takes &source_color"
+
+  (DET &piece_order_axis
+    (&runs.component (:key (:E *Key)))
+    (&read_from *D)
+    (axis_of D *A))
+
+  ;; The pieces of an example in order from &read_from.
+  (INIT &piece_order Order
+    (key ((&piece_order_axis (:Key ^E) ^A)
+          (axis_of ^D A))
+      (member ((:t T))
+        (&runs.component (:key E) (:P *L) (:Id *T)))
+      (before ((:a T) (:b T2))
+        (&runs.component (:key E) (:P *L) (:Id *T))
+        (&runs.component (:key E) (:P *L2) (:Id *T2))
+        (!= T T2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2))))
+
+  (DET &piece_order_pos
+    (&piece_order.rank (:key (:E *Key) *A *D) (:t *M) (:R *R1))
+    (&piece_order.dual_rank (:key (:E Key) A D) (:t M) (:R *R2))
+    (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+  (DET &source_color AnyOutNewColor)
+
+  (DET &source_cell
+    (ex_output *E *P *Col)
+    (&source_color (:C Col)))
+
+  (DET &flow_ok
+    (&source_cell *E *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_output E (:P Q) *Col)
+    (&pipe_color (:C Col)))
+
+  (DET &flow_defect
+    (dir_elem *D)
+    (ex_output *E)
+    (NOT (&flow_ok E D)))
+
+  (DET &flow_dir
+    (dir_elem *D)
+    (NOT (&flow_defect D)))
+
+  (DET &run_node
+    (ex_output (:E *Key) *P *Col)
+    (&pipe_color (:C Col)))
+
+  ;; The runs of output pipe cells that a piece may paint: along the flow
+  ;; or across it, never back against it.
+  (INIT &run Ray
+    (key ((OR ((&run_node (:Key ^Ky) *P))
+              ((ex_output (:E Ky))
+               (dir_elem *D)
+               (&flow_dir (:D *F))
+               (opposite (:D F) (:Opp *F0))
+               (!= D F0))))
+      (source (P)
+        (&run_node (:Key Ky) *P))
+      (node (P)
+        (&run_node (:Key Ky) *P))
+      (dir (D)
+        (ex_output (:E Ky))
+        (dir_elem *D)
+        (&flow_dir (:D *F))
+        (opposite (:D F) (:Opp *F0))
+        (!= D F0))))
+
+  (DET &run_run_full
+    (&run.ray (:key (:Ky *V0)) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (DET &run_halt_full
+    (&run.end (:key (:Ky *V0)) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  ;; A run of lines across &read_from that hold the pipe color.
+  (INIT &runs2 Connectivity
+    (node ((:P L))
+      (input *P *Col)
+      (&pipe_color (:C Col))
+      (&read_from *D)
+      (axis_of D *A)
+      (split P A (:Along *L))))
+
+  (RULE &piece_cell2
+    (input *P)
+    (&read_from *D)
+    (axis_of D *A)
+    (split P A (:Along *L))
+    (&runs2.component (:P L) (:Id *T)))
+
+  (INIT &piece_box2 BoundingBox
+    (key ((&piece_cell2 ^T *P))
+      (cell (P)
+        (&piece_cell2 T *P))))
+
+  (RULE &glyph_cell2
+    (&piece_cell2 *T *P)
+    (input P *Col)
+    (&pipe_color (:C Col))
+    (&piece_box2.box (:key T) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *Q)))
+
+  (INIT &glyph_table Inclusion
+    (pattern ((:pattern Id) (:m Q))
+      (&piece_glyph *Id (:P *Q)))
+    (observed ((:observed T) (:m Q))
+      (&glyph_cell2 *T *Q)))
+
+  (RULE &walk_choice)
+
+  (DET &next_piece
+    (&piece_order_pos (:Key *E) (:M *T) (:P_pos *P))
+    (&read_from *D)
+    (opposite D (:Opp *D2))
+    (neighbor P (:D D2) (:Q *P2))
+    (&piece_order_pos (:Key E) (:M *T2) (:P_pos P2)))
+
+  (DET &last_piece
+    (&piece_order_pos (:Key *E) (:M *T))
+    (NOT (&next_piece E T)))
+
+  (DET &fit
+    (&runs.component (:key *E) (:Id *T))
+    (&run_run_full (:V0 E) (:V1 *P0) (:V2 *D) (:V3 *Q))
+    (dir_elem D)
+    (OR ((NOT (&last_piece E T)))
+        ((&last_piece E T)
+         (&run_halt_full (:V0 E) (:V1 P0) (:V2 D) (:V3 Q)))))
+
+  (DET &first_piece
+    (&piece_order_pos (:Key *E) (:M *T) (:P_pos *P))
+    (&read_from *D)
+    (margin (:B P) D (:K 0)))
+
+  ;; The pen's walk: the first piece starts next to the source along the
+  ;; flow, and each next piece one step along the flow from where the run
+  ;; before it ends.
+  (INIT &walk Propagation
+    (key ((OR ((&first_piece ^E *T)
+               (&source_cell E (:P *S))
+               (&flow_dir (:D *F))
+               (neighbor (:P S) (:D F) (:Q *P)))
+              ((&next_piece E T *T2)
+               (&fit E T *P0 *Q)
+               (&flow_dir (:D F))
+               (neighbor (:P Q) (:D F) (:Q *P2)))))
+      (source ((:n T P))
+        (&first_piece E *T)
+        (&source_cell E (:P *S))
+        (&flow_dir (:D *F))
+        (neighbor (:P S) (:D F) (:Q *P)))
+      (edge ((:a T (:P P0)) (:b (:T T2) (:P P2)))
+        (&next_piece E *T *T2)
+        (&fit E T *P0 *Q)
+        (&flow_dir (:D *F))
+        (neighbor (:P Q) (:D F) (:Q *P2)))))
+
+  ;; The walks back from each start of the last piece that a run fits.
+  (INIT &back Propagation
+    (key ((OR ((&walk.reached (:key ^E) (:n *T (:P *P0)))
+               (&last_piece E T)
+               (&fit E T P0))
+              ((&walk.edge (:key E) (:a (:T *A_t) (:P *A_p)) (:b (:T *B_t) (:P *B_p))))))
+      (source ((:n T (:P P0)))
+        (&walk.reached (:key E) (:n *T (:P *P0)))
+        (&last_piece E T)
+        (&fit E T P0))
+      (edge ((:a (:T B_t) (:P B_p)) (:b (:T A_t) (:P A_p)))
+        (&walk.edge (:key E) (:a (:T *A_t) (:P *A_p)) (:b (:T *B_t) (:P *B_p))))))
+
+  (DET &drew
+    (&walk.reached (:key *E) (:n *T (:P *P0)))
+    (&back.reached (:key E) (:n T (:P P0)))
+    (&fit E T P0 *D *Q)
+    (OR ((&last_piece E T))
+        ((&next_piece E T *T2)
+         (&flow_dir (:D *F))
+         (neighbor (:P Q) (:D F) (:Q *P2))
+         (&back.reached (:key E) (:n (:T T2) (:P P2))))))
+
+  (DET &drew_exit
+    (&drew *E *T *P0 *D *Q)
+    (&flow_dir (:D *F))
+    (neighbor (:P Q) (:D F) (:Q *P2))
+    (relative (:Base P0) (:X P2) (:X_rel *V)))
+
+  (DET &exit_cand
+    (&drew_exit *E *T *V)
+    (&glyph_class.class (:a E T) *Id))
+
+  (DET &exit_defect
+    (&exit_cand *Id *V)
+    (&glyph_class.class (:a *E *T) Id)
+    (ex_output E)
+    (NOT (&drew_exit E T V)))
+
+  (DET &piece_exit
+    (&exit_cand *Id *V)
+    (NOT (&exit_defect Id V)))
+
+  (RULE &exit
+    (&glyph_table.equal (:observed *T) (:pattern *Id))
+    (&piece_exit Id *V))
+
+  ;; The cells of each piece's sideways run.
+  (INIT &sideways Frame
+    (key ((&exit ^T (:V *X))
+          (&flow_dir (:D *F))
+          (perp_dir (:D F) (:D2 *D))
+          (margin (:B X) D *K)
+          (> K 0)
+          (axis_of D ^A))
+      (extent (A (:N K))
+        (&exit T (:V *X))
+        (&flow_dir (:D *F))
+        (perp_dir (:D F) (:D2 *D))
+        (margin (:B X) D *K)
+        (> K 0)
+        (axis_of D A))))
+
+  (INIT &steps Cardinality
+    (member ((:m T C))
+      (&sideways.cell (:key *T) (:P *C)))
+    (domain ()
+      (&walk_choice)))
+
+  (DET &source_cand
+    (&source_cell *P)
+    (&flow_dir (:D *F))
+    (perp_dir (:D F) (:D2 *D))
+    (&read_from D)
+    (margin (:B P) D *K))
+
+  (DET &source_defect
+    (&source_cand *D *K)
+    (&source_cell *E *P)
+    (NOT (margin (:B P) D K))
+    (ex_output E))
+
+  (DET &source_at
+    (&source_cand *D *K)
+    (NOT (&source_defect D K))))
+
+(OUTPUT read-order "the pieces are taken in order from the input edge &read_from"
+
+  (INIT &comps4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (&pipe_color (:C Col))))
+
+  (INIT &comps8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (&pipe_color (:C Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT lay-segments "the first piece starts at the cell next to the source toward &flow_dir; each piece paints the offsets its table entry gives in &piece_paint, relative to its start, in &pipe_color, and the next piece starts at the entry's &piece_exit offset"
+
+  (RULE &piece_order_axis2
+    (&piece_cell2)
+    (&read_from *D)
+    (axis_of D *A))
+
+  (RULE &piece_order_member
+    (&piece_cell2 (:T *M) (:P *P2))
+    (&read_from *D)
+    (axis_of D *A)
+    (split (:P P2) A (:Along *P)))
+
+  (INIT &piece_order2 Order
+    (key ((&piece_order_axis2 ^A)
+          (axis_of ^D A))
+      (before ((:a T) (:b M_b))
+        (&piece_order_member (:M *T) (:P *L))
+        (&piece_order_member (:M *M_b) (:P *Q))
+        (!= T M_b)
+        (margin (:B L) D (:K *K1))
+        (margin (:B Q) D (:K *K2))
+        (< K1 K2)))
+    (member ((:t T))
+      (&piece_order_member (:M *T))))
+
+  (DET &piece_paint
+    (&piece_exit *Id (:V *X))
+    (&glyph_class.class (:a *E *T) Id)
+    (&drew_exit E T *P0 *D *Q (:V X))
+    (OR ((&run_run_full (:V0 E) (:V1 P0) (:V2 D) (:V3 *C))
+         (NOT (&run_run_full (:V0 E) (:V1 Q) (:V2 D) (:V3 C))))
+        ((= C P0)))
+    (relative (:Base P0) (:X C) (:X_rel *V)))
+
+  (INIT &exit_steps Frame
+    (key ((&exit ^T (:V *X))
+          (dir_elem ^D)
+          (opposite D (:Opp *D0))
+          (margin (:B X) (:D D0) *K)
+          (> K 0)
+          (axis_of D ^A))
+      (extent (A (:N K))
+        (&exit T (:V *X))
+        (opposite D (:Opp *D0))
+        (margin (:B X) (:D D0) *K)
+        (> K 0)
+        (axis_of D A))))
+
+  ;; The exit steps toward each edge of the pieces before a piece.
+  (INIT &pen_steps Cardinality
+    (key ((OR ((&exit_steps.cell (:key *T ^D) (:P *C))
+               (&read_from (:D *R))
+               (&piece_order2.before (:key (:D R)) (:a T) (:b ^T2)))
+              ((&piece_cell2 (:T T2))
+               (dir_elem D))))
+      (member ((:m T C))
+        (&exit_steps.cell (:key *T D) (:P *C))
+        (&read_from (:D *R))
+        (&piece_order2.before (:key (:D R)) (:a T) (:b T2)))
+      (domain ()
+        (&piece_cell2 (:T T2))
+        (dir_elem D))))
+
+  (RULE &pen_move
+    (&pen_steps.size (:key (:T2 *T) *D) *N)
+    (jump_offset D (:K N) *V))
+
+  (RULE &pen
+    (&flow_dir (:D *F))
+    (opposite (:D F) (:Opp *F0))
+    (perp_dir (:D F) (:D2 *D))
+    (opposite D (:Opp *D0))
+    (&pen_move *T (:D F) (:V *V1))
+    (&pen_move T (:D F0) (:V *V2))
+    (&pen_move T D (:V *V3))
+    (&pen_move T (:D D0) (:V *V4))
+    (neighbor (:P V1) (:D F) (:Q *W1))
+    (compose (:A W1) (:B V2) (:C *W2))
+    (compose (:A W2) (:B V3) (:C *W3))
+    (compose (:A W3) (:B V4) (:C *V)))
+
+  (RULE &height
+    (&walk_choice)
+    (&flow_dir (:D *F))
+    (axis_of (:D F) *A)
+    (&out_dims A *N))
+
+  (RULE &width
+    (&walk_choice)
+    (&flow_dir (:D *F))
+    (perp_dir (:D F) (:D2 *D))
+    (axis_of D *A)
+    (&out_dims A *N))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (OR ((&height *N)
+           (&flow_dir (:D *F))
+           (axis_of (:D F) *A))
+          ((&width N)
+           (&flow_dir (:D *F2))
+           (perp_dir (:D F2) (:D2 *D))
+           (axis_of D A))))))
+
+(ALTS $seg "how a glyph gives the cells its piece paints and the next piece's start" $TableSegments
+  (ALT $DerivedSegments
+    (OUTPUT lay-segments "no table: a bar (one column, every cell filled) paints a run along &flow_dir; an L (one full column at one end, a full row on the &flow_dir side, nothing else) paints a run across, toward the side away from its full column; the next piece starts one step along &flow_dir from the run's end; undefined on a glyph that is neither"
+      (RULE &frame_cell
+        (&piece_cell2 *T *P)
+        (&piece_box2.box (:key T) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *Q)))
+
+      (RULE &read_edge
+        (&read_from *D)
+        (axis_of D *A)
+        (axis_of (:D *E1) A))
+
+      (RULE &wide
+        (&frame_cell *T *Q)
+        (&read_edge (:E1 *E))
+        (NOT (margin (:B Q) (:D E) (:K 0))))
+
+      (RULE &blank
+        (&frame_cell *T *Q)
+        (NOT (&glyph_cell2 T Q)))
+
+      (RULE &bar
+        (&piece_cell2 *T)
+        (NOT (&wide T))
+        (NOT (&blank T)))
+
+      (RULE &ell_defect
+        (&frame_cell *T *Q)
+        (&read_edge *E1)
+        (&flow_dir (:D *F))
+        (OR ((&glyph_cell2 T Q)
+             (NOT (margin (:B Q) (:D E1) (:K 0)))
+             (NOT (margin (:B Q) (:D F) (:K 0))))
+            ((NOT (&glyph_cell2 T Q))
+             (margin (:B Q) (:D E1) (:K 0)))
+            ((NOT (&glyph_cell2 T Q))
+             (margin (:B Q) (:D F) (:K 0)))))
+
+      (RULE &ell
+        (&piece_cell2 *T)
+        (&wide T)
+        (&read_edge *E1)
+        (NOT (&ell_defect T E1)))
+
+      (RULE &run_dir
+        (OR ((&bar *T)
+             (&flow_dir (:D *R)))
+            ((&ell T (:E1 *E))
+             (opposite (:D E) (:Opp R)))))
+
+      (RULE &run_cell
+        (OR ((&bar *T)
+             (&glyph_cell2 T *Q))
+            ((&ell T)
+             (&glyph_cell2 T Q)
+             (&flow_dir (:D *F))
+             (margin (:B Q) (:D F) (:K 0)))))
+
+      (RULE &run_last
+        (&run_cell *T *Q)
+        (&run_dir T *R)
+        (margin (:B Q) (:D R) (:K 0))
+        (opposite (:D R) (:Opp *R0))
+        (margin (:B Q) (:D R0) *K))
+
+      (RULE &exit
+        (&run_last *T *K)
+        (&run_dir T *R)
+        (jump_offset (:D R) K (:V *V1))
+        (&flow_dir (:D *F))
+        (step_offset (:D F) (:V *V2))
+        (compose (:A V1) (:B V2) (:C *V)))
+
+      (RULE &run2
+        (&run_cell *T *Q)
+        (&run_dir T *R)
+        (opposite (:D R) (:Opp *R0))
+        (margin (:B Q) (:D R0) *K)))
+    (RULE &paint
+      (&run2 *T *K)
+      (&run_dir T *R)
+      (jump_offset (:D R) K *V))
+    (ALTS $len "the length of the run a glyph paints" $GlyphExtent
+      (ALT $FixedLengths
+        (OUTPUT lay-segments "every run is &run_length long, whatever the glyph's extent"
+          (DET &run_length ConstInDim)
+          (INIT &fixed Frame
+            (key ((&run_length *N)
+                  (&flow_dir (:D *F))
+                  (axis_of (:D F) ^A))
+              (extent (A N)
+                (&run_length *N)
+                (&flow_dir (:D *F))
+                (axis_of (:D F) A))))
+          (RULE &fixed_index
+            (&fixed.cell (:P *C))
+            (&flow_dir (:D *F))
+            (margin (:B C) (:D F) *K))
+          (RULE &fixed_last
+            (&fixed.cell (:P *C))
+            (&flow_dir (:D *F))
+            (margin (:B C) (:D F) *K)
+            (opposite (:D F) (:Opp *F0))
+            (margin (:B C) (:D F0) (:K 0)))
+          (RULE &run2
+            (&run_dir *T)
+            (&fixed_index *K))
+          (RULE &run_last
+            (&run_dir *T)
+            (&fixed_last *K)))))))
+
+(ALTS $parse "what a piece is" $ColumnRuns
+  (ALT $ComponentPieces
+    (OUTPUT read-order "a piece is a 4-connected component of &pipe_color, ordered by its columns, and its glyph is its bounding box"
+      (RULE &piece_cell2
+        (&comps4.component *P (:Id *T)))))
+  (ALT $Components8
+    (OUTPUT read-order "as $ComponentPieces, with 8-connected components"
+      (RULE &piece_cell2
+        (&comps8.component *P (:Id *T))))))
+
+(ALTS $height "the output's row count" $StoredHeight
+  (ALT $HeightFromPipe
+    (OUTPUT source-mark "the row count is one more than the pipe's total drop along &flow_dir"
+      (RULE &piece_order_pos2
+        (&piece_order2.rank (:key *A *D) (:t *M) (:R *R1))
+        (&piece_order2.dual_rank (:key A D) (:t M) (:R *R2))
+        (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+      (RULE &last_piece2
+        (&piece_order_pos2 (:M *T) (:P_pos *P))
+        (&read_from *D)
+        (opposite D (:Opp *D2))
+        (margin (:B P) (:D D2) (:K 0)))
+
+      (RULE &pen_end
+        (OR ((&pen *T (:V *V0))
+             (&last_piece2 T)
+             (&exit T (:V *X))
+             (compose (:A V0) (:B X) (:C *V)))
+            ((&walk_choice)
+             (NOT (&piece_cell2))
+             (&flow_dir (:D *F))
+             (step_offset (:D F) V))))
+
+      (RULE &height
+        (&pen_end *V)
+        (&flow_dir (:D *F))
+        (opposite (:D F) (:Opp *F0))
+        (margin (:B V) (:D F0) (:K *N)))))
+  (ALT $HeightFromInput
+    (OUTPUT source-mark "the row count is &height_ratio times the input's"
+      (DET &height_ratio ScaleRatio)
+
+      (INIT &ratio Frame
+        (key ((&height_ratio (:K *N))
+              (&flow_dir (:D *F))
+              (axis_of (:D F) ^A))
+          (extent (A N)
+            (&height_ratio (:K *N))
+            (&flow_dir (:D *F))
+            (axis_of (:D F) A))))
+
+      (INIT &height_tiling Tiling
+        (outer ((:P L))
+          (input *P)
+          (&flow_dir (:D *F))
+          (axis_of (:D F) *A)
+          (split P A (:Along *L)))
+        (inner ((:P C))
+          (&ratio.cell (:P *C))))
+
+      ;; Each input line along the flow, cut into &height_ratio lines.
+      (RULE &height
+        (&walk_choice)
+        (input *P)
+        (&flow_dir (:D *F))
+        (axis_of (:D F) *A)
+        (split P A (:Along *L))
+        (&ratio.cell (:key A) (:P *C))
+        (&height_tiling.cell (:P_outer L) (:P_inner C) (:P *P_grid))
+        (frame_extent (:P P_grid) A *N))))
+  (ALT $HeightFromInputDiff
+    (OUTPUT source-mark "the row count is the input's plus &height_gap"
+      (DET &height_gap DimDiff)
+
+      (RULE &height
+        (&walk_choice)
+        (input *P)
+        (&flow_dir (:D *F))
+        (axis_of (:D F) *A)
+        (&height_gap (:D *G))
+        (edge_outset (:D F) (:K G) *B)
+        (box_extent B P A *N)))))
+
+(ALTS $width "the output's column count" $StoredWidth
+  (ALT $WidthFromSteps
+    (OUTPUT source-mark "the column count is one more than twice the total sideways run of the pipe's segments; undefined where &source_at falls outside it"
+      ;; A line along the flow, widened by the total sideways run on each side.
+      (RULE &width
+        (&steps.size (:N *S))
+        (input *P)
+        (&flow_dir (:D *F))
+        (axis_of (:D F) *A)
+        (split P A (:Along *L))
+        (perp_dir (:D F) (:D2 *D))
+        (axis_outset D (:K1 S) (:K2 S) *B)
+        (axis_of D (:A *A2))
+        (box_extent B (:P L) (:A A2) *N))))
+  (ALT $WidthFromInputDiff
+    (OUTPUT source-mark "the column count is the input's less &width_gap; undefined where it is below 1 or &source_at falls outside it"
+      (DET &width_gap DimDiff)
+
+      (RULE &width
+        (&walk_choice)
+        (input *P)
+        (&flow_dir (:D *F))
+        (perp_dir (:D F) (:D2 *D))
+        (axis_of D *A)
+        (&width_gap (:D *G))
+        (edge_inset D (:K G) *B)
+        (box_extent B P A *N)))))
+
+(ALTS $source "the source's column" $StoredSource
+  (ALT $SourceCentered
+    (OUTPUT source-mark "the source is at the frame's center column; undefined on a frame of even width")
+    (RULE &source
+      (&frame.cell *P)
+      (&flow_dir (:D *F))
+      (opposite (:D F) (:Opp *F0))
+      (margin (:B P) (:D F0) (:K 0))
+      (perp_dir (:D F) (:D2 *D))
+      (dist_pair P D *K (:K2 K)))))
+
+(RULE &paint
+  (&glyph_table.equal (:observed *T) (:pattern *Id))
+  (&piece_paint Id *V))
+
+(RULE &broken
+  (&walk_choice)
+  (&piece_cell2 *T)
+  (NOT (&exit T)))
+
+(RULE &pipe
+  (&pen *T (:V *V2))
+  (&paint T (:V *Y))
+  (compose (:A V2) (:B Y) (:C *V)))
+
+(RULE &source
+  (&frame.cell *P)
+  (&flow_dir (:D *F))
+  (opposite (:D F) (:Opp *F0))
+  (margin (:B P) (:D F0) (:K 0))
+  (&source_at *D *K)
+  (margin (:B P) D K))
+
+(RULE &output
+  (&frame.cell *P)
+  (&source (:P *S))
+  (NOT (&broken))
+  (relative (:Base S) (:X P) (:X_rel *V))
+  (OR ((= P S)
+       (&source_color (:C *Col)))
+      ((!= P S)
+       (&pipe V)
+       (&pipe_color (:C Col)))
+      ((!= P S)
+       (NOT (&pipe V))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

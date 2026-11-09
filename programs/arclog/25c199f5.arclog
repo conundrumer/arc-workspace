@@ -1,0 +1,137 @@
+;; inputs 0e2b30aa315eb81310709b46bf07f965b47eda8f49c37f8389edcb75620521d3 programs/solvers/25c199f5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 25c199f5
+
+;; The panels lie along order_axis, one divider between them.
+(DET &divide_gap DivisorRatio)
+
+(DET &divisor SepTileCount)
+
+(DET &order_axis AxisDomain)
+
+(INIT &panel_division Division
+  (cell (P)
+    (input *P))
+  (parts (A N)
+    (&order_axis *A)
+    (&divisor *N))
+  (gap (A G)
+    (&order_axis *A)
+    (&divide_gap (:K *G))))
+
+(DET &bg DominantColor)
+
+;; order_corner sets where the stack builds from: panels in order from its edge along order_axis, lines settling against its edge across.
+(DET &order_corner DiagDirDomain)
+
+(RULE &stack_axis
+  (&order_axis (:A *A2))
+  (perp (:A A2) (:A2 *A)))
+
+(RULE &stack_dir
+  (&order_corner (:D *Diag))
+  (&stack_axis (:A *A_st))
+  (corner_dir (:C Diag) (:A A_st) *D))
+
+(RULE &panel
+  (&panel_division.tile *P (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(ALTS $d "how the panels are found" $Count
+  (ALT $Size
+    (DET &panel_size ConstOutDim)
+
+    (INIT &panel_division2 Division
+      (cell (P)
+        (input *P))
+      (side (A K)
+        (&order_axis *A)
+        (&panel_size (:N *K)))
+      (gap (A G)
+        (&order_axis *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &panel
+      (&panel_division2.tile *P (:P_outer *P_tile) (:P_inner *P_intile)))))
+
+(ALTS $l "which lines a panel contributes" $Rows
+  (ALT $Bands
+
+    (INIT &span_frame Frame
+      (extent (A N)
+        (&ink_slab *P_slab)
+        (frame_extent (:P P_slab) *A *N)))
+
+    (INIT &span Ray
+      (source ((:P P_slab))
+        (&ink_slab *P_slab))
+      (node (P)
+        (&span_frame.cell *P))
+      (dir (D)
+        (&stack_axis *A)
+        (axis4_of *D A)))
+
+    (RULE &span_between
+      (&cell_slab (:P_slab *P))
+      (&stack_axis *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&span.ray P D)
+      (&span.ray P (:D O)))
+
+    (RULE &stacked
+      (&span_between (:P *P_slab)))))
+
+(RULE &cell_slab
+  (input *P *Col)
+  (&panel P *P_tile *P_intile)
+  (&stack_axis (:A *A_st))
+  (split (:P P_intile) (:A A_st) *Along)
+  (compose (:A P_tile) (:B Along) (:C *P_slab)))
+
+(RULE &ink_slab
+  (&cell_slab *P_slab *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &stacked
+  (&ink_slab *P_slab))
+
+(RULE &order_axis2
+  (&stacked)
+  (&order_axis *A))
+
+(RULE &order_corner2
+  (&stacked)
+  (&order_corner *D))
+
+;; Slabs stack in order, so a slab's rank is its distance from the stacking
+;; edge: panel first, then line, both counted from &order_corner.
+(INIT &order Order
+  (member ((:t P_slab))
+    (&stacked *P_slab))
+  (score ((:t P_slab) (:S K1))
+    (&stacked *P_slab)
+    (&order_corner2 (:D *Diag))
+    (&order_axis2 *A)
+    (diag_dist (:P P_slab) Diag A *K1 *K2))
+  (secondary_score ((:t P_slab) (:S K2))
+    (&stacked *P_slab)
+    (&order_corner2 (:D *Diag))
+    (&order_axis2 *A)
+    (diag_dist (:P P_slab) Diag A *K1 *K2)))
+
+(RULE &moved
+  (&cell_slab *P_slab *P_intile *Col)
+  (&order.rank (:t P_slab) *R)
+  (&cell_slab (:P_intile *P_grid_out))
+  (&stack_dir *D)
+  (margin (:B P_grid_out) D (:K R))
+  (&stack_axis (:A *A_st))
+  (same_line (:A A_st) (:P P_intile) (:Q P_grid_out)))
+
+(RULE &output
+  (&cell_slab (:P_intile *P))
+  (OR ((&moved (:P_grid_out P) *Col))
+      ((NOT (&moved (:P_grid_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

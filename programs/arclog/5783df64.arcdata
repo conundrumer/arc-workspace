@@ -1,0 +1,6 @@
+;; inputs edd16013fad8bcf0c4d2a5665de352dccefee687fccc9bbe26dfd1de40759827 programs/solvers/5783df64.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5783df64
+
+(param &bg Color (0))
+(param &divisor number (3))

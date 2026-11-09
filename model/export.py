@@ -52,7 +52,7 @@ model steps done, as arclog.ReplayProgress gives them.
 
 `--previous <dir>` takes, for each task whose key equals the key in <dir>/keys.json, that task's directory <dir>/tasks/<task>/ by hard links,
 and streams only the other tasks; the files written are those a run with
-no `--previous` writes. A task's key is the sha256 of its work/arclog/gen `.arclog` and `.arcdata`, its files under work/arclog/gen/cases/<task>/ with their names, its task file,
+no `--previous` writes. A task's key is the sha256 of its programs/arclog `.arclog` and `.arcdata`, its files under programs/arclog/cases/<task>/ with their names, its task file,
 `arclog.streams_digest()` (fixed when the package is built, over the inputs of the compile of the crates the streams bindings are built from, and
 over no file of the crates that only the tables export runs), the files of the installed `arclog` package other than its compiled library,
 the versions of Python and numpy, this file and the step cap (`tables_export.task_key` computes it). A <dir> with no keys.json gives no reuse. With a <out>/streams.pkl, `--previous`
@@ -76,7 +76,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from pathlib import Path
 from arclog_convert import determination_gate as D
 
-CORPUS, TASKS = "work/arclog/gen", "data/tasks"
+CORPUS, TASKS = "programs/arclog", "data/tasks"
 
 
 @functools.cache

@@ -1,0 +1,235 @@
+;; inputs 799a17ce666998ddb8c9abcf44256bf0be3fed8d7d552c9ab9d2fdb93aba54c9 programs/solvers/ad3b40cf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ad3b40cf
+
+(INPUT mirror-line "a straight line of &line (1) runs edge to edge along one of the grid's own symmetry axes: the middle row, the middle column, or a corner-to-corner diagonal"
+
+  (DET &line SharedColor))
+
+(INPUT one-side "every cell that is neither &background (8) nor &line lies on one side of the line, and the other side is all &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT two-colors "those cells, the shapes, take exactly two colors, and the two colors have different cell counts")
+
+(OUTPUT mirror-rarer "each cell of the shape color with the fewest cells is copied to its mirror image across the line, over whatever that image cell holds; every other cell keeps its input color"
+
+  (RULE &line_candidate
+    (&line (:C *Col)))
+
+  (RULE &aligned
+    (&line_candidate *Col)
+    (input *P Col)
+    (input (:P *Q) Col)
+    (same_line *A P Q))
+
+  (RULE &off_line
+    (&line_candidate *Col)
+    (input *P Col)
+    (input (:P *Q) Col)
+    (axis4_elem *A)
+    (NOT (&aligned Col A P Q)))
+
+  (RULE &straight
+    (&line_candidate *Col)
+    (input Col)
+    (axis4_elem *A)
+    (NOT (&off_line Col A)))
+
+  (RULE &line_color
+    (&line (:C *Col)))
+
+  (RULE &line_flip
+    (&line_color *Col)
+    (&straight Col *A)
+    (OR (
+         (perp A *A2)
+         (axis_inversion (:A A2) (:T *F)))
+        ((diag_axis_elem (:Da A))
+         (reflection A (:T F)))))
+
+  (RULE &competitor
+    (&line_color (:Col *L))
+    (input *Col)
+    (NOT (&background (:C Col)))
+    (!= Col L))
+
+  (INIT &cells Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (RULE &measure
+    (&cells.size (:key *Col) *N))
+
+  (INIT &least Order
+    (member ((:t (:V Col) (:S N)))
+      (&measure *Col *N)
+      (&competitor Col))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&measure *Col *N)
+      (&competitor Col)))
+
+  (INIT &sole Singleton
+    (member ((:v Col))
+      (&least.minimal (:t (:V *Col)))))
+
+  (RULE &copied_color
+    (&sole.value (:v *Col)))
+
+  (RULE &mirrored
+    (&copied_color *Col)
+    (input *P Col))
+
+  ;; p's offset from a line cell, reflected, taken from that cell.
+  (RULE &image
+    (&line_flip *F)
+    (&line_color (:Col *L_col))
+    (input (:P *L) (:Col L_col))
+    (&mirrored *P)
+    (relative (:Base L) (:X P) (:X_rel *V))
+    (apply (:D F) (:P V) (:P_out *V2))
+    (compose (:A L) (:B V2) (:C *Q)))
+
+  (INIT &objects4 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &object
+    (&objects4.component (:key *Col) *P *Id))
+
+  (INIT &object_box BoundingBox
+    (key ((&object ^Id *P))
+      (cell (P)
+        (&object Id *P))))
+
+  ;; A color's sum of box areas counts the cells of each of its objects' boxes.
+  (INIT &object_area Cardinality
+    (key ((&object ^Col *Id)
+          (&object_box.box (:key Id) *B)
+          (input *P)
+          (inside (:A P) B))
+      (member ((:m Id P))
+        (&object Col *Id)
+        (&object_box.box (:key Id) *B)
+        (input *P)
+        (inside (:A P) B))))
+
+  (INIT &objects8 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (INIT &color_area Cardinality
+    (key ((&color_box.box (:key ^Col) *B)
+          (input *P)
+          (inside (:A P) B))
+      (member ((:m P))
+        (&color_box.box (:key Col) *B)
+        (input *P)
+        (inside (:A P) B)))))
+
+(ALTS $cc "what picks the color that is mirrored" $CellCount
+  (ALT $ObjectBoxArea
+    (OUTPUT mirror-rarer "the color mirrored is the one whose 4-connected objects have the least sum of box areas; undefined where two colors tie for the least sum"
+      (RULE &measure
+        (&object_area.size (:key *Col) *N)))
+    (ALTS $adj "which cells join into one object" $Adjacency4
+      (ALT $Adjacency8
+        (OUTPUT mirror-rarer "objects also join at a corner"
+          (RULE &object
+            (&objects8.component (:key *Col) *P *Id))))))
+  (ALT $ColorBoxArea
+    (OUTPUT mirror-rarer "the color mirrored is the one whose cells have the box of least area; undefined where two colors tie for the least area"
+      (RULE &measure
+        (&color_area.size (:key *Col) *N)))))
+
+(ALTS $cp "which colors the count ranges over" $ShapeColors
+  (ALT $LineCompetes
+    (OUTPUT mirror-rarer "the count ranges over every color other than &background, the line included; where the line is the rarest, its image is the line itself"
+      (RULE &competitor
+        (input *Col)
+        (NOT (&background (:C Col))))))
+  (ALT $BackgroundCompetes
+    (OUTPUT mirror-rarer "the count ranges over every color other than &line, &background included"
+      (RULE &competitor
+        (&line_color (:Col *L))
+        (input *Col)
+        (!= Col L)))))
+
+(ALTS $t "what a tie for the least does" $TieUndefined
+  (ALT $CopyAllLeast
+    (OUTPUT mirror-rarer "every color tied for the least is mirrored"
+      (RULE &copied_color
+        (&least.minimal (:t (:V *Col)))))))
+
+(ALTS $pl "where the mirror stands" $DrawnLine
+  (ALT $FrameFlip
+    (OUTPUT mirror-rarer "the mirror is the grid's own flip whose fixed line has the drawn line's orientation, through the grid's center"
+      (RULE &image
+        (&line_flip *F)
+        (&mirrored *P)
+        (apply (:D F) P (:P_out *Q))))))
+
+(ALTS $pt "what an image does to a cell that holds the other shape color" $PaintOver
+  (ALT $PaintBackgroundOnly
+    (OUTPUT mirror-rarer "the image paints only &background cells")
+    (RULE &painted
+      (&copied_color *Col)
+      (input *P Col)
+      (&image P *Q)
+      (input (:P Q) (:Col *Old))
+      (&background (:C Old)))))
+
+(ALTS $lc "the color of the mirror line" $StoredLine
+  (ALT $LineByShape
+    (INPUT mirror-line "the line's color is the one color other than &background whose cells fill one whole row, column or diagonal line of the grid; undefined where no color or several colors do"
+      (RULE &line_candidate
+        (input *Col)
+        (NOT (&background (:C Col))))
+
+      (RULE &line_gap
+        (&straight *Col *A)
+        (input *P Col)
+        (input (:P *Q))
+        (same_line A P Q)
+        (NOT (input (:P Q) Col)))
+
+      ;; The one color whose cells fill a whole line of the grid.
+      (INIT &edge_line Singleton
+        (member ((:v Col))
+          (&straight *Col *A)
+          (NOT (&line_gap Col A))))
+
+      (RULE &line_color
+        (&edge_line.value (:v *Col))))))
+
+(RULE &defined
+  (&copied_color)
+  (&line_flip))
+
+(RULE &painted
+  (&copied_color *Col)
+  (input *P Col)
+  (&image P *Q)
+  (input (:P Q)))
+
+(RULE &output
+  (OR ((&defined)
+       (&painted (:Q *P) *Col))
+      ((&defined)
+       (input P Col)
+       (NOT (&painted (:Q P))))))
+
+(OUT (&output ^P ^Col))

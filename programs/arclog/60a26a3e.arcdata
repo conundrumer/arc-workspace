@@ -1,0 +1,7 @@
+;; inputs 262874709cfad41d8d6bf4e975cf9cacad922a1b307f0d944a3bcd0c1875f6a1 programs/solvers/60a26a3e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 60a26a3e
+
+(param &bg Color (0))
+(param &line Color (1))
+(param &ring Color (2))

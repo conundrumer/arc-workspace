@@ -1,0 +1,42 @@
+;; inputs 75a3897b5fcfdfc2d7ab7f7796196fd6ccd4395ecd5a10d2b24e32058233abb6 programs/solvers/aedd82e4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aedd82e4
+
+(DET &bg UnchangedColor)
+
+(DET &mark AnyOutNewColor)
+
+(RULE &ink_at
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &grouped
+  (&ink_at *P)
+  (dir_elem *D)
+  (neighbor P D (:Q *P2))
+  (&ink_at (:P P2)))
+
+(RULE &isolated
+  (&ink_at *P)
+  (NOT (&grouped P)))
+
+(ALTS $choice "what the rest of the grid becomes" $Passthrough
+  (ALT $Repaint
+    (DET &ink SharedColor)
+
+    (RULE &output
+      (OR ((&isolated *P)
+           (&mark (:C *Col)))
+          ((&grouped P)
+           (&ink (:C Col)))
+          ((input P)
+           (NOT (&ink_at P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&isolated *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&isolated P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,50 @@
+;; inputs 827df62f51e8d2150fae11ed9e24626ec73c4b2d0970434a65f0ffbd3ed98110 programs/solvers/41e4d17e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 41e4d17e
+
+(DET &bg DominantColor)
+
+;; The color the lines are drawn in.
+(DET &paint AnyOutNewColor)
+
+(INIT &objects Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &caster
+  (&objects.component *P (:Id *Ca)))
+
+(ALTS $choice "a square's outline and its hole share a center, so what casts is underdetermined" $Object
+  (ALT $Hole
+    (INIT &holes Enclosure
+      (cell (P)
+        (input *P *Col)
+        (&bg (:C Col))))
+
+    (RULE &caster
+      (&holes.enclosed *P (:Id *Ca)))))
+
+(INIT &frame BoundingBox
+  (key ((&caster (:Ca ^Id) *P))
+    (cell (P)
+      (&caster (:Ca Id) *P))))
+
+(RULE &painted
+  (input *P *Col)
+  (&bg (:C Col))
+  (input (:P *P_c))
+  (&frame.box *B)
+  (inside (:A P_c) B)
+  (relative (:Base B) (:X P_c) (:X_rel *P_inner))
+  (centered (:P P_inner))
+  (axis_elem *A)
+  (same_line A P (:Q P_c)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (IF ((&painted P))
+      ((&paint (:C *Col)))
+      ((= Col C_in))))
+
+(OUT (&output ^P ^Col))

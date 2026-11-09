@@ -1,0 +1,8 @@
+;; inputs 0c62e66b9d630eacde30bc6d200dc2fb9e7a6bcea38e64f9e0a8fded79dd94ba programs/solvers/9c56f360.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9c56f360
+
+(param &bg Color (0))
+(param &mover Color (3))
+(param &dir Dir (DIR_L))
+(param &wall Color (8))

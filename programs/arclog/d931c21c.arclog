@@ -1,0 +1,213 @@
+;; inputs 255580ea69e800de6758387a311787aa56a22480b292be805ca3c070728290ca programs/solvers/d931c21c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d931c21c
+
+(INPUT outlines-on-background "the input is a `background` field with a few separate one-cell-wide outlines of `wall_color` drawn on it, each outline a 4-connected set of `wall_color` cells"
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; The field is the commonest color of each input.
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (DET_OR_RULE &wall_color RarestColor
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (&palette.maximal (:t C))))
+
+  (RULE &wall
+    (input *P *Col)
+    (&wall_color (:C Col)))
+
+  (INIT &outlines8 Connectivity
+    (node (P)
+      (&wall *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT some-closed-some-open "some outlines are closed: the outline alone closes a region off, its hole, made of the cells not in it that no walk from the frame edge reaches, where a walk steps to any of the eight neighbors through cells not in the outline. The other outlines are broken by one or more one-cell gaps that let the inside reach the outside, and a piece between two gaps can be a single cell"
+
+  (INIT &outlines4 Connectivity
+    (node (P)
+      (&wall *P)))
+
+  (RULE &outline
+    (&outlines4.component *P (:Id *O)))
+
+  (RULE &barrier
+    (&outline (:O *K) *P))
+
+  (RULE &outside2
+    (&barrier *K)
+    (input *P)
+    (NOT (&barrier K P)))
+
+  (INIT &walk4 Flood
+    (key ((&outside2 (:K ^O) *P))
+      (node (P)
+        (&outside2 (:K O) *P))
+      (source (P)
+        (&outside2 (:K O) *P)
+        (margin (:B P) *D (:K 0))))))
+
+(INPUT outlines-apart "no cell is 8-adjacent both to a closed outline and to another outline")
+
+(OUTPUT outer-halo "each `background` cell that is 8-adjacent to a closed outline, and is not in that outline's hole, becomes `outer_color`")
+
+(OUTPUT inner-halo "each `background` cell of a closed outline's hole that is 8-adjacent to that outline becomes `inner_color`, also where another outline's outer halo reaches it")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color, so the cells of a hole that touch no outline cell stay `background`, and open outlines and their surroundings do not change"
+
+  (DET &repainted
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET_OR_RULE &background DominantColor
+    (&repainted (:C_in *C)))
+
+  (RULE &field
+    (input *P *Col)
+    (&background (:C Col)))
+
+  (INIT &walk8 Flood
+    (key ((&outside2 (:K ^O) *P))
+      (node (P)
+        (&outside2 (:K O) *P))
+      (source (P)
+        (&outside2 (:K O) *P)
+        (margin (:B P) *D (:K 0))))
+    (step ((:Delta S))
+      (OR ((step_offset *D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &hole
+    (&outside2 *K *P)
+    (NOT (&walk8.reached (:key (:O K)) P)))
+
+  (RULE &within
+    (&hole (:K *O) *P))
+
+  (RULE &rim
+    (&within *O)
+    (&outline O (:P *Q)))
+
+  (RULE &inner
+    (&within *O *P)
+    (&field P)
+    (neighbor P *D *Q)
+    (&outline O (:P Q)))
+
+  (RULE &outer
+    (&rim *O *Q)
+    (neighbor (:P Q) *D (:Q *P))
+    (&field P)
+    (NOT (&within O P)))
+
+  (DET &wall_color_determined
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (&palette.maximal (:t C))))
+
+  (DET &open_cell
+    (ex_input *E *P *Col)
+    (NOT (&wall_color_determined (:C Col))))
+
+  ;; The cells an 8-step walk from the frame edge reaches without crossing
+  ;; an outline: the outer halo is among them, the inner halo is not.
+  (INIT &outside Flood
+    (key ((&open_cell ^E *P))
+      (node (P)
+        (&open_cell E *P))
+      (source (P)
+        (&open_cell E *P)
+        (margin (:B P) *D (:K 0))))
+    (step ((:Delta S))
+      (OR ((step_offset *D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (DET &inner_color
+    (&repainted *E *P (:C_out *C))
+    (NOT (&outside.reached (:key E) P)))
+
+  (DET &outer_color
+    (&repainted *E *P (:C_out *C))
+    (&outside.reached (:key E) P)))
+
+(ALTS $w "how the walk from the frame edge steps" $Walk8
+  (ALT $Walk4
+    (INPUT some-closed-some-open "the walk takes only the four cardinal steps, so a gap that leaves the hole meeting the outside only diagonally still closes it"
+      (RULE &hole
+        (&outside2 *K *P)
+        (NOT (&walk4.reached (:key (:O K)) P))))))
+
+(ALTS $c "which wall cells make up one outline" $Outline4
+  (ALT $Outline8
+    (INPUT outlines-on-background "outlines are 8-connected sets of `wall_color` cells, so pieces that touch at a corner are one outline"
+      (RULE &outline
+        (&outlines8.component *P (:Id *O))))))
+
+(ALTS $s "what closes a hole off" $OwnWalls
+  (ALT $SharedWalls
+    (INPUT some-closed-some-open "the holes are the regions that all `wall_color` cells together close off, and a closed outline is an outline 4-adjacent to a hole"
+      (RULE &barrier
+        (&outline (:O *K))
+        (&wall *P)))
+    (OUTPUT inner-halo "each hole cell 8-adjacent to a `wall_color` cell becomes `inner_color`"
+      (RULE &borders
+        (&outline *O (:P *Q))
+        (dir_elem *D)
+        (neighbor (:P Q) D (:Q *H))
+        (&hole (:K O) (:P H)))
+
+      ;; Every hole counts for each closed outline.
+      (RULE &within
+        (&borders *O)
+        (&hole (:K O) *P)))
+    (OUTPUT outer-halo "each `background` cell outside every hole and 8-adjacent to a closed outline becomes `outer_color`")))
+
+(ALTS $m "which color a cell in one outline's inner halo and another's outer halo takes" $InnerOverOuter
+  (ALT $OuterOverInner
+    (OUTPUT inner-halo "a cell in one outline's inner halo and another outline's outer halo takes `outer_color`")
+    (RULE &painted
+      (OR ((&outer *P)
+           (&outer_color (:C *Col)))
+          ((&inner P)
+           (NOT (&outer P))
+           (&inner_color (:C Col)))))))
+
+(ALTS $e "which outline cells the outer halo runs around" $WholeOutline
+  (ALT $HoleRim
+    (OUTPUT outer-halo "the halo runs only around the outline cells that are 8-adjacent to its hole"
+      (RULE &rim
+        (&outline *O (:P *Q))
+        (neighbor (:P Q) *D (:Q *H))
+        (&within O (:P H))))))
+
+(RULE &painted
+  (OR ((&inner *P)
+       (&inner_color (:C *Col)))
+      ((&outer P)
+       (NOT (&inner P))
+       (&outer_color (:C Col)))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

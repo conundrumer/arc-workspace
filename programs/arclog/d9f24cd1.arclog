@@ -1,0 +1,66 @@
+;; inputs 3fe3f53a43d0b1baa291bb4a1e60c021851bb03ffa7d10fce148076624cfb5d7 programs/solvers/d9f24cd1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d9f24cd1
+
+(DET &mark UnchangedColor)
+
+(DET &block RarestColor)
+
+;; Dodge side, as a turn from the walk direction.
+(DET &dodge SenseDomain)
+
+(DET &dir DirDomain)
+
+;; The walk: starts at each mark, headed away from the mark edge; steps
+;; ahead while clear; deflects one cell to the dodge side when blocked.
+(INIT &walk Propagation
+  (source ((:n P W))
+    (input *P *Col)
+    (&mark (:C Col))
+    (&dir *D)
+    (opposite D (:Opp *W)))
+  (edge ((:a P W) (:b (:P P2) W))
+    (input *P)
+    (dir_elem (:D *W))
+    (neighbor P (:D W) *Q)
+    (OR ((input (:P Q) *Col)
+         (&block (:C Col))
+         (&dodge (:S *Sn))
+         (turn (:S Sn) (:D W) (:D2 *Dd))
+         (neighbor P (:D Dd) (:Q *P2))
+         (input (:P P2)))
+        ((input (:P Q) Col)
+         (NOT (&block (:C Col)))
+         (= P2 Q)))))
+
+(ALTS $choice "which edge is the mark edge" $Dir
+  (ALT $Edge
+    ;; The walk: starts at each mark, headed away from the mark edge; steps
+    ;; ahead while clear; deflects one cell to the dodge side when blocked.
+    (INIT &walk Propagation
+      (source ((:n P W))
+        (input *P *Col)
+        (&mark (:C Col))
+        (margin (:B P) *D (:K 0))
+        (opposite D (:Opp *W)))
+      (edge ((:a P W) (:b (:P P2) W))
+        (input *P)
+        (dir_elem (:D *W))
+        (neighbor P (:D W) *Q)
+        (OR ((input (:P Q) *Col)
+             (&block (:C Col))
+             (&dodge (:S *Sn))
+             (turn (:S Sn) (:D W) (:D2 *Dd))
+             (neighbor P (:D Dd) (:Q *P2))
+             (input (:P P2)))
+            ((input (:P Q) Col)
+             (NOT (&block (:C Col)))
+             (= P2 Q)))))))
+
+(RULE &output
+  (OR ((&walk.reached (:n *P))
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&walk.reached (:n P))))))
+
+(OUT (&output ^P ^Col))

@@ -1,12 +1,12 @@
-"""The readers' check of the files under `gen/`: `read_checked` gives the text of a file that is current and raises
+"""The readers' check of the converted solvers' files (`programs/arclog/`): `read_checked` gives the text of a file that is current and raises
 `Stale` for one that is not. The header and the record are those of `arclog_convert.provenance`.
 
 A file is current where:
   - its header's inputs hash is the inputs hash of the solver's files now (`plans.inputs_hash`), so that a solver
     file edited and not converted again makes it stale;
-  - the record of its solver, in `case_records/` beside `gen/`, holds that inputs hash and the sha256 of the file's
+  - the record of its solver, in `case_records/` of the converter's output directory, holds that inputs hash and the sha256 of the file's
     bytes.
-A program that reads a file under `gen/` reads it through `read_checked`.
+A program that reads one of those files reads it through `read_checked`.
 
     uv run python -m arclog_convert.readback [--out <dir>] [<stem> ...]
 
@@ -40,7 +40,7 @@ def record_faults(stem: str, record: Record) -> list[str]:
 
 
 def faults(stem: str) -> list[str]:
-    """The kinds of fault of the files of `stem` under `gen/` against its record, each led by the file's name; empty
+    """The kinds of fault of the files of `stem` among the converted solvers against its record, each led by the file's name; empty
     where the record is current and every file matches it."""
     record = read_record(stem)
     if record is None:
@@ -53,12 +53,12 @@ def faults(stem: str) -> list[str]:
 
 
 class Stale(Exception):
-    """A file under `gen/` is not current: its header's inputs hash is not that of the solver's files now, or it does
+    """A converted solver's file is not current: its header's inputs hash is not that of the solver's files now, or it does
     not match its record."""
 
 
 def locate(path: Path) -> tuple[Path, str, str | None]:
-    """The directory `gen/` that holds the file `path`, the solver's stem, and, for a file of `cases/<stem>/`, the
+    """The directory of converted solvers that holds the file `path`, the solver's stem, and, for a file of `cases/<stem>/`, the
     file's name there; none for the name where the file is `<stem>.arclog` or `<stem>.arcdata`."""
     path = path.resolve()
     if path.parent.parent.name == CASES:
@@ -67,11 +67,11 @@ def locate(path: Path) -> tuple[Path, str, str | None]:
 
 
 def read_checked(path: Path) -> str:
-    """The text of the file `path`, a `<stem>.arclog`, a `<stem>.arcdata` or a file of `cases/<stem>/` of a `gen/`
-    directory, where it is current; raises `Stale` otherwise. It is current where:
+    """The text of the file `path`, a `<stem>.arclog`, a `<stem>.arcdata` or a file of `cases/<stem>/` of a converted
+    solvers' directory, where it is current; raises `Stale` otherwise. It is current where:
       - its header's inputs hash is the inputs hash of the solver's files now, so that a solver file edited and not
         converted again makes it stale;
-      - the record of its solver, in `case_records/` beside `gen/`, holds that inputs hash and the sha256 of the
+      - the record of its solver, in `case_records/` of the converter's output directory, holds that inputs hash and the sha256 of the
         file's bytes.
     One hash of the solver's files and one of the file are computed. The code hash is not compared: the reader may
     run in a checkout whose code differs from the converter's, and `faults` and the command of this module check it."""
@@ -90,7 +90,7 @@ def read_checked(path: Path) -> str:
         raise Stale(f"{path}: the solver's files cannot be read, {e.strerror}") from e
     if head[0] != current:
         raise Stale(f"{path}: the solver's files changed since the conversion")
-    record = read_record(stem, gen.parent / "case_records")
+    record = read_record(stem, paths.records_of(gen))
     if record is None:
         raise Stale(f"{path}: no record")
     want = record.cases.get(name) if name is not None else record.arclog if path.suffix == ".arclog" else record.arcdata
@@ -108,7 +108,7 @@ def main(argv: list[str]) -> int:
     from arclog_convert.phases import use_out
     parser = argparse.ArgumentParser(prog="python -m arclog_convert.readback")
     parser.add_argument("--out", type=Path, help="the directory to read under, in place of `arclog_convert.out`")
-    parser.add_argument("stems", nargs="*", help="the solvers to check; every solver of `gen/` where none is given")
+    parser.add_argument("stems", nargs="*", help="the solvers to check; every converted solver where none is given")
     args = parser.parse_args(argv)
     if args.out is not None:
         use_out(args.out)

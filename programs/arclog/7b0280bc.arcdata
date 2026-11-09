@@ -1,0 +1,6 @@
+;; inputs 2f1f224ff3a42c2395f4071149151f916fb4748f9ea0b1974c3def298e0a8124 programs/solvers/7b0280bc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b0280bc
+
+(param &wire_fill Color (5))
+(param &square_fill Color (3))

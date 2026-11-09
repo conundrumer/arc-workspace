@@ -1,0 +1,7 @@
+;; inputs 1068966bf03820b3b11c5538c4259cd4c1c9886c602523eba965b995c008ce41 programs/solvers/bdad9b1f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bdad9b1f
+
+(param &cross Color (4))
+(param &bg Color (0))
+(param &role (Color Axis) (8 AXIS_V) (2 AXIS_H))

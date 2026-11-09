@@ -1,0 +1,226 @@
+;; inputs fc4613611c2379e4d3f48a69c2a1a2d8cbcf385518449e50d9dafec626232c28 programs/solvers/dc2e9a9d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc2e9a9d
+
+(INPUT background-field "a field of &background"
+
+  (DET &painted
+    (ex_input *E *P (:Col *C1))
+    (ex_output E P (:Col *C2))
+    (!= C1 C2))
+
+  ;; The color every painted cell held in the input.
+  (INIT &field Singleton
+    (member ((:v Col))
+      (&painted *E *P)
+      (ex_input E P *Col)))
+
+  (DET_OR_RULE &background DominantColor
+    (&field.value (:v *C))))
+
+(INPUT nubbed-boxes "each object is a hollow rectangle outline, one cell thick, of 3, with one single-cell nub outside the middle cell of one side; that side has odd length"
+
+  (RULE &ink2
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &comp8 Connectivity
+    (node (P)
+      (&ink2 *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT room-for-copy "the cells the copy of each box covers inside the frame are &background and are covered by no other copy, and the copy's rectangle lies inside the frame; only the copy's nub may fall past the frame edge")
+
+(OUTPUT keep-input "every input cell keeps its color in the output")
+
+(OUTPUT mirror-away-from-nub "each object is mirrored across the axis parallel to the side of its box opposite the nub, placed so that &gap lines of cells part the copy's box from that side; the copy's nub points away from the original"
+
+  ;; the number of background lines between the original box and its copy's box
+  (DET &gap DivisorRatio))
+
+(OUTPUT color-by-axis "the copy takes the color &copy_color gives the axis it moves along"
+
+  (DET &copy_link
+    (&painted *E *P)
+    (ex_output E P *Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&painted E (:P Q))
+    (ex_output E (:P Q) Col))
+
+  (DET &copy_branching
+    (&copy_link *E *P (:D *D1))
+    (&copy_link E P (:D *D2))
+    (!= D1 D2))
+
+  (DET &copy_nub
+    (&copy_link *E *P *D)
+    (NOT (&copy_branching E P)))
+
+  (DET &copy_color
+    (&copy_nub *E *P *D)
+    (axis_of D *A)
+    (ex_output E P (:Col *C))))
+
+(OUTPUT clip-at-frame "copy cells past the frame edge are dropped"
+
+  (INIT &comp4 Connectivity
+    (node (P)
+      (&ink2 *P)))
+
+  (RULE &obj
+    (&comp4.component *P (:Id *K)))
+
+  (RULE &link
+    (&obj *K *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&obj K (:P Q)))
+
+  (RULE &nub
+    (&link *K *P *D)
+    (ALL ((&link K P (:D *D1))
+          (&link K P (:D *D2)))
+         ((= D1 D2))))
+
+  (RULE &nubs
+    (&nub *K (:P *P1))
+    (&nub K (:P *P2))
+    (!= P1 P2))
+
+  ;; The box: the bounding box of the object's cells other than its nub.
+  (INIT &box BoundingBox
+    (key ((&obj (:K ^Id) *P)
+          (NOT (&nub (:K Id) P)))
+      (cell (P)
+        (&obj (:K Id) *P)
+        (NOT (&nub (:K Id) P)))))
+
+  (RULE &outline
+    (&box.box (:key (:Id *K)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (RULE &unboxed
+    (OR ((&outline *K *P)
+         (NOT (&obj K P)))
+        ((&box.cell (:key (:Id K)) (:P *P2))
+         (NOT (&outline K (:P P2))))))
+
+  ;; The reflection across the axis parallel to the side the copy moves away
+  ;; from.
+  (RULE &copy_transform
+    (axis_of *D *A)
+    (axis_inversion A (:T *G)))
+
+  (RULE &hollow
+    (&box.box (:key (:Id *K)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&outline K P)))
+
+  (RULE &copy
+    (&nub *K *D)
+    (NOT (&nubs K))
+    (NOT (&unboxed K))
+    (&box.box (:key (:Id K)) *B)
+    (OR ((&obj K (:P *P0)))
+        ((&hollow K (:P P0))))
+    (relative (:Base B) (:X P0) (:X_rel *P_rel))
+    (&copy_transform D *G)
+    (apply (:D G) (:P P_rel) (:P_out *R_rel))
+    (compose (:A B) (:B R_rel) (:C *R))
+    (axis_of D *A)
+    (box_extent B (:P P0) A *N)
+    (jump (:P R) D (:K N) (:Q *R1))
+    (&gap (:K *Gp))
+    (jump (:P R1) D (:K Gp) (:Q *P))
+    (input P))
+
+  (RULE &tint
+    (axis_of *D *A)
+    (&copy_color A (:C *Col)))
+
+  (RULE &cover
+    (&copy (:K *Id) *D *P0 *P)
+    (&obj (:K Id) (:P P0))
+    (&tint D *Col)))
+
+(ALTS $t "how the copy is transformed" $Mirror
+  (ALT $Rotate
+    (OUTPUT mirror-away-from-nub "the copy is the half turn of the object, placed at the mirror copy's box"
+      ;; The half turn: the reflections across both axes.
+      (RULE &copy_transform
+        (dir_elem *D)
+        (axis_inversion (:A *A1) (:T *G1))
+        (perp (:A A1) *A2)
+        (axis_inversion (:A A2) (:T *G2))
+        (d4_compose (:A G1) (:B G2) (:C *G))))))
+
+(ALTS $k "what the copy's color is keyed by" $AxisColor
+  (ALT $ColorByDir
+    (OUTPUT color-by-axis "the copy takes the color &copy_color_dir gives the direction it moves"
+      (DET &copy_color_dir
+        (&copy_nub *E *P (:D *D_back))
+        (opposite (:D D_back) (:Opp *D))
+        (ex_output E P (:Col *C)))
+
+      (RULE &tint
+        (&copy_color_dir *D (:C *Col))))))
+
+(ALTS $o "which cells a copy paints" $KeepInput
+  (ALT $CopyOver
+    (OUTPUT keep-input "copy cells paint over input cells; every other input cell keeps its color")
+    (RULE &shown
+      (&cover *P *Col))))
+
+(ALTS $a "which cells touch to form one object" $Adjacency4
+  (ALT $Adjacency8
+    (INPUT nubbed-boxes "objects are the 8-connected components"
+      (RULE &obj
+        (&comp8.component *P (:Id *K))))))
+
+(ALTS $s "which cells objects are made of" $AllCells
+  (ALT $ShapeColorObjects
+    (INPUT nubbed-boxes "objects are the components of &shape_color cells"
+
+      ;; The color of every input cell that is not background.
+      (INIT &ink Singleton
+        (member ((:v Col))
+          (ex_input *Col)
+          (NOT (&field.value (:v Col)))))
+
+      (DET_OR_RULE &shape_color RarestColor
+        (&ink.value (:v *C)))
+
+      (RULE &ink2
+        (input *P *Col)
+        (&shape_color (:C Col))))))
+
+(ALTS $e "what the copy holds" $ObjectOnly
+  (ALT $WholeBox
+    (OUTPUT mirror-away-from-nub "the copy holds the whole box, its interior cells in their input colors; undefined where a copy's interior covers a cell of another copy"
+      (RULE &cover
+        (OR ((&copy (:K *Id) *P0 *P)
+             (&hollow (:K Id) (:P P0))
+             (input (:P P0) *Col))
+            ((&copy (:K *Id2) *D (:P0 *P02) P)
+             (&obj (:K Id2) (:P P02))
+             (&tint D Col)))))))
+
+(RULE &shown
+  (&cover *P *Col)
+  (input P (:Col *B))
+  (&background (:C B)))
+
+(RULE &output
+  (OR ((&shown *P *Col))
+      ((input P Col)
+       (NOT (&shown P)))))
+
+(OUT (&output ^P ^Col))

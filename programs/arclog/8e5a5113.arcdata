@@ -1,0 +1,14 @@
+;; inputs 34251add8f43249bc004dc60d1aac780b7b04bd8f6fbeeb9fe4698adbadf1f4e programs/solvers/8e5a5113.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8e5a5113
+
+(param &bg Color (0))
+(param &axis Axis (AXIS_H))
+(param &gap number (1))
+(param &tile_n number (3))
+(param &tile_size number (3))
+(param &flow_dir Dir (DIR_R))
+(param &rot D4 (D4_CW))
+(param &tile_d4 (Position D4)
+  (grid
+    (D4_ID D4_CW D4_HT)))

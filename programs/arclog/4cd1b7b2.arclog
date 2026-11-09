@@ -1,0 +1,28 @@
+;; inputs 77d5a0dfa545f141f6a24c7fd6d5e853e1ee8c0a0fd7d65d5c0256d82c35cffb programs/solvers/4cd1b7b2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4cd1b7b2
+
+(DET &bg ChangedColor)
+
+;; The colors a line holds, one each.
+(DET &palette UnchangedColor (SET))
+
+(RULE &cell_cand
+  (input *P (:Col *C_in))
+  (OR ((&bg (:C C_in))
+       (&palette (:C *Col)))
+      ((NOT (&bg (:C C_in)))
+       (= Col C_in))))
+
+;; Each cell takes one candidate; elimination settles which.
+(CHOOSE &fill
+  (for ((&cell_cand ^P))
+    (from (&cell_cand P *Col)))
+  (never
+    (&cell_cand *P *Col)
+    (&cell_cand (:P *P2) Col)
+    (!= P P2)
+    (axis_elem *A)
+    (same_line A P (:Q P2))))
+
+(OUT (&fill ^P ^Col))

@@ -1,0 +1,147 @@
+;; inputs 4739837c895354a1c7fa98a39015f52e1c3c0b7cd38863c2ab4e7b13e621561f programs/solvers/7b3084d4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b3084d4
+
+(DET &bg DominantColor)
+
+;; The marker cell's color.
+(DET &marker RarestColor)
+
+;; The corner of the square the marker lands on.
+(DET &corner DiagDirDomain)
+
+;; The transforms a piece may take.
+(DET &group SymDomain)
+
+(RULE &content
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &joins
+  (&content *P (:Col *Col0))
+  (OR ((&marker (:C Col0))
+       (neighbor P *D *Q)
+       (&content (:P Q) *Col)
+       (NOT (&marker (:C Col))))
+      ((NOT (&marker (:C Col0)))
+       (= Col Col0))))
+
+;; The cells that join one color are one piece.
+(INIT &by_color Quotient
+  (equivalent ((:a P) (:b Q))
+    (&joins *P *Col)
+    (&joins (:P *Q) Col)))
+
+(RULE &piece_cell
+  (&by_color.class (:a *P) (:Id *O))
+  (&content P *Col))
+
+(INIT &area Cardinality
+  (member ((:m P))
+    (&content *P)))
+
+;; Candidate squares, by side.
+(INIT &square Frame
+  (key ((input *P)
+        (sub_extent P (:A *A0) (:K ^N))
+        (input (:P *P2))
+        (sub_extent (:P P2) (:A *A02) (:K N))
+        (perp *A *A2))
+    (extent (A N)
+      (input *P)
+      (axis_elem *A)
+      (sub_extent P (:A *A0) (:K N)))))
+
+(INIT &square_area Cardinality
+  (key ((&square.cell (:key ^N) *P))
+    (member ((:m P))
+      (&square.cell (:key N) *P))))
+
+(RULE &side
+  (&square_area.size (:key *N) (:N *K))
+  (&area.size (:N K)))
+
+(ALTS $choice "what counts as one piece" $ByColor
+  (ALT $ByComponent
+    (INIT &by_comp Connectivity
+      (node (P)
+        (&content *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &piece_cell
+      (&by_comp.component *P (:Id *O))
+      (&content P *Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&piece_cell ^O *P))
+    (cell (P)
+      (&piece_cell O *P))))
+
+(RULE &image
+  (&piece_cell *O *P *Col)
+  (&bbox.box (:key O) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner2))
+  (&group (:S *G))
+  (sym_member (:S G) *D)
+  (apply D (:P P_inner2) (:P_out *P_inner)))
+
+;; Where each pose fits in the square.
+(INIT &occ Occurrences
+  (key ((OR ((&image ^O ^D *P_inner))
+            ((&image O D)
+             (&side *N)
+             (&square.cell (:key N) *P))))
+    (cell (P)
+      (&image O D)
+      (&side *N)
+      (&square.cell (:key N) *P))
+    (shape ((:P P_inner))
+      (&image O D *P_inner))))
+
+(RULE &anchor
+  (&piece_cell *O *Col)
+  (&marker (:C Col)))
+
+(RULE &placement
+  (&occ.occurrence (:key *O *D) (:P *B))
+  (OR ((NOT (&anchor O)))
+      ((&image O D *P_inner *Col)
+       (&marker (:C Col))
+       (compose (:A B) (:B P_inner) (:C *P))
+       (&corner (:D *Dg))
+       (corner_dist P (:Diag Dg) (:K 0)))))
+
+(RULE &covers
+  (&placement *O *D *B)
+  (&image O D *P_inner *Col)
+  (compose (:A B) (:B P_inner) (:C *P)))
+
+(RULE &unplaced
+  (&piece_cell *O)
+  (NOT (&placement O)))
+
+;; Every joint placement survives the pruning, and the survivors agree where
+;; the packing is unique.
+(CHOOSE &pruning
+  (for ((&placement ^O))
+    (from (&placement O *D *B)))
+  (never
+    (&placement (:O *Pc_o) *D *B)
+    (&placement (:O *Pc2_o) (:D *Pc2_d) (:B *Pc2_b))
+    (OR ((!= B Pc2_b))
+        ((!= D Pc2_d))
+        ((!= Pc_o Pc2_o)))
+    (&covers (:O Pc_o) D B *P)
+    (&covers (:O Pc2_o) (:D Pc2_d) (:B Pc2_b) P)))
+
+(RULE &output
+  (&pruning (:O *Pc_o) (:D *Pc_d) (:B *Pc_b))
+  (NOT (&unplaced))
+  (&covers (:O Pc_o) (:D Pc_d) (:B Pc_b) *P *Col))
+
+(OUT (&output ^P ^Col))

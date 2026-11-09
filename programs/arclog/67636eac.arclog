@@ -1,0 +1,111 @@
+;; inputs e7b1cde2c69deede9875383c354f4e38594f65bd7fdf905e6a21794fe624a256 programs/solvers/67636eac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67636eac
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; $ByColor — the cells of one color form a shape.
+(INIT &by_color Quotient
+  (equivalent ((:a P) (:b Q))
+    (&ink *P)
+    (input P *Col)
+    (input (:P *Q) Col)))
+
+(RULE &shape_cell
+  (&by_color.class (:a *P) *Id))
+
+(ALTS $g "what a shape is" $ByColor
+  (ALT $Connected
+    ;; $Connected — an 8-connected component forms a shape.
+    (INIT &connected Connectivity
+      (node (P)
+        (&ink *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &shape_cell
+      (&connected.component *P *Id))))
+
+(ALTS $a "the layout axis" $Separate
+  (ALT $Spread
+    ;; $Spread — the shapes' joint bounding box is longer along the axis.
+    (INIT &spread BoundingBox
+      (cell (P)
+        (&shape_cell *P)))
+
+    (RULE &layout_axis
+      (&spread.cell *P)
+      (&spread.box *B)
+      (box_extent B P *A (:N *N_along))
+      (perp A *A2)
+      (box_extent B P (:A A2) (:N *N_across))
+      (> N_along N_across)))
+  (ALT $Long
+    ;; $Long — the grid is longer along the axis.
+    (RULE &layout_axis
+      (input *P)
+      (axis_extents P *A (:N1 *N_along) (:N2 *N_across))
+      (> N_along N_across))))
+
+;; Each shape's bounding box.
+(INIT &bbox BoundingBox
+  (key ((&shape_cell ^Id *P))
+    (cell (P)
+      (&shape_cell Id *P))))
+
+(RULE &box_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &box_line
+  (&box_cell *Id *P)
+  (split P *A (:Along *L)))
+
+;; The covered lines of each axis, packed: the blank lines between the
+;; boxes are gone.
+(INIT &packed Order
+  (key ((axis_elem ^A)
+        (axis_of ^D A))
+    (member ((:t L))
+      (&box_line A *L))
+    (before ((:a L) (:b L2))
+      (&box_line A *L)
+      (&box_line A (:L *L2))
+      (!= L L2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2))))
+
+(RULE &packed_pos
+  (&packed.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&packed.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &shared_line
+  (&box_line (:Id *Id1) *A *L)
+  (&box_line (:Id *Id2) A L)
+  (!= Id1 Id2))
+
+(RULE &layout_axis
+  (axis_elem *A)
+  (NOT (&shared_line A)))
+
+(RULE &output
+  (&layout_axis *A)
+  (input (:P *P2) *Col)
+  (&box_cell (:P P2) *P_inner)
+  (split (:P P2) A (:Along *L))
+  (&packed_pos (:Key A) (:M L) (:P_pos *P_along))
+  (split (:P P_inner) A (:Across *P_across))
+  (compose (:A P_along) (:B P_across) (:C *P)))
+
+(OUT (&output ^P ^Col))

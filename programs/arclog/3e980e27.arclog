@@ -1,0 +1,95 @@
+;; inputs 60c24aae5f5d2846a778677776b4c4f195a9ea55bf5cac2c2d8ede5c08f1fda8 programs/solvers/3e980e27.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3e980e27
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &joined
+  (&ink *P)
+  (neighbor P *D *Q)
+  (&ink (:P Q)))
+
+(RULE &lone
+  (&ink *P *Col)
+  (NOT (&joined P)))
+
+(INIT &obj Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &footprint
+  (&lone (:Col *Col_mark))
+  (&ink (:P *P0) (:Col Col_mark))
+  (&joined (:P P0))
+  (&obj.component (:P P0) *Id)
+  (&obj.component *P Id)
+  (&ink P *Col)
+  (relative (:Base P0) (:X P) (:X_rel *V)))
+
+;; Each bare marker's stamp, and the output about that marker, both as
+;; displacements from the marker.
+(INIT &stamp Agreement
+  (key ((OR ((&lone ^E ^P (:Col *M))
+             (&footprint E (:Col_mark M) *V *Col)
+             (ex_output E))
+            ((&lone E P)
+             (ex_output E (:P *Q) Col)
+             (relative (:Base P) (:X Q) (:X_rel V)))))
+    (source ((:P V) (:v Col))
+      (&lone E P (:Col *M))
+      (&footprint E (:Col_mark M) *V *Col)
+      (ex_output E))
+    (target ((:P V) (:v Col))
+      (&lone E P)
+      (ex_output E (:P *Q) *Col)
+      (relative (:Base P) (:X Q) (:X_rel *V)))))
+
+(DET &stamp_src
+  (&lone *E (:P *Key_p) (:Col *M))
+  (&footprint E (:Col_mark M) (:V *P) (:Col *V))
+  (ex_output E))
+
+(DET &stamp_compatible
+  (&stamp_src *E (:Key_p *P))
+  (d4_elem *D)
+  (NOT (&stamp.conflict (:key E P) D)))
+
+(DET &carries
+  (&lone *E *P *Col)
+  (&stamp_src E (:Key_p P))
+  (d4_elem *D)
+  (NOT (&stamp.conflict (:key E P) D)))
+
+(DET &uncarried
+  (&carries *Col *D)
+  (&stamp_src *E (:Key_p *P))
+  (&lone E P Col)
+  (NOT (&stamp_compatible E P D)))
+
+(DET &stamp_d4
+  (&carries *Col *D)
+  (NOT (&uncarried Col D)))
+
+(RULE &paint
+  (&lone (:P *P2) (:Col *M))
+  (&stamp_d4 (:Col M) *D)
+  (&footprint (:Col_mark M) *V *Col)
+  (apply D (:P V) (:P_out *V2))
+  (compose (:A P2) (:B V2) (:C *P))
+  (input P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

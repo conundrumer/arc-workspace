@@ -1,0 +1,90 @@
+;; inputs 07f3b844aaaf328f33aeab5346c62dad676204a8e31c0562bc7b9972deb38d0c programs/solvers/6a1e5592.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6a1e5592
+
+(DET &bg DominantColor)
+
+(DET &wall UnchangedColor)
+
+(DET &sprite ChangedColor)
+
+(DET &fill AnyOutNewColor)
+
+;; The notches: the bg cells inside the wall's box.
+(INIT &wall2 BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&wall (:C Col))))
+
+(RULE &notch
+  (&wall2.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (&bg (:C Col)))
+
+(INIT &sprites Connectivity
+  (node (P)
+    (input *P *Col)
+    (&sprite (:C Col))))
+
+;; A placement of a sprite: a translation landing every cell off the wall.
+(INIT &occ Occurrences
+  (key ((OR ((&sprites.component (:P *S) ^Id))
+            ((&sprites.component Id)
+             (input *P *Col)
+             (NOT (&wall (:C Col))))))
+    (cell (P)
+      (&sprites.component Id)
+      (input *P *Col)
+      (NOT (&wall (:C Col))))
+    (shape ((:P S))
+      (&sprites.component (:P *S) Id))))
+
+(RULE &covers
+  (&occ.occurrence (:key *Id) (:P *V))
+  (&occ.shape (:key Id) (:P *S))
+  (compose (:A V) (:B S) (:C *P)))
+
+(RULE &forcing_item
+  (&covers *Id *V *P)
+  (&notch P))
+
+(CHOOSE &forcing
+  (for ((&forcing_item ^P))
+    (from (&forcing_item P *Id *V)))
+  (never
+    (&forcing_item *Id *V)
+    (&forcing_item Id (:V *V2))
+    (&occ.occurrence (:key Id) (:P V))
+    (&occ.occurrence (:key Id) (:P V2))
+    (!= V V2))
+  (never
+    (&forcing_item *Id *V)
+    (&forcing_item (:Id *Id2) (:V *V2))
+    (&covers Id V *P)
+    (&covers (:Id Id2) (:V V2) P)
+    (OR ((!= Id Id2))
+        ((!= V V2))))
+  (never
+    (&forcing_item *Id *V)
+    (&forcing_item (:P *P2) (:Id *Id2) (:V *V2))
+    (&forcing_item (:P P2) Id V)
+    (OR ((!= Id Id2))
+        ((!= V V2)))))
+
+(RULE &plugged
+  (&forcing *Id *V)
+  (&covers Id V *P))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&wall (:C Col)))
+      ((&plugged P)
+       (&fill (:C Col)))
+      ((input P (:Col *C_in))
+       (NOT (&wall (:C C_in)))
+       (NOT (&notch P))
+       (NOT (&plugged P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

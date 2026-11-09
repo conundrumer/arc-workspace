@@ -1,0 +1,6 @@
+;; inputs b85d0753d54935b510ba6cec9ef40c4ac7f1b9f0199db17f1275b752012ad92e programs/solvers/bc1d5164.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bc1d5164
+
+(param &bg Color (0))
+(param &frame_dim number (3))

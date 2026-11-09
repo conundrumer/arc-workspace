@@ -1,0 +1,263 @@
+;; inputs 16e8b67de4fde518b7c65aeec3d96ab54db76f67688fecba3bd303e0e62a49ac programs/solvers/e40b9e2f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e40b9e2f
+
+(INPUT one-figure "the grid holds one figure of non-bg cells on a field of bg (0), which may be disconnected at corners.")
+
+(INPUT square-core "the figure holds one largest solid square block that each element of group (SYM_C4) about its own center maps onto itself, colors included, once the squares tied for largest about which consistent-images fails drop out; this is the core."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &figure
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The squares of the grid, each the bounding box of two cells on a diagonal.
+  (INIT &square BoundingBox
+    (key ((input ^P)
+          (input (:P ^Q)))
+      (cell ((:P P2))
+        (OR ((diag_axis_elem (:Da *A))
+             (same_line A P Q)
+             (= *P2 P))
+            ((diag_axis_elem (:Da *A2))
+             (same_line (:A A2) P Q)
+             (= P2 Q))))))
+
+  ;; the symmetry group whose images the figure gains
+  (DET &group SymDomain)
+
+  (RULE &point
+    (OR ((input (:P *B)))
+        ((&square.box (:key *P *Q) B)
+         (diag_dir_elem *D)
+         (neighbor P D Q))))
+
+  (RULE &disagree
+    (&point *B)
+    (&figure *P *Col)
+    (&group *S)
+    (sym_member S *D)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (apply D (:P P_rel) (:P_out *P_rel2))
+    (compose (:A B) (:B P_rel2) (:C *Q))
+    (NOT (input (:P Q) Col)))
+
+  (INIT &agreement Cardinality
+    (key ((&point ^B))
+      (member ((:m P))
+        (&figure *P)
+        (NOT (&disagree B P)))))
+
+  (INIT &most Order
+    (member ((:t (:V B) (:S N)))
+      (&agreement.size (:key *B) *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&agreement.size (:key *B) *N))))
+
+(INPUT consistent-images "the quarter-turn images of the figure about the core center fall inside the grid, and no two of them give one cell two different colors.")
+
+(OUTPUT quarter-turn-completion "each figure cell, under each element of group about the core center (a quarter, a half and three quarters turn), paints its color at its image cell.")
+
+(OUTPUT rest-unchanged "every other cell keeps its input color."
+
+  (RULE &side
+    (&square.box (:key *P) *B)
+    (box_extent B P *A *N))
+
+  (RULE &holds_figure
+    (&side *B)
+    (&figure *P)
+    (inside (:A P) B))
+
+  ;; The symmetries of each such square, its cells read in its own frame.
+  (INIT &self Agreement
+    (key ((&holds_figure ^B))
+      (source ((:P P_inner) (:v Col))
+        (input *P *Col)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner)))
+      (target ((:P P_inner) (:v Col))
+        (input *P *Col)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+  (RULE &self_src
+    (&holds_figure (:B *Key))
+    (input (:P *P2) (:Col *V))
+    (inside (:A P2) (:B Key))
+    (relative (:Base Key) (:X P2) (:X_rel *P)))
+
+  (RULE &self_map
+    (&self_src *Key)
+    (d4_elem *D)
+    (NOT (&self.mismatch (:key (:B Key)) D)))
+
+  (RULE &hole
+    (&side *B)
+    (input *P *Col)
+    (&bg (:C Col))
+    (inside (:A P) B))
+
+  (RULE &solid
+    (&side *B)
+    (NOT (&hole B)))
+
+  (RULE &asym
+    (&holds_figure *B)
+    (&group *S)
+    (sym_member S *D)
+    (NOT (&self_map (:Key B) D)))
+
+  ;; The core of each core branch: the largest candidate square. A tie leaves it
+  ;; undefined, unless the branch resolves the tie.
+  (INIT &core Order
+    (member ((:t (:V B) (:S N)))
+      (&solid *B)
+      (NOT (&asym B))
+      (&side B *N))
+    (score ((:t (:V B) (:S N)) (:S N))
+      (&solid *B)
+      (NOT (&asym B))
+      (&side B *N)))
+
+  (RULE &core_tie
+    (&core.maximal (:t (:V *B1)))
+    (&core.maximal (:t (:V *B2)))
+    (!= B1 B2))
+
+  (RULE &tied_image
+    (&core_tie)
+    (&core.maximal (:t (:V *B)))
+    (&figure *P *Col)
+    (&group *S)
+    (sym_member S *D)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (apply D (:P P_rel) (:P_out *P_rel2))
+    (compose (:A B) (:B P_rel2) (:C *Q)))
+
+  (RULE &inconsistent
+    (OR ((&tied_image *B *Q)
+         (NOT (input (:P Q))))
+        ((&tied_image B (:Q *Q2) (:Col *Col1))
+         (&tied_image B (:Q Q2) (:Col *Col2))
+         (!= Col1 Col2))))
+
+  (RULE &left
+    (&core_tie)
+    (&core.maximal (:t (:V *B)))
+    (NOT (&inconsistent B)))
+
+  (RULE &center
+    (OR ((&core.maximal (:t (:V *B)))
+         (NOT (&core_tie)))
+        ((&left B)
+         (ALL ((&left (:B *B1))
+               (&left (:B *B2)))
+              ((= B1 B2))))))
+
+  (RULE &image
+    (&center *B)
+    (&figure *P *Col)
+    (&group *S)
+    (sym_member S *D)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (apply D (:P P_rel) (:P_out *P_rel2))
+    (compose (:A B) (:B P_rel2) (:C *Q))))
+
+(ALTS $c "how the turning center is found" $CoreCenter
+  (ALT $CoreCenter
+    (ALTS $s "which square is the core" $SymmetricCore
+      (ALT $AnySolidCore
+        (INPUT square-core "the core is the largest solid square, symmetric or not; undefined where it ties, and where its own cells conflict under the turn."
+          ;; The core of each core branch: the largest candidate square. A tie leaves it
+          ;; undefined, unless the branch resolves the tie.
+          (INIT &core Order
+            (member ((:t (:V B) (:S N)))
+              (&solid *B)
+              (&side B *N))
+            (score ((:t (:V B) (:S N)) (:S N))
+              (&solid *B)
+              (&side B *N)))
+          (RULE &center
+            (&core.maximal (:t (:V *B)))
+            (NOT (&core_tie)))))
+      (ALT $MirrorCore
+        (INPUT square-core "the core is the largest solid square that every element of D4 maps onto itself, while the images stay under group; undefined where that square ties."
+          (RULE &mirror_asym
+            (&holds_figure *B)
+            (d4_elem *D)
+            (NOT (&self_map (:Key B) D)))
+          ;; The core of each core branch: the largest candidate square. A tie leaves it
+          ;; undefined, unless the branch resolves the tie.
+          (INIT &core Order
+            (member ((:t (:V B) (:S N)))
+              (&solid *B)
+              (NOT (&mirror_asym B))
+              (&side B *N))
+            (score ((:t (:V B) (:S N)) (:S N))
+              (&solid *B)
+              (NOT (&mirror_asym B))
+              (&side B *N)))
+          (RULE &center
+            (&core.maximal (:t (:V *B)))
+            (NOT (&core_tie)))))
+      (ALT $OpenCore
+        (INPUT square-core "the core is the largest square that holds a figure cell and that group maps onto itself, bg cells included; undefined where that square ties."
+          ;; The core of each core branch: the largest candidate square. A tie leaves it
+          ;; undefined, unless the branch resolves the tie.
+          (INIT &core Order
+            (member ((:t (:V B) (:S N)))
+              (&holds_figure *B)
+              (NOT (&asym B))
+              (&side B *N))
+            (score ((:t (:V B) (:S N)) (:S N))
+              (&holds_figure *B)
+              (NOT (&asym B))
+              (&side B *N)))
+          (RULE &center
+            (&core.maximal (:t (:V *B)))
+            (NOT (&core_tie)))))))
+  (ALT $MostAgreement
+    (INPUT square-core "the center is the point about which the most figure cells have every group image in their own color; undefined at a tie."
+      (RULE &center
+        (&most.maximal (:t (:V *B)))
+        (ALL ((&most.maximal (:t (:V *B1)))
+              (&most.maximal (:t (:V *B2))))
+             ((= B1 B2)))))))
+
+(ALTS $k "an image that falls on a cell of another color" $NoConflict
+  (ALT $InputWins
+    (INPUT consistent-images "an image paints only a bg cell, and each input cell keeps its color; undefined where two images give one bg cell two colors.")
+    (RULE &paint
+      (&image *Q *Col)
+      (input (:P Q) (:Col *Col0))
+      (&bg (:C Col0)))))
+
+(ALTS $g "an image that falls outside the grid" $InGrid
+  (ALT $ClipImages
+    (INPUT consistent-images "an image outside the grid is dropped.")
+    (RULE &broken
+      (&paint *Q (:Col *Col1))
+      (&paint Q (:Col *Col2))
+      (!= Col1 Col2))))
+
+(RULE &paint
+  (&image *Q *Col)
+  (input (:P Q)))
+
+(RULE &broken
+  (OR ((&paint *Q (:Col *Col1))
+       (&paint Q (:Col *Col2))
+       (!= Col1 Col2))
+      ((&image (:Q *Q2))
+       (NOT (input (:P Q2))))))
+
+(RULE &output
+  (&center)
+  (NOT (&broken))
+  (OR ((&paint (:Q *P) *Col))
+      ((input P Col)
+       (NOT (&paint (:Q P))))))
+
+(OUT (&output ^P ^Col))

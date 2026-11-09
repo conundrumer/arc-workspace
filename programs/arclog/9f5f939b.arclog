@@ -1,0 +1,123 @@
+;; inputs 9bf278c1b30a27611bd0ef3bfb54b458076c1adc7680c9802c0dc03e366eca71 programs/solvers/9f5f939b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9f5f939b
+
+(INPUT dominoes "every run of ink is a domino, two adjacent cells with no other ink cell touching either")
+
+(OUTPUT cross "a cell takes the mark color when four dominoes point at it, one from each cardinal direction, each lying along the direction it stands in, its near end one cell away"
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &domino_end
+    (&ink (:P *E1))
+    (dir_elem *D)
+    (neighbor (:P E1) D (:Q *F))
+    (&ink (:P F)))
+
+  (RULE &see_blocked
+    (&ink *P)
+    (dir_elem (:D *Key)))
+
+  ;; Each domino casts from its near end away from itself, keyed by the
+  ;; direction in which it lies from the cells the cast reaches.
+  (INIT &see Ray
+    (key ((OR ((&domino_end (:E1 *E) ^D))
+              ((opposite D (:Opp *O)))))
+      (source ((:P E))
+        (&domino_end (:E1 *E) D))
+      (node (P)
+        (opposite D (:Opp *O))
+        (input *P)
+        (NOT (&see_blocked (:Key D) P)))
+      (dir ((:D O))
+        (opposite D (:Opp *O))))))
+
+(OUTPUT keep "every other cell keeps its color"
+
+  (INIT &see_full Ray
+    (key ((OR ((&domino_end (:E1 *E) ^D))
+              ((opposite D (:Opp *O)))))
+      (source ((:P E))
+        (&domino_end (:E1 *E) D))
+      (node (P)
+        (opposite D (:Opp *O))
+        (input *P))
+      (dir ((:D O))
+        (opposite D (:Opp *O)))))
+
+  (RULE &pointed
+    (input *P)
+    (neighbor P *D (:Q *G))
+    (neighbor (:P G) D (:Q *E))
+    (&domino_end (:E1 E) D))
+
+  (RULE &arm
+    (&see_full.ray (:key *D) *P *K)
+    (> K 0))
+
+  (RULE &balanced
+    (&arm *P *D *K)
+    (axis_of D *A)
+    (opposite D (:Opp *O))
+    (&arm P (:D O) K)))
+
+(ALTS $gap "how far from the cell the dominoes of a cross stand" $Near
+  (ALT $Centered
+    (OUTPUT cross "a cell takes the mark color when four dominoes point at it, one from each cardinal direction, each lying along the direction it stands in, the four near ends at one distance from the cell")
+    (RULE &cross
+      (&balanced *P *A *K)
+      (perp A *A2)
+      (&balanced P (:A A2) K)))
+  (ALT $Midpoint
+    (OUTPUT cross "a cell takes the mark color when four dominoes point at it, one from each cardinal direction, each lying along the direction it stands in, the two near ends on each axis at one distance from the cell")
+    (RULE &cross
+      (&balanced *P *A)
+      (perp A *A2)
+      (&balanced P (:A A2)))))
+
+(ALTS $sight "what ink between the cell and a domino does" $Any
+  (ALT $Clear
+    (OUTPUT cross "a cell takes the mark color when four dominoes point at it, one from each cardinal direction, each lying along the direction it stands in, its near end one cell away and the first ink the cell meets toward it"
+      (RULE &see_stop_full
+        (&see.end (:key (:D *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&see_full.ray (:key (:D V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &arm
+        (OR ((&see.ray (:key *D) *P *K)
+             (> K 0))
+            ((&see_stop_full (:V0 D) (:V1 P) (:V3 K))))))
+    ;; Clear adds that the cell between holds no ink.
+    (RULE &near_arm
+      (&pointed *P *D)
+      (neighbor P D (:Q *G))
+      (NOT (&ink (:P G))))))
+
+;; the color a cross's center takes
+(DET &mark AnyOutNewColor)
+
+(RULE &near_arm
+  (&pointed *P *D))
+
+(RULE &near_pair
+  (&near_arm *P *D)
+  (axis_of D *A)
+  (opposite D (:Opp *O))
+  (&near_arm P (:D O)))
+
+(RULE &cross
+  (&near_pair *P *A)
+  (perp A *A2)
+  (&near_pair P (:A A2)))
+
+(RULE &output
+  (OR ((&cross *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&cross P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,23 @@
+;; inputs 9c0d0a40b2d24de4a97f2e1f7cda5d8c52335dcc3305bf9c9c6b46cd9b998a55 programs/solvers/e133d23d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e133d23d
+
+(representative 5d2a5c43)
+
+(param &tile_dim number (3))
+(param &arr_dim (Axis number) (AXIS_V 1) (AXIS_H 2))
+(param &gap number (1))
+(param &divide_axis Axis (AXIS_H))
+(param &divide_gap number (1))
+(param &divisor number (2))
+(param &combine (Ident Color Position Color)
+  (0 0 (grid
+    (0 0)))
+  (1 2 (grid
+    (6 0)))
+  (2 2 (grid
+    (0 8)))
+  (3 2 (grid
+    (6 8))))
+(param &bg Color (0))
+(param &out_fill Color (2))

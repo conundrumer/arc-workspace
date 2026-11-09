@@ -1,0 +1,89 @@
+;; 981571dc
+
+(DET &noise ChangedColor)
+
+(RULE &clean
+  (input *P *Col)
+  (NOT (&noise (:C Col))))
+
+(DET &cand
+  (ex_output *P)
+  (axis_of *D *A)
+  (margin (:B P) D *K)
+  (jump_offset D K *V))
+
+(DET &mirrored
+  (ex_output *E *P)
+  (&cand *A *V)
+  (split P A (:Along *L))
+  (relative (:Base V) (:X L) (:X_rel *L_inner))
+  (axis_inversion A (:T *D))
+  (apply D (:P L_inner) (:P_out *L2_inner))
+  (compose (:A V) (:B L2_inner) (:C *L2))
+  (inside (:A L2) (:B 0)))
+
+(DET &mirror_mismatch
+  (&mirrored *E *A *V *L *L2)
+  (ex_output E *P *Col)
+  (split P A (:Along L) (:Across *X))
+  (compose (:A L2) (:B X) (:C *Q))
+  (ex_output E (:P Q) (:Col *C2))
+  (!= C2 Col))
+
+(DET &axis_center
+  (&mirrored *A *V)
+  (NOT (&mirror_mismatch A V)))
+
+(DET &center
+  (perp (:A *A1) *A2)
+  (&axis_center (:A A1) (:V *V1))
+  (&axis_center (:A A2) (:V *V2))
+  (compose (:A V1) (:B V2) (:C *V)))
+
+(DET &inv_src
+  (&center (:V *V2))
+  (ex_output (:E *Key) (:P *P2) (:Col *V))
+  (relative (:Base V2) (:X P2) (:X_rel *P)))
+
+;; Self-symmetry of each restored grid, read in the center frame.
+(INIT &inv Agreement
+  (key ((OR ((&center *V)
+             (ex_output ^E *P *Col)
+             (relative (:Base V) (:X P) (:X_rel *P_inner)))
+            ((&inv_src (:Key E) (:P P_inner) (:V Col)))))
+    (source ((:P P_inner) (:v Col))
+      (&center *V)
+      (ex_output E *P *Col)
+      (relative (:Base V) (:X P) (:X_rel *P_inner)))
+    (target ((:P P_inner) (:v Col))
+      (&inv_src (:Key E) (:P *P_inner) (:V *Col)))))
+
+;; The transforms no example contradicts, named as a subgroup.
+(INIT &named Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&inv.conflict D))))
+
+(DET &sym
+  (&named.equal (:pattern *S)))
+
+(RULE &counterpart
+  (&center *V)
+  (input *P)
+  (relative (:Base V) (:X P) (:X_rel *P_inner))
+  (&sym *S)
+  (sym_member S *D)
+  (apply D (:P P_inner) (:P_out *Q_inner))
+  (compose (:A V) (:B Q_inner) (:C *Q))
+  (input (:P Q)))
+
+(RULE &output
+  (OR ((&clean *P *Col))
+      ((input P (:Col *N))
+       (&noise (:C N))
+       (&counterpart P *Q)
+       (&clean (:P Q) Col))))
+
+(OUT (&output ^P ^Col))

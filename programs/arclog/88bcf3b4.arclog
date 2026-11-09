@@ -1,0 +1,247 @@
+;; inputs 6080a74d6a7dd32a75bfea8f22a5a51f3f5f4131b86126672e663c7c9036a6ba programs/solvers/88bcf3b4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 88bcf3b4
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background is the commonest color.
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(INIT &objs Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col)))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &bent
+  (&objs.component *Id *P)
+  (&objs.component Id (:P *Q))
+  (split P *A (:Across *X))
+  (split (:P Q) A (:Across *X2))
+  (!= X X2))
+
+(RULE &pole
+  (&objs.component *Id *P)
+  (&objs.component Id (:P *Q))
+  (!= P Q)
+  (axis_elem *A)
+  (NOT (&bent Id A)))
+
+(RULE &heading
+  (&pole *Id *A)
+  (axis_of (:D *D_foot) A)
+  (&objs.component Id *P)
+  (margin (:B P) (:D D_foot) (:K 0))
+  (opposite (:D D_foot) (:Opp *T)))
+
+;; The tip: the pole cell farthest from its foot.
+(INIT &reach Order
+  (key ((&heading ^Id *T)
+        (&objs.component Id *P)
+        (margin (:B P) (:D T) *K))
+    (member ((:t (:V P) (:S K)))
+      (&heading Id *T)
+      (&objs.component Id *P)
+      (margin (:B P) (:D T) *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&heading Id *T)
+      (&objs.component Id *P)
+      (margin (:B P) (:D T) *K))))
+
+(RULE &worm
+  (&reach.minimal (:key (:Id *Pole)) (:t (:V *Tip)))
+  (&heading (:Id Pole) *T)
+  (perp_dir (:D T) (:D2 *S))
+  (neighbor (:P Tip) (:D S) (:Q *Root))
+  (&objs.component (:Id *W) (:P Root)))
+
+;; Object sizes: the worm keeps its cell count.
+(INIT &size Cardinality
+  (key ((&objs.component ^Id *P))
+    (member ((:m P))
+      (&objs.component Id *P))))
+
+;; The target: the object with the cell nearest ahead of the tip, among the
+;; cells beyond the tip along the heading and not across the pole's line
+;; from the worm.
+(INIT &nearest Order
+  (key ((&worm ^W *Pole *S)
+        (&reach.minimal (:key (:Id Pole)) (:t (:V *Tip)))
+        (&heading (:Id Pole) *T)
+        (&objs.component (:Id *Obj) (:P *Q))
+        (!= Obj W)
+        (nearer (:D T) (:P Q) (:Q Tip))
+        (margin (:B Q) (:D T) *K)
+        (margin (:B Q) (:D S) (:K *K_s))
+        (margin (:B Tip) (:D S) (:K *K_tip))
+        (<= K_s K_tip))
+    (member ((:t (:V Obj) (:S K)))
+      (&worm W *Pole *S)
+      (&reach.minimal (:key (:Id Pole)) (:t (:V *Tip)))
+      (&heading (:Id Pole) *T)
+      (&objs.component (:Id *Obj) (:P *Q))
+      (!= Obj W)
+      (nearer (:D T) (:P Q) (:Q Tip))
+      (margin (:B Q) (:D T) *K)
+      (margin (:B Q) (:D S) (:K *K_s))
+      (margin (:B Tip) (:D S) (:K *K_tip))
+      (<= K_s K_tip))
+    (score ((:t (:V Obj) (:S K)) (:S K))
+      (&worm W *Pole *S)
+      (&reach.minimal (:key (:Id Pole)) (:t (:V *Tip)))
+      (&heading (:Id Pole) *T)
+      (&objs.component (:Id *Obj) (:P *Q))
+      (!= Obj W)
+      (nearer (:D T) (:P Q) (:Q Tip))
+      (margin (:B Q) (:D T) *K)
+      (margin (:B Q) (:D S) (:K *K_s))
+      (margin (:B Tip) (:D S) (:K *K_tip))
+      (<= K_s K_tip))))
+
+(INIT &silhouette Order
+  (key ((&nearest.maximal (:key ^W) (:t (:V *Obj)))
+        (&objs.component (:Id Obj) (:P *Q))
+        (&worm W *Pole *S)
+        (&pole (:Id Pole) *A)
+        (split (:P Q) A (:Along ^L))
+        (margin (:B Q) (:D S) *K))
+    (member ((:t (:V Q) (:S K)))
+      (&nearest.maximal (:key W) (:t (:V *Obj)))
+      (&objs.component (:Id Obj) (:P *Q))
+      (&worm W *Pole *S)
+      (&pole (:Id Pole) *A)
+      (split (:P Q) A (:Along L))
+      (margin (:B Q) (:D S) *K))
+    (score ((:t (:V Q) (:S K)) (:S K))
+      (&nearest.maximal (:key W) (:t (:V *Obj)))
+      (&objs.component (:Id Obj) (:P *Q))
+      (&worm W *Pole *S)
+      (&pole (:Id Pole) *A)
+      (split (:P Q) A (:Along L))
+      (margin (:B Q) (:D S) *K))))
+
+(RULE &contour
+  (&silhouette.minimal (:key *W) (:t (:V *Q)))
+  (&worm W *S)
+  (neighbor (:P Q) (:D S) (:Q *P))
+  (input P))
+
+(RULE &next
+  (&contour *W *P)
+  (&worm W *Pole *S)
+  (&heading (:Id Pole) *T)
+  (neighbor P (:D T) (:Q *P2))
+  (axis_of (:D S) (:A *A2))
+  (&contour W (:P *Q))
+  (same_line (:A A2) (:P P2) Q))
+
+(RULE &depart
+  (&worm *W *Pole *S)
+  (&heading (:Id Pole) *T)
+  (opposite (:D S) (:Opp *S_back))
+  (diag_dirs *D (:D1 T) (:D2 S_back)))
+
+(RULE &arrive
+  (&contour *W (:P *G))
+  (OR ((&next W (:P G) (:Q *S_g))
+       (= *P G))
+      ((NOT (&next W (:P G)))
+       (= P G)
+       (= S_g G))))
+
+;; The walk: from the root, the first goal is the contour's first cell; each
+;; step heads toward the goal, and once no goal is left, away.
+(INIT &walk Distance
+  (key ((OR ((&worm ^W *Root)
+             (&contour W (:P *G))
+             (NOT (&next W (:Q G)))
+             (OR ((= Root G)
+                  (&arrive W G (:P *S_p) *S_g))
+                 ((!= Root G)
+                  (= S_p Root)
+                  (= S_g G))))
+            ((input *P)
+             (&contour W (:P G))
+             (!= P G)
+             (dir_elem (:D *D2))
+             (nearer (:D D2) (:P G) (:Q P))
+             (OR ((diag_dirs *D (:D1 D2) (:D2 *D22))
+                  (nearer (:D D22) (:P G) (:Q P)))
+                 ((axis_of (:D D2) *A)
+                  (same_line A P (:Q G))
+                  (= D D2)))
+             (neighbor P D *Q)
+             (OR ((= Q G)
+                  (&arrive W G (:P S_p) S_g))
+                 ((!= Q G)
+                  (= S_p Q)
+                  (= S_g G))))
+            ((input (:P *P3))
+             (&depart W (:D *D4))
+             (neighbor (:P P3) (:D D4) (:Q *Q2))
+             (input (:P Q2)))))
+    (edge ((:a P G) (:b (:P S_p) (:G S_g)))
+      (OR ((input *P)
+           (&contour W (:P *G))
+           (!= P G)
+           (dir_elem (:D *D2))
+           (nearer (:D D2) (:P G) (:Q P))
+           (OR ((diag_dirs *D (:D1 D2) (:D2 *D22))
+                (nearer (:D D22) (:P G) (:Q P)))
+               ((axis_of (:D D2) *A)
+                (same_line A P (:Q G))
+                (= D D2)))
+           (neighbor P D *Q)
+           (OR ((= Q G)
+                (&arrive W G (:P *S_p) *S_g))
+               ((!= Q G)
+                (= S_p Q)
+                (= S_g G))))
+          ((input P)
+           (&depart W (:D *D3))
+           (neighbor P (:D D3) (:Q S_p))
+           (input (:P S_p))
+           (= G P)
+           (= S_g S_p))))
+    (source ((:n (:P S_p) (:G S_g)))
+      (&worm W *Root)
+      (&contour W (:P *G))
+      (NOT (&next W (:Q G)))
+      (OR ((= Root G)
+           (&arrive W G (:P *S_p) *S_g))
+          ((!= Root G)
+           (= S_p Root)
+           (= S_g G))))))
+
+(RULE &body
+  (&walk.distance (:key *W) (:n *P) (:K *R))
+  (&size.size (:key (:Id W)) *N)
+  (< R N))
+
+(RULE &worm_cell
+  (&worm *W)
+  (&objs.component (:Id W) *P))
+
+(RULE &output
+  (OR ((&body *W *P)
+       (&objs.component (:key *Col) (:Id W)))
+      ((input P (:Col *Col_in))
+       (NOT (&body P))
+       (IF ((&worm_cell P))
+           ((&bg_mode.maximal (:t Col)))
+           ((= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

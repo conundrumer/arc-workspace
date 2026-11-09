@@ -1,0 +1,179 @@
+;; inputs 7674da7814193250f83783ddbaaff637f1a51e03c81b55e04816571421221b55 programs/solvers/3979b1a8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3979b1a8
+
+(DET &scale ScaleRatio)
+
+;; The frame is a scale x scale arrangement of input-sized tiles; the
+;; input occupies its tile.
+(INIT &tiles Frame
+  (extent (A (:N S))
+    (&scale (:K *S))
+    (axis_elem *A)))
+
+(INIT &tile_cell_tiling Tiling
+  (outer ((:P P_tile))
+    (&tiles.cell (:P *P_tile)))
+  (inner ((:P P_in))
+    (input (:P *P_in))))
+
+;; Where each train input occurs in its output, as the box of the input's
+;; frame in the output's.
+(INIT &occ Occurrences
+  (key ((OR ((ex_output ^E *P *Col))
+            ((ex_input E P Col)
+             (ex_output E))))
+    (cell (P (:v Col))
+      (ex_output E *P *Col))
+    (shape (P (:v Col))
+      (ex_input E *P *Col)
+      (ex_output E))))
+
+;; Tiles of the scale arrangement.
+(INIT &tiles2 Frame
+  (extent (A (:N S))
+    (&scale (:K *S))
+    (axis_elem *A)))
+
+(INIT &tile_seated_tiling Tiling
+  (outer ((:P P_tile))
+    (&tiles2.cell (:P *P_tile)))
+  (inner ((:P P_in))
+    (&occ.occurrence (:key *E))
+    (ex_input E (:P *P_in))))
+
+(RULE &frame_cell
+  (&tile_cell_tiling.cell (:P *P_grid)))
+
+(DET &tile_seated
+  (&occ.occurrence (:key *E) (:P *B))
+  (ex_input E (:P *P_in))
+  (compose (:A B) (:B P_in) (:C *P_grid))
+  (&tile_seated_tiling.cell (:P_outer *P_tile) (:P_inner P_in) (:P P_grid)))
+
+(DET &tile_defect
+  (&tile_seated *P_tile)
+  (ex_output *E)
+  (NOT (&tile_seated E P_tile)))
+
+(DET &in_tile
+  (&tile_seated *P_tile)
+  (NOT (&tile_defect P_tile)))
+
+(RULE &placed
+  (&in_tile *P_tile)
+  (&tile_cell_tiling.cell (:P *P_grid) (:P_outer P_tile) (:P_inner *P_in)))
+
+(DET &seated
+  (&occ.occurrence (:key *E) (:P *B))
+  (diag_dist (:P B) *Diag (:K1 0) (:K2 0)))
+
+(DET &anchor_defect
+  (&seated *Diag)
+  (ex_output *E)
+  (NOT (&seated E Diag)))
+
+(DET &anchor
+  (&seated (:Diag *D))
+  (NOT (&anchor_defect (:Diag D))))
+
+(DET &growth
+  (&anchor (:D *A))
+  (diag_opposite (:D A) (:Opp *D)))
+
+(DET &cand
+  (ex_output *P)
+  (sub_extent P *A (:K *N))
+  (&growth (:D *Diag))
+  (diag_opposite (:D Diag) (:Opp *Back))
+  (jump_offset (:D Back) (:K N) (:V *Delta)))
+
+(DET &diag_cell
+  (ex_output *E *P)
+  (&growth (:D *Diag))
+  (diag_dist P Diag (:K1 *K) (:K2 K)))
+
+(DET &anchored
+  (ex_input *E (:P *P_in))
+  (ex_output E (:P *P_grid))
+  (same_corner (:D *Diag) (:P1 P_in) (:P2 P_grid)))
+
+(DET &in_region
+  (&anchor (:D *Diag))
+  (&anchored *E Diag *P_grid))
+
+(DET &mismatch
+  (&cand *N *Delta)
+  (&diag_cell *E *P)
+  (NOT (&in_region E (:P_grid P)))
+  (compose (:A P) (:B Delta) (:C *P2))
+  (ex_output E P *Col)
+  (ex_output E (:P P2) (:Col *C2))
+  (!= C2 Col))
+
+(DET &period
+  (&cand *N)
+  (NOT (&mismatch N)))
+
+(ALTS $choice "what the output frame is" $Scale
+  (ALT $Canvas
+    (DET &out_dim ConstOutDim)
+
+    ;; The frame is a stored canvas; the input sits at the anchor corner.
+    (INIT &canvas Frame
+      (extent (A (:N K))
+        (&out_dim (:N *K))
+        (axis_elem *A)))
+
+    (RULE &frame_cell
+      (&canvas.cell (:P *P_grid)))
+
+    (RULE &placed
+      (&canvas.cell (:P *P_grid))
+      (input (:P *P_in))
+      (&anchor (:D *Diag))
+      (same_corner (:D Diag) (:P1 P_in) (:P2 P_grid)))))
+
+(RULE &on_diag
+  (&frame_cell *P_grid)
+  (&growth (:D *Diag))
+  (diag_dist (:P P_grid) Diag (:K1 *K) (:K2 K)))
+
+(RULE &diag_color
+  (&on_diag *P_grid)
+  (OR ((&placed P_grid *P_in)
+       (input (:P P_in) *Col))
+      ((&growth (:D *Diag))
+       (&period *N)
+       (diag_dist (:P P_grid) Diag (:K1 *K) (:K2 K))
+       (divide (:T K) (:Side N) (:Gap 0) (:Remainder *R))
+       (&on_diag (:P_grid *Q))
+       (NOT (&placed P_grid))
+       (&placed (:P_grid Q) (:P_in *Q_in))
+       (input (:P Q_in) Col)
+       (diag_dist (:P Q) Diag (:K1 *Kq) (:K2 Kq))
+       (divide (:T Kq) (:Side N) (:Gap 0) (:Remainder R))
+       (jump (:P Q) (:D Diag) (:K N) (:Q *Q2))
+       (NOT (&placed (:P_grid Q2))))))
+
+(RULE &output
+  ;; The input in place.
+  (OR ((&placed (:P_grid *P) *P_in)
+       (input (:P P_in) *Col))
+      ;; Outside the input, the diagonal continues, and each diagonal cell paints
+      ;; two arms one shell out: a step toward the corner, then a ray back across.
+      ((&diag_color (:P_grid *Q) Col)
+       (OR ((&growth (:D *Diag))
+            (diag_dirs (:D Diag) *D1 *D2)
+            (neighbor (:P Q) (:D D1) (:Q *M))
+            (&frame_cell (:P_grid P))
+            (axis_of (:D D2) *A)
+            (same_line A P (:Q M))
+            (opposite (:D D2) (:Opp *O))
+            (margin (:B P) (:D O) (:K *Kp))
+            (margin (:B M) (:D O) (:K *Km))
+            (<= Kp Km))
+           ((= P Q)))
+       (NOT (&placed (:P_grid P))))))
+
+(OUT (&output ^P ^Col))

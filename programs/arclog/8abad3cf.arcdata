@@ -1,0 +1,8 @@
+;; inputs 1a64303f62d3118e2c4244135abb2ef43ab851d881a3bf481d30e2e58044dc95 programs/solvers/8abad3cf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8abad3cf
+
+(param &bg Color (7))
+(param &pack_dir Dir (DIR_L))
+(param &rest_sense Sense (SENSE_CC))
+(param &gap number (1))

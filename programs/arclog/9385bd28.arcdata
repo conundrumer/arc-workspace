@@ -1,0 +1,6 @@
+;; inputs 3a1640893dda4ba5408c14f18f8fbaecbc1f27ef9e8e02ad7d4f55069a31839f programs/solvers/9385bd28.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9385bd28
+
+(param &head_dir Dir (DIR_T))
+(param &key_sense Sense (SENSE_CC))

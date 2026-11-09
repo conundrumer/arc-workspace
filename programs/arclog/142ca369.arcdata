@@ -1,0 +1,14 @@
+;; inputs 887463308a1901e1a3bb4afef530141ef03cb28735ccbed1bc14691efea0246a programs/solvers/142ca369.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 142ca369
+
+(param &bg Color (0))
+(param &marker.glyph Position
+  (grid
+    (1 1)
+    (1 _)))
+(param &marker.launch Position
+  (grid
+    (1 _)
+    (_ _)))
+(param &marker.aim DiagDir (DIAG_TL))

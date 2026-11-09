@@ -1,0 +1,107 @@
+;; inputs 80531d0b94af0a626d733fa951bce3256cb1c02737cfa80ea7b59e110a43decb programs/solvers/95755ff2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 95755ff2
+
+(DET &changed
+  (ex_input *E *P *Col)
+  (ex_output E P (:Col *Col2))
+  (!= Col Col2))
+
+(DET &bg
+  (&changed *E *P)
+  (ex_input E P (:Col *C)))
+
+(DET &cand
+  (ex_input (:Col *C))
+  (NOT (&bg C)))
+
+;; Each candidate read as the wall: what its cells close off.
+(INIT &closed Enclosure
+  (key ((ex_input ^E *P (:Col *Col_cell))
+        (&cand (:C ^Col))
+        (!= Col_cell Col))
+    (cell (P)
+      (ex_input E *P (:Col *Col_cell))
+      (&cand (:C Col))
+      (!= Col_cell Col))))
+
+(DET &open
+  (&cand *C)
+  (ex_input *E)
+  (NOT (&closed.enclosed (:key E (:Col C)))))
+
+(DET &wall
+  (&cand *C)
+  (NOT (&open C)))
+
+(RULE &source
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall (:C Col)))
+  (opposite *D (:Opp *D_border))
+  (margin (:B P) (:D D_border) (:K 0)))
+
+(INIT &closed2 Enclosure
+  (cell (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col)))))
+
+(RULE &cast_cell
+  (dir_elem (:D *Key))
+  (&closed2.enclosed *P))
+
+(ALTS $choice "which cells of a line lie inside the curve" $Enclose
+  (ALT $Span
+    (INIT &span Ray
+      (key ((axis_elem ^A))
+        (dir (D)
+          (axis4_of *D A)))
+      (source (P)
+        (input *P *Col)
+        (&wall (:C Col)))
+      (node (P)
+        (input *P)))
+
+    (RULE &span_between
+      (input *P *Col)
+      (NOT (&wall (:C Col)))
+      (axis_elem (:A *Key))
+      (axis4_of *D (:A Key))
+      (dir8_opposite D (:D2 *O))
+      (&span.ray (:key (:A Key)) P D)
+      (&span.ray (:key (:A Key)) P (:D O)))
+
+    (RULE &cast_cell
+      (axis_of (:D *Key) *A)
+      (&span_between (:Key A) *P))))
+
+(RULE &cast_blocked
+  (&cast_cell *Key *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Each instance casts one way over the inside cells of its reading. An
+;; inside cell that already carries content stops the cast.
+(INIT &cast Ray
+  (key ((OR ((&source *P ^D))
+            ((dir_elem D))))
+    (source (P)
+      (&source *P D))
+    (node (P)
+      (dir_elem D)
+      (input *P)
+      (NOT (&cast_blocked (:Key D) P)))
+    (dir (D)
+      (dir_elem D))))
+
+(RULE &painted
+  (&cast.ray (:key *D) *P (:Origin *P_src))
+  (&cast_cell (:Key D) P)
+  (&source (:P P_src) D *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

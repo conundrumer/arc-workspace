@@ -1,0 +1,289 @@
+;; inputs 707ba22b2eac860ce8c2f9ffcd4bb9feb148ac4824f4508f4b3c3d58a7797ba6 programs/solvers/e76a88a6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e76a88a6
+
+(INPUT field "the cells of color 0 form the field.")
+
+(INPUT one-pattern "one object, a 4-connected set of non-field cells that holds no cell of color 5, is the pattern; its cells fill its bounding box and take more than one color."
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each example's input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_commonest
+    (&commonest.maximal (:t *Col))
+    (&commonest.maximal (:key *E))
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&not_commonest (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &objects8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT placeholder-blocks "every other object is a solid block of color 5 whose bounding box has the extent of the pattern's bounding box.")
+
+(OUTPUT stamp-pattern "each cell of a placeholder object takes the color of the cell at the same place in the pattern's bounding box; every other cell keeps its input color."
+
+  (INIT &objects4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &object
+    (&objects4.component *P (:Id *O)))
+
+  (INIT &object_box BoundingBox
+    (key ((&object (:O ^Id) *P))
+      (cell (P)
+        (&object (:O Id) *P))))
+
+  (DET &placeholder
+    (ex_input *E *P *Col)
+    (ex_output E P (:Col *Col2))
+    (!= Col Col2))
+
+  (RULE &holds_placeholder
+    (&object *O *P)
+    (input P *Col)
+    (&placeholder Col))
+
+  (RULE &pattern
+    (&object *O)
+    (NOT (&holds_placeholder O)))
+
+  (RULE &block
+    (&holds_placeholder *O))
+
+  (RULE &pattern_box
+    (&pattern (:O *O_id))
+    (&object_box.box (:key (:Id O_id)) *B))
+
+  (RULE &pattern_cell
+    (&pattern (:O *O_id))
+    (&object (:O O_id) *P)
+    (input P *Col)
+    (&object_box.box (:key (:Id O_id)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (RULE &block_cell
+    (&block *O)
+    (&object O *P)
+    (&object_box.box (:key (:Id O)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (RULE &aligned
+    (&block_cell *P *P_rel)
+    (&pattern_cell P_rel *Col))
+
+  (RULE &mismatched
+    (&block_cell *O *P)
+    (&object_box.box (:key (:Id O)) *B)
+    (&pattern_box (:B *B2))
+    (box_extent B P (:A *Ax) *N)
+    (box_extent (:B B2) P (:A Ax) (:N *N2))
+    (!= N N2)))
+
+(ALTS $f "How the blocks are told apart from the pattern" $Placeholder
+  (ALT $MonoPlaceholder
+    (INPUT one-pattern "the pattern is the one object of more than one color; undefined where the count of multicolored objects is not one."
+      (RULE &multicolored
+        (&object *O *P)
+        (&object O (:P *Q))
+        (input P *Col)
+        (input (:P Q) (:Col *Col2))
+        (!= Col Col2))
+
+      (RULE &pattern
+        (&multicolored *O))
+
+      (RULE &block
+        (&object *O)
+        (NOT (&multicolored O))))
+    (INPUT placeholder-blocks "every other object is a one-color block of the pattern's extent, in any color.")))
+
+(ALTS $a "The steps that join an object's cells" $Adjacency4
+  (ALT $Adjacency8
+    (INPUT one-pattern "objects are 8-connected; undefined where a placeholder object meets the pattern at a corner."
+      (RULE &object
+        (&objects8.component *P (:Id *O))))))
+
+(ALTS $s "A placeholder object whose cells are not a copy of the pattern's box" $SameExtent
+  (ALT $SkipMismatched
+    (INPUT placeholder-blocks "the blocks have any extent.")
+    (OUTPUT stamp-pattern "a block whose extent differs from the pattern's keeps its color.")
+    (RULE &output
+      (OR ((OR ((&aligned *P *Col))
+               ((&block_cell *O P)
+                (&mismatched O)
+                (input P Col))))
+          ;; Every cell outside a block keeps its color.
+          ((NOT (&extra_pattern))
+           (input P Col)
+           (NOT (&block_cell P))))))
+  (ALT $ScaleToBlock
+    (INPUT placeholder-blocks "each block's extent is a whole multiple of the pattern's on each axis.")
+    (OUTPUT stamp-pattern "a block takes the pattern scaled by those multiples; undefined on another extent."
+      (INIT &output_division Division
+        (key ((&block_cell *P)
+              (&pattern_box *B)
+              (box_extent B P (:A ^Ax) ^N))
+          (cell ((:P P_rel))
+            (&block_cell *P *P_rel)
+            (&pattern_box *B)
+            (box_extent B P (:A Ax) N))
+          (parts ((:A Ax) N)
+            (&block_cell *P)
+            (&pattern_box *B)
+            (box_extent B P (:A Ax) N))))
+
+      (INIT &output_division2 Division
+        (key ((&block_cell *P)
+              (&pattern_box *B)
+              (perp (:A ^Ax) (:A2 ^Ax2))
+              (box_extent B P (:A Ax2) (:N ^N2)))
+          (cell ((:P P_rel))
+            (&block_cell *P *P_rel)
+            (&pattern_box *B)
+            (&output_division.tile (:key Ax) (:P P_rel))
+            (perp (:A Ax) (:A2 Ax2))
+            (box_extent B P (:A Ax2) (:N N2)))
+          (parts ((:A Ax2) (:N N2))
+            (&block_cell *P)
+            (&pattern_box *B)
+            (perp (:A Ax) (:A2 Ax2))
+            (box_extent B P (:A Ax2) (:N N2))))))
+    (RULE &output
+      ;; A block cell takes the pattern cell of the part it falls in, when the
+      ;; block's box is cut into as many equal parts as the pattern's box has lines
+      ;; on each axis.
+      (OR ((&block_cell *P *P_rel)
+           (&pattern_box *B)
+           (&output_division.tile (:key *Ax *N) (:P P_rel) *P_outer)
+           (&output_division2.tile (:key Ax *Ax2 *N2) (:P P_rel) (:P_outer *P_outer2))
+           (box_extent B P (:A Ax) N)
+           (box_extent B P (:A Ax2) (:N N2))
+           (&pattern_cell (:P_rel *Q_rel) *Col)
+           (split (:P Q_rel) (:A Ax) (:Along P_outer))
+           (split (:P Q_rel) (:A Ax2) (:Along P_outer2)))
+          ;; Every cell outside a block keeps its color.
+          ((NOT (&extra_pattern))
+           (input P Col)
+           (NOT (&block_cell P))))))
+  (ALT $TileRegion
+    (INPUT placeholder-blocks "each block's extent is a whole multiple of the pattern's on each axis.")
+    (OUTPUT stamp-pattern "a block takes the pattern repeated across it; undefined on another extent."
+      (INIT &output_division3 Division
+        (key ((&block_cell *P)
+              (&pattern_box *B)
+              (box_extent B P (:A ^Ax) ^N))
+          (cell ((:P P_rel))
+            (&block_cell *P *P_rel)
+            (&pattern_box *B)
+            (box_extent B P (:A Ax) N))
+          (side ((:A Ax) (:K N))
+            (&block_cell *P)
+            (&pattern_box *B)
+            (box_extent B P (:A Ax) N))))
+
+      (INIT &output_division4 Division
+        (key ((&block_cell *P)
+              (&pattern_box *B)
+              (perp (:A ^Ax) (:A2 ^Ax2))
+              (box_extent B P (:A Ax2) (:N ^N2)))
+          (cell ((:P P_rel))
+            (&block_cell *P *P_rel)
+            (&pattern_box *B)
+            (&output_division3.tile (:key Ax) (:P P_rel))
+            (perp (:A Ax) (:A2 Ax2))
+            (box_extent B P (:A Ax2) (:N N2)))
+          (side ((:A Ax2) (:K N2))
+            (&block_cell *P)
+            (&pattern_box *B)
+            (perp (:A Ax) (:A2 Ax2))
+            (box_extent B P (:A Ax2) (:N N2))))))
+    (RULE &output
+      ;; A block cell takes the pattern cell at its place within its tile, when the
+      ;; block's box is cut into tiles of the pattern's extent.
+      (OR ((&block_cell *P *P_rel)
+           (&pattern_box *B)
+           (&output_division3.tile (:key *Ax *N) (:P P_rel) (:P_inner *P_slab))
+           (split (:P P_slab) (:A Ax) (:Along *P_inner))
+           (&output_division4.tile (:key Ax *Ax2 *N2) (:P P_rel) (:P_inner *P_slab2))
+           (split (:P P_slab2) (:A Ax2) (:Along *P_inner2))
+           (box_extent B P (:A Ax) N)
+           (box_extent B P (:A Ax2) (:N N2))
+           (&pattern_cell (:P_rel *Q_rel) *Col)
+           (split (:P Q_rel) (:A Ax) (:Along P_inner))
+           (split (:P Q_rel) (:A Ax2) (:Along P_inner2)))
+          ;; Every cell outside a block keeps its color.
+          ((NOT (&extra_pattern))
+           (input P Col)
+           (NOT (&block_cell P))))))
+  (ALT $ClipAtCorner
+    (INPUT placeholder-blocks "the blocks have any extent.")
+    (OUTPUT stamp-pattern "each block cell takes the pattern cell at the same offset from a corner of the two boxes, where one exists, and keeps its color otherwise; undefined where the four corners give different outputs."
+      (RULE &clipped
+        (&block_cell *P *P_rel)
+        (&pattern_cell (:P_rel *Q_rel) *Col)
+        (same_corner *D (:P1 P_rel) (:P2 Q_rel))))
+    (RULE &output
+      (OR ((&block_cell *P)
+           (diag_dir_elem *D)
+           (OR ((&clipped D P *Col))
+               ((NOT (&clipped D P))
+                (input P Col))))
+          ;; Every cell outside a block keeps its color.
+          ((NOT (&extra_pattern))
+           (input P Col)
+           (NOT (&block_cell P))))))
+  (ALT $TurnToBlock
+    (INPUT placeholder-blocks "each block has the pattern's extent or its transposed extent.")
+    (OUTPUT stamp-pattern "a transposed block takes the pattern under each D4 element that transposes it; undefined on another extent, and where those elements give different outputs.")
+    (RULE &output
+      ;; A mismatched block takes the pattern under each D4 element that carries the
+      ;; pattern's box onto the block's box, which only a transposed block admits.
+      (OR ((OR ((&aligned *P *Col))
+               ((&block_cell *O P *P_rel)
+                (&mismatched O)
+                (&pattern_cell (:P_rel *Q_rel) Col)
+                (apply (:D *T) (:P Q_rel) (:P_out P_rel)))))
+          ;; Every cell outside a block keeps its color.
+          ((NOT (&extra_pattern))
+           (input P Col)
+           (NOT (&block_cell P)))))))
+
+(RULE &extra_pattern
+  (&pattern (:O *O_id))
+  (&pattern (:O *O2_id))
+  (!= O_id O2_id))
+
+(RULE &output
+  ;; Every cell outside a block keeps its color.
+  (OR ((NOT (&extra_pattern))
+       (input *P *Col)
+       (NOT (&block_cell P)))
+      ((&aligned P Col))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,59 @@
+;; inputs 630d138512c5950d69525967f72b21912eb3139581b7a4f39660a13abece71b1 programs/solvers/712bf12e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 712bf12e
+
+(DET &bg DominantColor)
+
+(DET &mark RarestColor)
+
+(DET &sense SenseDomain)
+
+(DET &dir DirDomain)
+
+;; The walks of each case: from each marker cell, steps away from its edge.
+(INIT &walk Propagation
+  (source ((:n P D))
+    (input *P *Col)
+    (&mark (:C Col))
+    (&dir *D))
+  (edge ((:a P D) (:b (:P P2) D))
+    (input *P)
+    (opposite *D (:Opp *W))
+    (neighbor P (:D W) (:Q *P_a))
+    (OR ((input (:P P_a) (:Col *Blk))
+         (NOT (&bg (:C Blk)))
+         (&sense (:S *Sn))
+         (turn (:S Sn) (:D W) (:D2 *SD))
+         (neighbor P (:D SD) (:Q *P2)))
+        ((= P2 P_a)))
+    (input (:P P2) (:Col *Bg))
+    (&bg (:C Bg))))
+
+(ALTS $choice "two models of the marker edge" $Dir
+  (ALT $Edge
+    ;; The walks of each case: from each marker cell, steps away from its edge.
+    (INIT &walk Propagation
+      (source ((:n P D))
+        (input *P *Col)
+        (&mark (:C Col))
+        (margin (:B P) *D (:K 0)))
+      (edge ((:a P D) (:b (:P P2) D))
+        (input *P)
+        (opposite *D (:Opp *W))
+        (neighbor P (:D W) (:Q *P_a))
+        (OR ((input (:P P_a) (:Col *Blk))
+             (NOT (&bg (:C Blk)))
+             (&sense (:S *Sn))
+             (turn (:S Sn) (:D W) (:D2 *SD))
+             (neighbor P (:D SD) (:Q *P2)))
+            ((= P2 P_a)))
+        (input (:P P2) (:Col *Bg))
+        (&bg (:C Bg))))))
+
+(RULE &output
+  (OR ((&walk.reached (:n *P))
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&walk.reached (:n P))))))
+
+(OUT (&output ^P ^Col))

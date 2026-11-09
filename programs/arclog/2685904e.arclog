@@ -1,0 +1,83 @@
+;; inputs 774aaefe49b9e6af01a005db7b232e90595d86fc9f81b2a3c505516e8163009c programs/solvers/2685904e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2685904e
+
+;; Edge the separator and the pattern line are measured from; the canvas and the bar lie the other way.
+(DET &base_dir DirDomain)
+
+(DET &sep_dist SepTileCount)
+
+(DET &pattern_dist DivisorRatio)
+
+(DET &bg DominantColor)
+
+(RULE &canvas_dir
+  (&base_dir (:D *B))
+  (opposite (:D B) (:Opp *D)))
+
+(RULE &bar_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&canvas_dir *D)
+  (margin (:B P) D (:K 0)))
+
+(RULE &sep_cell
+  (input *P)
+  (&base_dir *D)
+  (&sep_dist (:N *K))
+  (margin (:B P) D K))
+
+(RULE &pattern_cell
+  (input *P *Col)
+  (&base_dir *D)
+  (&pattern_dist *K)
+  (margin (:B P) D K))
+
+(INIT &length Cardinality
+  (member ((:m P))
+    (&bar_cell *P)))
+
+(INIT &freq Cardinality
+  (key ((&pattern_cell *P ^Col))
+    (member ((:m P))
+      (&pattern_cell *P Col))))
+
+(INIT &cast Ray
+  (source (P)
+    (&sep_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&canvas_dir *D)))
+
+(RULE &band_cell
+  (&length.size *N)
+  (&cast.ray *P *K)
+  (!= K 0)
+  (<= K N))
+
+(RULE &paint
+  (&band_cell *P)
+  (&length.size *N)
+  (&freq.size (:key *Col) N)
+  (&pattern_cell (:P *P_pat) Col)
+  (&base_dir *D)
+  (axis_of D *A)
+  (same_line A P (:Q P_pat)))
+
+(ALTS $choice "what an unselected band cell holds" $Passthrough
+  (ALT $Repaint
+    (RULE &output
+      (OR ((&paint *P *Col))
+          ((&band_cell P)
+           (NOT (&paint P))
+           (&bg (:C Col)))
+          ((input P Col)
+           (NOT (&band_cell P)))))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

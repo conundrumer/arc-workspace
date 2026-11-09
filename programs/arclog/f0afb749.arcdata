@@ -1,0 +1,104 @@
+;; inputs 4b73eaf07449c75d277f430a3b5084b099425f993e692466e2b6bb0ca95b006c programs/solvers/f0afb749.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0afb749
+
+(param &bg Color (0))
+(param &line_color Color (1))
+(param &line_axis DiagAxis (DAXIS_DG))
+(param &scale number (2))
+
+(alts $l
+  (alt $LineOverBlocks
+    (witness shared-diagonal variant concept
+      (relaxed one-mark-per-diagonal)
+      (separates "two marks on one main diagonal: the concept draws the line between their blocks and leaves the blocks whole; $LineOverBlocks also paints each block's own diagonal cells with the line color, since the other mark's line runs over it")
+      (input (grid
+        (5 0 0)
+        (0 0 0)
+        (0 0 5)))
+      (output $PassBehind (grid
+        (5 5 0 0 0 0)
+        (5 5 0 0 0 0)
+        (0 0 1 0 0 0)
+        (0 0 0 1 0 0)
+        (0 0 0 0 5 5)
+        (0 0 0 0 5 5)))
+      (output $LineOverBlocks (grid
+        (1 5 0 0 0 0)
+        (5 1 0 0 0 0)
+        (0 0 1 0 0 0)
+        (0 0 0 1 0 0)
+        (0 0 0 0 1 5)
+        (0 0 0 0 5 1))))))
+
+(alts $s
+  (alt $ScaleByColorCount
+    (witness two-mark-colors variant concept
+      (relaxed one-mark-color)
+      (separates "marks of two colors: the concept scales by 2; $ScaleByColorCount counts three colors and scales by 3")
+      (input (grid
+        (0 5 0)
+        (0 0 0)
+        (2 0 0)))
+      (output $StoredScale (grid
+        (0 0 5 5 0 0)
+        (0 0 5 5 0 0)
+        (0 0 0 0 1 0)
+        (0 0 0 0 0 1)
+        (2 2 0 0 0 0)
+        (2 2 0 0 0 0)))
+      (output $ScaleByColorCount (grid
+        (0 0 0 5 5 5 0 0 0)
+        (0 0 0 5 5 5 0 0 0)
+        (0 0 0 5 5 5 0 0 0)
+        (0 0 0 0 0 0 1 0 0)
+        (0 0 0 0 0 0 0 1 0)
+        (0 0 0 0 0 0 0 0 1)
+        (2 2 2 0 0 0 0 0 0)
+        (2 2 2 0 0 0 0 0 0)
+        (2 2 2 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed single-cell-marks)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 2 swapped")
+      (input (grid
+        (2 2 2 5 2)
+        (2 5 2 2 2)
+        (2 2 2 2 2)
+        (2 5 2 2 2)
+        (2 2 2 2 2)))
+      (output ($PassBehind &bg=$Stored) (grid
+        (2 2 2 2 2 2 5 5 2 2)
+        (2 2 2 2 2 2 5 5 2 2)
+        (2 2 5 5 2 2 2 2 2 2)
+        (2 2 5 5 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 5 5 2 2 2 2 2 2)
+        (2 2 5 5 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)))
+      (output $LineOverBlocks (grid
+        (1 2 1 2 1 2 1 5 2 2)
+        (2 1 2 1 2 1 5 1 2 2)
+        (1 2 1 5 1 2 1 2 1 2)
+        (2 1 5 1 2 1 2 1 2 1)
+        (1 2 1 2 1 2 1 2 1 2)
+        (2 1 2 1 2 1 2 1 2 1)
+        (1 2 1 5 1 2 1 2 1 2)
+        (2 1 5 1 2 1 2 1 2 1)
+        (2 2 1 2 1 2 1 2 1 2)
+        (2 2 2 1 2 1 2 1 2 1)))
+      (output &bg=$Derived (grid
+        (1 2 2 2 2 2 5 5 2 2)
+        (2 1 2 2 2 2 5 5 2 2)
+        (2 2 5 5 2 2 2 2 1 2)
+        (2 2 5 5 2 2 2 2 2 1)
+        (1 2 2 2 1 2 2 2 2 2)
+        (2 1 2 2 2 1 2 2 2 2)
+        (2 2 5 5 2 2 1 2 2 2)
+        (2 2 5 5 2 2 2 1 2 2)
+        (2 2 2 2 1 2 2 2 1 2)
+        (2 2 2 2 2 1 2 2 2 1))))))

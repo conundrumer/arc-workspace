@@ -1,0 +1,139 @@
+;; inputs b63c34228d4d487937d88ed4d65124a760084fe0d3bebbbd92ef8f1e051b4ae8 programs/solvers/44f52bb0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 44f52bb0
+
+(INIT &d42 Agreement
+  (source (P (:v Col))
+    (input *P *Col))
+  (target (P (:v Col))
+    (input *P *Col)))
+
+(INIT &d4 Agreement
+  (key ((ex_input ^E *P *Col))
+    (source (P (:v Col))
+      (ex_input E *P *Col))
+    (target (P (:v Col))
+      (ex_input E *P *Col))))
+
+(INIT &out_cmp Inclusion
+  (pattern ((:pattern E) (:m (:P M_p) (:Col M_col)))
+    (ex_output *E (:P *M_p) (:Col *M_col)))
+  (observed ((:observed E) (:m (:P M_p) (:Col M_col)))
+    (ex_output *E (:P *M_p) (:Col *M_col))))
+
+(DET &differs
+  (ex_output (:E *E1))
+  (ex_output (:E *E2))
+  (NOT (&out_cmp.equal (:observed E1) (:pattern E2))))
+
+(DET &split_broken
+  (OR ((ex_input (:E *E1))
+       (d4_elem *D)
+       (NOT (&d4.mismatch (:key (:E E1)) D))
+       (ex_input (:E *E2))
+       (NOT (&d4.mismatch (:key (:E E2)) D))
+       (&differs E1 E2))
+      ((&d4.mismatch (:key (:E *E12)) D)
+       (&d4.mismatch (:key (:E *E22)) D)
+       (&differs (:E1 E12) (:E2 E22)))))
+
+(DET &sym_broken
+  (d4_elem *D)
+  (NOT (&split_broken D))
+  (&d4.mismatch (:key *E) D))
+
+(DET &inv_broken
+  (ex_output *E)
+  (NOT (&sym_broken E))
+  (&d4.mismatch (:key E) *D))
+
+;; The symmetric class's invariance set, named as a subgroup.
+(INIT &named Inclusion
+  (pattern ((:pattern S) (:m D))
+    (sym_member *S *D))
+  (observed ((:m D))
+    (d4_elem *D)
+    (NOT (&inv_broken D))))
+
+(DET &sym_group
+  (&named.equal (:pattern *S)))
+
+(RULE &syms_non_invariant
+  (&d42.mismatch *D)
+  (&sym_group *S)
+  (sym_member S D))
+
+(DET &sym_out
+  (ex_output *E *P *Col)
+  (NOT (&sym_broken E)))
+
+(DET &asym_out
+  (ex_output *E *P *Col)
+  (&sym_broken E))
+
+(ALTS $choice "how the input's invariance is tested to pick its class" $Direct
+  (ALT $GroupMatch
+    ;; One table entry per class of alike pairs; the label carries identity
+    ;; only.
+    (INIT &class Quotient
+      (equivalent ((:a E) (:b E2))
+        (&out_cmp.equal (:observed *E) (:pattern *E2))))
+
+    (DET &group_broken
+      (&class.class (:a *E) *Id)
+      (&d4.mismatch (:key E) *D))
+
+    ;; The class's group: the transforms every member of it is invariant
+    ;; under, named as a subgroup.
+    (INIT &named_class Inclusion
+      (pattern ((:pattern S) (:m D))
+        (sym_member *S *D))
+      (observed ((:observed Id) (:m D))
+        (&class.class *Id)
+        (d4_elem *D)
+        (NOT (&group_broken Id D))))
+
+    (DET &mapping_sym
+      (&named_class.equal (:observed *Id) (:pattern *S)))
+
+    (INIT &group_size Cardinality
+      (key ((&mapping_sym ^Id *S)
+            (sym_member S *D))
+        (member ((:m D))
+          (&mapping_sym Id *S)
+          (sym_member S *D))))
+
+    ;; The largest group the input is invariant under. Invariance beyond what a
+    ;; group requires still matches it, so the test is covers, not equals. Two
+    ;; entries of one size would emit conflicting cells.
+    (INIT &group Inclusion
+      (pattern ((:pattern Id) (:m D))
+        (&mapping_sym *Id *S)
+        (sym_member S *D))
+      (observed ((:m D))
+        (d4_elem *D)
+        (NOT (&d42.mismatch D))))
+
+    (INIT &best_id Order
+      (member ((:t (:V Id) (:S N)))
+        (&group.superset (:pattern *Id))
+        (&group_size.size (:key Id) *N))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&group.superset (:pattern *Id))
+        (&group_size.size (:key Id) *N)))
+
+    (DET &mapping_out
+      (&class.class (:a *E) *Id)
+      (ex_output E *P *Col))
+
+    (RULE &output
+      (&best_id.maximal (:t (:V *Id)))
+      (&mapping_out Id *P *Col))))
+
+(RULE &output
+  (OR ((&sym_out *P *Col)
+       (NOT (&syms_non_invariant)))
+      ((&asym_out P Col)
+       (&syms_non_invariant))))
+
+(OUT (&output ^P ^Col))

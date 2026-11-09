@@ -1,0 +1,22 @@
+;; inputs 69c513e0f8305d48825713b8df4ad6efee168444717f005cf00b22e2fa47cb5d programs/solvers/3618c87e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3618c87e
+
+(param &slice.fall_to Dir (DIR_B))
+(param &slice.pose2 D4 (D4_ID))
+(param &slice.input (Position Color)
+  (grid
+    (0)
+    (0)
+    (1)
+    (5)
+    (5)))
+(param &slice.output2 (Position Color)
+  (grid
+    (0)
+    (0)
+    (0)
+    (5)
+    (1)))
+(param &bg Color (0))
+(param &marker Color (1))

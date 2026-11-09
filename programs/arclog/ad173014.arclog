@@ -1,0 +1,181 @@
+;; inputs cebc34d742ecf99288fa24efebbcec5d254e5522145bbe718af31a5901691f56 programs/solvers/ad173014.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ad173014
+
+(INPUT loop "a closed rectangular loop of line_color (1), one cell wide, on a field of background (0)")
+
+(INPUT boxes-on-loop "three or more boxes, each a square outline of frame_color (2), that the loop passes through; no two boxes touch")
+
+(INPUT one-shape-per-box "each box's interior holds one shape of a single color on background, and the shapes of different boxes have different colors"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &frame_color UnchangedColor)
+
+  (INIT &outlines Outlines
+    (node (P)
+      (input *P *Col)
+      (&frame_color (:C Col))))
+
+  (RULE &shape
+    (&outlines.box *B)
+    (input *P *Col)
+    (interior (:A P) B)
+    (NOT (&background (:C Col))))
+
+  (INIT &shape_color Singleton
+    (key ((&shape ^B *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&shape B *P)
+        (input P *Col)))))
+
+(OUTPUT color-turn "each shape keeps its cells and takes the color of the shape in the box that comes next along the loop in sense"
+
+  (DET &line_color UnchangedColor)
+
+  ;; The direction around the loop in which a box finds the box whose color it takes.
+  (DET &sense SenseDomain)
+
+  (DET &step DivisorRatio)
+
+  (RULE &frame
+    (&outlines.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+
+  (RULE &member
+    (&outlines.box *B))
+
+  (RULE &track
+    ;; The loop runs on through a box that is not a member.
+    (OR ((input *P *Col)
+         (&line_color (:C Col)))
+        ((&frame *B P)
+         (NOT (&member B)))))
+
+  ;; The runs of track between member boxes.
+  (INIT &segments Connectivity
+    (node (P)
+      (&track *P)))
+
+  (RULE &touch
+    (&segments.component *P (:Id *S))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&frame *B (:P Q))
+    (&member B))
+
+  (RULE &boxed
+    (&outlines.box *B)
+    (input *P)
+    (inside (:A P) B))
+
+  ;; The regions the loop and the boxes close off from the grid edge.
+  (INIT &closed Enclosure
+    (cell (P)
+      (input *P *Col)
+      (NOT (&line_color (:C Col)))
+      (NOT (&boxed P))))
+
+  (RULE &enclosed
+    (&closed.enclosed *P))
+
+  (RULE &outside
+    (&closed.cell *P)
+    (NOT (&closed.enclosed P)))
+
+  (RULE &inward
+    (&touch *P)
+    (opposite *D (:Opp *D_out))
+    (OR ((neighbor P D (:Q *R))
+         (&enclosed (:P R)))
+        ((neighbor P (:D D_out) (:Q R))
+         (&outside (:P R)))))
+
+  (RULE &next
+    (&sense (:S *Sn))
+    (&touch *S (:B *A) *P *D)
+    (turn (:S Sn) (:D *D_in) (:D2 D))
+    (&inward P (:D D_in))
+    (&touch S *B (:P *P2) (:D *D2))
+    (turn (:S Sn) (:D D2) (:D2 *D2_in))
+    (&inward (:P P2) (:D D2_in)))
+
+  (INIT &line_box BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (&line_color (:C Col))))
+
+  (INIT &cycle Walk
+    (successor ((:p A) (:p_next B))
+      (&next *A *B))
+    (steps (N)
+      (&next)
+      (&step (:K *N)))))
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $o "how the boxes are ordered into the cycle" $LoopWalk
+  (ALT $BboxRingOrder
+    (OUTPUT color-turn "the boxes follow one another in sense around the ring of the bounding box of the line_color cells, in place of along the loop; undefined where a box has no cell on that ring"
+      (RULE &enclosed
+        (&line_box.box *B)
+        (input *P)
+        (interior (:A P) B))
+
+      (RULE &outside
+        (&line_box.box *B)
+        (input *P)
+        (NOT (inside (:A P) B)))
+
+      (RULE &in_member
+        (&member *B)
+        (input *P)
+        (inside (:A P) B))
+
+      ;; A ring cell outside every member box.
+      (RULE &track
+        (&line_box.box *B)
+        (input *P)
+        (inside (:A P) B)
+        (same_dist (:P1 P) (:P2 B))
+        (NOT (&in_member P))))))
+
+(ALTS $s "how far along the cycle the source box is" $NextBox
+  (ALT $StepCount
+    (OUTPUT color-turn "each shape takes the color of the shape in the box that lies step boxes on along the loop in sense")
+    (RULE &source
+      (&cycle.walk (:p0 *A) *N (:p *B))
+      (&step (:K N)))))
+
+(ALTS $m "whether a box with no shape is a member of the cycle" $EveryBoxMember
+  (ALT $EveryBoxMember
+    (ALTS $hand "what a member box with no shape hands on" $HandsNothing
+      (ALT $EmptyBoxErases
+        (OUTPUT color-turn "a box with no shape hands on background, so the shape that takes its color is erased")
+        (RULE &handed
+          (OR ((&outlines.box *B)
+               (NOT (&shape B))
+               (&background (:C *Col)))
+              ((&shape_color.value (:key B) (:v Col))))))))
+  (ALT $SkipEmptyBoxes
+    (OUTPUT color-turn "a box with no shape is not a member of the cycle, and it stays empty"
+      (RULE &member
+        (&shape *B)))))
+
+(RULE &handed
+  (&shape_color.value (:key *B) (:v *Col)))
+
+(RULE &source
+  (&next *A *B))
+
+(RULE &output
+  (OR ((&source *A *B)
+       (&shape (:B A) *P)
+       (&handed B *Col))
+      ((input P Col)
+       (NOT (&shape P)))))
+
+(OUT (&output ^P ^Col))

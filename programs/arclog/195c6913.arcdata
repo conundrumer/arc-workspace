@@ -1,0 +1,6 @@
+;; inputs a4f3675e5ca3e1448487a3d267c59f94f57dfe746abd99c933322e68c99e34c3 programs/solvers/195c6913.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 195c6913
+
+(param &read_dir Dir (DIR_R))
+(param &turn_sense Sense (SENSE_CC))

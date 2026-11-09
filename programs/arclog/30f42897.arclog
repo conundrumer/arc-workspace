@@ -1,0 +1,67 @@
+;; inputs 99420e511f8e5414fd66e403262167c35a73bcebaba3f0f027f0c1d5b401ae8e programs/solvers/30f42897.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 30f42897
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &block Cardinality
+  (member ((:m P))
+    (&mark *P)))
+
+(RULE &ring_step
+  (input *P)
+  (turn *S *D (:D2 *D_step))
+  (margin (:B P) D (:K 0))
+  (neighbor P (:D D_step) *Q)
+  (input (:P Q)))
+
+(RULE &leads
+  (&mark *P)
+  (&ring_step *S (:P *Q) (:Q P))
+  (&mark (:P Q)))
+
+;; The distance of each border cell along the cycle from the block's first
+;; cell in sense s.
+(INIT &ring Distance
+  (key ((OR ((&ring_step ^S *P *Q))
+            ((&mark P)
+             (sense_elem S)
+             (NOT (&leads S P)))))
+    (edge ((:a P) (:b Q))
+      (&ring_step S *P *Q))
+    (source ((:n P))
+      (&mark *P)
+      (sense_elem S)
+      (NOT (&leads S P)))))
+
+;; Painted and blank stretches of one block-length alternate from the block.
+(RULE &paint
+  (&ring.distance (:key *S) (:n *P) (:K *T))
+  (&block.size *N)
+  (divide T (:Side N) (:Gap N)))
+
+(ALTS $choice "what spaces the copies" $Alternate
+  (ALT $Period
+    ;; Stretches from one copy of the block to the next.
+    (DET &period_blocks SepTileCount)
+
+    ;; The block recurs every K stretches.
+    (RULE &paint
+      (&ring.distance (:key *S) (:n *P) (:K *T))
+      (&block.size *N)
+      (divide T (:Side N) (:Gap 0) (:Part *J))
+      (&period_blocks (:N *K))
+      (divide (:T J) (:Side K) (:Gap 0) (:Remainder 0)))))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&mark *Col))
+      ((sense_elem *S)
+       (input P Col)
+       (NOT (&paint S P)))))
+
+(OUT (&output ^P ^Col))

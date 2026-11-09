@@ -1,0 +1,167 @@
+;; inputs 33115aab26e96a9d3fdbc4bef34ace0f33b7986d428d9237728c0d43232fa236 programs/solvers/f823c43c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f823c43c
+
+(INPUT periodic-pattern "the grid is a pattern that repeats with one period on each axis: the period shortest on both axes among those at which every two cells not of `noise_color` at the same place of the tile agree; that period varies from input to input")
+
+(INPUT noise-overwrites "some cells of the pattern are overwritten with `noise_color` (6), scattered with no structure, and `noise_color` is no color of the pattern")
+
+(INPUT phase-visible "each place of the repeating tile has at least one copy in the grid that the noise leaves showing")
+
+(OUTPUT restore-by-phase "each output cell takes the color that the cells not of `noise_color` hold at the same place of the repeating tile; the output has the input's size"
+
+  (DET &noise_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (RULE &left_out
+    (OR ((input (:Col *X)))
+        ((&noise_color (:C X)))))
+
+  (RULE &visible
+    (&left_out *X)
+    (input *P *Col)
+    (!= Col X))
+
+  (INIT &dominant_count Cardinality
+    (key ((&visible ^X *P ^Col))
+      (member ((:m P))
+        (&visible X *P Col))))
+
+  (RULE &cand_k
+    (input *P)
+    (axis_of *D *A)
+    (OR ((sub_extent P A *K))
+        ((frame_extent P A (:N K)))))
+
+  (RULE &phase
+    (input *P)
+    (&cand_k *D *K)
+    (margin (:B P) D (:K *T))
+    (divide T (:Side K) (:Gap 0) (:Part *N) (:Remainder *R)))
+
+  (INIT &place Singleton
+    (key ((&visible ^X *P *Col)
+          (perp_dir (:D ^D1) ^D2)
+          (&phase P (:D D1) (:K ^K1) (:R ^R1))
+          (&phase P (:D D2) (:K ^K2) (:R ^R2)))
+      (member ((:v Col))
+        (&visible X *P *Col)
+        (perp_dir (:D D1) D2)
+        (&phase P (:D D1) (:K K1) (:R R1))
+        (&phase P (:D D2) (:K K2) (:R R2)))))
+
+  (RULE &fits
+    (&left_out *X)
+    (&cand_k (:D *D1) (:K *K1))
+    (perp_dir (:D D1) *D2)
+    (&cand_k (:D D2) (:K *K2))
+    (NOT (&place.plural (:key X D1 K1 D2 K2))))
+
+  (INIT &least Order
+    (key ((&fits ^X ^D1 *K1))
+      (member ((:t K1))
+        (&fits X D1 *K1))
+      (score ((:t K1) (:S K1))
+        (&fits X D1 *K1))))
+
+  (RULE &period
+    (&least.minimal (:key *X (:D1 *D)) (:t *K))
+    (perp_dir D *D2)
+    (&least.minimal (:key X (:D1 D2)) (:t *K2))
+    (&fits X (:D1 D) (:K1 K) D2 K2))
+
+  (RULE &noise
+    (&noise_color (:C *X)))
+
+  (RULE &repeated
+    (&phase *D *K *N *R)
+    (> N 0))
+
+  (RULE &lone
+    (&phase *D *K *R)
+    (NOT (&repeated D K R)))
+
+  (RULE &short
+    (&cand_k *D *K)
+    (NOT (&lone D K)))
+
+  ;; The colors whose cells, left out, let the rest repeat with short periods.
+  (INIT &by_period Singleton
+    (member ((:v X))
+      (input (:Col *X))
+      (&fits X *D1 *K1 *D2 *K2)
+      (&short (:D D1) (:K K1))
+      (&short (:D D2) (:K K2))))
+
+  (RULE &cell_place
+    (&noise *X)
+    (&period X (:D *D1) (:K *K1))
+    (perp_dir (:D D1) *D2)
+    (&period X (:D D2) (:K *K2))
+    (&phase (:P *Q) (:D D1) (:K K1) (:R *R1))
+    (&phase (:P Q) (:D D2) (:K K2) (:R *R2)))
+
+  (INIT &dominant Order
+    (key ((&dominant_count.size (:key ^X *Col)))
+      (member ((:t Col))
+        (&dominant_count.size (:key X *Col)))
+      (score ((:t Col) (:S N))
+        (&dominant_count.size (:key X *Col) *N))))
+
+  (INIT &wp Wallpaper
+    (key ((&noise ^X))
+      (cell (P (:v Col))
+        (&visible X *P *Col))
+      (period (A K)
+        (&period X *D *K)
+        (axis_of D *A)))
+    (transform (D)
+      (d4_elem *D))
+    (grid (P)
+      (input *P))))
+
+(ALTS $n "where the noise color comes from" $NoiseStored
+  (ALT $NoiseByPeriod
+    (OUTPUT noise-by-period "`noise_color` is the one color whose cells, left out, let the rest repeat with a period at most half the grid on each axis; undefined where no color or more than one color qualifies"
+      (RULE &noise
+        (&by_period.value (:v *X))))))
+
+(ALTS $h "what a tile place with no visible copy takes" $HiddenUndefined
+  (ALT $HiddenPhaseKeepsNoise
+    (OUTPUT hidden-keeps-noise "a fully hidden tile place keeps `noise_color`")
+    (RULE &output
+      (OR ((&cell_place (:Q *P) (:X *Key_x) (:D1 *Key_d1) (:K1 *Key_k1) (:R1 *Key_r1) (:D2 *Key_d2) (:K2 *Key_k2) (:R2 *Key_r2))
+           (&place.value (:key (:X Key_x) (:D1 Key_d1) (:K1 Key_k1) (:R1 Key_r1) (:D2 Key_d2) (:K2 Key_k2) (:R2 Key_r2)) (:v *Col)))
+          ((&cell_place (:Q P) (:X *Key_x2) (:D1 *Key_d12) (:K1 *Key_k12) (:R1 *Key_r12) (:D2 *Key_d22) (:K2 *Key_k22) (:R2 *Key_r22))
+           (NOT (&place.member (:key (:X Key_x2) (:D1 Key_d12) (:K1 Key_k12) (:R1 Key_r12) (:D2 Key_d22) (:K2 Key_k22) (:R2 Key_r22))))
+           (&noise (:X Col))))))
+  (ALT $HiddenPhaseTakesDominant
+    (OUTPUT hidden-takes-dominant "a fully hidden tile place takes the commonest color not of `noise_color`")
+    (RULE &output
+      (OR ((&cell_place (:Q *P) (:X *Key_x) (:D1 *Key_d1) (:K1 *Key_k1) (:R1 *Key_r1) (:D2 *Key_d2) (:K2 *Key_k2) (:R2 *Key_r2))
+           (&place.value (:key (:X Key_x) (:D1 Key_d1) (:K1 Key_k1) (:R1 Key_r1) (:D2 Key_d2) (:K2 Key_k2) (:R2 Key_r2)) (:v *Col)))
+          ((&cell_place (:Q P) (:X *Key_x2) (:D1 *Key_d12) (:K1 *Key_k12) (:R1 *Key_r12) (:D2 *Key_d22) (:K2 *Key_k22) (:R2 *Key_r22))
+           (NOT (&place.member (:key (:X Key_x2) (:D1 Key_d12) (:K1 Key_k12) (:R1 Key_r12) (:D2 Key_d22) (:K2 Key_k22) (:R2 Key_r22))))
+           (&noise *X)
+           (&dominant.maximal (:key X) (:t Col))))))
+  (ALT $IsometryOrbit
+    (OUTPUT restore-by-phase "each cell takes its orbit's color under the periods and under the D4 maps of the tile that some visible pair shows and none contradicts; undefined where no such map reaches a hidden place"
+      (INIT &orbit Quotient
+        (edge ((:a X P) (:b X (:P Q)))
+          (&wp.action (:key *X) *P *Q)))
+
+      (RULE &orbit_color
+        (&orbit.class (:a *X (:P *Q)) *Id)
+        (&visible X (:P Q) *Col)))
+    (RULE &output
+      (&noise *X)
+      (&orbit.class (:a X *P) *Id)
+      (&orbit_color Id *Col))))
+
+(RULE &output
+  (&cell_place (:Q *P) (:X *Key_x) (:D1 *Key_d1) (:K1 *Key_k1) (:R1 *Key_r1) (:D2 *Key_d2) (:K2 *Key_k2) (:R2 *Key_r2))
+  (&place.value (:key (:X Key_x) (:D1 Key_d1) (:K1 Key_k1) (:R1 Key_r1) (:D2 Key_d2) (:K2 Key_k2) (:R2 Key_r2)) (:v *Col)))
+
+(OUT (&output ^P ^Col))

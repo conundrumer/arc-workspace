@@ -1,0 +1,49 @@
+;; inputs b4c0a1089cdeefd66a6e88a9719fe91829df34ef0ac4d625c2bd7556470a847a programs/solvers/3194b014.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3194b014
+
+(DET &bg DominantColor)
+
+;; Noise makes runs of its own, but only small ones.
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &biggest_count Cardinality
+  (key ((&comps.component (:key (:Col ^K_col)) (:Id ^K_id) *P))
+    (member ((:m P))
+      (&comps.component (:key (:Col K_col)) (:Id K_id) *P))))
+
+(DET &out_dim ConstOutDim)
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&out_dim *N)))
+
+(ALTS $choice "what \"biggest\" measures" $Cells
+  (ALT $Span
+    (INIT &bbox BoundingBox
+      (key ((&comps.component (:key ^Col) ^Id *P))
+        (cell (P)
+          (&comps.component (:key Col) Id *P))))
+
+    (INIT &biggest_count Cardinality
+      (key ((&bbox.box (:key (:Col ^K_col) (:Id ^K_id)) *B)
+            (input *P)
+            (inside (:A P) B))
+        (member ((:m P))
+          (&bbox.box (:key (:Col K_col) (:Id K_id)) *B)
+          (input *P)
+          (inside (:A P) B))))))
+
+(INIT &biggest Order
+  (member ((:t (:Col K_col) (:Id K_id)))
+    (&biggest_count.size (:key *K_col *K_id)))
+  (score ((:t (:Col K_col) (:Id K_id)) (:S N))
+    (&biggest_count.size (:key *K_col *K_id) *N)))
+
+(OUT (&out_pos_frame.cell ^P) (&biggest.maximal (:t ^Col)))

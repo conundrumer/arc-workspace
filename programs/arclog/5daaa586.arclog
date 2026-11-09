@@ -1,0 +1,113 @@
+;; inputs 701a1eb53bfb3d68414df6a1d5a29c386c7a140e3340e54e65bac3eda849b051 programs/solvers/5daaa586.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5daaa586
+
+(DET &bg DominantColor)
+
+(RULE &gapped
+  (input *P *Col)
+  (&bg (:C Col))
+  (split P *A (:Along *L)))
+
+(RULE &divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&gapped A L)))
+
+(INIT &bound Order
+  (key ((&divider *A *L)
+        (axis_of ^D A)
+        (margin (:B L) D *K))
+    (member ((:t K))
+      (&divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (&divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))))
+
+(RULE &bound_box_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&bound.minimal (:key D) (:t *K))
+  (&bound.minimal (:key (:D D2)) (:t *K2))
+  (axis_inset D (:K1 K) K2 *B))
+
+(RULE &bound_box
+  (&bound_box_axis *A (:B *B1))
+  (perp A *A2)
+  (&bound_box_axis (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &border
+  (&bound_box *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B)))
+
+(RULE &inner
+  (&bound_box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(RULE &mark
+  (&inner *P)
+  (input P *Col)
+  (axis_of *D *A)
+  (&border (:P *Q) D)
+  (same_line A P Q)
+  (input (:P Q) Col))
+
+(RULE &cast_cell
+  (dir_elem (:D *Key))
+  (&inner))
+
+(ALTS $choice "what a cell's run matches against" $EndMatch
+  (ALT $LineMatch
+    (RULE &crossing
+      (&border *P *D)
+      (perp_dir D *D2)
+      (&border P (:D D2)))
+
+    (INIT &side Singleton
+      (key ((&border *P ^D)
+            (NOT (&crossing P))
+            (input P *Col))
+        (member ((:v Col))
+          (&border *P D)
+          (NOT (&crossing P))
+          (input P *Col))))
+
+    (RULE &mark
+      (&inner *P)
+      (input P *Col)
+      (&side.value (:key *D) (:v Col)))))
+
+(INIT &cast Ray
+  (key ((OR ((&mark *P ^D))
+            ((dir_elem D))))
+    (source (P)
+      (&mark *P D))
+    (node (P)
+      (dir_elem D)
+      (input *P))
+    (dir (D)
+      (dir_elem D))))
+
+(RULE &fill
+  (&cast.ray (:key *D) *P D (:Origin *S))
+  (&cast_cell (:Key D))
+  (&inner P)
+  (input (:P S) *Col))
+
+(RULE &output
+  (&bound_box *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&fill (:P P2) *Col))
+      ((NOT (&fill (:P P2)))
+       (input (:P P2) Col))))
+
+(OUT (&output ^P ^Col))

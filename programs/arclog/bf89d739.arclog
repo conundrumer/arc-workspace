@@ -1,0 +1,146 @@
+;; inputs c610465a47cf851d1752ca006c49c64ad9fea1c236e9303c0d2394269232f872 programs/solvers/bf89d739.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bf89d739
+
+(INPUT scattered-dots "single cells of color 2 lie apart on a field of &background, no two touching."
+
+  (INIT &field_count Cardinality
+    (key ((ex_input *E *P (:Col ^C)))
+      (member ((:m E P))
+        (ex_input *E *P (:Col C)))))
+
+  ;; The field: the commonest color of the inputs.
+  (INIT &field Order
+    (member ((:t C))
+      (&field_count.size (:key *C)))
+    (score ((:t C) (:S Count))
+      (&field_count.size (:key *C) (:N *Count))))
+
+  (DET_OR_RULE &background DominantColor
+    (&field.maximal (:t *C))))
+
+(INPUT one-aligned-pair "exactly two dots share a row or a column, and no other two dots share a row or a column.")
+
+(INPUT within-span "every other dot lies off the pair's line, level with a cell strictly between the pair's two dots.")
+
+(OUTPUT trunk "each two dots that share a row or a column with no dot between them form a trunk: each background cell strictly between them takes &line_color."
+
+  (RULE &dot
+    (input *P (:Col *C))
+    (NOT (&background C)))
+
+  (DET &line_color
+    (ex_output *E *P (:Col *C))
+    (ex_input E P (:Col *C0))
+    (!= C0 C))
+
+  (INIT &dots_box BoundingBox
+    (cell (P)
+      (&dot *P))))
+
+(OUTPUT branch "a dot off a trunk's line, level with a cell strictly between the trunk's two dots, branches onto that cell: each background cell strictly between the dot and that cell takes &line_color.")
+
+(OUTPUT keep "every other cell keeps its input color."
+
+  ;; The cells with a dot on each side along axis a.
+  (INIT &span Ray
+    (key ((axis_elem ^A))
+      (dir (D)
+        (axis4_of *D A)))
+    (source (P)
+      (&dot *P))
+    (node (P)
+      (input *P)))
+
+  (RULE &span_between
+    (axis_elem (:A *Key))
+    (input *P)
+    (axis4_of *D (:A Key))
+    (dir8_opposite D (:D2 *O))
+    (&span.ray (:key (:A Key)) P D)
+    (&span.ray (:key (:A Key)) P (:D O)))
+
+  (RULE &between_pair
+    (&span_between (:Key *A) *P)
+    (NOT (&dot P)))
+
+  (RULE &line_cell
+    (&dot (:P *Q))
+    (&dot (:P *Q2))
+    (!= Q Q2)
+    (axis_elem *A)
+    (same_line A (:P Q) (:Q Q2))
+    (input *P)
+    (same_line A P Q)))
+
+(ALTS $beyond "what a dot gets when its level is not strictly between the pair's two dots" $WithinSpan
+  (ALT $TrunkSpansAll
+    (INPUT within-span "a dot off the pair's line may lie at any level")
+    (OUTPUT trunk "each line that holds two dots carries a trunk across the bounding box of all the dots: each background cell of the line inside that box takes &line_color"
+      (RULE &landing
+        (&line_cell *A *P)
+        (&dots_box.box *B)
+        (inside (:A P) B)))
+    (OUTPUT branch "every dot off a trunk's line branches onto it")
+    (RULE &paint
+      (OR ((&landing *P))
+          ((&landing *A (:P *T))
+           (perp A *A2)
+           (&dot_line (:A A2) *X (:P T))
+           (&dot_line (:A A2) X P)
+           (axis_of *D (:A A2))
+           (nearer D (:P X) (:Q P))
+           (nearer D P (:Q T))))))
+  (ALT $BranchToLine
+    (INPUT within-span "a dot off the pair's line may lie at any level")
+    (OUTPUT branch "every dot off a trunk's line branches onto that line, past the trunk's end where its level is beyond the pair")
+    (RULE &paint
+      (OR ((&between_pair *P))
+          ((&line_cell *A (:P *T))
+           (perp A *A2)
+           (&dot_line (:A A2) *X (:P T))
+           (&dot_line (:A A2) X P)
+           (axis_of *D (:A A2))
+           (nearer D (:P X) (:Q P))
+           (nearer D P (:Q T)))))))
+
+(ALTS $dots "which cells are dots" $NonBackground
+  (ALT $DotsOfOneColor
+    (INPUT scattered-dots "only cells of &dot_color are dots; a cell of another color that is not the background is kept and joins nothing"
+
+      (DET_OR_RULE &dot_color RarestColor
+        (ex_input (:Col *C))
+        (NOT (&field.maximal (:t C))))
+
+      (RULE &dot
+        (input *P (:Col *C))
+        (&dot_color C)))))
+
+(RULE &dot_line
+  (&dot (:P *X))
+  (axis_elem *A)
+  (input *P)
+  (same_line A (:P X) (:Q P)))
+
+(RULE &paint
+  (OR ((&between_pair *A (:P *T))
+       (perp A *A2)
+       (&dot_line (:A A2) *X (:P T))
+       (&dot_line (:A A2) X *P)
+       (axis_of *D (:A A2))
+       (nearer D (:P X) (:Q P))
+       (nearer D P (:Q T)))
+      ((&between_pair P))))
+
+(RULE &drawn
+  (&paint *P)
+  (input P (:Col *C))
+  (&background C))
+
+(RULE &output
+  (input *P (:Col *C))
+  (IF ((&drawn P))
+      ((&line_color (:C *Col)))
+      ((= Col C))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,186 @@
+;; inputs 8ec51f8555b52e721ce2d5a125ec79833d609301f3bae440e4628170231139e4 programs/solvers/e9b4f6fc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9b4f6fc
+
+(INPUT background "every cell outside the objects is background")
+
+(INPUT one-picture "one connected object of more than two cells, the picture, a filled rectangle of a field color with a drawing of other colors on it"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_commonest
+    (&commonest.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&not_commonest C)))
+
+  (INIT &side_objects Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (RULE &obj
+    (&side_objects.component *P *Id))
+
+  (INIT &corner_objects Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &size Cardinality
+    (key ((&obj *P ^Id))
+      (member ((:m P))
+        (&obj *P Id))))
+
+  (INIT &largest Order
+    (member ((:t (:V Id) (:S N)))
+      (&size.size (:key *Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&size.size (:key *Id) *N))))
+
+(INPUT domino-keys "the other objects are keys, each two cells of two colors side by side on the axis of new-side, with background at every other cell that touches it at a side or a corner")
+
+(INPUT key-names-picture-color "the old cell of each key, the cell opposite new-side, holds a color of the picture's drawing, and the new cell holds a color the picture does not hold")
+
+(OUTPUT crop-picture "the output is the picture's bounding box, cut out of the input")
+
+(OUTPUT recolor-by-key "each cell of the picture whose color is the old color of a key takes that key's new color; each other cell keeps its color"
+
+  ;; The direction from a key's old cell to its new cell.
+  (DET &new_side DirDomain)
+
+  (RULE &large
+    (&obj *P *Id)
+    (&obj (:P *Q) Id)
+    (&obj (:P *R) Id)
+    (!= P Q)
+    (!= P R)
+    (!= Q R))
+
+  (RULE &two_large
+    (&large (:Id *Id1))
+    (&large (:Id *Id2))
+    (!= Id1 Id2))
+
+  (RULE &picture
+    (&large *Id)
+    (NOT (&two_large)))
+
+  (RULE &domino
+    (&obj *P *Id)
+    (&obj (:P *Q) Id)
+    (NOT (&large Id))
+    (dir_elem *D)
+    (neighbor P D Q)
+    (input P (:Col *C1))
+    (input (:P Q) (:Col *C2)))
+
+  (RULE &key
+    (&new_side *D)
+    (&domino (:C1 *Old) (:C2 *New) D))
+
+  (INIT &frame BoundingBox
+    (cell (P)
+      (&picture *Id)
+      (&obj *P Id)))
+
+  (RULE &cut
+    (&frame.box *B)
+    (input *P *Col)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (INIT &chain Distance
+    (key ((&cut (:Col ^C)))
+      (source ((:n C))))
+    (edge ((:a Old) (:b New))
+      (&key *Old *New)))
+
+  (INIT &chain_end Order
+    (key ((&chain.distance (:key ^C) (:n *C2) (:K *N)))
+      (member ((:t (:V C2) (:S N)))
+        (&chain.distance (:key C) (:n *C2) (:K *N)))
+      (score ((:t (:V C2) (:S N)) (:S N))
+        (&chain.distance (:key C) (:n *C2) (:K *N))))))
+
+(ALTS $r "how a key's old cell is told from its new cell" $KeyNewSide
+  (ALT $KeyOldInPicture
+    (INPUT domino-keys "the other objects are keys, each two cells side by side on either axis; the old cell is the one whose color the picture holds and the new cell the other, a key with neither color in the picture is ignored, and the model is undefined where the picture holds both colors of a key"
+      (RULE &picture_color
+        (&picture *Id)
+        (&obj *P Id)
+        (input P (:Col *C)))
+
+      (RULE &key
+        (&domino (:C1 *Old) (:C2 *New))
+        (&picture_color (:C Old)))
+
+      (RULE &key_clash
+        (&key *New)
+        (&picture_color (:C New))))
+    (RULE &output
+      (&cut (:P_inner *P) (:Col *C))
+      (NOT (&key_clash))
+      (OR ((&key (:Old C) (:New *Col)))
+          ((NOT (&key (:Old C)))
+           (= Col C))))
+    (ALT $RecolorTransitive
+      ;; The color farthest along the chain of keys from the cell's color.
+      (RULE &output
+        (&cut (:P_inner *P) (:Col *C))
+        (&chain_end.maximal (:key C) (:t (:V *Col)))
+        (NOT (&key_clash))))))
+
+(ALTS $a "which cells join into one object" $SideAdjacent
+  (ALT $Picture8Adjacent
+    (INPUT one-picture "the objects join cells that touch at a side or a corner"
+      (RULE &obj
+        (&corner_objects.component *P *Id)))
+    (INPUT domino-keys "a key touches no other object at a side or a corner")))
+
+(ALTS $s "which object is the picture" $OnlyLargeObject
+  (ALT $PictureLargest
+    (INPUT one-picture "the picture is the largest object, of more than two cells, and objects that are neither the picture nor keys are ignored; the model is undefined where two objects tie for largest"
+      (RULE &largest_tie
+        (&largest.maximal (:t (:V *Id1)))
+        (&largest.maximal (:t (:V *Id2)))
+        (!= Id1 Id2))
+
+      (RULE &picture
+        (&largest.maximal (:t (:V *Id)))
+        (&large Id)
+        (NOT (&largest_tie))))))
+
+(ALTS $t "how often a cell is recolored" $RecolorOnce
+  (ALT $RecolorTransitive
+    (OUTPUT recolor-by-key "each cell follows the chain of keys from its color until no key applies, stopping before a color repeats")
+    ;; The color farthest along the chain of keys from the cell's color.
+    (RULE &output
+      (&cut (:P_inner *P) (:Col *C))
+      (&chain_end.maximal (:key C) (:t (:V *Col))))))
+
+(RULE &output
+  (&cut (:P_inner *P) (:Col *C))
+  (OR ((&key (:Old C) (:New *Col)))
+      ((NOT (&key (:Old C)))
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

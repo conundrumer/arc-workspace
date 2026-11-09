@@ -1,0 +1,157 @@
+;; inputs 3f40373f8e07a966f32df3bfb3a9e1d33e43829a02f73581faf160940319e682 programs/solvers/e4075551.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e4075551
+
+(INPUT five-dots "on a field of the background, the input holds exactly five single non-background cells, with no two of them adjacent")
+
+(INPUT center-dot "exactly one of the five cells has the center color 2")
+
+(INPUT side-dots "each of the other four cells is the unique cell of the five that is extreme toward one side, and each side has exactly one such cell")
+
+(INPUT inside "the center dot lies strictly inside the box whose edges are the lines of the four side dots, and each side dot lies on that box's edge between the edge's two corners")
+
+(OUTPUT frame "the output draws the outline of that box, each side in the color of its side dot; the two edges on the corner axis (top and bottom) include the corners, and the other two run only between them")
+
+(OUTPUT cross "inside the box, the row and the column through the center dot take the cross color, from edge to edge of the box's interior")
+
+(OUTPUT center-kept "the center dot keeps its color")
+
+(OUTPUT rest-background "every other cell is background"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; The background is the commonest color of every train input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_background
+    (&commonest.maximal (:t *C))
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&not_background C)))
+
+  (RULE &dot
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &not_extreme
+    (&dot *P)
+    (&dot (:P *Q))
+    (!= P Q)
+    (dir_elem *D)
+    (NOT (nearer D P Q)))
+
+  (RULE &side
+    (&dot *P *Col)
+    (dir_elem *D)
+    (NOT (&not_extreme D P))))
+
+(ALTS $choice "how the center dot is found" $ByColor
+  (ALT $CenterByPlace
+    (INPUT center-dot "the center is the one dot that is extreme toward no side, in any color; undefined where no box is found")
+    (RULE &center
+      (&dot *P *Col)
+      (NOT (&side P)))))
+
+(RULE &box_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&side D *P)
+  (margin (:B P) D *K)
+  (&side (:D D2) (:P *P2))
+  (margin (:B P2) (:D D2) (:K *K2))
+  (axis_inset D (:K1 K) K2 *B))
+
+(RULE &box
+  (&box_axis *A (:B *B1))
+  (perp A *A2)
+  (&box_axis (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+;; the axis whose two edges take the box's corner cells
+(DET &corner_axis AxisDomain)
+
+(RULE &on_edge
+  (input *P)
+  (&box *B)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B))
+  (&side D *Col))
+
+(RULE &on_corner_axis_edge
+  (&on_edge *P *D)
+  (axis_of D *A)
+  (&corner_axis A))
+
+(RULE &frame
+  (&on_edge *P *D *Col)
+  (axis_of D *A)
+  (OR ((&corner_axis A))
+      ((NOT (&on_corner_axis_edge P)))))
+
+(DET &not_center
+  (OR ((ex_output (:Col *C))
+       (ex_output *E)
+       (NOT (ex_output E (:Col C))))
+      ((ex_output (:E *E2) *P (:Col C))
+       (ex_output (:E E2) (:P *Q) (:Col C))
+       (!= P Q))))
+
+(DET &center_color
+  (ex_output (:Col *C))
+  (NOT (&not_center C)))
+
+(RULE &center
+  (&dot *P *Col)
+  (&center_color (:C Col)))
+
+(DET &center_neighbor
+  (ex_output *E (:P *C2) (:Col *Cc))
+  (&center_color (:C Cc))
+  (dir_elem *D)
+  (neighbor (:P C2) D *Q)
+  (ex_output E (:P Q) (:Col *C)))
+
+(DET &not_cross
+  (&center_neighbor *C)
+  (ex_output *E)
+  (NOT (&center_neighbor E C)))
+
+(DET &cross_color
+  (&center_neighbor *C)
+  (NOT (&not_cross C)))
+
+(RULE &drawn
+  (OR ((&frame *P *Col))
+      ((&center P Col)
+       (&box))
+      ((&center (:P *C))
+       (&box *B)
+       (input P)
+       (interior (:A P) B)
+       (axis_elem *A)
+       (same_line A P (:Q C))
+       (!= P C)
+       (&cross_color (:C Col)))))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((&center)
+       (&box)
+       (input P)
+       (NOT (&drawn P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

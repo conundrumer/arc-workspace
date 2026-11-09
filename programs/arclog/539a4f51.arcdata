@@ -1,0 +1,8 @@
+;; inputs 8ddbf85d2e1523834c932a22a9fbef3376c764d58377fe61ab205a4b0a7caf11 programs/solvers/539a4f51.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 539a4f51
+
+(param &bg Color (0))
+(param &corner DiagDir (DIAG_TL))
+(param &scale number (2))
+(param &out_dim number (10))

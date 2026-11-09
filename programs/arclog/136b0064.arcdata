@@ -1,0 +1,47 @@
+;; inputs 8aa9ea5ae1cb7dbe38fe02695d19eec538228872008fb2944f764fa6dd53c247 programs/solvers/136b0064.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 136b0064
+
+(param &bg Color (0))
+(param &marker Color (5))
+(param &divide_gap number (1))
+(param &legend_dir Dir (DIR_L))
+(param &glyph_size number (3))
+(param &glyph_gap number (1))
+(param &order_corner DiagDir (DIAG_TL))
+(param &order_axis Axis (AXIS_H))
+(param &advance Dir (DIR_B))
+(param &divisor number (2))
+(param &panel_size number (7))
+(param &count_move (number Dir number)
+  (4 DIR_B 1)
+  (5 DIR_R 2)
+  (6 DIR_L 3)
+  (7 DIR_L 1))
+(param &glyph_member (Ident Position)
+  (0 (grid
+    (1 1 _)
+    (1 _ 1)
+    (_ 1 _)))
+  (1 (grid
+    (1 _ 1)
+    (1 _ 1)
+    (1 1 1)))
+  (2 (grid
+    (1 _ 1)
+    (_ 1 _)
+    (_ 1 _)))
+  (3 (grid
+    (1 1 1)
+    (_ 1 _)
+    (1 _ 1))))
+(param &glyph_move (Ident Dir number)
+  (0 DIR_R 2)
+  (1 DIR_L 1)
+  (2 DIR_B 1)
+  (3 DIR_L 3))
+(param &color_move (Color Dir number)
+  (1 DIR_R 2)
+  (2 DIR_L 1)
+  (6 DIR_B 1)
+  (3 DIR_L 3))

@@ -1,0 +1,106 @@
+;; inputs 83edbd92aea7dcaed94bcab1520cfd1da5e165e9f1e683b5006d222ec9308fe9 programs/solvers/4093f84a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4093f84a
+
+(DET &stripe UnchangedColor)
+
+(RULE &stripe_cell
+  (input *P *Col)
+  (&stripe (:C Col)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&stripe_cell *P)))
+
+(RULE &side
+  (&bbox.box *B)
+  (split (:P B) *A (:Along 0))
+  (perp A *A2)
+  (axis_of *D (:A A2)))
+
+(INIT &spread_frame Frame
+  (key ((&side ^D))
+    (extent (A N)
+      (&stripe_cell *P)
+      (&bbox.box *B)
+      (inside (:A P) B)
+      (same_dist D (:P1 P) (:P2 B))
+      (frame_extent P *A *N))))
+
+(DET &bg DominantColor)
+
+(RULE &dot
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&stripe (:C Col))))
+
+;; The stripe's outermost cell on each side casts out along its line.
+(INIT &spread Ray
+  (key ((OR ((&side ^D))
+            ((&spread_frame.cell (:key D) *P))))
+    (source (P)
+      (&side D)
+      (&stripe_cell *P)
+      (&bbox.box *B)
+      (inside (:A P) B)
+      (same_dist D (:P1 P) (:P2 B)))
+    (node (P)
+      (&spread_frame.cell (:key D) *P))
+    (dir (D)
+      (&side D))))
+
+(RULE &spread_cell
+  (&side (:D *Key))
+  (input))
+
+(RULE &outward
+  (&spread.ray (:key *D) *P D (:K *N) (:Origin *Src))
+  (&spread_cell (:Key D))
+  (input P))
+
+(INIT &pile Cardinality
+  (key ((&outward *P ^D ^Src)
+        (&dot P))
+    (member ((:m P))
+      (&outward *P D Src)
+      (&dot P))))
+
+(RULE &growth
+  (&pile.size (:key *D *Src) (:N *Len)))
+
+(ALTS $choice "what the dots on one side of one line set" $Count
+  (ALT $Table
+    ;; The cells the output grew out of the stripe on that line.
+    (INIT &grown Cardinality
+      (key ((&outward ^E *P ^D (:N *K) ^Src)
+            (!= K 0)
+            (ex_output E P *Col)
+            (&stripe (:C Col)))
+        (member ((:m P))
+          (&outward E *P D (:N *K) Src)
+          (!= K 0)
+          (ex_output E P *Col)
+          (&stripe (:C Col)))))
+
+    (DET &length
+      (&pile.size *E (:key *D *Src) *N)
+      (&grown.size (:key E D Src) (:N *Len)))
+
+    (RULE &growth
+      (&pile.size (:key *D *Src) *N)
+      (&length N *Len))))
+
+(RULE &painted
+  (OR ((&stripe_cell *P))
+      ((&outward P *D (:N *K) *Src)
+       (!= K 0)
+       (&growth D Src (:Len *N))
+       (<= K N))))
+
+(RULE &output
+  (input *P)
+  (IF ((&painted P))
+      ((&stripe (:C *Col)))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

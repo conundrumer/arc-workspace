@@ -1,0 +1,209 @@
+;; inputs 8b5e603cac2aa75dc73963f6cf906c8185e6db5ecb24d0fc2ec9be726c136ea6 programs/solvers/271d71e2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 271d71e2
+
+(DET &edge_color
+  (ex_input *P *Col)
+  (margin (:B P) *D (:K 0)))
+
+(DET &gauge
+  (ex_input *Col)
+  (NOT (&edge_color Col)))
+
+(DET &frame
+  (ex_input *E *P (:Col *G))
+  (&gauge (:Col G))
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (ex_input E (:P Q) *Col)
+  (NOT (&gauge Col)))
+
+(INIT &frames Connectivity
+  (node (P)
+    (input *P *Col)
+    (&frame Col)))
+
+(INIT &bbox BoundingBox
+  (key ((&frames.component *P ^Id))
+    (cell (P)
+      (&frames.component *P Id))))
+
+(RULE &abut
+  (&frames.component (:P *Q) *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A Q) B)
+  (same_dist *D (:P1 Q) (:P2 B))
+  (neighbor (:P Q) D (:Q *P)))
+
+(INIT &in_count Cardinality
+  (key ((ex_input ^E *P ^Col))
+    (member ((:m P))
+      (ex_input E *P Col))))
+
+(INIT &out_count Cardinality
+  (key ((ex_output ^E *P ^Col))
+    (member ((:m P))
+      (ex_output E *P Col))))
+
+(DET &shrank
+  (&in_count.size (:key *E *Col) (:N *N1))
+  (&out_count.size (:key E Col) (:N *N2))
+  (< N2 N1))
+
+(DET &marker
+  (&shrank *Col)
+  (NOT (&gauge Col)))
+
+(RULE &abut_break
+  (&abut *Id *D *P)
+  (&marker (:Col *M))
+  (NOT (input P (:Col M))))
+
+(RULE &handle_dir
+  (&abut *Id *D)
+  (NOT (&abut_break Id D)))
+
+(RULE &probe_mark
+  (&handle_dir (:Id *Key) *D)
+  (&abut (:Id Key) D *P))
+
+(INIT &probe_frame Frame
+  (key ((&probe_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&probe_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+;; The turn from the heading to the side the sweep starts on.
+(DET &sweep SenseDomain)
+
+;; Cast from the handle: offset K is the distance the block travels to bring
+;; its handle onto the line K cells ahead.
+(INIT &probe Ray
+  (key ((OR ((&probe_mark (:Key ^Ky) *P))
+            ((&handle_dir (:Id Ky) *D))
+            ((&probe_frame.cell (:key Ky) P))))
+    (source (P)
+      (&probe_mark (:Key Ky) *P))
+    (node (P)
+      (&probe_frame.cell (:key Ky) *P))
+    (dir (D)
+      (&handle_dir (:Id Ky) *D))))
+
+(RULE &probe_cell
+  (&frames.component (:Id *Key))
+  (input))
+
+(RULE &ahead
+  (&probe.ray (:key (:Ky *Id)) *P *K)
+  (&probe_cell (:Key Id))
+  (input P)
+  (!= K 0))
+
+(RULE &ahead_break
+  (&ahead *Id *P *K)
+  (&marker (:Col *M))
+  (NOT (input P (:Col M))))
+
+(DET &empty
+  (&gauge *Col)
+  (&shrank Col))
+
+(RULE &empty_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (&empty Col))
+
+(INIT &empty_count Cardinality
+  (key ((OR ((&empty_cell ^Id *P))
+            ((&frames.component Id))))
+    (member ((:m P))
+      (&empty_cell Id *P))
+    (domain ()
+      (&frames.component Id))))
+
+;; The block advances the least of: the distance to a marker line ahead, and
+;; the number of empty gauge cells.
+(INIT &advance Order
+  (key ((OR ((&ahead ^Id *K)
+             (NOT (&ahead_break Id K)))
+            ((&empty_count.size (:key Id) *N))))
+    (member ((:t K))
+      (OR ((&ahead Id *K)
+           (NOT (&ahead_break Id K)))
+          ((&empty_count.size (:key Id) (:N K)))))
+    (score ((:t K) (:S K))
+      (OR ((&ahead Id *K)
+           (NOT (&ahead_break Id K)))
+          ((&empty_count.size (:key Id) (:N K)))))))
+
+(RULE &fill_order_axis
+  (&handle_dir (:Id *Key) *D)
+  (axis_of D *A))
+
+(RULE &fill_order_corner
+  (&handle_dir (:Id *Key) (:D *D2))
+  (&sweep *S)
+  (turn S (:D D2) (:D2 *D_side))
+  (diag_dirs *D (:D1 D2) (:D2 D_side)))
+
+(INIT &fill_order Order
+  (key ((&empty_cell ^Id *P))
+    (member ((:t P))
+      (&empty_cell Id *P))
+    (score ((:t P) (:S K1))
+      (&empty_cell Id *P)
+      (&fill_order_corner (:Key Id) (:D *Diag))
+      (&fill_order_axis (:Key Id) *A)
+      (diag_dist P Diag A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&empty_cell Id *P)
+      (&fill_order_corner (:Key Id) (:D *Diag))
+      (&fill_order_axis (:Key Id) *A)
+      (diag_dist P Diag A *K1 *K2))))
+
+(RULE &fills
+  (&fill_order.rank (:key *Id) (:t *P) *R)
+  (&advance.minimal (:key Id) (:t *N))
+  (< R N))
+
+(RULE &assembly
+  (&handle_dir *Id *D)
+  (OR ((&bbox.box (:key Id) *B)
+       (input *P)
+       (inside (:A P) B))
+      ((&abut Id D P))))
+
+(DET &grew
+  (&in_count.size (:key *E *Col) (:N *N1))
+  (&out_count.size (:key E Col) (:N *N2))
+  (< N1 N2))
+
+(DET &filled
+  (&gauge *Col)
+  (&grew Col))
+
+(RULE &paint
+  (&assembly *Id (:P *P2))
+  (&handle_dir Id *D)
+  (&advance.minimal (:key Id) (:t *N))
+  (jump (:P P2) D (:K N) (:Q *P))
+  (OR ((input (:P P2) *Col)
+       (NOT (&fills (:P P2))))
+      ((&fills (:P P2))
+       (&filled Col))))
+
+(DET &bg
+  (&grew *Col)
+  (NOT (&gauge Col)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((OR ((&assembly P)
+            (&bg Col))
+           ((input P Col)
+            (NOT (&assembly P))))
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

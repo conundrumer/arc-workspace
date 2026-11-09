@@ -1,0 +1,8 @@
+;; inputs c56a45b701a0605aeba8db676345ddd1666e30c1face62055b96029b431022e3 programs/solvers/0e671a1a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0e671a1a
+
+(param &bg Color (0))
+(param &path Color (5))
+(param &leg (Color Color) (3 4) (4 2))
+(param &axis Axis (AXIS_V))

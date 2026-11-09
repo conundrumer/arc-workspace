@@ -1,0 +1,39 @@
+;; inputs 0eba2016d14c6a83a5a5454649d694404f8a438e645c336f2f6cce79989d9c17 programs/solvers/4a1cacc2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4a1cacc2
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &place_nearer
+  (&mark *P)
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(RULE &place_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&place_nearer *P (:D D1))
+  (&place_nearer P (:D D2)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (OR ((&mark *P))
+        ((input P)
+         (&place_quadrant *Diag)
+         (corner_dist P Diag (:K 0))))))
+
+(RULE &covered
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (IF ((&covered P))
+      ((&mark *Col))
+      ((= Col C0))))
+
+(OUT (&output ^P ^Col))

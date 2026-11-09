@@ -1,0 +1,54 @@
+;; inputs aada846ef98db118f1260875179e5a08d03a77e9dd1d6d70e98055b0d500586c programs/solvers/3bd292e8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3bd292e8
+
+(DET &wall RarestColor)
+
+(DET &small_side AnyOutNewColor)
+
+(DET &other_side AnyOutNewColor)
+
+(INIT &region Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&wall (:C Col)))))
+
+(RULE &across
+  (input *P *Col)
+  (&wall (:C Col))
+  (opposite *D (:Opp *D_opp))
+  (neighbor P D *Q)
+  (neighbor P (:D D_opp) (:Q *Q_opp))
+  (&region.component (:P Q) (:Id *A))
+  (&region.component (:P Q_opp) (:Id *B))
+  (!= A B))
+
+(INIT &area Cardinality
+  (key ((&region.component *P (:Id ^A)))
+    (member ((:m P))
+      (&region.component *P (:Id A)))))
+
+(INIT &smallest Order
+  (member ((:t (:V A) (:S N)))
+    (&area.size (:key *A) *N))
+  (score ((:t (:V A) (:S N)) (:S N))
+    (&area.size (:key *A) *N)))
+
+;; The regions on the smallest region's side: those a walk of crossing pairs
+;; reaches from it, since two crossings return to the side started from.
+(INIT &same_side Propagation
+  (source ((:n B))
+    (&smallest.minimal (:t (:V *B))))
+  (edge ((:a A) (:b C))
+    (&across *A (:B *X))
+    (&across (:A X) (:B *C))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&wall (:C Col)))
+      ((&region.component P (:Id *A))
+       (IF ((&same_side.reached (:n A)))
+           ((&small_side (:C Col)))
+           ((&other_side (:C Col)))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,9 @@
+;; inputs 5ed1d2c8d002f7298f14f70626258b5d933044f50aae8c3c2b57dad25ec3ab8e programs/solvers/212895b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 212895b5
+
+(param &block Color (8))
+(param &stop Color (5))
+(param &diag_paint Color (2))
+(param &arm_paint Color (4))
+(param &gait (number C4) (0 D4_ID) (1 D4_CW) (2 D4_ID) (3 D4_CC))

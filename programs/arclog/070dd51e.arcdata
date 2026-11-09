@@ -1,0 +1,6 @@
+;; inputs fb079684722d960f1f5b79558e57fa8514b7d6f107b1b787bffc59b9040f2636 programs/solvers/070dd51e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 070dd51e
+
+(param &bg Color (0))
+(param &over_axis Axis (AXIS_V))

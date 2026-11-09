@@ -1,0 +1,109 @@
+;; inputs e10b8fc5955e9cc48b4535be90d3a53a9dde099c84bcfef9fd0524ddb4893bf6 programs/solvers/4c416de3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4c416de3
+
+(INIT &bg_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The color the outlines are drawn in.
+(DET &frame SharedColor)
+
+(INIT &bg Order
+  (member ((:t Col))
+    (&bg_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_count.size (:key *Col) *N)))
+
+(RULE &drawn
+  (input *P *Col)
+  (&frame (:C Col)))
+
+(RULE &outline
+  (OR ((&drawn *P))
+      ((input P)
+       (opposite *D (:Opp *D2))
+       (neighbor P D *Q)
+       (&drawn (:P Q))
+       (neighbor P (:D D2) (:Q *Q2))
+       (&drawn (:P Q2)))))
+
+(INIT &frames Connectivity
+  (node (P)
+    (&outline *P)))
+
+(INIT &boxes BoundingBox
+  (key ((&frames.component *P ^Id))
+    (cell (P)
+      (&frames.component *P Id))))
+
+(RULE &site
+  (input *P)
+  (&boxes.box *B)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&frame (:C Col)))
+  (NOT (&bg.maximal (:t Col))))
+
+(INIT &marks Connectivity
+  (key ((&ink *P ^Col))
+    (node (P)
+      (&ink *P Col)))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &mark_boxes BoundingBox
+  (key ((&marks.component *P ^Id))
+    (cell (P)
+      (&marks.component *P Id))))
+
+(RULE &shape
+  (&site (:P *P_site) *D)
+  (&mark_boxes.box (:key *Id) *B)
+  (inside (:A P_site) B)
+  (&marks.component *P Id)
+  (relative (:Base P_site) (:X P) (:X_rel *V)))
+
+(RULE &stamp
+  (&site (:P *P_site) *D)
+  (&shape (:D *D_whole) *V)
+  (apply_diag_dir (:D *G) (:Dir D_whole) (:Dir_out D))
+  (apply (:D G) (:P V) (:P_out *V_here))
+  (compose (:A P_site) (:B V_here) (:C *P)))
+
+(RULE &painted
+  (&stamp *P_site *P)
+  (&stamp P_site (:P *Q))
+  (&ink (:P Q) *Col))
+
+(ALTS $choice "which cells of a completed stamp get painted" $Cover
+  (ALT $Fill
+    (RULE &open
+      (OR ((input *P *Col)
+           (&bg.maximal (:t Col)))
+          ((&drawn P))))
+
+    (RULE &filled
+      (&painted *P *Col)
+      (&open P))
+
+    (RULE &output
+      (OR ((input *P)
+           (&filled P *Col))
+          ((input P Col)
+           (NOT (&filled P)))))))
+
+(RULE &output
+  (OR ((input *P)
+       (&painted P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

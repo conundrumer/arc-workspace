@@ -1,0 +1,54 @@
+;; inputs 3aaf58b5666e5402e37fe6e42b11661c6cdc6541453968246373d65b4047f3dd programs/solvers/d406998b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d406998b
+
+(DET &anchor DirDomain)
+
+(DET &dot RarestColor)
+
+(DET &mark AnyOutNewColor)
+
+(DET &mark_run DivisorRatio)
+
+(DET &keep_run DivisorRatio)
+
+(RULE &dot_dist
+  (input *P (:Col *Dot))
+  (&dot (:C Dot))
+  (&anchor *D)
+  (margin (:B P) D *K))
+
+(RULE &stripe_marked
+  (&dot_dist *P (:K *T))
+  (&mark_run *K)
+  (&keep_run (:K *G))
+  (divide T (:Side K) (:Gap G)))
+
+(ALTS $choice "two models of what alternates, tagged on out's Choice" $Stripes
+  (ALT $Sequence
+    (INIT &o Order
+      (member ((:t K))
+        (&dot_dist *K))
+      (score ((:t K) (:S K))
+        (&dot_dist *K)))
+
+    (RULE &seq_marked
+      (&dot_dist *P *K)
+      (&o.rank (:t K) *R)
+      (&mark_run (:K *Kr))
+      (&keep_run (:K *G))
+      (divide (:T R) (:Side Kr) (:Gap G)))
+
+    (RULE &output
+      (OR ((&seq_marked *P)
+           (&mark (:C *Col)))
+          ((input P Col)
+           (NOT (&seq_marked P)))))))
+
+(RULE &output
+  (OR ((&stripe_marked *P)
+       (&mark (:C *Col)))
+      ((input P Col)
+       (NOT (&stripe_marked P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,23 @@
+;; inputs fc9c17a28a654c3f91150abea57b69a9b25dc4530b05c0a95e8f57f78eb6f3b1 programs/solvers/623ea044.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 623ea044
+
+(DET &bg DominantColor)
+
+(INIT &diag Ray
+  (source (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (diag_dir_elem *D)))
+
+(RULE &output
+  (input *P)
+  (OR ((&diag.ray P (:Origin *Src))
+       (input (:P Src) *Col))
+      ((NOT (&diag.ray P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

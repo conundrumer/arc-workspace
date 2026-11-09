@@ -1,0 +1,6 @@
+;; inputs 007f9725bc45b6ec10c7f2676e522860ebc994ab551d92fd8e7f7b6ce21e45aa programs/solvers/feca6190.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; feca6190
+
+(param &bg Color (0))
+(param &sweep DiagDir (DIAG_TR))

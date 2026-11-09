@@ -1,0 +1,78 @@
+;; inputs 8e08dab2be6bf696ab49e881367a06445679c304d46d6bd1e790593370e44e39 programs/solvers/1f0c79e5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1f0c79e5
+
+(DET &bg DominantColor)
+
+(RULE &block
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&block *P)))
+
+;; The color that names a heading.
+(DET &mark ChangedColor)
+
+(RULE &marker
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &heading
+  (&marker *P)
+  (&block P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B)))
+
+(RULE &trail
+  (&block *P)
+  (input P *Col)
+  (NOT (&mark (:C Col))))
+
+(ALTS $choice "where a mark sits in the block, named two ways; the block is 2x2 in every pair, so the two ways agree here and part only on a larger block" $Corner
+  (ALT $Quadrant
+    (RULE &block_inner
+      (&block *P)
+      (&bbox.box *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+    (RULE &place_nearer
+      (&block_inner (:P_inner *P))
+      (dist_pair P *D *K *K2)
+      (< K K2))
+
+    (RULE &place_quadrant
+      (diag_dirs (:D *Diag) *D1 *D2)
+      (&place_nearer *P (:D D1))
+      (&place_nearer P (:D D2)))
+
+    (RULE &heading
+      (&marker *P)
+      (&block_inner P *P_inner)
+      (&place_quadrant (:P P_inner) (:Diag *D)))))
+
+;; Every block cell casts toward the headings the case claims.
+(INIT &ray Ray
+  (source (P)
+    (&block *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&heading *D)))
+
+(RULE &ray_ray
+  (&ray.ray *P *D *K (:Origin *Src))
+  (input P))
+
+(RULE &output
+  (input *P)
+  (OR ((&ray.ray P)
+       (input P)
+       (&trail *Col))
+      ((NOT (&ray_ray P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

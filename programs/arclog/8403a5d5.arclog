@@ -1,0 +1,280 @@
+;; inputs 4e566eb2b32c0f6db992f51a83e6f35386ea60696acdfcc8f3ca8380535fb1eb programs/solvers/8403a5d5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8403a5d5
+
+(DET &bg DominantColor)
+
+(DET &mark
+  (ex_input *E *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &trail_frame Frame
+  (key ((&mark ^E *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&mark E *P)
+      (frame_extent P *A *N))))
+
+(DET &dot AnyOutNewColor)
+
+(DET &dir DirDomain)
+
+(RULE &side
+  (&dir (:D *D2))
+  (turn *S (:D D2) (:D2 *D)))
+
+(RULE &bar_axis
+  (&dir *D)
+  (axis_of D (:A *A0))
+  (perp (:A A0) (:A2 *A)))
+
+;; The lines one step of the walk crosses: a bar line and the gap line after it.
+(DET &step_lines SepThickness)
+
+(DET &first_side SenseDomain)
+
+(RULE &first_edge
+  (&first_side *S)
+  (&side S *D))
+
+(RULE &marker
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The trail: the cells from the marker toward &dir.
+(INIT &trail2 Ray
+  (source (P)
+    (&marker *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&dir *D)))
+
+(RULE &first_edge2
+  (&first_edge (:D *E1)))
+
+(RULE &walk_line
+  (&trail2.ray *P (:K *I))
+  (&step_lines (:G *N))
+  (divide (:T I) (:Side N) (:Gap 0) (:Part *M) (:Remainder *J)))
+
+;; The end the gap's dot sits at flips at each step.
+(INIT &flip Walk
+  (successor ((:p E) (:p_next E2))
+    (&side (:D *E))
+    (opposite (:D E) (:Opp *E2)))
+  (steps ((:N M))
+    (&walk_line *M)))
+
+(RULE &lit
+  (&walk_line (:P *P2) (:J 0))
+  (&bar_axis *A)
+  (input *P)
+  (same_line A (:P P2) (:Q P)))
+
+;; The cast from the marker toward the trail direction.
+(INIT &trail Ray
+  (key ((OR ((&mark ^E *P))
+            ((&mark E)
+             (&dir *D))
+            ((&trail_frame.cell (:key E) P))))
+    (source (P)
+      (&mark E *P))
+    (node (P)
+      (&trail_frame.cell (:key E) *P))
+    (dir (D)
+      (&mark E)
+      (&dir *D))))
+
+(DET &step_cell
+  (&trail.ray (:key *E) (:P *P2) (:K *I))
+  (ex_input E (:P P2))
+  (&bar_axis *A)
+  (ex_output E *P *Col)
+  (same_line A (:P P2) (:Q P)))
+
+(DET &dot_step
+  (&step_cell *E *I (:P *Q) (:Col *Dot))
+  (&dot (:C Dot))
+  (&side *S (:D *Ed))
+  (margin (:B Q) (:D Ed) (:K 0)))
+
+(ALTS $choice "how the alternating trail is produced" $Walk
+  (ALT $Walk
+    (ALTS $f "the first dot's side" $Stored
+      (ALT $Away
+        (RULE &first_edge2
+          (&marker *P)
+          (margin (:B P) (:D *E0) (:K 0))
+          (&bar_axis *A)
+          (axis_of (:D E0) A)
+          (opposite (:D E0) (:Opp *E1))))))
+  (ALT $Banner
+    ;; The trail's shifts along its axis.
+    (INIT &si Periods
+      (key ((&step_cell ^E (:P *Q) *Col))
+        (cell ((:P Q) (:v Col))
+          (&step_cell E (:P *Q) *Col))))
+
+    (DET &si_mismatch_full
+      (&step_cell (:E *V0) *P)
+      (frame_offset P (:A *V1) (:K *V2))
+      (NOT (&si.period (:key (:E V0)) (:A V1) (:K V2))))
+
+    (DET &si_pair_full
+      (&step_cell (:E *V0) (:P *V3))
+      (frame_offset (:P V3) (:A *V1) (:K *V2) *V)
+      (compose (:A V3) (:B V) (:C *V4))
+      (&step_cell (:E V0) (:P V4)))
+
+    (RULE &trail_axis
+      (&dir *D)
+      (axis_of D *A))
+
+    (DET &broken
+      (&si_mismatch_full (:V1 *A) (:V2 *K))
+      (&trail_axis A))
+
+    ;; The shortest witnessed shift no trail breaks.
+    (INIT &unbroken Order
+      (member ((:t K))
+        (&si_pair_full (:V1 *A) (:V2 *K))
+        (&trail_axis A)
+        (NOT (&broken K)))
+      (score ((:t K) (:S K))
+        (&si_pair_full (:V1 *A) (:V2 *K))
+        (&trail_axis A)
+        (NOT (&broken K))))
+
+    (DET &dot_slot
+      (&dot_step *I *S)
+      (&unbroken.minimal (:t *N))
+      (divide (:T I) (:Side N) (:Gap 0) (:Remainder *K)))
+
+    (RULE &dot_edge
+      (&dot_slot *K *S)
+      (&side S *D))
+
+    (DET &slot
+      (&step_cell (:I *K))
+      (&unbroken.minimal (:t *N))
+      (< K N))
+
+    (INIT &slots Order
+      (member ((:t K))
+        (&slot *K))
+      (score ((:t K) (:S K))
+        (&slot *K)))
+
+    ;; The slot cycle, advanced once per step along the trail.
+    (INIT &slot_walk Walk
+      (successor ((:p K) (:p_next K2))
+        (&slots.cyclic_successor (:a *K) (:b *K2)))
+      (steps ((:N I))
+        (&trail2.ray (:K *I))))
+
+    (RULE &slot_at
+      (&trail2.ray *P (:K *I))
+      (&slot_walk.walk (:p0 0) (:N I) (:p *K)))
+
+    (DET &bar_step
+      (&step_cell *E *I *Col)
+      (&mark E Col))
+
+    (DET &bar_slot
+      (&bar_step *I)
+      (&unbroken.minimal (:t *N))
+      (divide (:T I) (:Side N) (:Gap 0) (:Remainder *K)))
+
+    (RULE &lit
+      (&slot_at (:P *P2) *K)
+      (&bar_slot K)
+      (&bar_axis *A)
+      (input *P)
+      (same_line A (:P P2) (:Q P)))
+
+    (RULE &dotted
+      (&slot_at (:P *P2) *K)
+      (&dot_edge K (:D *E))
+      (&bar_axis *A)
+      (input *P)
+      (same_line A (:P P2) (:Q P))
+      (margin (:B P) (:D E) (:K 0))))
+  (ALT $Stamp
+    (DET &aim
+      (&dir *D))
+
+    (DET &bar
+      (&mark *E *P *Col)
+      (ex_output E (:P *Q) Col)
+      (relative (:Base P) (:X Q) (:X_rel *Delta)))
+
+    (DET &dots
+      (&mark *E *P)
+      (ex_output E (:P *Q) (:Col *Dot))
+      (&dot (:C Dot))
+      (relative (:Base P) (:X Q) (:X_rel *Delta)))
+
+    ;; The trail's first dot.
+    (INIT &first_dot Order
+      (key ((&dot_step ^E *I))
+        (member ((:t I))
+          (&dot_step E *I))
+        (score ((:t I) (:S I))
+          (&dot_step E *I))))
+
+    (DET &first_end
+      (&first_dot.minimal (:key *E) (:t *I))
+      (&dot_step E I *S)
+      (&side S *D))
+
+    ;; The trail, its cells as offsets from the marker, `@` on the marker cell:
+    ;; bar cells take the marker's color, and dot cells take &dot.
+    (RIGID_DET &stamp
+      (&bar *Delta)
+      (&dots *Delta)
+      (&aim *D)
+      (&first_end *D))
+
+    (RULE &stamp_pose
+      (&stamp.aim (:Pose *G) *D)
+      (&dir D)
+      (&stamp.first_end (:Pose G) (:D *E))
+      (&first_edge (:D E)))
+
+    ;; Each offset of the posed stamp seated on the marker, on-grid.
+    (RULE &lit
+      (&stamp_pose *G)
+      (&marker (:P *P2))
+      (&stamp.bar (:Pose G) *Delta)
+      (compose (:A P2) (:B Delta) (:C *P))
+      (input P))
+
+    (RULE &dotted
+      (&stamp_pose *G)
+      (&marker (:P *P2))
+      (&stamp.dots (:Pose G) *Delta)
+      (compose (:A P2) (:B Delta) (:C *P))
+      (input P))))
+
+(RULE &dotted
+  (&walk_line (:P *P2) *M *J)
+  (!= J 0)
+  (&first_edge2 (:E1 *E0))
+  (&flip.walk (:p0 E0) (:N M) (:p *E))
+  (&bar_axis *A)
+  (input *P)
+  (same_line A (:P P2) (:Q P))
+  (margin (:B P) (:D E) (:K 0)))
+
+(RULE &output
+  (OR ((&lit *P)
+       (&marker *Col))
+      ((&dotted P)
+       (&dot (:C Col)))
+      ((input P)
+       (NOT (&lit P))
+       (NOT (&dotted P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

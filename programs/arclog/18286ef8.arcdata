@@ -1,0 +1,7 @@
+;; inputs 0fc9aca6aef832326aea7d0782b6129e188cffe6356c6726ee9df17b53aa63eb programs/solvers/18286ef8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 18286ef8
+
+(param &divider Color (0))
+(param &gaze Color (9))
+(param &target Color (6))

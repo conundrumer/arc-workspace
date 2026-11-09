@@ -1,0 +1,5 @@
+;; inputs a5a7dbd4d1ad71798b103a59690fc74ed4cbdcc9366b8ada9f9a1f7220e5c15c programs/solvers/50a16a69.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 50a16a69
+
+(param &move_dir Dir (DIR_L))

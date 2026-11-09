@@ -1,0 +1,168 @@
+;; inputs 31df5133be99af13e48b46323ad094c84de3cb31f1bae74a775b10e4b8099df8 programs/solvers/36a08778.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 36a08778
+
+(DET &block UnchangedColor)
+
+(RULE &block2
+  (input *P *Col)
+  (&block (:C Col)))
+
+(RULE &stream_mark
+  (dir_elem (:D *Key))
+  (input *P)
+  (NOT (&block2 P)))
+
+;; The course water poured at a cell toward a direction takes: a cast toward
+;; that direction, halted by a block. Keyed by direction.
+(INIT &stream Ray
+  (key ((OR ((&stream_mark (:Key ^Ky) *P))
+            ((dir_elem (:D Ky)))))
+    (source (P)
+      (&stream_mark (:Key Ky) *P))
+    (node (P)
+      (dir_elem (:D Ky))
+      (input *P)
+      (NOT (&block2 P)))
+    (dir ((:D Ky))
+      (dir_elem (:D Ky)))))
+
+(INIT &stream_full Ray
+  (key ((OR ((&stream_mark (:Key ^Ky) *P))
+            ((dir_elem (:D Ky)))))
+    (source (P)
+      (&stream_mark (:Key Ky) *P))
+    (node (P)
+      (dir_elem (:D Ky))
+      (input *P))
+    (dir ((:D Ky))
+      (dir_elem (:D Ky)))))
+
+(RULE &stream_stop_full
+  (&stream.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&stream_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(DET &water RarestColor)
+
+(DET &fall DirDomain)
+
+(RULE &source
+  (input *P *Col)
+  (&water (:C Col)))
+
+(RULE &pour
+  (&source *P)
+  (&fall *D))
+
+(RULE &barred
+  (&stream.ray (:key (:Ky *D)) *P D (:Origin *M))
+  (neighbor P D (:Q *B))
+  (&stream_stop_full (:V0 D) (:V1 B) (:V2 D) (:V4 M)))
+
+;; A cell to each side, across the flow, pours on.
+(RULE &pour_on
+  (&barred *M *D *P)
+  (perp_dir D *D2)
+  (neighbor P (:D D2) *Q)
+  (input (:P Q))
+  (NOT (&block2 (:P Q))))
+
+(ALTS $flow "how the water passes a barring block" $Step
+  (ALT $Shell
+    (RULE &run_mark
+      (axis_elem (:A *Key))
+      (&block2 *P))
+
+    ;; A block's maximal run along an axis: a cast over block cells that any
+    ;; other cell halts.
+    (INIT &run Ray
+      (key ((OR ((&run_mark (:Key ^Ky) *P))
+                ((axis_of *D (:A Ky)))))
+        (source (P)
+          (&run_mark (:Key Ky) *P))
+        (node (P)
+          (axis_of *D (:A Ky))
+          (input *P)
+          (ALL ()
+               ((&block2 P))))
+        (dir (D)
+          (axis_of *D (:A Ky)))))
+
+    (INIT &run_full Ray
+      (key ((OR ((&run_mark (:Key ^Ky) *P))
+                ((axis_of *D (:A Ky)))))
+        (source (P)
+          (&run_mark (:Key Ky) *P))
+        (node (P)
+          (axis_of *D (:A Ky))
+          (input *P))
+        (dir (D)
+          (axis_of *D (:A Ky)))))
+
+    (RULE &run_stop_full
+      (&run.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+      (neighbor (:P E1) (:D V2) (:Q *V1))
+      (&run_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+    (RULE &run_cell
+      (axis_elem (:A *Key))
+      (&block2))
+
+    (RULE &span
+      (OR ((&run.ray (:key (:Ky *A)) *P (:Origin *B))
+           (&run_cell (:Key A))
+           (&block2 P))
+          ((&run_stop_full (:V0 A) (:V1 P) (:V4 B)))))
+
+    (RULE &shell
+      (axis_of *D (:A *A0))
+      (perp (:A A0) (:A2 *A))
+      (&span A *B (:P *Q))
+      (opposite D (:Opp *D_back))
+      (neighbor (:P Q) (:D D_back) (:Q *P))
+      (input P)
+      (NOT (&block2 P)))
+
+    ;; Where a block stands on another's shell row (test 1), the water past it
+    ;; arrives by another pour, so $Step and $Shell agree there too.
+    (RULE &pour_on
+      (&barred *M *D *B)
+      (&shell D B (:P *Q)))))
+
+(ALTS $seat "where the pour direction comes from" $Dir
+  (ALT $Stub
+    (INIT &stub Connectivity
+      (node (P)
+        (&source *P)))
+
+    (RULE &stub_flow
+      (&stub.component *P *Id)
+      (opposite *D (:Opp *E))
+      (margin (:B P) (:D E) (:K 0))
+      (neighbor P D *Q)
+      (&source (:P Q)))
+
+    (RULE &pour
+      (&stub.component *P *Id)
+      (&stub_flow Id *D))))
+
+;; The pours the water makes: the stub's pours, and each pour on from a
+;; barred one.
+(INIT &flow Propagation
+  (source ((:n P D))
+    (&pour *P *D))
+  (edge ((:a (:P M) D) (:b (:P Q) D))
+    (&pour_on *M *D *Q)))
+
+(RULE &wet
+  (&flow.reached (:n (:P *M) *D))
+  (&stream.ray (:key (:Ky D)) *P D (:Origin M)))
+
+(RULE &output
+  (OR ((&wet *P)
+       (&water (:C *Col)))
+      ((input P Col)
+       (NOT (&wet P)))))
+
+(OUT (&output ^P ^Col))

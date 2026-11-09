@@ -1,0 +1,62 @@
+;; inputs 56b0c3d98d189afc518c4ddbe94ba90c1bc4517fd0168ab08cab7c39e9286a8b programs/solvers/46f33fce.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 46f33fce
+
+(DET &tile_count TileCount)
+
+(INIT &tile_division Division
+  (cell (P)
+    (input *P))
+  (parts (A N)
+    (axis_elem *A)
+    (&tile_count *N)))
+
+(DET &bg DominantColor)
+
+(RULE &tile
+  (&tile_division.tile *P (:P_outer *P_tile)))
+
+(DET &scale ScaleRatio)
+
+;; Scale: each input cell becomes a &scale block of the rendered color.
+(INIT &subf Frame
+  (extent (A (:N S))
+    (axis_elem *A)
+    (&scale (:K *S))))
+
+(ALTS $choice "what the tiling is read by" $Count
+  (ALT $Size
+    (DET &tile_dim ScaleRatio)
+
+    (INIT &tile_division2 Division
+      (cell (P)
+        (input *P))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim *K)))
+
+    (RULE &tile
+      (&tile_division2.tile *P (:P_outer *P_tile)))))
+
+(RULE &tile_ink
+  (&tile *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &render
+  (&tile *P *P_tile)
+  (OR ((&tile_ink P_tile *Col))
+      ((NOT (&tile_ink P_tile))
+       (&bg (:C Col)))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_in))
+    (&render (:P *P_in)))
+  (inner ((:P P_sub))
+    (&subf.cell (:P *P_sub))))
+
+(RULE &output
+  (&render (:P *P_in) *Col)
+  (&output_tiling.cell (:P_outer P_in) *P))
+
+(OUT (&output ^P ^Col))

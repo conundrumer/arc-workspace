@@ -1,0 +1,115 @@
+;; inputs 7d0367ddca8edeeb366d1b8fcff346202271aa42a644089c0348635df4528d08 programs/solvers/c92b942c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c92b942c
+
+(INPUT marks-on-background "the input is a field of &background with one or more marks, all of one color other than &line_color and &diag_color, and the marks are fewer than the &background cells"
+
+  (DET &tile_count ScaleRatio)
+
+  (INIT &arrangement Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&tile_count (:K *N))))
+
+  (INIT &tiled_tiling Tiling
+    (outer ((:P P_tile))
+      (&arrangement.cell (:P *P_tile)))
+    (inner ((:P P_intile))
+      (input (:P *P_intile))))
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &line_axis AxisDomain)
+
+  (RULE &tiled
+    (&tiled_tiling.cell (:P_inner *P_intile) *P)
+    (input (:P P_intile) *Col))
+
+  (RULE &mark
+    (&tiled *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &line_cell
+    (&tiled *P *Col)
+    (&background (:C Col))
+    (&mark (:P *Q))
+    (&line_axis *A)
+    (same_line A P Q))
+
+  (DET &step_color
+    (&mark *E (:P *Q))
+    (diag_dir_elem *D)
+    (neighbor (:P Q) D (:Q *P))
+    (&tiled E P (:Col *Col0))
+    (&background (:C Col0))
+    (NOT (&line_cell E P))
+    (ex_output E P (:Col *C)))
+
+  (DET &unpainted
+    (&step_color *D (:C *Col))
+    (&background (:C Col)))
+
+  (DET &diag_dirs
+    (&step_color *D)
+    (NOT (&unpainted D)))
+
+  (RULE &corner_cell
+    (&mark (:P *Q))
+    (&diag_dirs *D)
+    (neighbor (:P Q) D (:Q *P)))
+
+  (DET &diag_color
+    (&corner_cell *E *P)
+    (NOT (&mark E P))
+    (ex_output E P (:Col *C)))
+
+  (DET &line_color
+    (&line_cell *E *P)
+    (NOT (&corner_cell E P))
+    (ex_output E P (:Col *C))))
+
+(OUTPUT tile "the output frame is the input repeated &tile_count times on each axis")
+
+(OUTPUT row-line "in the tiled grid, each &background cell on a line along &line_axis that holds a mark takes &line_color")
+
+(OUTPUT diag-corners "in the tiled grid, each &background cell one diagonal step from a mark toward a corner in &diag_dirs takes &diag_color, over the line; a step that leaves the tiled grid paints nothing")
+
+(OUTPUT marks-kept "each mark keeps its color, and every other cell keeps &background")
+
+(ALTS $lc "the color of a cell that is both on a line and at a corner" $CornerOverLine
+  (ALT $LineOverCorner
+    (OUTPUT diag-corners "a corner paints only a cell the line leaves &background; defined on every input")
+    (RULE &shielded
+      (OR ((&line_cell *P))
+          ((&mark P))))
+    (ALT $CornerOverMark
+
+      (RULE &painted
+        (&corner_cell *P)
+        (NOT (&line_cell P))))))
+
+(ALTS $cm "the color of a mark at another mark's corner" $MarkKept
+  (ALT $CornerOverMark
+    (OUTPUT marks-kept "a corner paints &diag_color over a mark; defined on every input")
+    (RULE &painted
+      (&corner_cell *P))))
+
+(RULE &shielded
+  (&mark *P))
+
+(RULE &painted
+  (&corner_cell *P)
+  (NOT (&shielded P)))
+
+(RULE &output
+  (&tiled *P (:Col *Col0))
+  (OR ((&painted P)
+       (&diag_color (:C *Col)))
+      ((NOT (&painted P))
+       (&line_cell P)
+       (&line_color (:C Col)))
+      ((NOT (&painted P))
+       (NOT (&line_cell P))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

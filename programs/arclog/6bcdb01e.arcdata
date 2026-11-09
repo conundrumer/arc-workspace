@@ -1,0 +1,6 @@
+;; inputs 1d1ba724c8d4d7b15b6afbcbe648700067521f27b781ed7b76d3b15195c31b80 programs/solvers/6bcdb01e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6bcdb01e
+
+(param &wall Color (8))
+(param &seed Color (3))

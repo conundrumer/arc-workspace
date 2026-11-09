@@ -1,0 +1,199 @@
+;; inputs b66e22700ed82180ccd75e029a5172d4bb00e661ec0c1aec52ecbca62a2ba91d programs/solvers/c658a4bd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c658a4bd
+
+(param &bg Color (0))
+(param &side_axis Axis (AXIS_H))
+
+(exclude ($RankRings $RankByBboxArea) "The cases. Where RankRings is defined, every ring has a square and InnermostFills gives the same output, so RankRings takes the concept branch at every other point. Under OutlineAtSide and SolidAtSide the rank key picks only the frame, and RankByBboxArea is defined there only where the first square by area has the largest side, so those two take BySide.")
+(exclude ($OutlineAtSide $RankByBboxArea) "The cases. Where RankRings is defined, every ring has a square and InnermostFills gives the same output, so RankRings takes the concept branch at every other point. Under OutlineAtSide and SolidAtSide the rank key picks only the frame, and RankByBboxArea is defined there only where the first square by area has the largest side, so those two take BySide.")
+(exclude ($SolidAtSide $RankByBboxArea) "The cases. Where RankRings is defined, every ring has a square and InnermostFills gives the same output, so RankRings takes the concept branch at every other point. Under OutlineAtSide and SolidAtSide the rank key picks only the frame, and RankByBboxArea is defined there only where the first square by area has the largest side, so those two take BySide.")
+(exclude ($RankRings $SideOnAxis) "The cases. Where RankRings is defined, every ring has a square and InnermostFills gives the same output, so RankRings takes the concept branch at every other point. Under OutlineAtSide and SolidAtSide the rank key picks only the frame, and RankByBboxArea is defined there only where the first square by area has the largest side, so those two take BySide.")
+(exclude ($RankRings &bg=$Derived) "fails Subsumption: where it is defined, $InnermostFills gives the same output")
+
+(alts $nesting
+  (alt $OutlineAtSide
+    (witness size-step-four variant $OutlineAtSide
+      (relaxed sizes-step)
+      (separates "the sides fall by 4, not 2: the concept leaves the inner rings with no square and is undefined; $OutlineAtSide places each outline at its own side with background between; $SolidAtSide stacks solid squares into rings 2 wide; $SideFromCount shrinks the frame to one ring per square; $InnermostFills fills the inner rings with the smallest square's color")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 6 0 0 0 0 0 0 0 6 0 0 0)
+        (0 6 0 0 0 0 0 0 0 6 0 0 0)
+        (0 6 0 0 0 0 0 0 0 6 0 0 0)
+        (0 6 0 0 0 0 0 0 0 6 0 0 0)
+        (0 6 0 0 0 0 0 3 3 3 3 3 0)
+        (0 6 0 0 0 0 0 3 0 6 0 3 0)
+        (0 6 0 0 0 0 0 3 0 6 0 3 0)
+        (0 6 6 6 6 6 6 3 6 6 0 3 0)
+        (0 0 0 0 0 0 0 3 3 3 3 3 0)
+        (0 0 4 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $OutlineAtSide (grid
+        (6 6 6 6 6 6 6 6 6)
+        (6 0 0 0 0 0 0 0 6)
+        (6 0 3 3 3 3 3 0 6)
+        (6 0 3 0 0 0 3 0 6)
+        (6 0 3 0 4 0 3 0 6)
+        (6 0 3 0 0 0 3 0 6)
+        (6 0 3 3 3 3 3 0 6)
+        (6 0 0 0 0 0 0 0 6)
+        (6 6 6 6 6 6 6 6 6)))
+      (output $SolidAtSide (grid
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 3 3 3 3 3 6 6)
+        (6 6 3 3 3 3 3 6 6)
+        (6 6 3 3 4 3 3 6 6)
+        (6 6 3 3 3 3 3 6 6)
+        (6 6 3 3 3 3 3 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)))
+      (output $SideFromCount (grid
+        (6 6 6 6 6)
+        (6 3 3 3 6)
+        (6 3 4 3 6)
+        (6 3 3 3 6)
+        (6 6 6 6 6)))
+      (output $InnermostFills (grid
+        (6 6 6 6 6 6 6 6 6)
+        (6 3 3 3 3 3 3 3 6)
+        (6 3 4 4 4 4 4 3 6)
+        (6 3 4 4 4 4 4 3 6)
+        (6 3 4 4 4 4 4 3 6)
+        (6 3 4 4 4 4 4 3 6)
+        (6 3 4 4 4 4 4 3 6)
+        (6 3 3 3 3 3 3 3 6)
+        (6 6 6 6 6 6 6 6 6)))))
+  (alt $SolidAtSide
+    (witness size-step-four variant $OutlineAtSide))
+  (alt $SideFromCount
+    (witness size-step-four variant $OutlineAtSide))
+  (alt $InnermostFills
+    (witness size-step-four variant $OutlineAtSide)))
+
+(alts $rank
+  (alt $RankByBboxArea
+    (witness cut-to-three-rows ordinary concept
+      (separates "the largest square runs past the bottom edge and keeps 3 of its 9 rows: the concept keeps it outermost by its width; $RankByBboxArea ranks the whole side-7 square above it by box area")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 2)
+        (0 8 8 8 8 8 8 8 0 0 0 0 0)
+        (0 8 0 0 0 0 0 3 3 3 3 3 0)
+        (0 8 0 0 0 0 0 3 0 0 0 3 0)
+        (0 8 0 0 0 0 0 3 0 0 0 3 0)
+        (0 8 0 0 0 0 0 3 0 0 0 3 0)
+        (0 8 0 0 0 0 0 3 3 3 3 3 0)
+        (0 8 8 8 8 8 8 8 0 0 4 4 4)
+        (0 0 0 0 0 0 0 0 0 0 4 0 4)
+        (0 0 0 0 0 0 0 0 0 0 4 4 4)
+        (0 0 6 6 6 6 6 6 6 6 6 0 0)
+        (0 0 6 0 0 0 0 0 0 0 6 0 0)
+        (0 0 6 0 0 0 0 0 0 0 6 0 0)))
+      (output $BySide (grid
+        (6 6 6 6 6 6 6 6 6)
+        (6 8 8 8 8 8 8 8 6)
+        (6 8 3 3 3 3 3 8 6)
+        (6 8 3 4 4 4 3 8 6)
+        (6 8 3 4 2 4 3 8 6)
+        (6 8 3 4 4 4 3 8 6)
+        (6 8 3 3 3 3 3 8 6)
+        (6 8 8 8 8 8 8 8 6)
+        (6 6 6 6 6 6 6 6 6)))
+      (output ($SideFromCount $RankByBboxArea) (grid
+        (8 8 8 8 8 8 8 8 8)
+        (8 6 6 6 6 6 6 6 8)
+        (8 6 3 3 3 3 3 6 8)
+        (8 6 3 4 4 4 3 6 8)
+        (8 6 3 4 2 4 3 6 8)
+        (8 6 3 4 4 4 3 6 8)
+        (8 6 3 3 3 3 3 6 8)
+        (8 6 6 6 6 6 6 6 8)
+        (8 8 8 8 8 8 8 8 8)))
+      (output ($InnermostFills $RankByBboxArea) (grid
+        (8 8 8 8 8 8 8)
+        (8 6 6 6 6 6 8)
+        (8 6 3 3 3 6 8)
+        (8 6 3 4 3 6 8)
+        (8 6 3 3 3 6 8)
+        (8 6 6 6 6 6 8)
+        (8 8 8 8 8 8 8))))))
+
+(alts $side
+  (alt $SideOnAxis
+    (witness cut-at-side-edge ordinary concept
+      (separates "a square runs past the left edge and keeps 4 of its 7 columns: the concept reads its side from its height and keeps it second; $SideOnAxis reads its width and ranks it below the side-5 square")
+      (input (grid
+        (8 8 8 8 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 4 4 4 4 4 0 0)
+        (0 0 0 8 0 0 0 0 4 0 0 0 4 0 0)
+        (0 0 0 8 0 0 0 0 4 0 0 0 4 0 0)
+        (0 0 0 8 0 0 0 0 4 0 0 0 4 0 0)
+        (0 0 0 8 0 2 2 2 4 4 4 4 4 2 0)
+        (8 8 8 8 0 2 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 2 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 2 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 2 0 0 0 0 0 0 0 2 0)
+        (1 1 1 0 0 2 0 0 0 0 0 0 0 2 0)
+        (1 0 1 0 0 2 0 0 0 0 0 0 0 2 0)
+        (1 1 1 0 0 2 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 2 2 2 2 2 2 2 2 2 0)
+        (3 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $LargerExtent (grid
+        (2 2 2 2 2 2 2 2 2)
+        (2 8 8 8 8 8 8 8 2)
+        (2 8 4 4 4 4 4 8 2)
+        (2 8 4 1 1 1 4 8 2)
+        (2 8 4 1 3 1 4 8 2)
+        (2 8 4 1 1 1 4 8 2)
+        (2 8 4 4 4 4 4 8 2)
+        (2 8 8 8 8 8 8 8 2)
+        (2 2 2 2 2 2 2 2 2)))
+      (output ($OutlineAtSide $SideOnAxis) ($SolidAtSide $SideOnAxis) undefined)
+      (output ($SideFromCount $SideOnAxis) ($InnermostFills $SideOnAxis) (grid
+        (2 2 2 2 2 2 2 2 2)
+        (2 4 4 4 4 4 4 4 2)
+        (2 4 8 8 8 8 8 4 2)
+        (2 4 8 1 1 1 8 4 2)
+        (2 4 8 1 3 1 8 4 2)
+        (2 4 8 1 1 1 8 4 2)
+        (2 4 8 8 8 8 8 4 2)
+        (2 4 4 4 4 4 4 4 2)
+        (2 2 2 2 2 2 2 2 2))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor borderline concept
+      (separates "the side-7 square's color 8 outnumbers the background: the concept reads background 0 and puts 8 in the ring at depth 1; bg=DominantColor takes 8 as the background, reads the 0 cells as a side-7 square, and puts 0 in that ring")
+      (input (grid
+        (2 2 2 2 2 2 2 2 2)
+        (2 4 4 4 4 4 0 0 2)
+        (2 4 8 8 8 4 8 8 8)
+        (2 4 8 0 0 4 0 0 8)
+        (2 4 8 0 0 1 1 1 8)
+        (2 4 4 4 4 1 0 1 8)
+        (2 0 8 0 0 1 1 1 8)
+        (2 3 8 0 0 0 0 0 8)
+        (2 2 8 8 8 8 8 8 8)))
+      (output &bg=$Stored (grid
+        (2 2 2 2 2 2 2 2 2)
+        (2 8 8 8 8 8 8 8 2)
+        (2 8 4 4 4 4 4 8 2)
+        (2 8 4 1 1 1 4 8 2)
+        (2 8 4 1 3 1 4 8 2)
+        (2 8 4 1 1 1 4 8 2)
+        (2 8 4 4 4 4 4 8 2)
+        (2 8 8 8 8 8 8 8 2)
+        (2 2 2 2 2 2 2 2 2)))
+      (output &bg=$Derived (grid
+        (2 2 2 2 2 2 2 2 2)
+        (2 0 0 0 0 0 0 0 2)
+        (2 0 4 4 4 4 4 0 2)
+        (2 0 4 1 1 1 4 0 2)
+        (2 0 4 1 3 1 4 0 2)
+        (2 0 4 1 1 1 4 0 2)
+        (2 0 4 4 4 4 4 0 2)
+        (2 0 0 0 0 0 0 0 2)
+        (2 2 2 2 2 2 2 2 2))))))

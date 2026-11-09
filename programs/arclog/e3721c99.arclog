@@ -1,0 +1,167 @@
+;; inputs b8281f9f79d619c49ea4d221433d83ad513539fb3ae76a21750dd9d0f6898677 programs/solvers/e3721c99.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e3721c99
+
+(INPUT divider "a line of &divider_color, straight or bent once, the one object of that color that touches the grid edge, runs to the grid edge and cuts off a legend region at one side or corner of the grid."
+
+  (DET &shape_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET_OR_RULE &background DominantColor
+    (&shape_color (:C *S))
+    (ex_input *E *P (:Col S))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (!= C S))
+
+  (DET &background_determined
+    (&shape_color (:C *S))
+    (ex_input *E *P (:Col S))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (!= C S))
+
+  (DET_OR_RULE &divider_color "the color of the line that cuts off the legend" SharedColor
+    (ex_input *P (:Col *C))
+    (dir_elem *D)
+    (margin (:B P) D (:K 0))
+    (NOT (&shape_color C))
+    (NOT (&background_determined C)))
+
+  ;; The 4-connected one-color pieces of each color but the background.
+  (INIT &pieces Connectivity
+    (key ((input *P (:Col ^C))
+          (NOT (&background C)))
+      (node (P)
+        (input *P (:Col C))
+        (NOT (&background C)))))
+
+  (RULE &object
+    (&pieces.component (:key *C) *P *Id))
+
+  (INIT &divider_size Cardinality
+    (key ((&object ^C ^Id *P)
+          (&divider_color C))
+      (member ((:m P))
+        (&object C Id *P)
+        (&divider_color C))))
+
+  (INIT &largest Order
+    (member ((:t C Id (:S N)))
+      (&divider_size.size (:key *C *Id) *N))
+    (score ((:t C Id (:S N)) (:S N))
+      (&divider_size.size (:key *C *Id) *N))))
+
+(INPUT legend-keys "the legend region holds keys in a row or a column, each a block of one color other than &shape_color, with single &background cells as holes; no two keys have the same hole count."
+
+  ;; The 8-connected one-color pieces of each color but the background.
+  (INIT &shapes8 Connectivity
+    (key ((input *P (:Col ^C))
+          (NOT (&background C)))
+      (node (P)
+        (input *P (:Col C))
+        (NOT (&background C))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT shapes "outside the legend, shapes of &shape_color on &background, each a 4-connected set of cells that encloses zero or more holes.")
+
+(INPUT hole "a hole of an object is a 4-connected region of the cells outside that object that no walk of cardinal steps through the cells outside that object reaches from the grid edge.")
+
+(OUTPUT recolor-by-holes "each shape takes the color of the key whose hole count equals the shape's hole count."
+
+  ;; The cells outside each object.
+  (INIT &outside Enclosure
+    (key ((&object ^C ^Id))
+      (cell (P)
+        (input *P)
+        (NOT (&object C Id P)))))
+
+  (INIT &own Cardinality
+    (key ((OR ((&object ^C ^Id))
+              ((&outside.enclosed (:key C Id) (:Id *Id2)))))
+      (member ((:m Id2))
+        (&outside.enclosed (:key C Id) (:Id *Id2)))
+      (domain ()
+        (&object C Id))))
+
+  ;; The background regions the grid edge cannot reach.
+  (INIT &enclosed Enclosure
+    (cell (P)
+      (input *P (:Col *C))
+      (&background C)))
+
+  (INIT &joint Cardinality
+    (key ((&object ^C ^Id))
+      (member ((:m Id2))
+        (&object C Id *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&enclosed.enclosed (:P Q) (:Id *Id2)))
+      (domain ()
+        (&object C Id)))))
+
+(OUTPUT erase-unmatched "a shape whose hole count no key has becomes &background.")
+
+(OUTPUT rest-kept "the divider, the keys and the background stay as they are.")
+
+(ALTS $s "how the cells of &shape_color join into shapes" $Shape4
+  (ALT $Shape8
+    (INPUT shapes "a shape is an 8-connected set, so shapes that touch at a corner are one shape."
+      (RULE &object
+        (&shapes8.component (:key *C) *P *Id)))))
+
+(ALTS $h "what closes off a hole" $OwnHoles
+  (ALT $HoleByAllContent
+    (INPUT hole "a hole is a closed region of &background cells in the whole grid that touches the object, so the divider, keys and other shapes can close it off.")
+    (RULE &hole_count
+      (&joint.size (:key *C *Id) *N))))
+
+(ALTS $d "which object of &divider_color is the divider" $EdgeDivider
+  (ALT $LargestDivider
+    (INPUT divider "the divider is the object of &divider_color with the most cells, wherever it lies.")
+    (RULE &divider
+      (&largest.maximal (:t *C *Id)))))
+
+(RULE &shape
+  (&object *C *Id)
+  (&shape_color C))
+
+(RULE &divider
+  (&object *C *Id *P)
+  (&divider_color C)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &key
+  (&object *C *Id)
+  (NOT (&shape_color C))
+  (NOT (&divider C Id)))
+
+(RULE &hole_count
+  (&own.size (:key *C *Id) *N))
+
+(RULE &hue
+  (&shape *C *Id)
+  (&hole_count C Id *N)
+  (&key (:C *Col) (:Id *K))
+  (&hole_count (:C Col) (:Id K) N))
+
+(RULE &output
+  ;; Every cell outside the shapes keeps its color.
+  (OR ((input *P *Col)
+       (NOT (&shape_color (:C Col))))
+      ;; A shape takes its key's color, and a shape no key matches is erased.
+      ((&shape *C *Id)
+       (&object C Id P)
+       (OR ((&hue C Id Col))
+           ((NOT (&hue C Id))
+            (&background (:C Col)))))))
+
+(OUT (&output ^P ^Col))

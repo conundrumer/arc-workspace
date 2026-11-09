@@ -1,0 +1,146 @@
+;; inputs f3d7afb44df37bc00401eb181a161955503402970a7f9f891e5e4bae880f7b3d programs/solvers/e9ac8c9e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9ac8c9e
+
+(INPUT squares "the input holds one or more solid squares of &block_color, each with an even side"
+
+  (DET &block_color VanishedColor)
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &shapes Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col)))
+          (dir_elem *D)
+          (neighbor P D *Q)
+          (input (:P Q) Col))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col)))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (input (:P Q) Col)))))
+
+(INPUT corner-dots "each square has, at each of its four corners, one cell diagonally adjacent to that corner and outside the square, which holds a color other than &bg and &block_color"
+
+  (INIT &squares Connectivity
+    (node (P)
+      (input *P *Col)
+      (&block_color (:C Col))))
+
+  (RULE &block
+    (&squares.component *P (:Id *Pc))
+    (&block_color (:C *Col)))
+
+  (INIT &box BoundingBox
+    (key ((&block (:Pc ^Id) *P))
+      (cell (P)
+        (&block (:Pc Id) *P))))
+
+  (RULE &corner
+    (&box.box (:key (:Id *Pc)) *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (RULE &diag_ray_blocked
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &diag_ray Ray
+    (source (P)
+      (&corner *P))
+    (node (P)
+      (input *P)
+      (NOT (&diag_ray_blocked P)))
+    (dir (D)
+      (diag_dir_elem *D))))
+
+(OUTPUT erase-dots "each corner dot becomes &bg")
+
+(OUTPUT quadrant-color "each square is cut into four equal quarters, and every cell of a quarter takes the color of the dot at that quarter's corner of the square")
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &block_inner
+    (&block *Pc *P)
+    (&box.box (:key (:Id Pc)) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  (RULE &quarter_nearer
+    (&block_inner (:Pc *Key) (:P_inner *P))
+    (dist_pair P *D *K *K2)
+    (< K K2))
+
+  (RULE &quarter_quadrant
+    (diag_dirs (:D *Diag) *D1 *D2)
+    (&quarter_nearer *Key *P (:D D1))
+    (&quarter_nearer Key P (:D D2)))
+
+  (RULE &reach
+    (&corner *Pc *D *P)
+    (neighbor P D *Q))
+
+  (RULE &dot
+    (&reach *Pc *D *Q)
+    (input (:P Q) *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&block Pc Col)))
+
+  (RULE &quarter_cell
+    (&block_inner *Pc *P *P_inner)
+    (&quarter_quadrant (:Key Pc) (:P P_inner) (:Diag *D))))
+
+(ALTS $block "what a block is" $StoredColor
+  (ALT $BlockByShape
+    (INPUT squares "each 4-connected one-color component of non-&bg cells that has more than one cell is a block, and its own color is its block color"
+      (RULE &block
+        (&shapes.component (:key *Col) *P (:Id *Pc))))))
+
+(ALTS $reach "which cell holds a corner's dot" $Adjacent
+  (ALT $RayDot
+    (INPUT corner-dots "the dot of a corner is the first non-&bg cell on the diagonal ray outward from that corner; undefined where the ray meets no such cell, or meets a cell of the block color first"
+      (INIT &diag_ray_full Ray
+        (source (P)
+          (&corner *P))
+        (node (P)
+          (input *P))
+        (dir (D)
+          (diag_dir_elem *D)))
+
+      (RULE &diag_ray_stop_full
+        (&diag_ray.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&diag_ray_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &reach
+        (&corner *Pc *D *P)
+        (&diag_ray_stop_full (:V1 *Q) (:V2 D) (:V4 P))))))
+
+(ALTS $missing "what a quarter with no dot at its corner does" $DotRequired
+  (ALT $KeepBlock
+    (OUTPUT keep-block "a quarter whose corner has no dot keeps the block color")
+    (RULE &recolor
+      (OR ((&quarter_cell (:Pc *Id) *P *D)
+           (NOT (&dot (:Pc Id) D))
+           (input P *Col))
+          ((&quarter_cell (:Pc *Id2) P (:D *D2))
+           (&dot (:Pc Id2) (:D D2) Col))))))
+
+(RULE &recolor
+  (&quarter_cell (:Pc *Id) *P *D)
+  (&dot (:Pc Id) D *Col))
+
+(RULE &covered
+  (OR ((&block *P))
+      ((&dot (:Q P)))))
+
+(RULE &output
+  (OR ((&recolor *P *Col))
+      ((&dot (:Q P))
+       (&bg (:C Col)))
+      ((input P Col)
+       (NOT (&covered P)))))
+
+(OUT (&output ^P ^Col))

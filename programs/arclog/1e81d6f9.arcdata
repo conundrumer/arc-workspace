@@ -1,0 +1,8 @@
+;; inputs 9cdb6591921ab5a6ba36ccca7200bb9c7fec4a4ab4bf2a026b06abf1e9cac8f3 programs/solvers/1e81d6f9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e81d6f9
+
+(param &target_corner DiagDir (DIAG_TL))
+(param &target_offset number (1))
+(param &bg Color (0))
+(param &mask_color Color (5))

@@ -1,0 +1,6 @@
+;; inputs cab521075fb55978777e2c197dc9f70343be57a8aaf561a1b0c83bf8527fcd5c programs/solvers/776ffc46.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 776ffc46
+
+(param &bg Color (0))
+(param &frame Color (5))

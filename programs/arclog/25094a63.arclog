@@ -1,0 +1,110 @@
+;; inputs d972ab78795d65167fdea49042bd1ce6d839dbdcbc6422f604216187762c7eea programs/solvers/25094a63.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 25094a63
+
+(DET &paint AnyOutNewColor)
+
+(DET &painted
+  (ex_output *E *P)
+  (ex_input E P *Col)
+  (NOT (ex_output E P Col)))
+
+(INIT &pieces Connectivity
+  (key ((&painted ^E *P))
+    (node (P)
+      (&painted E *P))))
+
+(INIT &piece_box BoundingBox
+  (key ((&pieces.component (:key ^E) *P ^Id))
+    (cell (P)
+      (&pieces.component (:key E) *P Id))))
+
+;; The least extent of a recolored piece, which no footprint exceeds.
+(INIT &narrowest Order
+  (member ((:t N))
+    (&pieces.component (:key *E) *P *Id)
+    (&piece_box.box (:key E Id) *B)
+    (box_extent B P *A *N))
+  (score ((:t N) (:S N))
+    (&pieces.component (:key *E) *P *Id)
+    (&piece_box.box (:key E Id) *B)
+    (box_extent B P *A *N)))
+
+(DET &cand
+  (&narrowest.minimal (:t *N))
+  (&painted *P)
+  (sub_extent P *A *K)
+  (<= K N))
+
+(DET &shade
+  (ex_output *E)
+  (ex_input E *Col))
+
+(INIT &square Frame
+  (key ((&cand ^K)
+        (perp *A *A2))
+    (extent (A (:N K))
+      (&cand K)
+      (axis_elem *A))))
+
+;; Each square of one color in an input.
+(INIT &seats Occurrences
+  (key ((OR ((&shade ^E ^Col)
+             (ex_input E *P Col)
+             (&cand ^K))
+            ((&shade E Col)
+             (&square.cell (:key K) (:P *S)))))
+    (cell (P)
+      (&shade E Col)
+      (ex_input E *P Col)
+      (&cand K))
+    (shape ((:P S))
+      (&shade E Col)
+      (&square.cell (:key K) (:P *S)))))
+
+(DET &left_alone
+  (&seats.occurrence (:key *E *Col *K) (:P *M))
+  (&square.cell (:key K) (:P *S))
+  (compose (:A M) (:B S) (:C *P))
+  (ex_output E P Col))
+
+(INIT &least Order
+  (member ((:t K))
+    (&cand *K)
+    (NOT (&left_alone K)))
+  (score ((:t K) (:S K))
+    (&cand *K)
+    (NOT (&left_alone K))))
+
+(DET &side
+  (&least.minimal (:t *K)))
+
+;; The footprint.
+(INIT &square2 Frame
+  (extent (A (:N K))
+    (&side *K)
+    (axis_elem *A)))
+
+;; One key per color: a seated footprint is monochrome.
+(INIT &occ Occurrences
+  (key ((OR ((input *P ^Col))
+            ((&square2.cell (:P *S))
+             (input Col))))
+    (cell (P)
+      (input *P Col))
+    (shape ((:P S))
+      (&square2.cell (:P *S))
+      (input Col))))
+
+(RULE &covered
+  (&occ.occurrence (:P *M))
+  (&square2.cell (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+(RULE &output
+  (OR ((&covered *P)
+       (&paint (:C *Col)))
+      ((input P Col)
+       (NOT (&covered P)))))
+
+(OUT (&output ^P ^Col))

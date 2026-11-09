@@ -1,0 +1,86 @@
+;; inputs f3b2ee09b1f741e92f346da569d22db4edf6f25412368e777cc2ea7bf745c100 programs/solvers/2f0c5170.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2f0c5170
+
+(DET &bg DominantColor)
+
+(DET &canvas SharedColor)
+
+(INIT &panels Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&panels.component *P ^Id))
+    (cell (P)
+      (&panels.component *P Id))))
+
+(RULE &mark
+  (&panels.component *P *Id)
+  (input P *Col)
+  (NOT (&canvas (:C Col))))
+
+;; The glyph panel's marks disagree on where they sit; the other panel's
+;; mark is alone.
+(INIT &alone Singleton
+  (key ((&mark ^Id *P))
+    (member ((:v P))
+      (&mark Id *P))))
+
+(RULE &glyph_mark
+  (&alone.plural (:key *Id))
+  (&mark Id *P *Col))
+
+(RULE &lone_mark
+  (&alone.value (:key *Id) (:v *P))
+  (&mark Id P *Col))
+
+(RULE &handle
+  (&glyph_mark *P *Col)
+  (&lone_mark Col))
+
+(ALTS $choice "what the glyph's handle is" $Match
+  (ALT $Odd
+    (INIT &glyph_color_count Cardinality
+      (key ((&glyph_mark *P ^Col))
+        (member ((:m P))
+          (&glyph_mark *P Col))))
+
+    (INIT &glyph_color Order
+      (member ((:t Col))
+        (&glyph_color_count.size (:key *Col)))
+      (score ((:t Col) (:S N))
+        (&glyph_color_count.size (:key *Col) *N)))
+
+    (RULE &handle
+      (&glyph_mark *P *Col)
+      (NOT (&glyph_color.maximal (:t Col)))))
+  (ALT $Ink
+    (DET &ink SharedColor)
+
+    (RULE &handle
+      (&glyph_mark *P *Col)
+      (NOT (&ink (:C Col))))))
+
+(RULE &travel
+  (&handle *P)
+  (&lone_mark (:P *P2))
+  (relative (:Base P) (:X P2) (:X_rel *V)))
+
+(RULE &stamped
+  (&glyph_mark (:P *P2) *Col)
+  (&travel *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (&lone_mark *Id)
+  (&bbox.cell (:key Id) (:P *P2))
+  (&bbox.box (:key Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&stamped (:P P2) *Col))
+      ((NOT (&stamped (:P P2)))
+       (&canvas (:C Col)))))
+
+(OUT (&output ^P ^Col))

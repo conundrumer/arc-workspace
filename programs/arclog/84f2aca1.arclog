@@ -1,0 +1,123 @@
+;; inputs 9cfa413ce0132d3beb16449e7e9d881ebe6bbd50e4f5cfe6aa6a9e4e4ee5815f programs/solvers/84f2aca1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 84f2aca1
+
+(DET &bg DominantColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; $Rect: the inside of each rectangle outline drawn in ink.
+(INIT &drect Outlines
+  (node (P)
+    (&ink *P)))
+
+(INIT &rect_id Quotient
+  (equivalent ((:a B) (:b B))
+    (&drect.box *B)))
+
+(RULE &region
+  (&rect_id.class (:a *B) *Id)
+  (&bg_cell *P)
+  (interior (:A P) B))
+
+(DET &changed
+  (ex_input *E *P (:Col *C_in))
+  (ex_output E P *Col)
+  (!= Col C_in))
+
+(INIT &holes Connectivity
+  (key ((&changed ^E *P))
+    (node (P)
+      (&changed E *P))))
+
+(DET &hole
+  (&holes.component (:key *E) *P *Id)
+  (&changed E P *Col))
+
+(INIT &hole_size Cardinality
+  (key ((&hole ^E ^Id *P))
+    (member ((:m P))
+      (&hole E Id *P))))
+
+(DET &count_fill
+  (&hole_size.size (:key (:E *H_e) (:Id *H_id)) *N)
+  (&hole (:E H_e) (:Id H_id) *Col))
+
+(ALTS $r "which cells count as the hole" $Rect
+  (ALT $Box
+    ;; $Box: the bg cells each ink object's box holds.
+    (INIT &objs Connectivity
+      (node (P)
+        (&ink *P)))
+
+    (INIT &obox BoundingBox
+      (key ((&objs.component *P ^Id))
+        (cell (P)
+          (&objs.component *P Id))))
+
+    (RULE &region
+      (&obox.box (:key *Id) *B)
+      (&bg_cell *P)
+      (inside (:A P) B)))
+  (ALT $Enclose
+    ;; $Enclose: the bg regions closed off from the grid edge.
+    (INIT &closed Enclosure
+      (cell (P)
+        (&bg_cell *P)))
+
+    (RULE &region
+      (&closed.enclosed *P *Id))))
+
+(ALTS $k "what selects the fill color" $Count
+  (ALT $Extent
+    (INIT &rbox BoundingBox
+      (key ((&region ^Id *P))
+        (cell (P)
+          (&region Id *P))))
+
+    (INIT &hbox BoundingBox
+      (key ((&hole ^E ^Id *P))
+        (cell (P)
+          (&hole E Id *P))))
+
+    (DET &extent_fill
+      (&hbox.box (:key (:E *H_e) (:Id *H_id)) *B)
+      (&hole (:E H_e) (:Id H_id) *P *Col)
+      (box_extent B P *A (:N *N_short))
+      (perp A *A2)
+      (box_extent B P (:A A2) (:N *N_long))
+      (<= N_short N_long))
+
+    (RULE &fill
+      (&rbox.box (:key *Id) *B)
+      (&region Id *P)
+      (box_extent B P *A (:N *N1))
+      (perp A *A2)
+      (box_extent B P (:A A2) (:N *N2))
+      (&extent_fill (:N_short N1) (:N_long N2) *Col))))
+
+(INIT &region_size Cardinality
+  (key ((&region ^Id *P))
+    (member ((:m P))
+      (&region Id *P))))
+
+(RULE &fill
+  (&region_size.size (:key *Id) *N)
+  (&count_fill N *Col))
+
+(RULE &painted
+  (&region *Id *P)
+  (&fill Id *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

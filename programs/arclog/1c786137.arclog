@@ -1,0 +1,104 @@
+;; inputs acb393212f4b81b29e1f6747e96477b35022aeaea991205b152175a870b978d4 programs/solvers/1c786137.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1c786137
+
+(INIT &cbox BoundingBox
+  (key ((input *P ^Col))
+    (cell (P)
+      (input *P Col))))
+
+(RULE &misdrawn
+  (OR ((&cbox.box (:key *Col) *B)
+       (input *P)
+       (inside (:A P) B)
+       (same_dist (:P1 P) (:P2 B))
+       (NOT (input P Col)))
+      ((&cbox.box (:key Col) (:B *B2))
+       (input (:P *P2) Col)
+       (interior (:A P2) (:B B2)))))
+
+(RULE &marker
+  (input *Col)
+  (NOT (&misdrawn Col)))
+
+(ALTS $choice "which color and structure count as the outline" $Rect
+  (ALT $Solo
+    (INIT &parts Connectivity
+      (key ((input *P ^Col))
+        (node (P)
+          (input *P Col))))
+
+    (INIT &color_part Singleton
+      (key ((&parts.component (:key ^Col) *Id))
+        (member ((:v Id))
+          (&parts.component (:key Col) *Id))))
+
+    (RULE &marker
+      (input *Col)
+      (NOT (&color_part.plural (:key Col)))))
+  (ALT $Drawn
+    (INIT &drect Outlines
+      (key ((input *P ^Col))
+        (node (P)
+          (input *P Col))))
+
+    (INIT &biggest_hole_count Cardinality
+      (key ((&drect.box ^B)
+            (input *P)
+            (interior (:A P) B))
+        (member ((:m P))
+          (&drect.box B)
+          (input *P)
+          (interior (:A P) B))))
+
+    (INIT &biggest_hole Order
+      (member ((:t B))
+        (&biggest_hole_count.size (:key *B)))
+      (score ((:t B) (:S N))
+        (&biggest_hole_count.size (:key *B) *N)))
+
+    (RULE &outline_box
+      (&biggest_hole.maximal (:t *B))))
+  (ALT $Enclose
+    ;; Each color walls the rest of the grid off.
+    (INIT &closed Enclosure
+      (key ((input ^Col))
+        (cell (P)
+          (input *P (:Col *Col2))
+          (!= Col2 Col))))
+
+    (INIT &biggest_region_count Cardinality
+      (key ((&closed.enclosed (:key ^Col) *P ^Id))
+        (member ((:m P))
+          (&closed.enclosed (:key Col) *P Id))))
+
+    (INIT &biggest_region Order
+      (member ((:t (:Col M_col) (:Id M_id)))
+        (&biggest_region_count.size (:key (:Col *M_col) (:Id *M_id))))
+      (score ((:t (:Col M_col) (:Id M_id)) (:S N))
+        (&biggest_region_count.size (:key (:Col *M_col) (:Id *M_id)) *N)))
+
+    (RULE &window
+      (&biggest_region.maximal (:t *Col *Id))
+      (&closed.enclosed (:key Col) *P Id))))
+
+(RULE &outline_box
+  (&marker *Col)
+  (&cbox.box (:key Col) *B))
+
+(RULE &window
+  (&outline_box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(INIT &window_bbox BoundingBox
+  (cell (P)
+    (&window *P)))
+
+(RULE &output
+  (&window_bbox.box *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

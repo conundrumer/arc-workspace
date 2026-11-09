@@ -1,0 +1,8 @@
+;; inputs fd783d63bfe41e85abcd5a0ed69ec12166df05fe2e05a5b312615f65ed6525a8 programs/solvers/2ba387bc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2ba387bc
+
+(param &bg Color (0))
+(param &hole_side Dir (DIR_L))
+(param &corner DiagDir (DIAG_TL))
+(param &tile_dim number (4))

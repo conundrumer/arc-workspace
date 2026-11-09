@@ -1,0 +1,81 @@
+;; inputs fe0c134554639602a85724a74564e0c774b7d62d114a037f17ef207220b76289 programs/solvers/13713586.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 13713586
+
+(DET &bg DominantColor)
+
+(DET &wall SharedColor)
+
+(INIT &bars Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&wall (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&wall (:C Col))))))
+
+(INIT &shadow_frame Frame
+  (key ((&bars.component (:key ^Col) ^Id *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&bars.component (:key Col) Id *P)
+      (frame_extent P *A *N))))
+
+(RULE &wall_defect
+  (input *P *Col)
+  (margin (:B P) *D (:K 0))
+  (NOT (&wall (:C Col))))
+
+(RULE &wall_dir
+  (dir_elem *D)
+  (NOT (&wall_defect D)))
+
+(INIT &bar_box BoundingBox
+  (key ((&bars.component (:key ^Col) ^Id *P))
+    (cell (P)
+      (&bars.component (:key Col) Id *P))))
+
+(INIT &shadow Ray
+  (key ((OR ((&bars.component (:key ^Col) ^Id *P))
+            ((&bars.component (:key Col) Id)
+             (&wall_dir *D))
+            ((&shadow_frame.cell (:key Col Id) P))))
+    (source (P)
+      (&bars.component (:key Col) Id *P))
+    (node (P)
+      (&shadow_frame.cell (:key Col Id) *P))
+    (dir (D)
+      (&bars.component (:key Col) Id)
+      (&wall_dir *D))))
+
+(RULE &shadow_cell
+  (&bars.component (:key *Col) *Id)
+  (input *P (:Col *Col2))
+  (&bg (:C Col2)))
+
+(INIT &paint Order
+  (key ((&shadow.ray (:key *Col *Id) ^P)
+        (&shadow_cell Col Id P)
+        (&bar_box.box (:key Col Id) (:B *B_bar))
+        (&wall_dir *D)
+        (margin (:B B_bar) D *K))
+    (member ((:t (:V Col) (:S K)))
+      (&shadow.ray (:key *Col *Id) P)
+      (&shadow_cell Col Id P)
+      (&bar_box.box (:key Col Id) (:B *B_bar))
+      (&wall_dir *D)
+      (margin (:B B_bar) D *K))
+    (score ((:t (:V Col) (:S K)) (:S K))
+      (&shadow.ray (:key *Col *Id) P)
+      (&shadow_cell Col Id P)
+      (&bar_box.box (:key Col Id) (:B *B_bar))
+      (&wall_dir *D)
+      (margin (:B B_bar) D *K))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&paint.minimal (:key P))))
+      ((&paint.minimal (:key P) (:t (:V Col))))))
+
+(OUT (&output ^P ^Col))

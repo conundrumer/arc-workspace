@@ -1,0 +1,50 @@
+;; inputs 458b4d168f84c77dc14eba27fc7ec68504f3de64f2c38bd356f569453fec51c9 programs/solvers/52fd389e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 52fd389e
+
+(DET &body SharedColor)
+
+(INIT &rects Connectivity
+  (node (P)
+    (input *P *Col)
+    (&body (:C Col))))
+
+(INIT &rect_box BoundingBox
+  (key ((&rects.component *P ^Id))
+    (cell (P)
+      (&rects.component *P Id))))
+
+(RULE &within
+  (input *P)
+  (&rect_box.box (:key *Id) *B)
+  (inside (:A P) B))
+
+(RULE &marker
+  (&within *Id *P)
+  (input P *Col)
+  (NOT (&body (:C Col))))
+
+(INIT &marker_count Cardinality
+  (key ((&marker ^Id *P))
+    (member ((:m P))
+      (&marker Id *P))))
+
+(RULE &ring_box
+  (&marker_count.size (:key *Id) (:N *K))
+  (uniform_outset K (:B *B_frame))
+  (&rect_box.box (:key Id) (:B *B_rect))
+  (compose (:A B_frame) (:B B_rect) (:C *B)))
+
+(RULE &ring
+  (input *P)
+  (&ring_box *Id *B)
+  (inside (:A P) B)
+  (NOT (&within Id P)))
+
+(RULE &output
+  (OR ((&ring *Id *P)
+       (&marker Id *Col))
+      ((input P Col)
+       (NOT (&ring P)))))
+
+(OUT (&output ^P ^Col))

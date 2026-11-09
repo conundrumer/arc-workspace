@@ -1,0 +1,39 @@
+;; inputs 4b07f9f2129a913642ab8eedb232b7f635ff4229f9ca6643e550f975318a9e3c programs/solvers/396d80d7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 396d80d7
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &beside
+  (input *P (:Col *C_bg))
+  (&bg (:C C_bg))
+  (neighbor P *D *Q)
+  (&ink (:P Q) *Col))
+
+(RULE &side
+  (dir_elem *D)
+  (&beside *P D))
+
+(RULE &corner_only
+  (&beside *P)
+  (NOT (&side P)))
+
+(RULE &shell
+  (&corner_only *P)
+  (&beside P *Col))
+
+(RULE &core
+  (&ink *Col)
+  (NOT (&shell Col)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (IF ((&corner_only P))
+      ((&core *Col))
+      ((= Col C_in))))
+
+(OUT (&output ^P ^Col))

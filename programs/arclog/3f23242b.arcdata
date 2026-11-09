@@ -1,0 +1,26 @@
+;; inputs 7c77e52e6381578217c16d8411c1c4f1ad0fb32cbf12d9ff3e13c64c479ce483 programs/solvers/3f23242b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3f23242b
+
+(param &mark Color (3))
+(param &ground_dir Dir (DIR_B))
+(param &ground_paint Color (2))
+(param &bracket.seat Position
+  (grid
+    (_ _ _ _ _)
+    (_ _ _ _ _)
+    (_ _ 1 _ _)
+    (_ _ _ _ _)
+    (_ _ _ _ _)))
+(param &bracket.ground Dir (DIR_B))
+(param &bracket.shape (Position Color)
+  (grid
+    (5 5 5 5 5)
+    (2 _ 5 _ 2)
+    (2 _ 3 _ 2)
+    (2 _ _ _ 2)
+    (8 8 8 8 8)))
+(param &bracket.edge_paint (Dir Color) (DIR_T 5) (DIR_B 8) (DIR_L 2) (DIR_R 2))
+(param &bracket.face_axis Axis (AXIS_V))
+(param &bracket.arm_dir Dir (DIR_T))
+(param &arm_paint Color (5))

@@ -1,0 +1,122 @@
+;; inputs 78e6e8a34f4bbb7696a3eaf6cd21a84a654d9bfd6a8c2a532430bf6d3865d3a2 programs/solvers/db695cfb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db695cfb
+
+(param &link_color Color (1))
+(param &cross_color Color (6))
+
+(alts $e
+  (alt $ExtensionEmits
+    (witness cross-color-on-extension ordinary concept
+      (separates "a cross_color cell on the diagonal of a joined pair beyond its end: the concept leaves it a single cell, and $ExtensionEmits draws the square diagonal through it")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 1 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 1 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $Inside (grid
+        (8 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 6 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 1 8 6 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 8 8 6 8 1 8 8 8 8)
+        (8 8 6 8 8 8 1 8 8 8)
+        (8 6 8 8 8 8 8 8 8 8)
+        (6 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $ExtensionEmits (grid
+        (8 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 6 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 1 8 6 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 8 8 6 8 1 8 8 8 8)
+        (8 8 6 8 8 8 1 8 8 8)
+        (8 6 8 8 8 8 8 8 8 6)
+        (6 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 6 8 8))))))
+
+(alts $x
+  (alt $CrossStopsAtMark
+    (witness stray-mark-on-cross-line variant concept
+      (relaxed clear-cross-lines)
+      (separates "a stray cross_color cell on the square diagonal of an emitting cell: the concept draws that diagonal to both grid edges, and $CrossStopsAtMark stops it before the stray cell")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 1 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $ToEdge (grid
+        (8 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 6 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 1 8 6 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 8 8 6 8 1 8 8 8 8)
+        (8 8 6 8 8 8 1 8 8 8)
+        (8 6 8 8 8 8 8 8 8 8)
+        (6 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $CrossStopsAtMark (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 1 8 6 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 8 8 6 8 1 8 8 8 8)
+        (8 8 6 8 8 8 1 8 8 8)
+        (8 6 8 8 8 8 8 8 8 8)
+        (6 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8))))))
+
+(alts $r
+  (alt $LinkOverCross
+    (witness cross-line-meets-other-link variant concept
+      (relaxed clear-cross-lines)
+      (separates "the square diagonal of an emitting cell crosses the joining line of a second pair at (6,2): the concept paints that cell cross_color, and $LinkOverCross keeps it link_color")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 1 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 1 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 1 8 8 8)
+        (8 8 8 1 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $CrossOverLink (grid
+        (8 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 6 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 1 8 6 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 1 8 6 8 1 8 8 8 8)
+        (8 8 6 8 8 8 1 8 8 8)
+        (8 6 8 1 8 8 8 8 8 8)
+        (6 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output $LinkOverCross (grid
+        (8 8 8 8 8 8 8 8 6 8)
+        (8 8 8 8 8 8 8 6 8 8)
+        (8 8 1 8 8 8 6 8 8 8)
+        (8 8 8 1 8 6 8 8 8 8)
+        (8 8 8 8 6 8 8 8 8 8)
+        (8 1 8 6 8 1 8 8 8 8)
+        (8 8 1 8 8 8 1 8 8 8)
+        (8 6 8 1 8 8 8 8 8 8)
+        (6 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8))))))

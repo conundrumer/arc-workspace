@@ -1,0 +1,89 @@
+;; inputs 01bbb1ff070cb6ae4ae83f968ae9514d5f9d9f0f6086f5c6caf55f5f7c34d740 programs/solvers/48d8fb45.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 48d8fb45
+
+(DET &mark RarestColor)
+
+(DET &bg DominantColor)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+;; The shapes; the mark is a cell of the one it touches.
+(INIT &blob Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &marked
+  (&mark2 (:P *M))
+  (&blob.component (:P M) *Id)
+  (&blob.component *P Id)
+  (NOT (&mark2 P))
+  (input P *Col))
+
+;; The marked shape's box, and the grid seen from it.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&marked *P)))
+
+(ALTS $choice "where the crop's box comes from, and what it keeps inside it" $Object
+  (ALT $Interior
+    (RULE &output
+      (&bbox.box *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P))))
+  (ALT $Window
+    ;; Where each train output stands in its input: the boxes at which every
+    ;; output cell lies on an input cell of its color.
+    (INIT &found Occurrences
+      (key ((OR ((ex_input ^E *P *Col))
+                ((ex_output E (:P *Q) Col))))
+        (cell (P (:v Col))
+          (ex_input E *P *Col))
+        (shape ((:P Q) (:v Col))
+          (ex_output E (:P *Q) *Col))))
+
+    (DET &seen
+      (&found.occurrence (:key *E) (:P *B2))
+      (ex_input E (:P *M) *Col)
+      (&mark (:C Col))
+      (relative (:Base M) (:X B2) (:X_rel *B)))
+
+    (DET &unseen
+      (&seen *B)
+      (ex_output *E)
+      (NOT (&seen E B)))
+
+    (DET &win_box
+      (&seen *B)
+      (NOT (&unseen B)))
+
+    (RULE &window
+      (&mark2 (:P *M))
+      (&win_box (:B *B_mark))
+      (compose (:A M) (:B B_mark) (:C *B)))
+
+    (RULE &output
+      (&window *B)
+      (input (:P *P2) *Col)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))))
+
+(RULE &output
+  (&bbox.box *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&marked (:P P2) *Col))
+      ((NOT (&marked (:P P2)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

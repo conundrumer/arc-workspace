@@ -1,0 +1,7 @@
+;; inputs 98e92203984d8ac5e6da44202e66cc6f409b3c19a46ba2a0100ffac6e9b3ff3d programs/solvers/32e9702f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 32e9702f
+
+(param &dir Dir (DIR_L))
+(param &bg Color (0))
+(param &fill Color (5))

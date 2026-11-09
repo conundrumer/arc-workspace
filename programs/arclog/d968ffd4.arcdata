@@ -1,0 +1,107 @@
+;; inputs 91c479436ed78446fbb625e9a4bbcf0645732e54761097404b6ce4af900ac1e0 programs/solvers/d968ffd4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d968ffd4
+
+(alts $f
+  (alt $AxisByShape
+    (witness short-axis-facing variant concept
+      (separates "the blocks face along the vertical axis of a 10x12 frame, its shorter axis; the concept fills rows 3-4 and 5-6, $AxisByShape takes the horizontal axis, finds no two blocks at its ends, and is undefined")
+      (input (grid
+        (3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 8 8 8 8 8 8 8 8 8 8 3)
+        (3 8 8 8 8 8 8 8 8 8 8 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 2 2 2 2 2 2 2 2 2 2 3)
+        (3 2 2 2 2 2 2 2 2 2 2 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3)))
+      (output $AxisByEnds (grid
+        (3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 8 8 8 8 8 8 8 8 8 8 3)
+        (3 8 8 8 8 8 8 8 8 8 8 3)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8)
+        (2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2)
+        (3 2 2 2 2 2 2 2 2 2 2 3)
+        (3 2 2 2 2 2 2 2 2 2 2 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3)))
+      (output $AxisByShape undefined))
+    (witness three-blocks foreign any
+      (relaxed two-blocks)
+      (separates "a third block shares columns with the first block, which shares rows with the second, so the blocks share lines of both axes; the concept finds two facing axes, fills along both, and is undefined where the fills cross, $AxisByShape takes only the frame's longer, horizontal axis and fills columns 3 and 4 with the colors of the two blocks that face along it")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 1 1 0 0 2 0)
+        (0 1 1 0 0 2 0)
+        (0 0 0 0 0 0 0)
+        (0 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $AxisByEnds undefined)
+      (output ($AxisByShape $GapMidpoint) (grid
+        (0 0 0 1 2 0 0)
+        (0 1 1 1 2 2 0)
+        (0 1 1 1 2 2 0)
+        (0 0 0 1 2 0 0)
+        (0 3 3 1 2 0 0)
+        (0 0 0 1 2 0 0)))
+      (output ($AxisByShape $FrameMidline) (grid
+        (0 0 0 0 2 0 0)
+        (0 1 1 0 2 2 0)
+        (0 1 1 0 2 2 0)
+        (0 0 0 0 2 0 0)
+        (0 3 3 0 2 0 0)
+        (0 0 0 0 2 0 0))))))
+
+(alts $s
+  (alt $FrameMidline
+    (witness unequal-thickness borderline concept
+      (relaxed thickness)
+      (separates "the top block is 3 lines thick and the bottom one 2, so the gap's midline (row 7) is not the frame's midline (between rows 6 and 7); the concept fills rows 4-6 and 8-10 and keeps row 7 background, $FrameMidline fills rows 7-10 with the bottom color")
+      (input (grid
+        (8 8 8)
+        (8 2 8)
+        (8 2 8)
+        (8 2 8)
+        (8 8 8)
+        (8 8 8)
+        (8 8 8)
+        (8 8 8)
+        (8 8 8)
+        (8 8 8)
+        (8 8 8)
+        (8 1 8)
+        (8 1 8)
+        (8 8 8)))
+      (output $GapMidpoint (grid
+        (8 8 8)
+        (8 2 8)
+        (8 2 8)
+        (8 2 8)
+        (2 2 2)
+        (2 2 2)
+        (2 2 2)
+        (8 8 8)
+        (1 1 1)
+        (1 1 1)
+        (1 1 1)
+        (8 1 8)
+        (8 1 8)
+        (8 8 8)))
+      (output $FrameMidline (grid
+        (8 8 8)
+        (8 2 8)
+        (8 2 8)
+        (8 2 8)
+        (2 2 2)
+        (2 2 2)
+        (2 2 2)
+        (1 1 1)
+        (1 1 1)
+        (1 1 1)
+        (1 1 1)
+        (8 1 8)
+        (8 1 8)
+        (8 8 8))))))

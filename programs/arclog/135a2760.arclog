@@ -1,0 +1,121 @@
+;; inputs f4469eb4085f1a7def02eb6c9ffdfb78b1a672f5558bce3e14ddc58b60083720 programs/solvers/135a2760.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 135a2760
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&line_color.value (:key *A *L))
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A uniform line spans the grid, so it divides panels rather than sit in one.
+(INIT &panels_rank Order
+  (key ((OR ((&line_color.value (:key *A *L))
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&line_color.value (:key *A *L))
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&line_color.value (:key *A *L))
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(INIT &frame Boundary
+  (key ((&panels_tile_of *P (:P_tile ^T)))
+    (cell (P)
+      (&panels_tile_of *P (:P_tile T)))))
+
+(RULE &inner_cell
+  (&panels_tile_of *P (:P_tile *T))
+  (NOT (&frame.boundary (:key T) P)))
+
+(INIT &si Periods
+  (key ((&inner_cell ^T *P)
+        (input P *Col))
+    (cell (P (:v Col))
+      (&inner_cell T *P)
+      (input P *Col))))
+
+;; The interior's period per axis: the shortest. On an axis with no true
+;; period the shortest is pair-less, so it generates nothing.
+(INIT &period Order
+  (key ((&si.approximate_period (:key ^T) ^A *K))
+    (member ((:t K))
+      (&si.approximate_period (:key T) A *K))
+    (score ((:t K) (:S K))
+      (&si.approximate_period (:key T) A *K))))
+
+;; Period classes: the cells of one interior whose distance on each
+;; axis is a whole number of periods.
+(INIT &orbit Quotient
+  (equivalent ((:a P) (:b Q))
+    (&inner_cell *T *P)
+    (&inner_cell T (:P *Q))
+    (relative (:Base P) (:X Q) (:X_rel *V))
+    (diag_dirs *A *D1 *D2)
+    (perp A *A2)
+    (margin (:B V) (:D D1) (:K *K1))
+    (margin (:B V) (:D D2) (:K *K2))
+    (&period.minimal (:key T A) (:t *N1))
+    (&period.minimal (:key T (:A A2)) (:t *N2))
+    (divide (:T K1) (:Side N1) (:Gap 0) (:Remainder 0))
+    (divide (:T K2) (:Side N2) (:Gap 0) (:Remainder 0))))
+
+(INIT &pattern_count Cardinality
+  (key ((&orbit.class (:a *P) (:Id ^Cls))
+        (input P ^Col))
+    (member ((:m P))
+      (&orbit.class (:a *P) (:Id Cls))
+      (input P Col))))
+
+(INIT &pattern Order
+  (key ((&pattern_count.size (:key ^Cls *Col)))
+    (member ((:t Col))
+      (&pattern_count.size (:key Cls *Col)))
+    (score ((:t Col) (:S N))
+      (&pattern_count.size (:key Cls *Col) *N))))
+
+(RULE &output
+  (OR ((&orbit.class (:a *P) (:Id *Cls))
+       (&pattern.maximal (:key Cls) (:t *Col)))
+      ((input P Col)
+       (NOT (&inner_cell P)))))
+
+(OUT (&output ^P ^Col))

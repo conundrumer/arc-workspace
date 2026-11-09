@@ -1,0 +1,8 @@
+;; inputs 1f1f2bef007d7f9a0c7acc2fce0b556ded6ec3bae1714592871dfab6d6f29a4b programs/solvers/5bd6f4ac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5bd6f4ac
+
+(param &diag DiagDir (DIAG_TR))
+(param &window_dim number (3))
+(param &divisor number (3))
+(param &tile_dim number (3))

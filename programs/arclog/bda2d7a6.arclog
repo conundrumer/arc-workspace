@@ -1,0 +1,114 @@
+;; inputs 784112ad5bc9f1c1675b90d792f88cf6974a9daae6c52bd9b89d840d5db3d626 programs/solvers/bda2d7a6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bda2d7a6
+
+(INPUT nested-rings "the grid is square, and every cell's color depends only on its ring, the cells at one distance from the nearest frame edge; each ring is 1 cell wide")
+
+(INPUT color-cycle "read from the outermost ring inward, the first 3 rings show 3 distinct colors, one new color each, and every ring after them repeats a color already seen")
+
+(OUTPUT cycle-colors "list the distinct colors in the order they first appear from the outermost ring inward; every cell of a color takes the color just before it in that list, and the first color takes the last"
+
+  ;; The grid peels into rings, one per depth.
+  (INIT &peel Boundary
+    (cell (P)
+      (input *P)))
+
+  (INIT &peel_depth CellDistance
+    (node (P)
+      (input *P))
+    (source (P)
+      (&peel.boundary *P)))
+
+  (RULE &ring_color
+    (&peel_depth.distance *P (:K *I))
+    (input P *Col))
+
+  ;; The depth of each color's outermost ring: where it first appears.
+  (INIT &appear Order
+    (key ((&ring_color *I ^Col))
+      (member ((:t I))
+        (&ring_color *I Col))
+      (score ((:t I) (:S I))
+        (&ring_color *I Col))))
+
+  (INIT &order Order
+    (member ((:t Col))
+      (input *Col))
+    (score ((:t Col) (:S I))
+      (&appear.minimal (:key *Col) (:t *I))))
+
+  (INIT &size Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The place of each cell count among the counts, from the highest.
+  (INIT &size_rank Order
+    (member ((:t N))
+      (&size.size *N))
+    (score ((:t N) (:S N))
+      (&size.size *N)))
+
+  (RULE &outer_ring
+    (&peel_depth.distance *P (:K *I))
+    (neighbor P *Q)
+    (&peel_depth.distance (:P Q) (:K *I2))
+    (< I2 I))
+
+  ;; The depth at which the last color first appears.
+  (INIT &newest Order
+    (member ((:t I))
+      (&appear.minimal (:t *I)))
+    (score ((:t I) (:S I))
+      (&appear.minimal (:t *I))))
+
+  ;; The colors other than the outermost ring's.
+  (INIT &others Cardinality
+    (member ((:m Col))
+      (input *Col)
+      (NOT (&ring_color (:I 0) Col)))
+    (domain ()))
+
+  (RULE_OR_DET &others.size "The colors other than the outermost ring's."))
+
+(ALTS $choice "what the output takes from the input" $Recolor
+  (ALT $Recolor
+    (ALTS $pred "which color each color takes" $ListCycle
+      (ALT $ListCycle
+        (ALTS $order "the order that lists the colors" $FirstSeen
+          (ALT $CountOrder
+            (OUTPUT cycle-colors "the colors are listed by their cell count, the highest first; undefined where two colors have the same count"
+              (INIT &order Order
+                (member ((:t Col))
+                  (input *Col))
+                (score ((:t Col) (:S R))
+                  (&size.size (:key *Col) *N)
+                  (&size_rank.dual_rank (:t N) *R)))))))
+      (ALT $EnclosingColor
+        (OUTPUT cycle-colors "each color takes the color of the ring just outside its outermost ring, and the outermost ring's color takes the last color to appear; undefined where that ring holds two colors")
+        (RULE &output
+          (input *P (:Col *C))
+          (&appear.minimal (:key (:Col C)) (:t *I))
+          (OR ((&outer_ring I *I2)
+               (&ring_color (:I I2) *Col))
+              ((= I 0)
+               (&newest.maximal (:t I2))
+               (&appear.minimal (:key Col) (:t I2))))))))
+  (ALT $RingShift
+    (OUTPUT cycle-colors "each ring takes the color of the ring just outside it, and the outermost ring takes the color of the ring with as many rings outside it as the input has colors other than the outermost ring's")
+    (RULE &output
+      (&peel_depth.distance *P (:K *I))
+      (OR ((&outer_ring I *I2)
+           (&ring_color (:I I2) *Col))
+          ((= I 0)
+           (&others.size (:N I2))
+           (&ring_color (:I I2) Col))))))
+
+;; A color takes the color just before it, and the first color the last.
+(RULE &output
+  (input *P (:Col *C))
+  (OR ((&order.successor (:a *Col) (:b C)))
+      ((&order.minimal (:t C))
+       (&order.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

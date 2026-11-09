@@ -1,0 +1,262 @@
+;; inputs 5f823a35d2236e25225441c46c914abedf4e9b0c481e61f825f57b10db6c82c7 programs/solvers/d43fd935.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d43fd935
+
+(INPUT one-block "a background of color &background (0) holds one solid 2x2 block of color &block_color (3)"
+
+  (INIT &palette_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &palette Order
+    (key ((&palette_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&palette_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&palette_count.size (:key E *Col) *N))))
+
+  (DET &uneven
+    (&palette.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&palette.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&palette.maximal (:t *C))
+    (NOT (&uneven (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (DET &solid
+    (ex_input *E *P *Col)
+    (NOT (&background (:C Col)))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) Col))
+
+  (DET &unshared
+    (&solid *Col)
+    (ex_output *E)
+    (NOT (&solid E Col)))
+
+  (DET &block_color
+    (&solid (:Col *C))
+    (NOT (&unshared (:Col C))))
+
+  (RULE &tinted
+    (input *P *Col)
+    (&block_color (:C Col)))
+
+  (INIT &tint2 BoundingBox
+    (cell (P)
+      (&tinted *P)))
+
+  (RULE &joined
+    (&ink *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&ink (:P Q)))
+
+  (INIT &piece Connectivity
+    (node (P)
+      (&joined *P))))
+
+(INPUT single-dots "every other non-background cell is a single cell of a color other than &block_color, and no two of them share an edge")
+
+(INPUT clear-paths "between a dot that is level with the block and the block, every cell is background")
+
+(OUTPUT ray-to-block "a dot that shares a row or a column with a cell of the block paints every cell between it and the block, on that row or column, in the dot's color"
+
+  (RULE &stop_key)
+
+  (RULE &block
+    (&tinted *P))
+
+  (RULE &stopper
+    (&block *P))
+
+  (INIT &hull BoundingBox
+    (cell (P)
+      (&block *P)))
+
+  (RULE &obst_blocked
+    (OR ((&stopper *P))
+        ((&stop_key)
+         (&ink P))))
+
+  (RULE &obst_dir
+    (&stop_key)
+    (dir_elem *D))
+
+  (RULE &obst_mark
+    (&stop_key)
+    (&ink *P))
+
+  ;; The same casts, stopped by every ink cell as well.
+  (INIT &obst Ray
+    (source (P)
+      (&obst_mark *P))
+    (node (P)
+      (input *P)
+      (NOT (&obst_blocked P)))
+    (dir (D)
+      (&obst_dir *D))))
+
+(OUTPUT rest-unchanged "every other cell keeps its input color"
+
+  (RULE &reach_dir
+    (&stop_key)
+    (dir_elem *D))
+
+  (RULE &reach_mark
+    (&stop_key)
+    (&ink *P))
+
+  ;; Each ink cell's cast toward each edge, stopped by the stoppers alone.
+  (INIT &reach Ray
+    (source (P)
+      (&reach_mark *P))
+    (node (P)
+      (input *P)
+      (NOT (&stopper P)))
+    (dir (D)
+      (&reach_dir *D)))
+
+  (INIT &reach_full Ray
+    (source (P)
+      (&reach_mark *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&reach_dir *D)))
+
+  (RULE &reach_stop_full
+    (&reach.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&reach_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &located))
+
+(ALTS $s "which cells stop a dot's line" $Cells
+  (ALT $Box
+    (OUTPUT ray-to-block "the cells of the block's bounding box stop the line"
+      (RULE &stopper
+        (&hull.box *B)
+        (input *P)
+        (inside (:A P) B)))))
+
+(ALTS $o "what a line does at a non-background cell between its dot and the block" $Over
+  (ALT $StopAtDot
+    (OUTPUT ray-to-block "every non-background cell blocks a line, and a dot casts only where the first cell it meets is a block cell; undefined where two lines paint one cell in different colors"
+      (INIT &obst_full Ray
+        (source (P)
+          (&obst_mark *P))
+        (node (P)
+          (input *P))
+        (dir (D)
+          (&obst_dir *D)))
+
+      (RULE &obst_stop_full
+        (&obst.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&obst_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4))))
+    ;; A cast whose first obstacle is a stopper paints its clear cells.
+    (RULE &line
+      (&obst_stop_full (:V1 *Q) (:V2 *D) (:V4 *Src))
+      (&stopper (:P Q))
+      (&obst.ray *P D (:Origin Src))))
+  (ALT $PaintToDot
+    (OUTPUT ray-to-block "a dot level with the block paints up to the first non-background cell on its line, whatever that cell is; undefined where two lines paint one cell in different colors")
+    ;; A cast that meets a stopper paints up to its first obstacle.
+    (RULE &line
+      (&reach_stop_full (:V2 *D) (:V4 *Src))
+      (&obst.ray *P D (:Origin Src)))))
+
+(ALTS $ca "which cells cast a line" $Every
+  (ALT $SingletonsOnly
+    (OUTPUT ray-to-block "only a cell with no non-background cell beside it casts")
+    (RULE &caster
+      (&located)
+      (&ink *P)
+      (NOT (&joined P))
+      (NOT (&block P)))))
+
+(ALTS $bk "how the block is found" $ByColor
+  (ALT $BlockByShape
+    (INPUT one-block "the block is the one 4-connected non-background object larger than one cell, of any color; undefined on an input with no such object or more than one"
+      (RULE &two_blocks
+        (&piece.component (:Id *Id1))
+        (&piece.component (:Id *Id2))
+        (!= Id1 Id2))
+
+      (RULE &block
+        (&joined *P)
+        (NOT (&two_blocks)))
+
+      (RULE &located
+        (&block))))
+  (ALT $Square
+    (INPUT one-block "the block is the cells of &block_color where they fill a square of side &block_size; where they do not, there is no block, and no line is drawn"
+      ;; The box of each input's block-colored cells.
+      (INIT &tint BoundingBox
+        (key ((ex_input ^E *P *Col)
+              (&block_color (:C Col)))
+          (cell (P)
+            (ex_input E *P *Col)
+            (&block_color (:C Col)))))
+
+      (DET &side
+        (&tint.box (:key *E) *B)
+        (ex_input E *P)
+        (box_extent B P *A *N))
+
+      (DET &uneven_side
+        (OR ((&side *N)
+             (&side *E (:N *N2))
+             (ex_output E)
+             (!= N2 N))
+            ((&side N)
+             (ex_output (:E *E2))
+             (NOT (&side (:E E2))))))
+
+      (DET_OR_RULE &block_size TileCount TileDim
+        (&side *N)
+        (NOT (&uneven_side N)))
+
+      (RULE &unsquare
+        (&tint2.box *B)
+        (input *P)
+        (OR ((box_extent B P *A *N)
+             (NOT (&block_size N)))
+            ((inside (:A P) B)
+             (NOT (&tinted P)))))
+
+      (RULE &block
+        (&tinted *P)
+        (NOT (&unsquare))))))
+
+(RULE &caster
+  (&located)
+  (&ink *P)
+  (NOT (&block P)))
+
+;; A cast that meets a stopper paints its clear cells.
+(RULE &line
+  (&reach_stop_full (:V2 *D) (:V4 *Src))
+  (&reach.ray *P D (:Origin Src)))
+
+(RULE &paint
+  (&caster (:P *Src))
+  (input (:P Src) *Col)
+  (&line Src *P))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&located)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

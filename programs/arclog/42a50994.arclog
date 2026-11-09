@@ -1,0 +1,30 @@
+;; inputs fbca4837ff42dabd12d25f5ea8a14af893c413baaee3bc57d42a49730332c438 programs/solvers/42a50994.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 42a50994
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &grouped
+  (&ink *P)
+  (neighbor P *D (:Q *P2))
+  (&ink (:P P2)))
+
+(ALTS $choice "each pair's dots share one color, which hides what counts as a companion" $Ink
+  (ALT $Self
+    (RULE &grouped
+      (&ink *P *Col)
+      (neighbor P *D (:Q *P2))
+      (&ink (:P P2) Col))))
+
+(RULE &output
+  (OR ((&grouped *P)
+       (input P *Col))
+      ((input P)
+       (NOT (&grouped P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

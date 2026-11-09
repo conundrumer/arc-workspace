@@ -1,0 +1,72 @@
+;; inputs f61c908f0a67a69eb38cdd4872e590fe73a75e3c17e8946160561f433af9e3c6 programs/solvers/4df5b0ae.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4df5b0ae
+
+(DET &bg DominantColor)
+
+;; The row starts at pack_dir; the shapes rest on the edge a quarter turn away.
+(DET &pack_dir DirDomain)
+
+(DET &rest_sense SenseDomain)
+
+(RULE &rest_dir
+  (&pack_dir (:D *D2))
+  (&rest_sense *S)
+  (turn S (:D D2) (:D2 *D)))
+
+(INIT &shapes Connectivity
+  (key ((input (:P *P_grid) ^Col)
+        (NOT (&bg (:C Col))))
+    (node ((:P P_grid))
+      (input (:P *P_grid) Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &size Cardinality
+  (key ((&shapes.component (:P *P_grid) (:Id ^M)))
+    (member ((:m P_grid))
+      (&shapes.component (:P *P_grid) (:Id M)))))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component (:P *P_grid) (:Id ^M)))
+    (cell ((:P P_grid))
+      (&shapes.component (:P *P_grid) (:Id M)))))
+
+(RULE &shape_inner
+  (&shapes.component (:P *P_grid) (:Id *M))
+  (&bbox.box (:key M) *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+(RULE &line
+  (&shape_inner *M *P_inner)
+  (&pack_dir *D)
+  (margin (:B P_inner) D *K))
+
+(INIT &row Order
+  (member ((:t M K))
+    (&line *M *K))
+  (score ((:t M K) (:S N))
+    (&line *M *K)
+    (&size.size (:key M) *N)))
+
+(RULE &paint
+  (&shapes.component (:key *Col) (:P *P_grid_in) (:Id *M))
+  (&shape_inner M (:P_grid P_grid_in) *P_inner)
+  (&pack_dir *D)
+  (margin (:B P_inner) D *K)
+  (&row.rank (:t M K) *R)
+  (input (:P *P_start))
+  (margin (:B P_start) D (:K R))
+  (opposite D (:Opp *D_far))
+  (jump (:P P_start) (:D D_far) K (:Q *P))
+  (input P)
+  (&rest_dir (:D *D_rest))
+  (same_dist (:D D_rest) (:P1 P_inner) (:P2 P)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

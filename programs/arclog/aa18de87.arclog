@@ -1,0 +1,63 @@
+;; inputs a2e11e647fb9c4ed08980cbb13f8a03161eb473ca7e13a9e3f6ebe6ab9cd7827 programs/solvers/aa18de87.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aa18de87
+
+(DET &axis AxisDomain)
+
+(DET &bg DominantColor)
+
+(INIT &axis_spans Ray
+  (source ((:P Q))
+    (input (:P *Q) *Col)
+    (NOT (&bg (:C Col))))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&axis *A)
+    (axis4_of *D A)))
+
+(RULE &axis_spans_between
+  (input *P (:Col *Bg))
+  (&bg (:C Bg))
+  (&axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&axis_spans.ray P D)
+  (&axis_spans.ray P (:D O)))
+
+(DET &fill AnyOutNewColor)
+
+(ALTS $choice "which lines fill" $Axis
+  (ALT $Iso
+    (INIT &iso_spans Ray
+      (source ((:P Q))
+        (input (:P *Q) *Col)
+        (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P))
+      (dir (D)
+        (axis_elem *A)
+        (axis4_of *D A)))
+
+    (RULE &iso_spans_between
+      (input *P (:Col *Bg))
+      (&bg (:C Bg))
+      (axis_elem *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&iso_spans.ray P D)
+      (&iso_spans.ray P (:D O)))
+
+    (RULE &output
+      (OR ((&iso_spans_between *P)
+           (&fill (:C *Col)))
+          ((input P Col)
+           (NOT (&iso_spans_between P)))))))
+
+(RULE &output
+  (OR ((&axis_spans_between *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&axis_spans_between P)))))
+
+(OUT (&output ^P ^Col))

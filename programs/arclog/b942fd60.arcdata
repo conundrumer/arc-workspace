@@ -1,0 +1,155 @@
+;; inputs d9f16e8c77ce978778a555461c698574ed7113d8496a5a15c3db15a937dee79a programs/solvers/b942fd60.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b942fd60
+
+(param &line Color (2))
+(param &start Dir (DIR_R))
+(param &bg Color (0))
+(param &obstacle Color (3) (6) (7) (8))
+
+(alts $s
+  (alt $SeedBlocks
+    (witness ray-meets-seed ordinary concept
+      (separates "A ray runs left along the seed's row toward the seed. Where the seed is no obstacle, the ray runs over it to the edge and ends. Where the seed is an obstacle, the ray stops at (3,1) and branches up and down column 1.")
+      (input (grid
+        (0 0 0 0 3 0 0)
+        (0 7 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (2 0 0 0 0 8 0)
+        (0 0 6 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $SeedPasses (grid
+        (0 0 2 0 3 0 0)
+        (0 7 2 2 2 2 2)
+        (0 0 2 0 2 0 0)
+        (2 2 2 2 2 8 0)
+        (0 0 6 0 2 0 0)
+        (0 0 0 0 2 0 0)
+        (0 0 0 0 2 0 0)))
+      (output $SeedBlocks (grid
+        (0 0 2 0 3 0 0)
+        (0 7 2 2 2 2 2)
+        (2 2 2 2 2 2 2)
+        (2 2 2 2 2 8 0)
+        (0 2 6 0 2 0 0)
+        (0 2 0 0 2 0 0)
+        (0 2 0 0 2 0 0))))))
+
+(alts $b
+  (alt $BlockedRayEnds
+    (witness seed-next-to-mark ordinary concept
+      (separates "A mark sits right next to the seed, so the first ray has no cell to run over. Where a blocked ray still branches, the line runs up and down the seed's edge column. Where a blocked ray ends, nothing is drawn.")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 0 7 0 0)
+        (2 8 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 6 0)
+        (0 0 0 0 0 0)))
+      (output $BlockedRayBranches (grid
+        (2 0 0 0 0 0)
+        (2 0 0 7 0 0)
+        (2 8 0 0 0 0)
+        (2 0 0 0 0 0)
+        (2 0 0 0 6 0)
+        (2 0 0 0 0 0)))
+      (output $BlockedRayEnds (grid
+        (0 0 0 0 0 0)
+        (0 0 0 7 0 0)
+        (2 8 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 6 0)
+        (0 0 0 0 0 0))))))
+
+(alts $st
+  (alt $StartFromSeedEdge
+    (witness seed-on-top-edge variant $StartFromSeedEdge
+      (relaxed one-seed)
+      (separates "The seed lies on the top edge. The stored start direction sends the first ray right along the top row. The direction derived from the seed's edge sends it down, and it branches before the 8.")
+      (input (grid
+        (0 0 2 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 7 0)
+        (0 0 0 0 0 0)
+        (0 0 8 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $StoredStart (grid
+        (0 0 2 2 2 2)
+        (0 0 0 0 0 0)
+        (0 0 0 0 7 0)
+        (0 0 0 0 0 0)
+        (0 0 8 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $StartFromSeedEdge (grid
+        (0 0 2 0 0 0)
+        (0 0 2 0 0 0)
+        (0 0 2 0 7 0)
+        (2 2 2 2 2 2)
+        (0 0 8 0 0 0)
+        (0 0 0 0 0 0))))))
+
+(alts $o
+  (alt $StoredObstacleColors
+    (witness mark-of-new-color variant concept
+      (separates "A 4 stands in the first ray's path. Where every non-background cell is an obstacle, the ray stops before the 4 and branches. Where only the stored colors 3, 6, 7 and 8 block, the ray paints over the 4 and runs to the edge.")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 0 3 0 0)
+        (2 0 0 4 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 6)
+        (0 0 0 0 0 0)))
+      (output $NonBackground (grid
+        (0 0 2 0 0 0)
+        (0 0 2 3 0 0)
+        (2 2 2 4 0 0)
+        (0 0 2 0 0 0)
+        (0 0 2 0 0 6)
+        (0 0 2 0 0 0)))
+      (output $StoredObstacleColors (grid
+        (0 0 0 0 0 0)
+        (0 0 0 3 0 0)
+        (2 2 2 2 2 2)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 6)
+        (0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed background)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 1 8 1 1 1 1 1)
+        (1 1 3 1 1 1 1 1 7 1)
+        (2 1 1 1 1 1 3 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 7 1 8 1 1 6)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 7 1 1 1 6 1 1 1 8)
+        (1 1 6 1 8 1 1 1 1 1)
+        (1 1 1 1 8 1 1 1 1 1)
+        (1 1 1 1 1 1 7 1 1 1)))
+      (output ($NonBackground &bg=$Stored) (grid
+        (1 1 1 1 8 1 1 1 1 1)
+        (1 1 3 1 1 1 1 1 7 1)
+        (2 1 1 1 1 1 3 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 7 1 8 1 1 6)
+        (1 1 1 1 1 1 1 1 1 1)
+        (1 7 1 1 1 6 1 1 1 8)
+        (1 1 6 1 8 1 1 1 1 1)
+        (1 1 1 1 8 1 1 1 1 1)
+        (1 1 1 1 1 1 7 1 1 1)))
+      (output &bg=$Derived $StoredObstacleColors (grid
+        (1 1 1 1 8 2 1 1 1 1)
+        (1 1 3 1 1 2 1 1 7 1)
+        (2 2 2 2 2 2 3 1 1 1)
+        (1 1 1 1 1 2 1 1 1 1)
+        (1 1 1 1 7 2 8 1 1 6)
+        (2 2 2 2 2 2 2 2 2 2)
+        (1 7 1 1 1 6 1 1 1 8)
+        (1 1 6 1 8 1 1 1 1 1)
+        (1 1 1 1 8 1 1 1 1 1)
+        (1 1 1 1 1 1 7 1 1 1))))))

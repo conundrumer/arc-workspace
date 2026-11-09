@@ -1,0 +1,69 @@
+;; inputs 1c14d314b14c65e07fe4ce610b083e1c61c94305dadb76623083bb331bb4b910 programs/solvers/0a2355a6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0a2355a6
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; The cells left when all ink is solid — the background.
+(INIT &off_ink Enclosure
+  (cell (P)
+    (input *P *Col)
+    (&bg (:C Col))))
+
+;; Each object's hole regions when all ink closes jointly.
+(INIT &joint_holes Cardinality
+  (key ((&off_ink.enclosed *P *Id)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&objs.component (:P Q) (:Id ^O)))
+    (member ((:m Id))
+      (&off_ink.enclosed *P *Id)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&objs.component (:P Q) (:Id O)))))
+
+(DET &joint_count_color
+  (&objs.component *E *P (:Id *O))
+  (&joint_holes.size E (:key O) *N)
+  (ex_output E P *Col))
+
+(ALTS $choice "what a hole is" $Joint
+  (ALT $Own
+    ;; The cells left when only O is solid — other objects among them.
+    (INIT &off_obj Enclosure
+      (key ((&objs.component (:Id ^O)))
+        (cell (P)
+          (input *P)
+          (NOT (&objs.component P (:Id O))))))
+
+    ;; Each object's hole regions when it closes alone.
+    (INIT &own_holes Cardinality
+      (key ((&off_obj.enclosed (:key ^O) *Id))
+        (member ((:m Id))
+          (&off_obj.enclosed (:key O) *Id))))
+
+    (DET &own_count_color
+      (&objs.component *E *P (:Id *O))
+      (&own_holes.size E (:key O) *N)
+      (ex_output E P *Col))
+
+    (RULE &output
+      (OR ((&objs.component *P (:Id *O))
+           (&own_holes.size (:key O) *N)
+           (&own_count_color N *Col))
+          ((input P Col)
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&objs.component P (:Id *O))
+       (&joint_holes.size (:key O) *N)
+       (&joint_count_color N Col))))
+
+(OUT (&output ^P ^Col))

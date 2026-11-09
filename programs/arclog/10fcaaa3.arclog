@@ -1,0 +1,86 @@
+;; inputs f2bf518f06559c680de978649b07666d0e3d9dddbeff7697c3d8c878c43a5290 programs/solvers/10fcaaa3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 10fcaaa3
+
+(DET &copies ScaleRatio)
+
+(INIT &arrangement Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&copies (:K *N))))
+
+(INIT &tiled_tiling Tiling
+  (outer ((:P P_tile))
+    (&arrangement.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &bg DominantColor)
+
+(DET &paint AnyOutNewColor)
+
+(RULE &tiled
+  (&tiled_tiling.cell (:P_inner *P_intile) *P)
+  (input (:P P_intile) *Col))
+
+(RULE &mark
+  (&tiled *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &ground
+  (&tiled *P *Col)
+  (&bg (:C Col)))
+
+(RULE &stamp
+  (diag_dir_elem (:D *Diag))
+  (step_offset (:D Diag) (:V *Off))
+  (&paint (:C *Col)))
+
+(ALTS $choice "the halo's footprint" $Corners
+  (ALT $Table
+    (DET &painted
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col)))
+      (&ground E P))
+
+    (DET &witness
+      (&painted *E *P *Col)
+      (&mark E (:P *M))
+      (relative (:Base M) (:X P) (:X_rel *Off)))
+
+    (DET &mismatch
+      (&witness *Off *Col)
+      (&mark *E (:P *M))
+      (compose (:A M) (:B Off) (:C *P))
+      (&ground E P)
+      (ex_output E P (:Col *C2))
+      (!= C2 Col))
+
+    (DET &explains
+      (&witness *Off *E *P *Col)
+      (NOT (&mismatch Off Col)))
+
+    (DET &shared
+      (&explains *Off *E *P *Col)
+      (&explains (:Off *Off2) E P Col)
+      (!= Off2 Off))
+
+    (DET &footprint
+      (&explains (:Off *Delta) *E *P *Col)
+      (NOT (&shared (:Off Delta) E P Col)))
+
+    (RULE &stamp
+      (&footprint (:Delta *Off) *Col))))
+
+(RULE &halo
+  (&mark (:P *Q))
+  (&stamp *Off *Col)
+  (compose (:A Q) (:B Off) (:C *P))
+  (&ground P))
+
+(RULE &output
+  (OR ((&halo *P *Col))
+      ((&tiled P Col)
+       (NOT (&halo P)))))
+
+(OUT (&output ^P ^Col))

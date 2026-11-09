@@ -1,0 +1,160 @@
+;; inputs 2c2f51af578d225829c60d8c68932d92baccf7a927f08f2a304c6cec86e6e632 programs/solvers/50846271.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 50846271
+
+(DET &mark RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &bg UnchangedColor)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &arm
+  (input *P)
+  (corner_dist P (:Diag *D) (:K 0))
+  (sub_extent P *A *K))
+
+(RULE &mark_distance
+  (input (:P *C))
+  (&mark2 (:P *M))
+  (axis_of *D *A)
+  (same_line A (:P C) (:Q M))
+  (relative (:Base C) (:X M) (:X_rel *V))
+  (margin (:B V) D (:K *J))
+  (>= J 0))
+
+(RULE &off
+  (&arm *K)
+  (input (:P *C))
+  (input *P *Col)
+  (&bg (:C Col))
+  (axis_of *D *A)
+  (same_line A (:P C) (:Q P))
+  (relative (:Base C) (:X P) (:X_rel *V))
+  (margin (:B V) D (:K *J))
+  (>= J 0)
+  (<= J K))
+
+(RULE &backed
+  (&arm *K)
+  (&mark_distance *C *J)
+  (<= J K)
+  (NOT (&off K C)))
+
+(RULE &place
+  (&backed *K *C))
+
+(ALTS $choice "which placements are the crosses, and where a plus may lie" $Backed
+  (ALT $Packed
+    (RULE &packing_item
+      (&place *K *C)
+      (&mark_distance C *M *J)
+      (<= J K))
+
+    (CHOOSE &packing
+      (for ((&packing_item ^K ^M))
+        (from (&packing_item K M *C)))
+      (never
+        (&packing_item *K *C)
+        (&packing_item K (:M *M2) (:C *C2))
+        (&packing_item K (:M M2) C)
+        (!= C C2)))
+
+    (RULE &cross
+      (&packing *K *C)))
+  (ALT $Free
+    ;; The arms a free plus may take: none longer than the longest backed arm.
+    (INIT &longest Order
+      (member ((:t K))
+        (&backed *K))
+      (score ((:t K) (:S K))
+        (&backed *K)))
+
+    (RULE &free_arm
+      (&arm *K)
+      (&longest.maximal (:t *K2))
+      (<= K K2))
+
+    (RULE &place
+      (&free_arm *K)
+      (&mark_distance *C *J)
+      (<= J K))
+
+    (INIT &shortest Order
+      (member ((:t K))
+        (&free_arm *K)
+        (NOT (&orphan K)))
+      (score ((:t K) (:S K))
+        (&free_arm *K)
+        (NOT (&orphan K))))
+
+    (RULE &span
+      (&shortest.minimal (:t *K)))))
+
+(RULE &rival
+  (&place *K *C)
+  (&mark_distance C *M *J)
+  (<= J K)
+  (&place K (:C *C2))
+  (&mark_distance (:C C2) M (:J *J2))
+  (<= J2 K)
+  (!= C C2))
+
+(RULE &unmatched
+  (&rival *K *C *C2)
+  (&mark_distance C *M *J)
+  (<= J K)
+  (OR ((NOT (&mark_distance (:C C2) M)))
+      ((&mark_distance (:C C2) M (:J *J2))
+       (> J2 K))))
+
+(RULE &dominated
+  (&rival *K *C *C2)
+  (NOT (&unmatched K C C2))
+  (&unmatched K (:C C2) (:C2 C)))
+
+(RULE &cross
+  (&place *K *C)
+  (NOT (&dominated K C)))
+
+(INIT &owner Singleton
+  (key ((&cross ^K *C)
+        (&mark_distance C ^M *J)
+        (<= J K))
+    (member ((:v C))
+      (&cross K *C)
+      (&mark_distance C M *J)
+      (<= J K))))
+
+(RULE &orphan
+  (&arm *K)
+  (&mark2 (:P *M))
+  (NOT (&owner.value (:key K M))))
+
+(RULE &span
+  (&arm *K)
+  (NOT (&orphan K)))
+
+(RULE &completed
+  (&span *K)
+  (&cross K *C)
+  (input *P)
+  (axis_of *D *A)
+  (same_line A (:P C) (:Q P))
+  (relative (:Base C) (:X P) (:X_rel *V))
+  (margin (:B V) D (:K *J))
+  (>= J 0)
+  (<= J K)
+  (NOT (&mark2 P)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&span)
+       (NOT (&completed P)))
+      ((&completed P)
+       (&fill (:C Col)))))
+
+(OUT (&output ^P ^Col))

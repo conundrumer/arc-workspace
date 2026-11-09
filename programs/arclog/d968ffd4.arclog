@@ -1,0 +1,112 @@
+;; inputs 91c479436ed78446fbb625e9a4bbcf0645732e54761097404b6ce4af900ac1e0 programs/solvers/d968ffd4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d968ffd4
+
+(INPUT background "one color fills every cell that is not in a block")
+
+(INPUT two-blocks "there are two solid rectangular blocks, of two different colors that are not the background")
+
+(INPUT facing-ends "the two blocks sit at the two opposite ends of one axis, each 1 cell from its near edge of the frame, with background lines between them")
+
+(INPUT side-margin "across the axis, each block spans the whole frame less 1 cell at each side, so the two blocks have one extent across the axis")
+
+(INPUT thickness "along the axis, each block is 2 lines thick")
+
+(OUTPUT split-gap "the lines between the two blocks split into two halves of equal count, and each half, the one nearer a block, takes that block's color on every cell of each of its lines, the side margins included")
+
+(OUTPUT odd-middle "when the count of lines between the blocks is odd, the middle line keeps the background")
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &bg
+    (input *P *Col)
+    (corner_dist P (:Diag *D) (:K 0)))
+
+  (RULE &block
+    (input *P *Col)
+    (NOT (&bg Col)))
+
+  (RULE &toward
+    (&block *P *Col)
+    (&block (:P *Q) (:Col *C2))
+    (!= Col C2)
+    (axis_of *D *A)
+    (same_line A P Q)
+    (nearer D (:P Q) (:Q P)))
+
+  (RULE &facing
+    (&toward *D)
+    (axis_of D *A))
+
+  (RULE &face
+    (&facing *A)
+    (&toward *Col *D)
+    (axis_of D A)
+    (&block *P Col)
+    (neighbor P D *Q)
+    (NOT (&block (:P Q) Col))
+    (split P A (:Along *L)))
+
+  (RULE &ahead
+    (&face *Col *D (:L *L3))
+    (axis_of D *A)
+    (opposite D (:Opp *O))
+    (input *P)
+    (split P A (:Along *L))
+    (relative (:Base L3) (:X L) (:X_rel *V))
+    (margin (:B V) (:D O) *K)
+    (> K 0))
+
+  (RULE &gap
+    (&ahead *Col *L (:K *K1))
+    (&ahead (:Col *C2) L (:K *K2))
+    (!= Col C2)))
+
+(ALTS $f "the axis on which the blocks face" $AxisByEnds
+  (ALT $AxisByShape
+    (INPUT facing-ends "the blocks face along the frame's longer axis; undefined on a square frame and where the two blocks do not sit at the two ends of the longer axis"
+      (RULE &facing
+        (&toward *D)
+        (axis_of D *A)
+        (input *P)
+        (axis_extents P A *N1 *N2)
+        (> N1 N2)))))
+
+(ALTS $s "where the gap divides between the two blocks" $GapMidpoint
+  (ALT $FrameMidline
+    (OUTPUT split-gap "a gap line takes the color of the block on its side of the frame's center line")
+    (OUTPUT odd-middle "the center line of an odd-extent frame keeps the background")
+    (RULE &fill
+      (&gap *L *Col)
+      (&face Col *D)
+      (opposite D (:Opp *O))
+      (dist_pair (:P L) (:D O) (:K *K1) *K2)
+      (< K1 K2))
+
+    (RULE &middle
+      (&gap *L)
+      (&facing *A)
+      (axis_of *D A)
+      (dist_pair (:P L) D *K (:K2 K)))))
+
+(RULE &fill
+  (&gap *L *Col *K1 *K2)
+  (< K1 K2))
+
+(RULE &middle
+  (&gap *L (:K1 *K) (:K2 K)))
+
+;; A filled gap line takes its color across the whole frame, the middle line
+;; keeps the background, and every other cell keeps its input color.
+(RULE &output
+  (&facing *A)
+  (input *P)
+  (split P A (:Along *L))
+  (OR ((&fill L *Col))
+      ((&middle L)
+       (&bg Col))
+      ((input P Col)
+       (NOT (&fill L))
+       (NOT (&middle L)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,126 @@
+;; inputs 2866e8349db71a1eb822baa11ef77faf9bd7d8103485c45fff8bc919e83d4736 programs/solvers/5ad4f10b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5ad4f10b
+
+;; The picture's extent, in pixels.
+(DET &dim ConstOutDim)
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &figure
+  (&ink *Col *P)
+  (diag_dirs (:D *G) *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (&ink Col (:P Q1))
+  (neighbor P (:D D2) (:Q *Q2))
+  (&ink Col (:P Q2))
+  (neighbor P (:D G) (:Q *Q3))
+  (&ink Col (:P Q3)))
+
+;; The drawing: the box the figure occupies, its cells read as figure or blank.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&figure *Col)
+    (&ink Col *P)))
+
+(RULE &drawing
+  (input *P (:Col *C))
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (OR ((NOT (&figure (:Col C)))
+       (&bg (:C *Col)))
+      ((&figure (:Col C))
+       (= Col C))))
+
+(INIT &pixel_division Division
+  (cell ((:P P_inner))
+    (&drawing *P_inner))
+  (parts (A N)
+    (axis_elem *A)
+    (&dim *N)))
+
+(RULE &speck
+  (&ink *Col)
+  (NOT (&figure Col)))
+
+(RULE &pixel
+  (&pixel_division.tile (:P *P_inner) (:P_outer *P_tile)))
+
+(ALTS $choice "how wide the picture is" $Extent
+  (ALT $Pixels
+    (INIT &pixel_cand_division Division
+      (key ((&drawing *P_inner)
+            (sub_extent (:P P_inner) ^A (:K ^S)))
+        (cell ((:P P_inner))
+          (&drawing *P_inner)
+          (sub_extent (:P P_inner) A (:K S)))
+        (side (A (:K S))
+          (&drawing *P_inner)
+          (sub_extent (:P P_inner) A (:K S)))))
+
+    (INIT &pixel_cand_division2 Division
+      (key ((&drawing *P_inner)
+            (frame_extent (:P P_inner) ^A (:N ^S)))
+        (cell ((:P P_inner))
+          (&drawing *P_inner)
+          (frame_extent (:P P_inner) A (:N S)))
+        (side (A (:K S))
+          (&drawing *P_inner)
+          (frame_extent (:P P_inner) A (:N S)))))
+
+    (RULE &pixel_cand
+      (OR ((&pixel_cand_division.tile (:key *A *S)))
+          ((&pixel_cand_division2.tile (:key A S)))))
+
+    (INIT &run_color_division Division
+      (key ((&pixel_cand ^A ^S))
+        (side (A (:K S))))
+      (cell ((:P P_inner))
+        (&drawing *P_inner)))
+
+    (INIT &run_color Singleton
+      (key ((&run_color_division.tile (:key ^A ^S) (:P *P_inner) ^P_outer)
+            (&drawing P_inner *Col)
+            (split (:P P_inner) A (:Across ^P_across)))
+        (member ((:v Col))
+          (&run_color_division.tile (:key A S) (:P *P_inner) P_outer)
+          (&drawing P_inner *Col)
+          (split (:P P_inner) A (:Across P_across)))))
+
+    ;; The pixels are as large as the drawing allows.
+    (INIT &pixel_size Order
+      (key ((&pixel_cand ^A *S)
+            (NOT (&run_color.plural (:key A S))))
+        (member ((:t S))
+          (&pixel_cand A *S)
+          (NOT (&run_color.plural (:key A S))))
+        (score ((:t S) S)
+          (&pixel_cand A *S)
+          (NOT (&run_color.plural (:key A S))))))
+
+    (INIT &pixels Division
+      (cell ((:P P_inner))
+        (&drawing *P_inner))
+      (side (A (:K S))
+        (&pixel_size.maximal (:key *A) (:t *S))))
+
+    (RULE &pixel
+      (&pixels.tile (:P *P_inner) (:P_outer *P_tile)))))
+
+(RULE &filled
+  (&pixel *P_inner *P_tile)
+  (&drawing P_inner *Col)
+  (&figure Col))
+
+(RULE &output
+  (&pixel (:P_tile *P))
+  (IF ((&filled (:P_tile P)))
+      ((&speck *Col))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

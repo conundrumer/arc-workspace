@@ -1,0 +1,195 @@
+;; inputs 06356639acfb15885bb15bf9f254d49b8500581b346eab1faf4c3b276afa8de1 programs/solvers/c6141b15.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c6141b15
+
+(INPUT background "a field of &bg"
+
+  (INIT &field_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &field Order
+    (key ((&field_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&field_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&field_count.size (:key E *Col) *N))))
+
+  (DET &uneven
+    (&field.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&field.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&field.maximal (:t *C))
+    (NOT (&uneven (:Col C)))))
+
+(INPUT one-line "one straight run of cells of one color along a row, a column, or a diagonal, at least two cells long")
+
+(INPUT shape-copies "two or more identical copies of one shape in a second color, each one 8-connected object whose bounding box has odd extents, so that it has a center cell")
+
+(INPUT aligned-centers "each two shape centers lie on one row, column, or diagonal")
+
+(INPUT apart "the line and the copies are separate objects that do not touch, even at a corner")
+
+(OUTPUT stamps-at-line-ends "a copy of the shape, in the shape's color, sits with its center on each of the line's two end cells, drawn over any joining line")
+
+(OUTPUT lines-join-centers "a straight run of the line's color joins each two shape centers, along the row, column, or diagonal they share, end cells included")
+
+(OUTPUT rest-background "every other cell is &bg; the input line and copies do not stay"
+
+  ;; The objects of each color.
+  (INIT &objs Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &multi
+    (&objs.component (:key *Col) (:Id *Id1))
+    (&objs.component (:key Col) (:Id *Id2))
+    (!= Id1 Id2))
+
+  ;; The object taken as the line.
+  (INIT &line_obj Singleton
+    (member ((:v Id))
+      (&objs.component (:key *Col) *Id)
+      (NOT (&multi Col))))
+
+  (RULE &copy_obj
+    (&objs.component (:key *Col) *Id)
+    (&multi Col))
+
+  ;; The color of the copies.
+  (INIT &shape_color Singleton
+    (member ((:v Col))
+      (&copy_obj *Id)
+      (&objs.component (:key *Col) Id)))
+
+  (RULE &line
+    (&line_obj.value (:v *Id))
+    (&objs.component (:key *Col) *P Id))
+
+  (RULE &line_end
+    (&line *P)
+    (neighbor P *D *Q)
+    (&line (:P Q))
+    (dir8_opposite D (:D2 *D_back))
+    (neighbor P (:D D_back) (:Q *R))
+    (NOT (&line (:P R))))
+
+  (INIT &box BoundingBox
+    (key ((&objs.component *P ^Id))
+      (cell (P)
+        (&objs.component *P Id))))
+
+  (RULE &center
+    (&copy_obj *Id)
+    (&box.box (:key Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (centered (:P P_rel)))
+
+  (RULE &stamp
+    (&line_end (:P *E))
+    (&center *Id (:P *C))
+    (&objs.component (:P *S) Id)
+    (relative (:Base C) (:X S) (:X_rel *V))
+    (compose (:A E) (:B V) (:C *P)))
+
+  (INIT &sight Ray
+    (source (P)
+      (&center *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir8_elem *D)))
+
+  (RULE &join
+    (&sight.ray *P *D (:Origin *C1))
+    (dir8_opposite D (:D2 *D_back))
+    (&sight.ray P (:D D_back) (:Origin *C2))
+    (!= C1 C2))
+
+  (RULE &parsed
+    (&line_obj.value)
+    (&shape_color.value))
+
+  (RULE &unaligned
+    (&center (:P *C1))
+    (&center (:P *C2))
+    (!= C1 C2)
+    (NOT (&sight.ray (:P C2) (:Origin C1))))
+
+  (RULE &ready
+    (&parsed)
+    (NOT (&unaligned))))
+
+(ALTS $l "which object is the line and which are the copies" $OneObjectColor
+  (ALT $LineByStraightness
+    (INPUT one-line "the line is the one object that is a straight run of two or more cells; undefined where no object or more than one object is such a run"
+      (RULE &off_line
+        (&objs.component (:key *Col) *P *Id)
+        (neighbor P *D *Q)
+        (&objs.component (:key Col) (:P Q) Id)
+        (axis4_elem *A)
+        (NOT (axis4_of D A)))
+
+      ;; The object taken as the line.
+      (INIT &line_obj Singleton
+        (member ((:v Id))
+          (&objs.component (:key *Col) *P *Id)
+          (&objs.component (:key Col) (:P *Q) Id)
+          (!= P Q)
+          (axis4_elem *A)
+          (NOT (&off_line Id A))))
+
+      (RULE &copy_obj
+        (&objs.component *Id)
+        (NOT (&line_obj.value (:v Id)))))
+    (INPUT shape-copies "the copies are the objects of the other color, one or more")))
+
+(ALTS $j "which two centers a line joins" $JoinAll
+  (ALT $JoinAligned
+    (INPUT aligned-centers "two centers may share no row, column, or diagonal")
+    (OUTPUT lines-join-centers "a line joins each two centers that share a row, column, or diagonal, and no other two"
+      (RULE &ready
+        (&parsed)))))
+
+(ALTS $o "which is drawn on top where a stamp meets a joining line" $StampsOverLines
+  (ALT $LinesOverStamps
+    (OUTPUT stamps-at-line-ends "the joining lines are drawn over the stamps")
+    (RULE &output
+      (&ready)
+      (input *P)
+      (OR ((&join P)
+           (&line *Col))
+          ((&stamp P)
+           (NOT (&join P))
+           (&shape_color.value (:v Col)))
+          ((NOT (&join P))
+           (NOT (&stamp P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (&ready)
+  (input *P)
+  (OR ((&stamp P)
+       (&shape_color.value (:v *Col)))
+      ((&join P)
+       (NOT (&stamp P))
+       (&line Col))
+      ((NOT (&stamp P))
+       (NOT (&join P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

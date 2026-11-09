@@ -1,0 +1,109 @@
+;; inputs c712931aada5e293710cec36e53627ef4f4ee6765377be061a8f0b83babce9a0 programs/solvers/4938f0c2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4938f0c2
+
+(DET &bg DominantColor)
+
+(DET &marker RarestColor)
+
+(DET &sym SymDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&marker (:C Col))))
+
+(INIT &block BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&marker (:C Col))))
+
+(RULE &img
+  (&ink (:P *P2) *Col)
+  (&block.box *B)
+  (relative (:Base B) (:X P2) (:X_rel *V))
+  (&sym *S)
+  (sym_member S *D)
+  (apply D (:P V) (:P_out *V2))
+  (compose (:A B) (:B V2) (:C *P)))
+
+(INIT &obj Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &obj_box BoundingBox
+  (key ((&obj.component *P ^Id))
+    (cell (P)
+      (&obj.component *P Id))))
+
+(RULE &obj_quad
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&obj_box.box (:key *Id) (:B *B_obj))
+  (&block.box (:B *B_block))
+  (nearer (:D D1) (:P B_obj) (:Q B_block))
+  (nearer (:D D2) (:P B_obj) (:Q B_block)))
+
+(ALTS $choice "where an image lands; the pairs cannot separate the cases: in every pair the shape abuts the block, and each object fills the corner of its box that faces the block" $Mirror
+  (ALT $Seat
+    (RULE &anchor
+      (&obj_quad *Id (:Diag *Q))
+      (diag_opposite (:D Q) (:Opp *Q_face))
+      (&obj_box.box (:key Id) (:B *B_obj))
+      (input *P)
+      (inside (:A P) (:B B_obj))
+      (same_corner (:D Q_face) (:P1 P) (:P2 B_obj)))
+
+    (RULE &img
+      (&ink (:P *P2) *Col)
+      (&obj.component (:P P2) *Id)
+      (&anchor Id (:P *P0))
+      (relative (:Base P0) (:X P2) (:X_rel *V))
+      (&sym *S)
+      (sym_member S *D)
+      (apply D (:P V) (:P_out *V2))
+      (&obj_quad Id (:Diag *Q))
+      (apply_diag_dir D (:Dir Q) (:Dir_out *Q2))
+      (&block.cell (:P *P_c))
+      (&block.box (:B *B_block))
+      (inside (:A P_c) (:B B_block))
+      (same_corner (:D Q2) (:P1 P_c) (:P2 B_block))
+      (neighbor (:P P_c) (:D Q2) (:Q *P_seat))
+      (compose (:A P_seat) (:B V2) (:C *P))))
+  (ALT $SeatCell
+    (RULE &anchor
+      (&obj_quad *Id (:Diag *Q))
+      (diag_opposite (:D Q) (:Opp *Q_face))
+      (&obj.component *P Id)
+      (&obj_box.box (:key Id) (:B *B_obj))
+      (inside (:A P) (:B B_obj))
+      (same_corner (:D Q_face) (:P1 P) (:P2 B_obj)))
+
+    (RULE &img
+      (&ink (:P *P2) *Col)
+      (&obj.component (:P P2) *Id)
+      (&anchor Id (:P *P0))
+      (relative (:Base P0) (:X P2) (:X_rel *V))
+      (&sym *S)
+      (sym_member S *D)
+      (apply D (:P V) (:P_out *V2))
+      (&obj_quad Id (:Diag *Q))
+      (apply_diag_dir D (:Dir Q) (:Dir_out *Q2))
+      (&block.cell (:P *P_c))
+      (&block.box (:B *B_block))
+      (inside (:A P_c) (:B B_block))
+      (same_corner (:D Q2) (:P1 P_c) (:P2 B_block))
+      (neighbor (:P P_c) (:D Q2) (:Q *P_seat))
+      (compose (:A P_seat) (:B V2) (:C *P)))))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (OR ((&img P *Col))
+      ((NOT (&img P))
+       (= Col C0))))
+
+(OUT (&output ^P ^Col))

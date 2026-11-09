@@ -1,0 +1,19 @@
+;; inputs fd35ef43b85c84dda56402efbb7b57dda87cd37726eaa0eda10c64579d20f668 programs/solvers/dae9d2b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dae9d2b5
+
+(param &tile_dim number (3))
+(param &arr_dim (Axis number) (AXIS_V 1) (AXIS_H 2))
+(param &divide_axis Axis (AXIS_H))
+(param &divisor number (2))
+(param &combine (Ident Color Position Color)
+  (0 0 (grid
+    (0 0)))
+  (1 6 (grid
+    (4 0)))
+  (2 6 (grid
+    (0 3)))
+  (3 6 (grid
+    (4 3))))
+(param &bg Color (0))
+(param &out_fill Color (6))

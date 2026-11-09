@@ -1,0 +1,97 @@
+;; inputs 732c0ac83dde21d9e11b11e894b7f0132140313ca6bc604702b250f4596c56bd programs/solvers/825aa9e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 825aa9e9
+
+(DET &fall DirDomain)
+
+(DET &bg SharedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &floor_color
+  (&ink *P *Col)
+  (&fall *D)
+  (margin (:B P) D (:K 0)))
+
+(INIT &body Connectivity
+  (node (P)
+    (&ink *P *Col)
+    (NOT (&floor_color Col))))
+
+;; The clearance a shape keeps beneath itself.
+(DET &gap DivisorRatio)
+
+(ALTS $choice "how the floor is told apart from the falling shapes" $FloorColor
+  (ALT $Grounded
+    (INIT &body Connectivity
+      (node (P)
+        (&ink *P)))
+
+    (RULE &standing
+      (&body.component *P *Id)
+      (&fall *D)
+      (margin (:B P) D (:K 0)))
+
+    (RULE &mover
+      (&body.component *Id)
+      (NOT (&standing Id)))))
+
+(RULE &mover
+  (&body.component *Id))
+
+(RULE &mover_cell
+  (&mover *Id)
+  (&body.component *P Id))
+
+(RULE &foot
+  (OR ((&mover_cell *Id *P))
+      ((&mover_cell Id (:P *P2))
+       (&fall *D)
+       (&gap *K)
+       (jump (:P P2) D K (:Q P)))))
+
+;; Each body falls with its clearance until that clearance meets what lies
+;; beneath.
+(INIT &fall2 Distance
+  (weight ((:a Id2) (:b Id) (:W K))
+    (&foot *Id *P)
+    (&fall *D)
+    (&foot (:Id *Id2) (:P *P2))
+    (!= Id Id2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n Id) K)
+    (OR ((&foot *Id *P)
+         (&fall *D)
+         (margin (:B P) D *K))
+        ((&foot Id (:P *P3))
+         (&fall (:D *D2))
+         (&ink (:P *P2))
+         (NOT (&mover_cell (:P P2)))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &fall_travel_full
+  (&fall2.distance (:n *V1) *K)
+  (&fall *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &landed
+  (&fall_travel_full (:V1 *Id) (:V2 *Delta))
+  (&mover_cell Id (:P *P3))
+  (input (:P P3) *Col)
+  (compose (:A P3) (:B Delta) (:C *P)))
+
+(RULE &vacated
+  (&fall_travel_full (:V1 *Id))
+  (&mover_cell Id *P))
+
+(RULE &output
+  (OR ((&landed *P *Col))
+      ((input P (:Col *C_in))
+       (NOT (&landed P))
+       (IF ((&vacated P))
+           ((&bg (:C Col)))
+           ((= Col C_in))))))
+
+(OUT (&output ^P ^Col))

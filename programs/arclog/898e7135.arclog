@@ -1,0 +1,132 @@
+;; inputs 56737122e07ff20f287faf23ef3676facab6a063ab59432e1d7d3460455020fb programs/solvers/898e7135.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 898e7135
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; What each object closes off: the cells outside it that cannot reach the
+;; grid edge.
+(INIT &closed Enclosure
+  (key ((&objs.component ^Id))
+    (cell (P)
+      (input *P)
+      (NOT (&objs.component Id P)))))
+
+(INIT &piece_box BoundingBox
+  (key ((&objs.component (:Id ^O) *P)
+        (NOT (&closed.enclosed (:key (:Id O)))))
+    (cell (P)
+      (&objs.component (:Id O) *P)
+      (NOT (&closed.enclosed (:key (:Id O)))))))
+
+(RULE &piece_cell
+  (&piece_box.cell (:key *O) *P)
+  (&piece_box.box (:key O) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &scale_cand
+  (&piece_cell *P_inner)
+  (axis_elem *A)
+  (OR ((frame_extent (:P P_inner) A (:N *K)))
+      ((sub_extent (:P P_inner) A K))))
+
+;; The block a cell becomes at each scale.
+(INIT &block Frame
+  (key ((&scale_cand ^K)
+        (perp *A *A2))
+    (extent (A (:N K))
+      (&scale_cand K)
+      (axis_elem *A))))
+
+;; Each hole's own box.
+(INIT &hole_box BoundingBox
+  (key ((&closed.enclosed (:Id ^H) *P))
+    (cell (P)
+      (&closed.enclosed (:Id H) *P))))
+
+(RULE &hole_cell
+  (&closed.enclosed (:Id *H) *P)
+  (&hole_box.box (:key H) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &hole_scaled_tiling Tiling
+  (outer ((:P P_hole))
+    (&hole_cell (:P_inner *P_hole)))
+  (inner ((:P P_blk))
+    (&block.cell (:P *P_blk))))
+
+;; The box the board spans, holes included.
+(INIT &board_box BoundingBox
+  (key ((&closed.enclosed (:key ^Id)))
+    (cell (P)
+      (&objs.component Id *P))))
+
+(RULE &hole_scaled
+  (&hole_cell *H (:P_inner *P_hole))
+  (&block.cell (:key *K) (:P *P_blk))
+  (&hole_scaled_tiling.cell (:P_outer P_hole) (:P_inner P_blk) *P))
+
+(INIT &congruent Inclusion
+  (pattern ((:pattern O) (:m P_piece))
+    (&piece_cell *O (:P_inner *P_piece)))
+  (observed ((:observed H K D) (:m P_turned))
+    (&hole_scaled *H *K (:P *P_scaled))
+    (apply *D (:P P_scaled) (:P_out *P_turned))))
+
+(RULE &unfit_hole
+  (&closed.enclosed (:Id *H))
+  (&scale_cand *K)
+  (NOT (&congruent.equal (:observed H K))))
+
+(RULE &scale
+  (&scale_cand *K)
+  (NOT (&unfit_hole K)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_board))
+    (&board_box.box (:key *Id) *B)
+    (&objs.component Id *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_board)))
+  (inner ((:P P_blk))
+    (&scale *K)
+    (&block.cell (:key K) (:P *P_blk))))
+
+(INIT &output_tiling2 Tiling
+  (outer ((:P P_board))
+    (&board_box.box *B)
+    (&closed.enclosed (:Id *H) *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_board))
+    (&congruent.equal (:observed H)))
+  (inner ((:P P_blk))
+    (&scale *K)
+    (&block.cell (:key K) (:P *P_blk))
+    (&congruent.equal (:observed K))))
+
+(RULE &output
+  (OR ((&output_tiling.cell (:P_outer *P_board) *P)
+       (&board_box.box (:key *Id) *B)
+       (&objs.component Id (:key *Col) (:P *P2))
+       (inside (:A P2) B)
+       (relative (:Base B) (:X P2) (:X_rel P_board)))
+      ((&scale *K)
+       (&block.cell (:key K) (:P *P_blk))
+       (&board_box.box (:key (:Id *Id2)) (:B *B2))
+       (&output_tiling2.cell (:P_outer *P_board2) (:P_inner P_blk) P)
+       (&closed.enclosed (:Id *H) (:P *P22))
+       (inside (:A P22) (:B B2))
+       (relative (:Base B2) (:X P22) (:X_rel P_board2))
+       (&congruent.equal (:observed H K) (:pattern *O))
+       (&objs.component (:Id O) (:key Col)))))
+
+(OUT (&output ^P ^Col))

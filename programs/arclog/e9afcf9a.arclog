@@ -1,0 +1,100 @@
+;; inputs dfb0f32dd8efad74ba39303d248bec0964201c9f4787c194a4f628761c26bca5 programs/solvers/e9afcf9a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9afcf9a
+
+(INIT &cand Singleton
+  (key ((ex_input *E (:P ^P_in) *Col)
+        (ex_output E (:P *P_out) Col)
+        (axis_elem ^A)
+        (perp A *A2)
+        (same_line (:A A2) (:P P_in) (:Q P_out)))
+    (member ((:v P_out))
+      (ex_input *E (:P P_in) *Col)
+      (ex_output E (:P *P_out) Col)
+      (perp A *A2)
+      (same_line (:A A2) (:P P_in) (:Q P_out)))))
+
+(DET &divide_axis
+  (&cand.member (:key *A))
+  (NOT (&cand.plural (:key A))))
+
+(DET &pair
+  (&divide_axis *A)
+  (&cand.value (:key A *P_in) (:v *P_out)))
+
+(INIT &ident Quotient
+  (equivalent ((:a P_in) (:b P_in))
+    (&pair *P_in)))
+
+(DET &in_label
+  (&pair (:P_in *P))
+  (&ident.class (:a P) *Id))
+
+(DET &out_label
+  (&pair *P_in (:P_out *P))
+  (&ident.class (:a P_in) *Id))
+
+(RULE &label_pair
+  (&in_label (:P *P_in) *Id)
+  (&out_label (:P *P_out) Id))
+
+(RULE &perm
+  (&label_pair *P_in *P_out))
+
+(ALTS $choice "how the permutation is derived" $LabeledGrids
+  (ALT $Size
+    (DET &cell_transform
+      (&pair *P_in *P_out)
+      (apply *D (:P P_in) P_out))
+
+    (INIT &tiled_division Division
+      (key ((&pair *P_in)
+            (&divide_axis ^A)
+            (sub_extent (:P P_in) A ^K))
+        (cell ((:P P_in))
+          (&pair *P_in)
+          (&divide_axis A)
+          (sub_extent (:P P_in) A K))
+        (side (A K)
+          (&pair *P_in)
+          (&divide_axis A)
+          (sub_extent (:P P_in) A K))))
+
+    (DET &tiled
+      (&tiled_division.tile (:key *K *A) (:P *P_in) (:P_inner *P_slab))
+      (split (:P P_slab) A (:Along *P_inner_axis)))
+
+    (INIT &inner_transform Singleton
+      (key ((&tiled ^K *P_in ^P_inner_axis)
+            (&cell_transform P_in *D))
+        (member ((:v D))
+          (&tiled K *P_in P_inner_axis)
+          (&cell_transform P_in *D))))
+
+    (DET &col_transform
+      (&inner_transform.value (:key *K (:P_inner_axis *P_inner)) (:v *D))
+      (NOT (&inner_transform.plural (:key K))))
+
+    (RULE &tile_size
+      (&col_transform (:P_inner *P_inner_axis))
+      (&divide_axis *A)
+      (frame_extent (:P P_inner_axis) A (:N *K)))
+
+    (INIT &perm_division Division
+      (key ((&divide_axis ^A))
+        (side (A K)
+          (&tile_size *K)))
+      (cell ((:P P_grid_in))
+        (input (:P *P_grid_in))))
+
+    (RULE &perm
+      (&perm_division.tile (:key *A) (:P *P_in) (:P_inner *P_slab))
+      (split (:P P_slab) A (:Along *P_inner_axis))
+      (&col_transform (:P_inner P_inner_axis) (:D *T))
+      (apply (:D T) (:P P_in) *P_out))))
+
+(RULE &output
+  (input (:P *P_grid_in) *Col)
+  (&perm (:P_in P_grid_in) (:P_out *P)))
+
+(OUT (&output ^P ^Col))

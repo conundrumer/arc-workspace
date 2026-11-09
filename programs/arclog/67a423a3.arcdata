@@ -1,0 +1,6 @@
+;; inputs 7b37012c5b75e47fd20f820c059e28e0fea8e917b56f9851c94a20d6bc31a8ed programs/solvers/67a423a3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67a423a3
+
+(param &bg Color (0))
+(param &ring Color (4))

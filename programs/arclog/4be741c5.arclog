@@ -1,0 +1,77 @@
+;; inputs b2fe22917b740fc3f3260b2502e25a91327e7543485b796a010521c39668fe4f programs/solvers/4be741c5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4be741c5
+
+(RULE &touch
+  (input *P *Col)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &gapped
+  (input *Col)
+  (axis_of *D *A)
+  (NOT (&touch Col D)))
+
+(RULE &band_axis
+  (perp (:A *A2) (:A2 *A))
+  (NOT (&gapped (:A A2))))
+
+(RULE &line
+  (input *P)
+  (&band_axis *A)
+  (split P A (:Along *L)))
+
+(RULE &band_line
+  (input *P *Col)
+  (&line P *L))
+
+(ALTS $choice "which lines count as a band's own: presence of its color, or where its color is commonest. The two agree except on a band whose color is nowhere the commonest." $Present
+  (ALT $Majority
+    (INIT &commonest_count Cardinality
+      (key ((input *P ^Col)
+            (&line P ^L))
+        (member ((:m P))
+          (input *P Col)
+          (&line P L))))
+
+    (INIT &commonest Order
+      (key ((&commonest_count.size (:key ^L *Col)))
+        (member ((:t Col))
+          (&commonest_count.size (:key L *Col)))
+        (score ((:t Col) (:S N))
+          (&commonest_count.size (:key L *Col) *N))))
+
+    (RULE &band_line
+      (&commonest.maximal (:key *L) (:t *Col)))))
+
+;; A band's leading line, as its distance to one end of the stack.
+(INIT &lead Order
+  (key ((&band_line ^Col *L)
+        (&band_axis *A)
+        (axis_of ^D A)
+        (margin (:B L) D *K))
+    (member ((:t K))
+      (&band_line Col *L)
+      (&band_axis *A)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (&band_line Col *L)
+      (&band_axis *A)
+      (axis_of D A)
+      (margin (:B L) D *K))))
+
+;; The bands rank by their leading lines.
+(INIT &place Order
+  (key ((&lead.minimal (:key ^D) (:t *K)))
+    (member ((:t K))
+      (&lead.minimal (:key D) (:t *K)))
+    (score ((:t K) (:S K))
+      (&lead.minimal (:key D) (:t *K)))))
+
+(RULE &output
+  (&lead.minimal (:key *D *Col) (:t *K))
+  (&place.rank (:key D) (:t K) *R)
+  (&place.dual_rank (:key D) (:t K) (:R *R2))
+  (axis_inset D (:K1 R) (:K2 R2) (:B *P)))
+
+(OUT (&output ^P ^Col))

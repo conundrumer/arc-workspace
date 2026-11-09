@@ -1,0 +1,86 @@
+;; inputs 01a4f452d96f87c33b7970e68db69ac6632448281733edfba09794e79ebc3682 programs/solvers/f0f8a26d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f0f8a26d
+
+(param &background Color (7))
+(param &obj_turn D4 (D4_CW) (D4_CC) (D4_DG) (D4_AD))
+
+(exclude ($Straight $PartColors))
+(exclude ($OneColor $ObjectD4))
+(exclude ($OneColor $Runs))
+
+(alts $scope
+  (alt $ObjectD4
+    (witness plus-part borderline $ObjectD4
+      (relaxed straight-bars)
+      (separates "a plus of 5, one 4-connected part that is not straight: the concept is undefined on it; $ObjectD4 redraws it under each element as the same plus; $Runs turns its row run and its column run about their shared middle into the same plus")
+      (input (grid
+        (7 7 7 7 7)
+        (7 7 5 7 7)
+        (7 5 5 5 7)
+        (7 7 5 7 7)
+        (7 7 7 7 7)))
+      (output concept undefined)
+      (output $PartColors (grid
+        (7 7 7 7 7)
+        (7 7 5 7 7)
+        (7 5 5 5 7)
+        (7 7 5 7 7)
+        (7 7 7 7 7))))))
+
+(alts $parts
+  (alt $Runs
+    (witness touching-bars borderline $Runs
+      (relaxed straight-bars)
+      (separates "two bars of 5 that meet at a corner cell, so one 4-connected part is an L: the concept is undefined on it; $Runs turns each of the two rows-and-columns runs about its own middle into another L; $ObjectD4 is undefined on it, since the L redrawn under D4_CW, D4_CC, D4_DG and D4_AD gives different outputs")
+      (input (grid
+        (7 7 7 7 7)
+        (7 5 7 7 7)
+        (7 5 7 7 7)
+        (7 5 5 5 7)
+        (7 7 7 7 7)))
+      (output $Components undefined)
+      (output $Runs (grid
+        (7 7 7 7 7)
+        (7 7 7 7 7)
+        (5 5 5 7 7)
+        (7 7 5 7 7)
+        (7 7 5 7 7))))))
+
+(alts $colors
+  (alt $PartColors
+    (witness two-mark-colors borderline $PartColors
+      (relaxed one-mark-color)
+      (separates "a bar of 2 and a bar of 8 apart from each other: the concept, with one mark color, is undefined; $PartColors turns each bar in its own color")
+      (input (grid
+        (7 7 7 7 7 7 7)
+        (7 7 7 7 7 8 7)
+        (7 2 2 2 7 8 7)
+        (7 7 7 7 7 8 7)
+        (7 7 7 7 7 7 7)))
+      (output concept undefined)
+      (output $PartColors (grid
+        (7 7 7 7 7 7 7)
+        (7 7 2 7 7 7 7)
+        (7 7 2 7 8 8 8)
+        (7 7 2 7 7 7 7)
+        (7 7 7 7 7 7 7))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background-field)
+      (separates "a field of 0, not the stored background 7, with a bar of 5: the concept takes every non-7 cell as marked and is undefined; background=DominantColor takes 0 and turns the bar")
+      (input (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 5 5 5 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output ($OneColor &background=$Stored) $Runs undefined)
+      (output &background=$Derived $ObjectD4 (grid
+        (0 0 0 0 0)
+        (0 0 5 0 0)
+        (0 0 5 0 0)
+        (0 0 5 0 0)
+        (0 0 0 0 0))))))

@@ -1,0 +1,6 @@
+;; inputs 60c24aae5f5d2846a778677776b4c4f195a9ea55bf5cac2c2d8ede5c08f1fda8 programs/solvers/3e980e27.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3e980e27
+
+(param &bg Color (0))
+(param &stamp_d4 (Color D4) (2 D4_LR) (3 D4_ID))

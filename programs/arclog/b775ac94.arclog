@@ -1,0 +1,158 @@
+;; inputs 2318f55437f26b1637adf05d1e6a79b25083f303b976b37e65051da39b631475 programs/solvers/b775ac94.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b775ac94
+
+(INPUT shapes "the cells that are not &background form separate objects. Each object is one shape of one color, its cells 8-connected, plus one to three single marker cells."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT key-block "one cell of the shape, at a corner of the shape's bounding box, and the object's marker cells lie in one 2×2 block. That shape cell is the block's corner nearest the shape, and each marker fills one of the other three corners of the block.")
+
+(INPUT room "each copy fits in the grid and covers no other object")
+
+(OUTPUT keep "each input cell that is not &background stays in the output, and a copy cell that lands on one does not replace it")
+
+(OUTPUT mirror-copy "for each marker, the shape is copied into the marker's quadrant of the key block, in the marker's color. The copy is the shape's image under the reflection that takes the shape's key cell to the marker's cell: across the key block's vertical center line for a marker beside the key cell along a row, across its horizontal center line for a marker beside it along a column, and both together for the diagonal marker. Undefined where two copies of different colors meet, or where an object's markers lie in no key block.")
+
+(OUTPUT no-marker-no-copy "a corner of the key block with no marker gets no copy"
+
+  (INIT &objs Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &shape_color_count Cardinality
+    (key ((&objs.component *P ^Id)
+          (input P ^Col))
+      (member ((:m P))
+        (&objs.component *P Id)
+        (input P Col))))
+
+  ;; The shape's color: the commonest color of its object.
+  (INIT &shape_color Order
+    (key ((&shape_color_count.size (:key ^Id *Col)))
+      (member ((:t Col))
+        (&shape_color_count.size (:key Id *Col)))
+      (score ((:t Col) (:S N))
+        (&shape_color_count.size (:key Id *Col) *N))))
+
+  (RULE &shape
+    (&objs.component *P *Id)
+    (input P *Col)
+    (&shape_color.maximal (:key Id) (:t Col)))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape ^Id *P))
+      (cell (P)
+        (&shape Id *P))))
+
+  (RULE &corner_cell
+    (&shape *Id *P)
+    (&shape_box.box (:key Id) *B)
+    (inside (:A P) B)
+    (same_corner (:D *C) (:P1 P) (:P2 B)))
+
+  (INIT &block BoundingBox
+    (key ((&corner_cell ^Id *P ^C)
+          (neighbor P (:D C) *Q))
+      (cell (P)
+        (OR ((&corner_cell Id *P C)
+             (neighbor P (:D C) *Q))
+            ((&corner_cell Id (:P *P2) C)
+             (neighbor (:P P2) (:D C) (:Q P)))))))
+
+  (RULE &block_key
+    (&block.box (:key *Id *C) *B)
+    (&corner_cell Id *P C)
+    (inside (:A P) B)
+    (same_corner (:D *K) (:P1 P) (:P2 B)))
+
+  (RULE &color_marker
+    (&objs.component *P *Id)
+    (input P *Col)
+    (NOT (&shape_color.maximal (:key Id) (:t Col))))
+
+  (RULE &stray
+    (&block.box (:key *Id *C) *B)
+    (&color_marker Id (:P *M))
+    (NOT (inside (:A M) B)))
+
+  (RULE &key
+    (&block_key *Id *C *B *K)
+    (NOT (&stray Id C)))
+
+  (RULE &marker
+    (&color_marker *Id *P *Col))
+
+  (RULE &unread
+    (&marker *Id)
+    (NOT (&key Id)))
+
+  (RULE &swaps_axes
+    (apply_dir (:D *Op) (:Dir *D) (:Dir_out *D2))
+    (axis_of D *A)
+    (NOT (axis_of (:D D2) A)))
+
+  (RULE_OR_DET &quadrant_op "The reflection of the key block that takes its corner K to its corner M_corner: across one center line for corners on one side, across both for opposite corners."
+    (apply_diag_dir (:D *Op) (:Dir *Key_corner) (:Dir_out *Marker_corner))
+    (NOT (&swaps_axes Op))
+    (!= Key_corner Marker_corner))
+
+  (RULE &copy
+    (&key *Id *B *K)
+    (&marker Id (:P *M) *Col)
+    (inside (:A M) B)
+    (same_corner (:D *M_corner) (:P1 M) (:P2 B))
+    (&quadrant_op (:Key_corner K) (:Marker_corner M_corner) *Op)
+    (&shape Id (:P *S))
+    (relative (:Base B) (:X S) (:X_rel *S_rel))
+    (apply (:D Op) (:P S_rel) (:P_out *T_rel))
+    (compose (:A B) (:B T_rel) (:C *P))))
+
+(ALTS $m "which cells of an object are its markers" $ColorMarkers
+  (ALT $BlockMarkers
+    (INPUT key-block "the key block is a 2×2 block that holds a cell of the object besides its corner nearest the shape, a shape cell at a corner of the shape's bounding box. The markers are the block's cells other than that shape cell. A cell of the object outside the block that is not of the shape's color stays and makes no copy."
+      (RULE &block_other
+        (&block_key *Id *C *B (:P *P2))
+        (&objs.component *P Id)
+        (!= P P2)
+        (inside (:A P) B)
+        (input P *Col))
+
+      (RULE &key
+        (&block_key *Id *C *B *K)
+        (&block_other Id C))
+
+      (RULE &marker
+        (&block_other *Id *P *Col)))))
+
+(ALTS $o "what a copy cell does to an input cell of another object it lands on" $KeepObject
+  (ALT $CopyOver
+    (OUTPUT keep "a copy cell replaces the input cell it lands on")
+    (RULE &output
+      (OR ((input *P)
+           (&copy P *Col)
+           (NOT (&unread)))
+          ;; A cell no copy covers keeps its input color.
+          ((NOT (&unread))
+           (input P Col)
+           (NOT (&copy P)))))))
+
+(RULE &output
+  ;; A cell no copy covers keeps its input color.
+  (OR ((NOT (&unread))
+       (input *P *Col)
+       (NOT (&copy P)))
+      ((input P (:Col *Col_in))
+       (&copy P (:Col *Col_copy))
+       (NOT (&unread))
+       (IF ((&background (:C Col_in)))
+           ((= Col Col_copy))
+           ((= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

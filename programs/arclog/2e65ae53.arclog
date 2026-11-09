@@ -1,0 +1,108 @@
+;; inputs 8486f26b59c9edca6045f9824ed0e9dd54fb643b1571fa3ae38ad770137e06b3 programs/solvers/2e65ae53.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2e65ae53
+
+(DET &bg DominantColor)
+
+(INIT &ink_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+;; The frames are drawn in the commonest non-bg color.
+(INIT &ink Order
+  (member ((:t Col))
+    (&ink_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&ink_count.size (:key *Col) *N)))
+
+;; Each frame is one ink component.
+(INIT &frames Connectivity
+  (node (P)
+    (input *P *Col)
+    (&ink.maximal (:t Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&frames.component *P ^Id))
+    (cell (P)
+      (&frames.component *P Id))))
+
+(RULE &box_cell
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &broken
+  (&box_cell *Id *P)
+  (input P *Col)
+  (NOT (&ink.maximal (:t Col)))
+  (split P *A (:Along *L)))
+
+(RULE &cut_divider
+  (&box_cell (:Id *Key) *P)
+  (split P *A (:Along *L))
+  (NOT (&broken (:Id Key) L)))
+
+(RULE &cut_on_divider
+  (&box_cell (:Id *Key) *P)
+  (&cut_divider Key *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider (:Key ^Ky) *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((&box_cell (:Id Ky) *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider (:Key Ky) *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider (:Key Ky) *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((&box_cell (:Id Ky) *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (&box_cell (:Id Ky) *P)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (&box_cell (:Id *Key) *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider Key P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key (:Ky Key) D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *Key *P D (:N *N1))
+  (&cut_part_idx Key P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *Key *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of Key P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &tile_color
+  (&cut_tile_of *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &painted
+  (&cut_tile_of *P *P_tile)
+  (&tile_color P_tile *Col))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

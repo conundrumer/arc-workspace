@@ -1,0 +1,90 @@
+;; inputs 30c4e850afe9825a66c2a6748c8404fffa2948e1fbf88f364283880cd8045add programs/solvers/ce8d95cc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ce8d95cc
+
+(param &bg Color (0))
+
+(alts $choice
+  (alt $GapCollapse
+    (witness thick-line borderline concept
+      (relaxed lines-apart)
+      (separates "two adjacent identical horizontal lines: the concept keeps one, $GapCollapse keeps both side by side, and $Rebuild keeps both with a background row between them")
+      (input (grid
+        (0 0 4 0 0)
+        (3 3 4 3 3)
+        (3 3 4 3 3)
+        (0 0 4 0 0)
+        (0 0 4 0 0)))
+      (output concept (grid
+        (0 4 0)
+        (3 4 3)
+        (0 4 0)))
+      (output $GapCollapse (grid
+        (0 4 0)
+        (3 4 3)
+        (3 4 3)
+        (0 4 0)))
+      (output $Rebuild (grid
+        (0 4 0)
+        (3 4 3)
+        (0 4 0)
+        (3 4 3)
+        (0 4 0)))))
+  (alt $Rebuild
+    (witness thick-line borderline concept)
+    (witness edge-line borderline concept
+      (relaxed lines-apart)
+      (separates "a horizontal line on the grid's top row: the concept and $GapCollapse keep it on the top row, and $Rebuild adds a background row above it")
+      (input (grid
+        (3 3 1 3 3 3)
+        (0 0 1 0 0 0)
+        (0 0 1 0 0 0)
+        (2 2 1 2 2 2)
+        (0 0 1 0 0 0)
+        (0 0 1 0 0 0)))
+      (output concept $GapCollapse (grid
+        (3 1 3)
+        (0 1 0)
+        (2 1 2)
+        (0 1 0)))
+      (output $Rebuild (grid
+        (0 1 0)
+        (3 1 3)
+        (0 1 0)
+        (2 1 2)
+        (0 1 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant concept
+      (relaxed full-lines)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (3 3 3 8 3 3 3 3 6 3 3)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (5 5 5 8 5 5 5 5 6 5 5)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)))
+      (output concept &bg=$Derived (grid
+        (1 8 1 6 1)
+        (3 8 3 6 3)
+        (1 8 1 6 1)
+        (5 8 5 6 5)
+        (1 8 1 6 1)))
+      (output ($GapCollapse &bg=$Stored) (grid
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (3 3 3 8 3 3 3 3 6 3 3)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (5 5 5 8 5 5 5 5 6 5 5)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)
+        (1 1 1 8 1 1 1 1 6 1 1)))
+      (output $Rebuild undefined))))

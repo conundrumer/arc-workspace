@@ -1,0 +1,12 @@
+;; inputs efbae736b2a31d0f40faf1935217b016240bb47e81f1b21816de226159c746dc programs/solvers/642d658d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 642d658d
+
+(param &out_dim (Axis number) (AXIS_V 1) (AXIS_H 1))
+(param &center Color (4))
+(param &target number (2))
+(param &fp_off Offset
+  (grid
+    (_ 1 _)
+    (1 @_ 1)
+    (_ 1 _)))

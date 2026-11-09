@@ -1,0 +1,96 @@
+;; inputs 42803044c03a6e0625c4f621a9f7973f894a32eb64d0612d1caaf762c88a6ba0 programs/solvers/150deff5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 150deff5
+
+(DET &bg DominantColor)
+
+(DET &changed
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *C2))
+  (!= Col C2))
+
+(INIT &regions Connectivity
+  (key ((&changed ^E *P (:Col ^C)))
+    (node (P)
+      (&changed E *P (:Col C)))))
+
+(INIT &size Cardinality
+  (key ((&regions.component (:key ^E (:C ^Col)) ^Id *P))
+    (member ((:m P))
+      (&regions.component (:key E (:C Col)) Id *P))))
+
+(INIT &small Order
+  (key ((&size.size (:key (:Col ^C)) *N))
+    (member ((:t N))
+      (&size.size (:key (:Col C)) *N))
+    (score ((:t N) (:S N))
+      (&size.size (:key (:Col C)) *N))))
+
+;; A color's smallest regions are lone pieces — a merged region holds at
+;; least two. Each lone piece is one copy of its color's chart, in its
+;; own pose.
+(INIT &bbox BoundingBox
+  (key ((&size.size (:key ^E (:Col ^C) ^Id) *N)
+        (&small.minimal (:key C) (:t N))
+        (&regions.component (:key E C) Id *P))
+    (cell (P)
+      (&size.size (:key E (:Col C) Id) *N)
+      (&small.minimal (:key C) (:t N))
+      (&regions.component (:key E C) Id *P))))
+
+;; Each piece's id, from the color it paints.
+(INIT &color_id Quotient
+  (equivalent ((:a C) (:b C))
+    (&changed (:Col *C))))
+
+(DET &member
+  (&bbox.cell (:key *E (:C *Col) (:Id *Region)) (:P *P2))
+  (&bbox.box (:key E (:C Col) (:Id Region)) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (&color_id.class (:a Col) *Id))
+
+;; The catalog: each piece's footprint, and the color it paints.
+(RIGID_DET &piece
+  (key ((&member ^Id))
+    (instance ((&member ^E ^Col ^Region Id))
+      (&member E Col Region Id *P))))
+
+(INIT &occ Occurrences
+  (key ((OR ((&piece.member (:key ^Id) (:Pose ^D) (:P *S)))
+            ((&piece.member (:key Id) (:Pose D))
+             (input *P *Col)
+             (NOT (&bg (:C Col))))))
+    (cell (P)
+      (&piece.member (:key Id) (:Pose D))
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (shape ((:P S))
+      (&piece.member (:key Id) (:Pose D) (:P *S)))))
+
+(RULE &covers
+  (&occ.occurrence (:key (:Id *K_id) (:D *K_d)) (:P *B))
+  (&occ.shape (:key (:Id K_id) (:D K_d)) (:P *S))
+  (compose (:A B) (:B S) (:C *P)))
+
+(CHOOSE &forcing
+  (for ((&covers ^P))
+    (from (&covers *B P)))
+  (never
+    (&covers *B)
+    (&covers (:B *B2) (:P *P2))
+    (&covers B (:P P2))
+    (!= B B2)))
+
+(DET &piece_color
+  (&color_id.class (:a *Col) *Id))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&forcing *B)
+       (&covers B P)
+       (&occ.occurrence (:key *Id) (:P B))
+       (&piece_color Id Col))))
+
+(OUT (&output ^P ^Col))

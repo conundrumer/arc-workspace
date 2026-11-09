@@ -1,0 +1,6 @@
+;; inputs e6b8e3f5a4c09da3c591ea4648cdccb2c6a603a5bb0e831203936303b112eb81 programs/solvers/985ae207.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 985ae207
+
+(param &bg Color (8))
+(param &pitch number (3))

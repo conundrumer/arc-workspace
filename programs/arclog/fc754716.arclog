@@ -1,0 +1,22 @@
+;; inputs 9ae248c68e8ffeabdfe08f8289987f3c4a80f43341b653319b138ed3e531274b programs/solvers/fc754716.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fc754716
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &is_border
+  (input *P)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &output
+  (OR ((&is_border *P)
+       (&ink *Col))
+      ((input P)
+       (interior (:A P) (:B 0))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

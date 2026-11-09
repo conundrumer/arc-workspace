@@ -1,0 +1,94 @@
+;; inputs 2ee1b71fea7dd563c203c81e76e0d97a0e31b1a5031796cce995a8baea05ae55 programs/solvers/414297c0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 414297c0
+
+(DET &bg DominantColor)
+
+(INIT &canvas_count Cardinality
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (member ((:m P))
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &ink SharedColor)
+
+;; The canvas covers more cells than anything else on the background.
+(INIT &canvas Order
+  (member ((:t Col))
+    (&canvas_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&canvas_count.size (:key *Col) *N)))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&canvas.maximal (:t Col))))
+
+(RULE &canvas_view
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_out)))
+
+(RULE &dot
+  (&canvas_view *P *P_out)
+  (input P *Col)
+  (NOT (&canvas.maximal (:t Col))))
+
+(RULE &outside
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&canvas_view P)))
+
+(RULE &key
+  (&dot *Col)
+  (&outside *P Col))
+
+(RULE &ink_cell
+  (&outside *P (:Col *Ink))
+  (&ink (:C Ink)))
+
+(ALTS $sp "how far a glyph runs from its key" $Near
+  (ALT $Object
+    (INIT &obj Connectivity
+      (node (P)
+        (&outside *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &glyph
+      (&key *P *Col)
+      (&obj.component P *Id)
+      (&obj.component (:P *Q) Id)
+      (!= Q P)
+      (&ink_cell (:P Q) *Ink)
+      (relative (:Base P) (:X Q) (:X_rel *V)))))
+
+(ALTS $pt "which of the cells off the canvas a glyph is drawn in" $Stored
+  (ALT $Copied
+    (RULE &ink_cell
+      (&outside *P (:Col *Ink)))))
+
+(RULE &glyph
+  (&key *P *Col)
+  (neighbor P *D *Q)
+  (&ink_cell (:P Q) *Ink)
+  (step_offset D *V))
+
+(RULE &stamp
+  (&dot (:P_out *P_dot) (:Col *Col2))
+  (&glyph (:Col Col2) *V (:Ink *Col))
+  (compose (:A P_dot) (:B V) (:C *P_out))
+  (&canvas_view P_out))
+
+(RULE &output
+  (OR ((&stamp (:P_out *P) *Col))
+      ((&canvas_view (:P *P2) (:P_out P))
+       (input (:P P2) Col)
+       (NOT (&stamp (:P_out P))))))
+
+(OUT (&output ^P ^Col))

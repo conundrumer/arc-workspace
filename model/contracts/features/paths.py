@@ -16,7 +16,7 @@ def main_checkout(root):
 
 
 MAIN = main_checkout(Path(__file__).resolve().parents[3])
-GEN = Path(os.environ.get('CONTRACTS_GEN', MAIN / 'work/arclog/gen'))  # the solvers, as .arclog and .arcdata files
+GEN = Path(os.environ.get('CONTRACTS_GEN', MAIN / 'programs/arclog'))  # the solvers, as .arclog and .arcdata files
 DATA = Path(os.environ.get('CONTRACTS_DATA', MAIN / 'model/contracts'))  # holds cache/ and corpus/
 REGISTRY = MAIN / 'engine/lib/registry.sexpr'
 

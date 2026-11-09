@@ -1,0 +1,136 @@
+;; inputs d35917bb2a2658103400ae443f76acb65fe431157db55015aaecdf99f1ab2d5d programs/solvers/d89b689b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d89b689b
+
+(INPUT one-block "the grid holds one 2×2 block of color block_color on a field of background"
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; The commonest color of each solved input.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &outvoted
+    (&common.maximal (:t *Col))
+    (&common.maximal (:key *E))
+    (NOT (&common.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&outvoted (:Col C))))
+
+  (INIT &blobs Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (INIT &the_block Singleton
+    (member ((:v Id))
+      (&blobs.component *P *Id)
+      (&blobs.component (:P *Q) Id)
+      (!= P Q))))
+
+(INPUT four-markers "besides the block, the grid holds exactly four single cells, each of a color other than background and block_color")
+
+(INPUT one-marker-per-corner "each marker lies strictly above or strictly below the block's rows, and strictly left or strictly right of its columns, and each of the block's four diagonal corners has exactly one marker")
+
+(OUTPUT marker-to-corner "each block cell takes the color of the marker off the block corner that cell sits at"
+
+  (DET &block_color
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output (:Col C))))
+
+  (RULE &block_cell
+    (input *P *Col)
+    (&block_color (:C Col)))
+
+  (RULE &marker
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&block_cell P)))
+
+  (INIT &block BoundingBox
+    (cell (P)
+      (&block_cell *P)))
+
+  ;; 4-step distances from each marker.
+  (INIT &steps Distance
+    (key ((&marker (:P ^M)))
+      (source ((:n M))))
+    (edge ((:a P) (:b Q))
+      (input *P)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (input (:P Q))))
+
+  (INIT &nearest Order
+    (key ((&marker (:P ^M)))
+      (member ((:t (:V C) (:S K)))
+        (&block_cell (:P *C))
+        (&steps.distance (:key M) (:n C) *K))
+      (score ((:t (:V C) (:S K)) (:S K))
+        (&block_cell (:P *C))
+        (&steps.distance (:key M) (:n C) *K)))))
+
+(OUTPUT clear-rest "every other cell of the output is background, so the markers leave their places")
+
+(ALTS $t "which block cell a marker moves into" $BlockCorner
+  (ALT $GridQuadrant
+    (OUTPUT marker-to-corner "the marker goes to the block cell at the corner of the grid quadrant the marker sits in, split at the grid's middle; undefined where a marker is on the middle row or column of an odd-sized grid, or two markers share a grid quadrant"
+      (RULE &halves_nearer
+        (input *P)
+        (dist_pair P *D *K *K2)
+        (< K K2))
+
+      (RULE &halves_quadrant
+        (diag_dirs (:D *Diag) *D1 *D2)
+        (&halves_nearer *P (:D D1))
+        (&halves_nearer P (:D D2))))
+    (RULE &target
+      (&halves_quadrant (:P *M) (:Diag *D))
+      (&block_cell (:P *C))
+      (&block.box *B)
+      (inside (:A C) B)
+      (same_corner D (:P1 C) (:P2 B))))
+  (ALT $NearestBlockCell
+    (OUTPUT marker-to-corner "the marker goes to the block cell at the least 4-step distance from it; undefined where two markers reach one cell")
+    (INPUT one-marker-per-corner "the corner condition is dropped")
+    (RULE &target
+      (&nearest.minimal (:key *M) (:t (:V *C))))))
+
+(ALTS $l "how the block is found" $ByColor
+  (ALT $BlockByShape
+    (INPUT one-block "the block is the one 4-connected component of non-background cells with more than one cell, of any color; undefined where no such component, or more than one, exists"
+      (RULE &block_cell
+        (&the_block.value (:v *Id))
+        (&blobs.component *P Id)))))
+
+(RULE &target
+  (&marker (:P *M))
+  (&block_cell (:P *C))
+  (&block.box *B)
+  (inside (:A C) B)
+  (same_corner *D (:P1 C) (:P2 B))
+  (diag_dirs D *D1 *D2)
+  (nearer (:D D1) (:P M) (:Q C))
+  (nearer (:D D2) (:P M) (:Q C)))
+
+(RULE &output
+  (OR ((&target *M (:C *P))
+       (&marker (:P M) *Col))
+      ((&block.box)
+       (input P)
+       (NOT (&block_cell P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

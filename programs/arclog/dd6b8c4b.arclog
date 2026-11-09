@@ -1,0 +1,210 @@
+;; inputs 2f2258855c52b2167137ab81a90a761a96ee02eccc3d9af7064e23086ae7bdba programs/solvers/dd6b8c4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dd6b8c4b
+
+(INPUT field "A grid of background 7 with wall 6 cells drawn on it.")
+
+(INPUT box "One 3x3 square of box color 3 cells with a center 2 cell at its center.")
+
+(INPUT marks "Single mark 9 cells scattered over the field, some of them shut off from the box by walls.")
+
+(OUTPUT reach "A mark reaches the box when a 4-adjacent walk through cells that are not wall joins it to a box cell; its distance is the length of the shortest such walk.")
+
+(OUTPUT take "The reached marks are taken nearest first, as many as the box has cells, or all of them when there are fewer. Undefined where the last mark taken and the first mark left are at one distance."
+
+  (DET &wall UnchangedColor)
+
+  (DET &change
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET &mark
+    (&change *C)
+    (&change (:C2 C)))
+
+  (DET &boxlike
+    (&mark (:C *M))
+    (&change *C (:C2 M)))
+
+  (DET &box_rim
+    (ex_input *E *P)
+    (dir_elem *D)
+    (OR ((margin (:B P) D (:K 0)))
+        ((neighbor P D *Q)
+         (ex_input E (:P Q) (:Col *C))
+         (NOT (&boxlike C)))))
+
+  (DET_OR_RULE &center RarestColor
+    (&boxlike *C)
+    (ex_input *E *P (:Col C))
+    (NOT (&box_rim E P)))
+
+  ;; The order the box cells fill in: a start corner and a primary axis.
+  (DET &fill_corner DiagDirDomain)
+
+  (DET &fill_axis AxisDomain)
+
+  (DET &box_color
+    (&boxlike *C)
+    (NOT (&center C)))
+
+  (RULE_OR_DET &box
+    (input *P *Col)
+    (OR ((&box_color (:C Col)))
+        ((&center (:C Col)))))
+
+  (RULE &mark2
+    (input *P *Col)
+    (&mark (:C Col)))
+
+  ;; The fewest 4-adjacent steps through cells that are not wall.
+  (INIT &walk Distance
+    (edge ((:a P) (:b Q))
+      (input *P (:Col *C1))
+      (NOT (&wall (:C C1)))
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (input (:P Q) (:Col *C2))
+      (NOT (&wall (:C C2))))
+    (source ((:n P))
+      (&box *P)))
+
+  (INIT &capacity Cardinality
+    (member ((:m P))
+      (&box *P)))
+
+  (RULE_OR_DET &capacity.size)
+
+  (RULE &near_elem
+    (&mark2 *P)
+    (&walk.distance (:n P)))
+
+  ;; The reached marks, nearest first.
+  (INIT &near Order
+    (member ((:t P))
+      (&near_elem *P))
+    (score ((:t P) (:S K))
+      (&near_elem *P)
+      (&walk.distance (:n P) *K)))
+
+  ;; The marks no farther along the take order than each reached mark.
+  (INIT &upto Cardinality
+    (key ((&near.rank (:t ^P) *R)
+          (&near.rank (:t *Q) (:R *R2))
+          (<= R2 R))
+      (member ((:m Q))
+        (&near.rank (:t P) *R)
+        (&near.rank (:t *Q) (:R *R2))
+        (<= R2 R))))
+
+  (INIT &reading Order
+    (member ((:t P))
+      (&mark2 *P))
+    (score ((:t P) (:S K1))
+      (&mark2 *P)
+      (&fill_corner *D)
+      (&fill_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&mark2 *P)
+      (&fill_corner *D)
+      (&fill_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))))
+
+(OUTPUT vacate "Each taken mark becomes background.")
+
+(OUTPUT fill "The box cells, the center included, take the mark color in fill order, one for each taken mark."
+
+  ;; The box cells in fill order.
+  (INIT &fill Order
+    (member ((:t P))
+      (&box *P))
+    (score ((:t P) (:S K1))
+      (&box *P)
+      (&fill_corner *D)
+      (&fill_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&box *P)
+      (&fill_corner *D)
+      (&fill_axis *A)
+      (diag_dist P (:Diag D) A *K1 *K2)))
+
+  (INIT &reached Cardinality
+    (member ((:m P))
+      (&mark2 *P)
+      (&walk.distance (:n P)))))
+
+(OUTPUT keep "Every other cell keeps its input color.")
+
+(ALTS $m "Where the walk that measures a mark's distance starts." $BoxWalk
+  (ALT $WalkFromCenter
+    (OUTPUT take "The distance is the walk from the center cell, through the box cells. Undefined where the last mark taken and the first mark left are at one such distance."
+      ;; The fewest 4-adjacent steps through cells that are not wall.
+      (INIT &walk Distance
+        (edge ((:a P) (:b Q))
+          (input *P (:Col *C1))
+          (NOT (&wall (:C C1)))
+          (dir_elem *D)
+          (neighbor P D *Q)
+          (input (:P Q) (:Col *C2))
+          (NOT (&wall (:C C2))))
+        (source ((:n P))
+          (input *P *Col)
+          (&center (:C Col)))))))
+
+(ALTS $t "What decides between marks at one distance." $TieUndefined
+  (ALT $TieReading
+    (OUTPUT take "Among marks at one distance, the mark earlier in fill order is taken first."
+      ;; The reached marks, nearest first.
+      (INIT &near Order
+        (member ((:t P))
+          (&near_elem *P))
+        (score ((:t P) (:S K))
+          (&near_elem *P)
+          (&walk.distance (:n P) *K))
+        (secondary_score ((:t P) (:S R))
+          (&near_elem *P)
+          (&reading.rank (:t P) *R))))))
+
+(RULE &taken
+  (&upto.size (:key *P) (:N *E))
+  (&capacity.size *N)
+  (<= E N))
+
+(RULE &left
+  (&near.rank (:t *P) *R)
+  (&capacity.size *N)
+  (>= R N))
+
+(RULE &filled
+  (&fill.rank (:t *P) (:R *K))
+  (&reached.size *N)
+  (< K N))
+
+(DET &bg
+  (&mark (:C *M))
+  (&change (:C M) (:C2 *C)))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (OR ((&filled P)
+       (&mark (:C *Col)))
+      ((&taken P)
+       (&bg (:C Col)))
+      ((&left P)
+       (= Col C0))
+      ((NOT (&box P))
+       (NOT (&near_elem P))
+       (= Col C0))
+      ((&box P)
+       (NOT (&filled P))
+       (= Col C0))))
+
+(DET &center_determined
+  (&boxlike *C)
+  (ex_input *E *P (:Col C))
+  (NOT (&box_rim E P)))
+
+(OUT (&output ^P ^Col))

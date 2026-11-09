@@ -1,0 +1,71 @@
+;; inputs 4e24a86273b2e237cc0a3b38c2e805967d59c8936157165c05bf94342e9eda32 programs/solvers/e729b7be.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e729b7be
+
+(DET &bg DominantColor)
+
+(INIT &d4m Agreement
+  (key ((ex_output ^E *P *Col))
+    (source (P (:v Col))
+      (ex_output E *P *Col))
+    (target (P (:v Col))
+      (ex_output E *P *Col))))
+
+(DET &sym
+  (d4_elem *D)
+  (NOT (&d4m.mismatch D)))
+
+(RULE &image
+  (input (:P *P3) *Col)
+  (NOT (&bg (:C Col)))
+  (&sym *D)
+  (apply D (:P P3) (:P_out *P)))
+
+(ALTS $choice "which center the half turn is about" $Sym
+  (ALT $Marker
+    (DET &line SharedColor)
+
+    ;; The crossing: the marker with line cells on both sides of it.
+    (INIT &crossing Ray
+      (source (P)
+        (input *P *Col)
+        (&line (:C Col)))
+      (node (P)
+        (input *P))
+      (dir (D)
+        (axis_elem *A)
+        (axis4_of *D A)))
+
+    (DET &marker RarestColor)
+
+    (RULE &crossing_between
+      (input *P *Col)
+      (&marker (:C Col))
+      (axis_elem *A)
+      (axis4_of *D A)
+      (dir8_opposite D (:D2 *O))
+      (&crossing.ray P D)
+      (&crossing.ray P (:D O)))
+
+    ;; The transform taken about the crossing.
+    (DET &transform D4Domain)
+
+    (RULE &image
+      (input (:P *P3) *Col)
+      (&crossing_between (:P *C))
+      (relative (:Base C) (:X P3) (:X_rel *V))
+      (&transform *D)
+      (apply D (:P V) (:P_out *V2))
+      (compose (:A C) (:B V2) (:C *P)))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (OR ((&bg (:C Col2))
+       (&image P *Col))
+      ((NOT (&bg (:C Col2)))
+       (= Col Col2))
+      ((&bg (:C Col2))
+       (NOT (&image P))
+       (= Col Col2))))
+
+(OUT (&output ^P ^Col))

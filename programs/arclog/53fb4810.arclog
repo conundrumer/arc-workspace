@@ -1,0 +1,82 @@
+;; inputs 0371104aefd1c9e3fc04fc7cd3178d67bbe307071865f06e4bfee32949c39463 programs/solvers/53fb4810.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 53fb4810
+
+(DET &bg DominantColor)
+
+(DET &anchor_color UnchangedColor)
+
+(INIT &bands Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&anchor_color (:C Col)))))
+
+(RULE &grow_dir
+  (&bands.component *P *Id)
+  (opposite *D (:Opp *O))
+  (neighbor P (:D O) *Q)
+  (input (:P Q) *Col)
+  (&anchor_color (:C Col)))
+
+(RULE &grow_axis
+  (&grow_dir *Id *D)
+  (axis_of D *A))
+
+(INIT &bbox BoundingBox
+  (key ((&bands.component *P ^Id))
+    (cell (P)
+      (&bands.component *P Id))))
+
+(RULE &period
+  (&bands.component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (&grow_axis Id *A)
+  (box_extent B P A (:N *K)))
+
+(ALTS $choice "two models of the period" $Extent
+  (ALT $Period
+    (INIT &shift Periods
+      (key ((&bands.component *P ^Id)
+            (input P *Col))
+        (cell (P (:v Col))
+          (&bands.component *P Id)
+          (input P *Col))))
+
+    (INIT &shortest Order
+      (key ((&grow_axis ^Id *A)
+            (&shift.approximate_period (:key Id) A *K))
+        (member ((:t K))
+          (&grow_axis Id *A)
+          (&shift.approximate_period (:key Id) A *K))
+        (score ((:t K) (:S K))
+          (&grow_axis Id *A)
+          (&shift.approximate_period (:key Id) A *K))))
+
+    (RULE &period
+      (&shortest.minimal (:key *Id) (:t *K)))))
+
+(RULE &pattern
+  (&bands.component (:P *P2) *Id)
+  (input (:P P2) *Col)
+  (&grow_dir Id *D)
+  (&period Id *K)
+  (input *P)
+  (axis_of D *A)
+  (same_line A (:P P2) (:Q P))
+  (relative (:Base P2) (:X P) (:X_rel *V))
+  (opposite D (:Opp *O))
+  (margin (:B V) (:D O) (:K *T))
+  (divide T (:Side K) (:Gap 0) (:Remainder 0)))
+
+(RULE &beyond
+  (&pattern *Id *P *Col)
+  (NOT (&bands.component P Id)))
+
+(RULE &output
+  (input *P (:Col *C))
+  (OR ((&beyond P *Col))
+      ((NOT (&beyond P))
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

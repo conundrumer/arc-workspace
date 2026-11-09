@@ -1,0 +1,115 @@
+;; inputs 06d7d984bc077e60cf6941cdb437b1a3c3b337d2751d2aee91834d7c6318b910 programs/solvers/9f27f097.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9f27f097
+
+(INPUT bg "the commonest color is the background")
+
+(INPUT blank "the cells of one other color form a solid rectangle"
+
+  (DET &blank ChangedColor)
+
+  (RULE &blank_color
+    (&blank (:C *Col)))
+
+  (RULE &blank2
+    (input *P *Col)
+    (&blank_color Col))
+
+  (INIT &blank_box BoundingBox
+    (cell (P)
+      (&blank2 *P))))
+
+(INPUT block "the cells of every remaining color form a solid rectangle of the blank rectangle's extent"
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (RULE &block
+    (input *P *Col)
+    (NOT (&palette.maximal (:t Col)))
+    (NOT (&blank_color Col)))
+
+  (INIT &block_box BoundingBox
+    (cell (P)
+      (&block *P))))
+
+(OUTPUT fill "each blank cell holds the block's cell at its place in the blank's box, reflected")
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (INIT &color_box BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col)))))
+
+(ALTS $h "what names the blank's color" $Stored
+  (ALT $Solid
+    (INPUT sole "the blank is the one color whose cells fill their own box"
+      (RULE &mixed
+        (&color_box.box (:key *Col) *B)
+        (input *P)
+        (inside (:A P) B)
+        (NOT (input P Col)))
+
+      (RULE &blank_color
+        (input *Col)
+        (NOT (&mixed Col))))))
+
+(ALTS $m "what fixes the reflection" $Fixed
+  (ALT $Stacked
+    (INPUT apart "the two rectangles share no line of one axis")
+    (OUTPUT fill "each blank cell holds the block's cell at its place in the blank's box, under the reflection that inverts the axis whose lines the two rectangles never share"
+      (RULE &together
+        (axis_elem *A)
+        (&blank2 *P)
+        (&block (:P *Q))
+        (same_line A P Q)))
+    ;; The reflection inverts the axis whose lines the two never share.
+    (RULE &mirror2
+      (axis_inversion *A (:T *D)) (axis_elem A)
+      (NOT (&together A)))))
+
+(ALTS $f "what the copy covers" $Cells
+  (ALT $Box
+    (OUTPUT fill "every cell of the blank's box holds the block's cell at its place in that box, reflected")
+    (RULE &target
+      (input *P)
+      (&blank_box.box *B)
+      (inside (:A P) B))))
+
+(DET &mirror D4Domain)
+
+(RULE &mirror2
+  (&mirror *D))
+
+(RULE &source
+  (input *P)
+  (&blank_box.box (:B *B_blank))
+  (inside (:A P) (:B B_blank))
+  (relative (:Base B_blank) (:X P) (:X_rel *P_rel))
+  (&mirror2 *D)
+  (apply D (:P P_rel) (:P_out *P_rel2))
+  (input (:P *P_src))
+  (&block_box.box (:B *B_block))
+  (inside (:A P_src) (:B B_block))
+  (relative (:Base B_block) (:X P_src) (:X_rel P_rel2)))
+
+(RULE &target
+  (&blank2 *P))
+
+(RULE &output
+  (OR ((&target *P)
+       (&source P *P_src)
+       (input (:P P_src) *Col))
+      ((input P Col)
+       (NOT (&target P)))))
+
+(OUT (&output ^P ^Col))

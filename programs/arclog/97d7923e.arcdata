@@ -1,0 +1,6 @@
+;; inputs b2890634f66eb24d274b025365cfdd04281a875bd60f47c8cdbcb1e886def218 programs/solvers/97d7923e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97d7923e
+
+(param &bg Color (0))
+(param &head_dir Dir (DIR_T))

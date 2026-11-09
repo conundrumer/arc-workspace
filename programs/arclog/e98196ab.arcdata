@@ -1,0 +1,11 @@
+;; inputs 4cb89a6bdb55b8a06939862edd97445ba6215baded174842866baa02bcecb0c4 programs/solvers/e98196ab.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e98196ab
+
+(param &bg Color (0))
+(param &tile_dim (Axis number) (AXIS_V 5) (AXIS_H 11))
+(param &arr_dim (Axis number) (AXIS_V 2) (AXIS_H 1))
+(param &gap number (1))
+(param &divisor number (2))
+(param &divide_axis Axis (AXIS_V))
+(param &divide_gap number (1))

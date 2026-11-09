@@ -1,0 +1,37 @@
+;; inputs 8a770706791cf07aff15db39997d8a77fca4b4a197b4453aed7a30026028e8a9 programs/solvers/3cd86f4f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3cd86f4f
+
+(DET &slide AxisDomain)
+
+(DET &sense SenseDomain)
+
+(DET &bg AnyOutNewColor)
+
+(RULE &shear
+  (input (:P *P_in))
+  (&slide *A)
+  (perp A *A2)
+  (axis_of (:D *D_m) (:A A2))
+  (&sense *S)
+  (turn S (:D D_m) (:D2 *D_push))
+  (dist_pair (:P P_in) (:D D_m) (:K *K_m) (:K2 *K_o))
+  (axis_inset (:D D_push) (:K1 K_m) (:K2 K_o) (:B *Delta))
+  (compose (:A P_in) (:B Delta) (:C *P_out)))
+
+(RULE &frame
+  (&shear (:P_out *P1))
+  (&shear (:P_out *P2))
+  (&slide *A)
+  (split (:P P1) A *Along)
+  (split (:P P2) A *Across)
+  (compose (:A Along) (:B Across) (:C *P)))
+
+(RULE &output
+  (OR ((input (:P *P_in) *Col)
+       (&shear P_in (:P_out *P)))
+      ((&frame P)
+       (NOT (&shear (:P_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

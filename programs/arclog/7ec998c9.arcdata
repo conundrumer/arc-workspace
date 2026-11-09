@@ -1,0 +1,8 @@
+;; inputs e10e5ab4b30c967644ac45a61b937dbc3481a22f0ea172a96af99420af3e9c85 programs/solvers/7ec998c9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7ec998c9
+
+(param &line Color (1))
+(param &axis Axis (AXIS_V))
+(param &corner DiagDir (DIAG_TL))
+(param &corner_sense Sense (SENSE_CW))

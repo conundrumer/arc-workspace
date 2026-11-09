@@ -1,0 +1,88 @@
+;; inputs fd2549e336f9cf0cad6191f9db6861a398d09ca6d6d8d757f66ed3fb410537ae programs/solvers/239be575.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 239be575
+
+(DET &mark VanishedColor)
+
+(DET &link ColorDomain)
+
+(DET &out_dim ConstOutDimAxis)
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (&out_dim *A *N)))
+
+(DET &bg DominantColor)
+
+(RULE &mark_cell
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &node
+  (input *P *Col)
+  (OR ((&mark (:C Col)))
+      ((&link (:C Col)))))
+
+(INIT &orth Connectivity
+  (node (P)
+    (&node *P)))
+
+(RULE &orth_linked
+  (&mark_cell *P)
+  (&mark_cell (:P *Q))
+  (&orth.component P *Id)
+  (&orth.component (:P Q) Id))
+
+(RULE &apart
+  (&mark_cell *P)
+  (&mark_cell (:P *Q))
+  (NOT (&orth_linked P Q)))
+
+(ALTS $a "what an edge is" $Orth
+  (ALT $Diag
+    (INIT &diag Connectivity
+      (node (P)
+        (&node *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &diag_linked
+      (&mark_cell *P)
+      (&mark_cell (:P *Q))
+      (&diag.component P *Id)
+      (&diag.component (:P Q) Id))
+
+    (RULE &apart
+      (&mark_cell *P)
+      (&mark_cell (:P *Q))
+      (NOT (&diag_linked P Q)))))
+
+(ALTS $r "how the verdict renders" $Wire
+  (ALT $Table
+    (DET &join_paint ColorDomain)
+
+    (DET &apart_paint DominantColor)
+
+    (RULE &output
+      (OR ((&joined)
+           (&join_paint (:C *Col))
+           (&out_pos_frame.cell *P))
+          ((&apart)
+           (&apart_paint (:C Col))
+           (&out_pos_frame.cell P))))))
+
+(RULE &joined
+  (NOT (&apart)))
+
+(RULE &output
+  (OR ((&joined)
+       (&link (:C *Col))
+       (&out_pos_frame.cell *P))
+      ((&apart)
+       (&bg (:C Col))
+       (&out_pos_frame.cell P))))
+
+(OUT (&output ^P ^Col))

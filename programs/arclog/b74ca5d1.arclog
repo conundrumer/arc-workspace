@@ -1,0 +1,295 @@
+;; inputs caa3fba6c62e0e3d30835009bca4f0464838268b94907edce8e979295f84e098 programs/solvers/b74ca5d1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b74ca5d1
+
+(INPUT background "one color fills most of the grid, and differs from pair to pair")
+
+(INPUT corner-markers "some of the four corner cells hold one non-background cell each, and the marked corners have distinct colors")
+
+(INPUT shapes "each non-background color that no corner marker has draws one shape, whose cells need not be connected")
+
+(INPUT key-cell "each shape has exactly one key, a cell of a corner marker's color that fits with the shape's cells in a box-size × box-size box, and each cell of a marker color off the corners is the key of exactly one shape"
+
+  (INIT &bg_mode_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The extent on each axis of the box that holds a shape's cells and its key.
+  (DET &box_size TileCount)
+
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  (RULE &corner
+    (input *P)
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  (RULE &marker
+    (&corner *D *P)
+    (input P *Col)
+    (NOT (&bg_mode.maximal (:t Col))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg_mode.maximal (:t Col)))
+    (NOT (&corner P)))
+
+  (RULE &size
+    (&box_size (:N *K)))
+
+  (INIT &pair_box BoundingBox
+    (key ((&ink ^P)
+          (&ink (:P ^Q)))
+      (cell ((:P P2))
+        (OR ((= *P2 P))
+            ((= P2 Q))))))
+
+  (RULE &span
+    (&pair_box.box (:key *P *Q) *B)
+    (box_extent B P *A *N)
+    (perp A *A2)
+    (box_extent B P (:A A2) (:N *N2))
+    (>= N N2))
+
+  (RULE &key
+    (&size)
+    (&ink *P *Col)
+    (&marker Col))
+
+  (RULE &body
+    (&size)
+    (&ink *P *Col)
+    (NOT (&key P)))
+
+  (INIT &color_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col)))
+
+  (RULE &shape
+    (&body *P *Col)
+    (&color_id.class (:a Col) *Id))
+
+  (INIT &reach Order
+    (key ((&shape ^Id *P)
+          (&key (:P ^K))
+          (&span (:P K) (:Q P) *N))
+      (member ((:t N))
+        (&shape Id *P)
+        (&key (:P K))
+        (&span (:P K) (:Q P) *N))
+      (score ((:t N) (:S N))
+        (&shape Id *P)
+        (&key (:P K))
+        (&span (:P K) (:Q P) *N))))
+
+  (INIT &nearest Order
+    (key ((&reach.minimal (:key *Id ^K) (:t *N)))
+      (member ((:t (:V Id) (:S N)))
+        (&reach.minimal (:key *Id K) (:t *N)))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&reach.minimal (:key *Id K) (:t *N))))))
+
+(INPUT shape-box "a shape's cells with its key span box-size on both axes"
+
+  (INIT &color_box BoundingBox
+    (key ((&ink *P ^Col)
+          (NOT (&marker Col)))
+      (cell (P)
+        (&ink *P Col)
+        (NOT (&marker Col)))))
+
+  (INIT &widest Order
+    (member ((:t N))
+      (&color_box.box (:key *Col) *B)
+      (&ink *P Col)
+      (box_extent B P *A *N))
+    (score ((:t N) (:S N))
+      (&color_box.box (:key *Col) *B)
+      (&ink *P Col)
+      (box_extent B P *A *N))))
+
+(OUTPUT swap-colors "in each shape, every shape cell takes the key's color, and the key cell takes the shape's color")
+
+(OUTPUT stamp-corner "each marked corner gets the overlay of the boxes of every shape keyed with its color, the shape cells and the key cell alike, painted in the marker's color, with each box flush against that corner"
+
+  (RULE &corner_cell
+    (&marker *D)
+    (&size *K)
+    (input *P)
+    (diag_dist P (:Diag D) *K1 *K2)
+    (< K1 K)
+    (< K2 K))
+
+  (INIT &corner_box BoundingBox
+    (key ((&corner_cell ^D *P))
+      (cell (P)
+        (&corner_cell D *P)))))
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &near
+    (&span *P *Q *N)
+    (&size *K)
+    (<= N K))
+
+  ;; The box of a shape's cells and a key.
+  (INIT &bond_box BoundingBox
+    (key ((&shape ^Id)
+          (&key (:P ^K)))
+      (cell (P)
+        (OR ((&shape Id *P)
+             (&key (:P K)))
+            ((&shape Id)
+             (&key (:P K))
+             (= P K))))))
+
+  (RULE &loose
+    (&bond_box.box (:key *Id *K) (:B *Bx))
+    (box_extent (:B Bx) (:P K) *A *N)
+    (&size (:K *S))
+    (> N S))
+
+  (RULE &paired
+    (&bond_box.box (:key *Id *K))
+    (NOT (&loose Id K))))
+
+(ALTS $g "which cells form one shape" $ColorClass
+  (ALT $ShapeBySpread
+    (INPUT shapes "a shape is the cells of one non-marker color that are linked by steps between cells that fit in one box-size × box-size box; undefined where a shape has no key or several keys"
+      (INIT &spread Quotient
+        (edge ((:a P) (:b Q))
+          (&body *P *Col)
+          (&body (:P *Q) Col)
+          (&near P Q)))
+
+      (RULE &shape
+        (&body *P *Col)
+        (&spread.class (:a P) *Id)))))
+
+(ALTS $i "which cells are keys" $MarkerColor
+  (ALT $KeyWithoutMarker
+    (INPUT key-cell "a key is a non-background cell off the corners that fits in no box-size × box-size box with another cell of its color, whatever its color; a shape whose key color is on no corner swaps colors and stamps nowhere; undefined where a shape has no key or several keys"
+      (RULE &crowded
+        (&ink *P *Col)
+        (&ink (:P *Q) Col)
+        (!= P Q)
+        (&near P Q))
+
+      (RULE &key
+        (&size)
+        (&ink *P *Col)
+        (NOT (&crowded P))))))
+
+(ALTS $p "which shape a key belongs to" $KeyInBox
+  (ALT $KeyByNearest
+    (INPUT key-cell "a key belongs to the shape with the cell nearest to it by Chebyshev distance; undefined where two shapes tie for nearest, or a shape gets no key or several keys"
+      (RULE &paired
+        (&nearest.minimal (:key *K) (:t (:V *Id)))))))
+
+(ALTS $b "where box-size comes from" $BoxSizeStored
+  (ALT $BoxSizeFromShapes
+    (INPUT shape-box "box-size is the largest extent on either axis of the cells of one non-marker color, read on each input alone; undefined on an input with no non-marker color off the corners"
+      (RULE &size
+        (&widest.maximal (:t *K))))))
+
+(ALTS $a "where a keyed box lies in its corner" $StampFlush
+  (ALT $StampAlignCenter
+    (OUTPUT stamp-corner "each keyed box is centered in the box-size × box-size box at its corner; undefined where a box's extent and box-size differ in parity")
+    (RULE &place
+      (&paired *Id *K)
+      (&key (:P K) *Col)
+      (&marker *D Col)
+      (&bond_box.box (:key Id K) (:B *Bx))
+      (input (:P *Pc))
+      (inside (:A Pc) (:B Bx))
+      (same_corner D (:P1 Pc) (:P2 Bx))
+      (&corner_cell D (:P *Q))
+      (relative (:Base Pc) (:X Q) (:X_rel *V))
+      (&corner_box.box (:key D) (:B *C))
+      (compose (:A Bx) (:B V) (:C *Bx2))
+      (relative (:Base C) (:X Bx2) (:X_rel *R))
+      (centered (:P R)))))
+
+(ALTS $m "what becomes of the corner box outside the stamp" $MarkerKept
+  (ALT $MarkerCleared
+    (OUTPUT rest-kept "the box-size × box-size box at each marked corner turns background before the stamp is painted")
+    (RULE &output
+      (&size)
+      (NOT (&broken))
+      (NOT (&unplaced))
+      (input *P (:Col *Col0))
+      (OR ((&stamp (:Q P) *Col))
+          ((&corner_cell P)
+           (NOT (&stamp (:Q P)))
+           (&bg_mode.maximal (:t Col)))
+          ((&swapped (:Q P) Col)
+           (NOT (&stamp (:Q P)))
+           (NOT (&corner_cell P)))
+          ((NOT (&stamp (:Q P)))
+           (NOT (&corner_cell P))
+           (NOT (&swapped (:Q P)))
+           (= Col Col0))))))
+
+(RULE &broken
+  (OR ((&key (:P *K))
+       (NOT (&paired K)))
+      ((&paired *Id (:K *K3))
+       (&paired (:Id *Id2) (:K K3))
+       (!= Id Id2))
+      ((&shape (:Id *Id3))
+       (NOT (&paired (:Id Id3))))
+      ((&paired (:Id *Id4) (:K *K4))
+       (&paired (:Id Id4) (:K *K2))
+       (!= K4 K2))))
+
+(RULE &swapped
+  (OR ((&paired *Id *K)
+       (&shape Id (:P *Q))
+       (&key (:P K) *Col))
+      ((&paired (:Id *Id2) (:K Q))
+       (&shape (:Id Id2) Col))))
+
+(RULE &place
+  (&paired *Id *K)
+  (&key (:P K) *Col)
+  (&marker *D Col)
+  (&bond_box.box (:key Id K) (:B *Bx))
+  (input (:P *Pc))
+  (inside (:A Pc) (:B Bx))
+  (same_corner D (:P1 Pc) (:P2 Bx))
+  (input (:P *Q))
+  (inside (:A Q) (:B 0))
+  (same_corner D (:P1 Q) (:P2 0))
+  (relative (:Base Pc) (:X Q) (:X_rel *V)))
+
+(RULE &unplaced
+  (&paired *Id *K)
+  (&key (:P K) *Col)
+  (&marker Col)
+  (NOT (&place Id K)))
+
+(RULE &stamp
+  (&place *Id *K *V)
+  (&key (:P K) *Col)
+  (OR ((&shape Id (:P *Q3)))
+      ((= Q3 K)))
+  (compose (:A Q3) (:B V) (:C *Q)))
+
+(RULE &output
+  (&size)
+  (NOT (&broken))
+  (NOT (&unplaced))
+  (input *P (:Col *Col0))
+  (OR ((&stamp (:Q P) *Col))
+      ((&swapped (:Q P) Col)
+       (NOT (&stamp (:Q P))))
+      ((NOT (&stamp (:Q P)))
+       (NOT (&swapped (:Q P)))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

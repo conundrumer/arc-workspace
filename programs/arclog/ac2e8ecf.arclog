@@ -1,0 +1,262 @@
+;; inputs 4518987e281dfab2c95ba800a2ead0ed0eaef2408f11ff6817b59f1dc83c54c6 programs/solvers/ac2e8ecf.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac2e8ecf
+
+(INPUT background "every cell outside the shapes is the background color")
+
+(INPUT single-color-objects "each shape is one 4-connected set of cells of one color; shapes of different colors may touch"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &shapes8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT two-kinds "each shape is either a hollow rectangle (a one-cell-thick rectangle outline that closes off an interior of background) or a cross (a horizontal bar and a vertical bar that cross, closing off nothing)")
+
+(OUTPUT kind "a shape that by itself closes off a region from the grid edge, under 4-adjacency, is a rectangle; every other shape is a cross"
+
+  (INIT &shapes4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &shape
+    (&shapes4.component *P (:Id *Sh)))
+
+  (RULE &off_shape
+    (&shape *Sh)
+    (input *P)
+    (NOT (&shape Sh P)))
+
+  (INIT &rim Boundary
+    (key ((&shape (:Sh ^Id) *P))
+      (cell (P)
+        (&shape (:Sh Id) *P))))
+
+  ;; The cells the grid edge reaches outside the shape, stepping to any of the
+  ;; eight neighbors.
+  (INIT &own8 Flood
+    (key ((&off_shape (:Sh ^Id) *P))
+      (node (P)
+        (&off_shape (:Sh Id) *P))
+      (source (P)
+        (&off_shape (:Sh Id) *P)
+        (margin (:B P) *D (:K 0))))
+    (step ((:Delta V))
+      (step_offset *V)))
+
+  ;; The regions all the shapes together close off.
+  (INIT &pockets Enclosure
+    (cell (P)
+      (input *P *Col)
+      (&background (:C Col)))))
+
+(OUTPUT rectangles-rise "the rectangles, as rigid objects, fall under Gravity toward closed_dir, with only the other rectangles and the grid edge as obstacles"
+
+  (INIT &box BoundingBox
+    (key ((&shape (:Sh ^Id) *P))
+      (cell (P)
+        (&shape (:Sh Id) *P))))
+
+  (RULE &box_cell
+    (&box.box (:key (:Id *Sh)) *B)
+    (input *P)
+    (inside (:A P) B)))
+
+(OUTPUT crosses-sink "the crosses, as rigid objects, fall under Gravity toward open_dir, with only the other crosses and the grid edge as obstacles")
+
+(OUTPUT compose "the output is the background with every shape drawn at its settled place; no settled rectangle overlaps a settled cross"
+
+  ;; The edge the rectangles fall toward.
+  (DET &closed_dir DirDomain)
+
+  ;; The regions the shape closes off by itself.
+  (INIT &own Enclosure
+    (key ((&off_shape (:Sh ^Id) *P))
+      (cell (P)
+        (&off_shape (:Sh Id) *P))))
+
+  (RULE &rectangle
+    (&own.enclosed (:key (:Id *Sh))))
+
+  (RULE &rise_body
+    (&shape *Sh *P))
+
+  (INIT &rise Distance
+    (weight ((:a Id2) (:b Id) (:W K2))
+      (&rectangle (:Sh *Id))
+      (&rise_body (:Sh Id) *P)
+      (&closed_dir *D)
+      (&rectangle (:Sh *Id2))
+      (&rise_body (:Sh Id2) (:P *P2))
+      (!= Id Id2)
+      (gap D P (:Q P2) (:K *K2)))
+    (source_distance ((:n Id) (:K K2))
+      (&rectangle (:Sh *Id))
+      (&rise_body (:Sh Id) *P)
+      (&closed_dir *D)
+      (margin (:B P) D (:K *K2))))
+
+  (RULE &rise_travel_full
+    (&rise.distance (:n *V1) *K)
+    (&closed_dir *D)
+    (jump_offset D K (:V *V2)))
+
+  (RULE &cross
+    (&shape *Sh)
+    (NOT (&rectangle Sh)))
+
+  (RULE &sink_body
+    (&shape *Sh *P))
+
+  ;; The edge the crosses fall toward.
+  (DET &open_dir DirDomain)
+
+  (RULE &sink_dir
+    (&open_dir *D))
+
+  (INIT &sink Distance
+    (weight ((:a Id2) (:b Id) (:W K2))
+      (&cross (:Sh *Id))
+      (&sink_body (:Sh Id) *P)
+      (&closed_dir)
+      (&sink_dir *D)
+      (&cross (:Sh *Id2))
+      (&sink_body (:Sh Id2) (:P *P2))
+      (!= Id Id2)
+      (gap D P (:Q P2) (:K *K2)))
+    (source_distance ((:n Id) (:K K2))
+      (&cross (:Sh *Id))
+      (&sink_body (:Sh Id) *P)
+      (&closed_dir)
+      (&sink_dir *D)
+      (margin (:B P) D (:K *K2))))
+
+  (RULE &sink_dir_gravity
+    (&closed_dir)
+    (&sink_dir *D))
+
+  (RULE &sink_travel_full
+    (&sink.distance (:n *V1) *K)
+    (&sink_dir_gravity *D)
+    (jump_offset D K (:V *V2)))
+
+  (RULE &risen
+    (&rise_travel_full (:V1 *Id) (:V2 *V))
+    (&shape (:Sh Id) (:P *P2))
+    (input (:P P2) *Col)
+    (compose (:A P2) (:B V) (:C *P)))
+
+  (RULE &sunk
+    (&sink_travel_full (:V1 *Id) (:V2 *V))
+    (&shape (:Sh Id) (:P *P2))
+    (input (:P P2) *Col)
+    (compose (:A P2) (:B V) (:C *P))))
+
+(ALTS $s "how cells group into shapes" $Components4
+  (ALT $Components8
+    (INPUT single-color-objects "each shape is one 8-connected set of cells of one color"
+      (RULE &shape
+        (&shapes8.component *P (:Id *Sh))))))
+
+(ALTS $k "which shapes are rectangles" $OwnClosure
+  (ALT $SolidCountsClosed
+    (OUTPUT kind "a shape that by itself closes off a region, or that fills its bounding box, is a rectangle"
+      (RULE &gap
+        (&box_cell *Sh *P)
+        (NOT (&shape Sh P)))
+
+      (RULE &rectangle
+        (OR ((&own.enclosed (:key (:Id *Sh))))
+            ((&shape Sh)
+             (NOT (&gap Sh)))))))
+  (ALT $CrossingSinks
+    (OUTPUT kind "a shape with a cell whose four neighbors all lie in the shape is a cross; every other shape is a rectangle"
+      (RULE &hub
+        (&shape *Sh *P)
+        (NOT (&rim.boundary (:key (:Id Sh)) P)))
+
+      (RULE &rectangle
+        (&shape *Sh)
+        (NOT (&hub Sh)))))
+  (ALT $ClosedAgainstDiagonal
+    (OUTPUT kind "a shape is a rectangle only when its region stays closed off from the grid edge with the background passing between two cells that touch at a corner"
+      (RULE &rectangle
+        (&off_shape *Sh *P)
+        (NOT (&own8.reached (:key (:Id Sh)) P)))))
+  (ALT $ClosedInGrid
+    (OUTPUT kind "a shape that borders a region that all the shapes together close off from the grid edge is a rectangle"
+      (RULE &rectangle
+        (&pockets.enclosed *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&shape *Sh (:P Q))))))
+
+(ALTS $o "where the crosses' heading comes from" $OpenStored
+  (ALT $OpenDirOpposite
+    (OUTPUT crosses-sink "the crosses fall toward the edge opposite closed_dir"
+      (RULE &sink_dir
+        (&closed_dir (:D *D_closed))
+        (opposite (:D D_closed) (:Opp *D))))))
+
+(ALTS $c "what part of a falling shape meets an obstacle" $StackByCells
+  (ALT $StackByBbox
+    (OUTPUT rectangles-rise "a rectangle stops where its bounding box meets the bounding box of another rectangle"
+      (RULE &rise_body
+        (&box_cell *Sh *P))
+
+      (RULE &sink_body
+        (&box_cell *Sh *P)))
+    (OUTPUT crosses-sink "a cross stops where its bounding box meets the bounding box of another cross"))
+  (ALT $StackRectanglesByBbox
+    (OUTPUT rectangles-rise "a rectangle stops where its bounding box meets the bounding box of another rectangle"
+      (RULE &rise_body
+        (&box_cell *Sh *P)))))
+
+(ALTS $m "the output where a settled rectangle and a settled cross share a cell" $Apart
+  (ALT $RectanglesOnTop
+    (OUTPUT compose "where a settled rectangle and a settled cross share a cell, the rectangle's color shows")
+    (RULE &output
+      (OR ((&risen *P *Col)
+           (&sink_dir))
+          ((&sunk P Col)
+           (NOT (&risen P)))
+          ((input P)
+           (&background (:C Col))
+           (NOT (&risen P))
+           (NOT (&sunk P))))))
+  (ALT $CrossesOnTop
+    (OUTPUT compose "where a settled rectangle and a settled cross share a cell, the cross's color shows")
+    (RULE &output
+      (OR ((&sunk *P *Col))
+          ((&risen P Col)
+           (&sink_dir)
+           (NOT (&sunk P)))
+          ((input P)
+           (&background (:C Col))
+           (NOT (&risen P))
+           (NOT (&sunk P)))))))
+
+(RULE &output
+  (OR ((input *P)
+       (&background (:C *Col))
+       (NOT (&risen P))
+       (NOT (&sunk P)))
+      ((&risen P Col)
+       (&sink_dir)
+       (NOT (&sunk P)))
+      ((&sunk P Col)
+       (NOT (&risen P)))))
+
+(OUT (&output ^P ^Col))

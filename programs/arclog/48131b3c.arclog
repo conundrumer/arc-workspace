@@ -1,0 +1,28 @@
+;; inputs 0d22e79b7240fbb6424151fc4eb5e3985c01013774b99939165397df886ecfb2 programs/solvers/48131b3c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 48131b3c
+
+(DET &copies ScaleRatio)
+
+;; copies×copies arrangement of the swapped grid.
+(INIT &arrangement Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&copies (:K *N))))
+
+(RULE &swapped
+  (input *P (:Col *C1))
+  (input *Col)
+  (!= Col C1))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&arrangement.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&swapped (:P *P_intile))))
+
+(RULE &output
+  (&output_tiling.cell (:P_inner *P_intile) *P)
+  (&swapped (:P P_intile) *Col))
+
+(OUT (&output ^P ^Col))

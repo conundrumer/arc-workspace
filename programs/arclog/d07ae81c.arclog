@@ -1,0 +1,173 @@
+;; inputs 9f20c51eaff6bc196667511f71beba76665fb6aece04cdffd4fe2dcc701244a2 programs/solvers/d07ae81c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d07ae81c
+
+(INPUT banded-background "each marker replaces one cell of a background of 2 colors; that background is full-length row and column bands of one color laid over a field of the other color, so rows of one kind repeat and columns of one kind repeat")
+
+(INPUT lone-markers "a marker is a single cell of a color that is not a background color, and it sits on the color the bands give the cell it replaces")
+
+(INPUT one-marker-color-per-background "each background color has markers sitting on it, the markers on one background color all have one color, and the marker colors of different background colors differ")
+
+(OUTPUT marker-color-map "each background color maps to the color of the markers that sit on it; a marker sits on the color that another row has at the marker's column, where that row equals the marker's row at every column where neither holds a marker, or likewise with columns and rows swapped"
+
+  (INIT &around_count Cardinality
+    (key ((input ^P)
+          (neighbor P *D *Q)
+          (input (:P Q) ^Col))
+      (member ((:m D))
+        (input P)
+        (neighbor P *D *Q)
+        (input (:P Q) Col))))
+
+  (INIT &around Order
+    (key ((&around_count.size (:key ^P *Col)))
+      (member ((:t Col))
+        (&around_count.size (:key P *Col)))
+      (score ((:t Col) (:S N))
+        (&around_count.size (:key P *Col) *N)))))
+
+(OUTPUT diagonal-rays "from each marker, a line runs toward each of the four diagonal directions, through markers, to the grid edge"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The background colors: the commonest color, and the commonest of the rest.
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (RULE &tied_commonest
+    (&commonest.maximal (:t *Col1))
+    (&commonest.maximal (:t *Col2))
+    (!= Col1 Col2))
+
+  (INIT &next_commonest_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&commonest.maximal (:t Col)))
+          (NOT (&tied_commonest)))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&commonest.maximal (:t Col)))
+        (NOT (&tied_commonest)))))
+
+  (INIT &next_commonest Order
+    (member ((:t Col))
+      (&next_commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&next_commonest_count.size (:key *Col) *N)))
+
+  (RULE &background
+    (OR ((&commonest.maximal (:t *Col)))
+        ((&next_commonest.maximal (:t Col)))))
+
+  (RULE &marker
+    (input *P *Col)
+    (NOT (&background Col)))
+
+  (INIT &rays Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (diag_dir_elem *D))))
+
+(OUTPUT recolor-by-background "each background cell on a line takes the marker color its background color maps to; every other cell keeps its color"
+
+  (RULE &cell_line
+    (input *P)
+    (split P *A (:Along *L) (:Across *X))))
+
+(ALTS $b "how a marker's background color is read" $Layout
+  (ALT $FullLineBackground
+    (OUTPUT marker-color-map "a marker sits on the color of a full-length line through its cell whose other cells all have one background color, and on the field color when no such line runs through it; undefined where full lines of both colors run through the cell"
+      (RULE &line_off
+        (&cell_line *A *P *L)
+        (NOT (&marker P))
+        (input P (:Col *Col2))
+        (&background *Col)
+        (!= Col Col2))
+
+      (RULE &full_line
+        (&cell_line *A *P *L)
+        (NOT (&marker P))
+        (&background *Col)
+        (NOT (&line_off A L Col)))
+
+      (RULE &on_full_line
+        (&cell_line *A *P *L)
+        (&full_line A L))
+
+      (RULE &field
+        (&background *Col)
+        (NOT (&full_line Col))))
+    (RULE &sits_on
+      (&marker *P)
+      (OR ((&cell_line *A P *L)
+           (&full_line A L *Col))
+          ((&field Col)
+           (NOT (&on_full_line P))))))
+  (ALT $NeighborMajority
+    (OUTPUT marker-color-map "a marker sits on the color most of its eight neighbors carry; undefined on a tie")
+    (RULE &sits_on
+      (&marker *P)
+      (&around.maximal (:key P) (:t *Col)))))
+
+(ALTS $m "which cells are markers" $OtherColor
+  (ALT $SingletonMarkers
+    (INPUT lone-markers "a marker is a cell of a color that is not a background color with no 4-neighbor of its own color"
+      (RULE &same_color_neighbor
+        (input *P *Col)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (input (:P Q) Col))
+
+      (RULE &marker
+        (input *P *Col)
+        (NOT (&background Col))
+        (NOT (&same_color_neighbor P))))))
+
+(RULE &line_clash
+  (&cell_line *A (:P *P1) (:L *L1) *X)
+  (&cell_line A (:P *P2) (:L *L2) X)
+  (!= L1 L2)
+  (input (:P P1) (:Col *Col1))
+  (input (:P P2) (:Col *Col2))
+  (!= Col1 Col2)
+  (NOT (&marker (:P P1)))
+  (NOT (&marker (:P P2))))
+
+(RULE &sits_on
+  (&marker *P)
+  (&cell_line *A P *L *X)
+  (&cell_line A (:P *Q) (:L *L2) X)
+  (!= L2 L)
+  (NOT (&line_clash A (:L1 L) L2))
+  (NOT (&marker (:P Q)))
+  (input (:P Q) *Col))
+
+(RULE &color_map
+  (&sits_on *P (:Col *Bg))
+  (input P *Col))
+
+(RULE &torn
+  (&sits_on *P (:Col *Col1))
+  (&sits_on P (:Col *Col2))
+  (!= Col1 Col2))
+
+(RULE &painted
+  (&rays.ray *P)
+  (NOT (&marker P)))
+
+(RULE &output
+  (NOT (&torn))
+  (input *P (:Col *Col0))
+  (IF ((&painted P))
+      ((&color_map (:Bg Col0) *Col))
+      ((= Col Col0))))
+
+(OUT (&output ^P ^Col))

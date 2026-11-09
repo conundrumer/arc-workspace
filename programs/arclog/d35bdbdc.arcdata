@@ -1,0 +1,61 @@
+;; inputs 735db5b8f0dad612f93a663a7c8b67a477e8c13615fa373088a6261d7e78fdc9 programs/solvers/d35bdbdc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d35bdbdc
+
+(param &background Color (0))
+(param &wire_color Color (5))
+
+(alts $choice
+  (alt $SelfLookup
+    (witness self-named-box borderline $SelfLookup
+      (separates "the 7-plus at a wire end has its own outer color 7 at its center: the concept erases it, since no other box has outer color 7; $SelfLookup links it, looks itself up, and keeps it unchanged")
+      (input (grid
+        (0 0 0 0 0 0 0 2 0 0)
+        (0 0 4 0 0 0 2 3 2 0)
+        (0 4 2 4 0 0 0 2 0 0)
+        (0 0 4 0 0 0 0 5 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 0 0 0 1 0 5 0 3 0)
+        (0 7 0 1 9 1 5 3 3 3)
+        (7 7 7 0 1 0 5 0 3 0)
+        (0 7 0 5 0 5 0 0 0 0)
+        (0 5 5 0 5 0 0 0 0 0)))
+      (output concept (grid
+        (0 0 0 0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 2 3 2 0)
+        (0 0 0 0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 0 5 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 0 0 5 0 5 0 0 0 0)
+        (0 5 5 0 5 0 0 0 0 0)))
+      (output $SelfLookup (grid
+        (0 0 0 0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 2 3 2 0)
+        (0 0 0 0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 0 5 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 0 0 0 0 0 5 0 0 0)
+        (0 7 0 0 0 0 5 0 0 0)
+        (7 7 7 0 0 0 5 0 0 0)
+        (0 7 0 5 0 5 0 0 0 0)
+        (0 5 5 0 5 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "6 is the commonest color of the input: the concept keeps 0 as background, links the 3-box and the 6-box at the wire ends and erases the 2-box; DominantColor takes 6 as background, so the 6-box is field, the 3-box names no box and both other boxes are erased to 6")
+      (input (grid
+        (3 3 3 0 0 6 6 6 0 2 2 2)
+        (3 6 3 5 5 6 3 6 0 2 6 2)
+        (3 3 3 0 0 6 6 6 0 2 2 2)))
+      (output &background=$Stored (grid
+        (3 3 3 0 0 6 6 6 0 0 0 0)
+        (3 3 3 5 5 6 6 6 0 0 0 0)
+        (3 3 3 0 0 6 6 6 0 0 0 0)))
+      (output &background=$Derived (grid
+        (6 6 6 0 0 6 6 6 0 6 6 6)
+        (6 6 6 5 5 6 3 6 0 6 6 6)
+        (6 6 6 0 0 6 6 6 0 6 6 6))))))

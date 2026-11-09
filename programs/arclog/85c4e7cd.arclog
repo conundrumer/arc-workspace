@@ -1,0 +1,32 @@
+;; inputs b0d5f42852d1708f9076f930a8d113f70f51765d6e6cf0e57d8b318f4bce3896 programs/solvers/85c4e7cd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 85c4e7cd
+
+;; The grid peels into concentric rings, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (input *P)))
+
+(INIT &peel_depth CellDistance
+  (node (P)
+    (input *P))
+  (source (P)
+    (&peel.boundary *P)))
+
+(INIT &rings Order
+  (member ((:t K))
+    (&peel_depth.distance *K))
+  (score ((:t K) (:S K))
+    (&peel_depth.distance *K)))
+
+(RULE &ring_color
+  (&peel_depth.distance *P *K)
+  (input P *Col))
+
+(RULE &output
+  (&peel_depth.distance *P *K)
+  (&rings.rank (:t K) *R)
+  (&rings.dual_rank (:t *K2) R)
+  (&ring_color (:K K2) *Col))
+
+(OUT (&output ^P ^Col))

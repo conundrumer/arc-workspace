@@ -1,0 +1,237 @@
+;; inputs d89dae6fd3e0414af6effa64fd503cdd47f0518117e986597ddf49c28a9267ff programs/solvers/e88171ec.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e88171ec
+
+(INPUT one-largest-hole "one rectangle made only of &hole_color cells has a larger area than every other such rectangle, and it is at least 3 cells on each axis"
+
+  (DET &changed
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (DET &hole_color
+    (&changed *E *P)
+    (ex_input E P (:Col *C)))
+
+  (DET &gap_blocked
+    (&changed (:E *Key))
+    (ex_input (:E Key) *P (:Col *C))
+    (NOT (&hole_color C)))
+
+  (INIT &gap_frame Frame
+    (key ((&changed ^E *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&changed E *P)
+        (frame_extent P *A *N))))
+
+  ;; Casts from the painted cells over the input's hole color.
+  (INIT &gap Ray
+    (key ((OR ((&changed ^E *P))
+              ((&changed E)
+               (dir_elem *D))
+              ((&gap_frame.cell (:key E) P)
+               (NOT (&gap_blocked (:Key E) P)))))
+      (source (P)
+        (&changed E *P))
+      (node (P)
+        (&gap_frame.cell (:key E) *P)
+        (NOT (&gap_blocked (:Key E) P)))
+      (dir (D)
+        (&changed E)
+        (dir_elem *D))))
+
+  (DET &gap_cell
+    (&changed (:E *Key))
+    (ex_input (:E Key) *P))
+
+  (DET &gap_clear
+    (&gap.ray (:key (:E *Key)) *P *D *K (:Origin *Src))
+    (&gap_cell Key P))
+
+  ;; The runs of hole-color cells.
+  (INIT &open_run Ray
+    (source (P)
+      (input *P *Col)
+      (&hole_color (:C Col)))
+    (node (P)
+      (input *P *Col)
+      (&hole_color (:C Col)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &reach
+    (&open_run.end (:P *E) *D (:Origin *P))
+    (margin (:B E) D *K))
+
+  ;; The cells of P's line across D whose runs reach at least as far toward D
+  ;; as P's run, joined to P along the line.
+  (INIT &base Flood
+    (key ((&reach ^D ^P))
+      (node ((:P Q))
+        (&reach D P *K)
+        (&reach D (:P *Q) (:K *K2))
+        (same_dist D (:P1 P) (:P2 Q))
+        (<= K2 K))
+      (source (P)
+        (&reach D P))))
+
+  ;; A hole-color rectangle: the base run, and the end of P's run.
+  (INIT &hull BoundingBox
+    (key ((OR ((&base.reached (:key ^D ^P) (:P *Q)))
+              ((&open_run.end (:P *E) D (:Origin P))
+               (dir_elem D))))
+      (cell ((:P Q))
+        (OR ((&base.reached (:key D P) (:P *Q)))
+            ((&open_run.end (:P Q) D (:Origin P))
+             (dir_elem D))))))
+
+  (RULE &rect_cell
+    (&hull.box *B)
+    (input *P)
+    (inside (:A P) B))
+
+  ;; The hole-color cells between a painted cell on the painted block's
+  ;; side D and the first other color toward D.
+  (INIT &run Order
+    (key ((&gap_clear (:Key ^E) ^D *K (:Src ^P))
+          (dir_elem D)
+          (neighbor P D *Q)
+          (NOT (&changed E (:P Q))))
+      (member ((:t K))
+        (&gap_clear (:Key E) D *K (:Src P))
+        (dir_elem D)
+        (neighbor P D *Q)
+        (NOT (&changed E (:P Q))))
+      (score ((:t K) (:S K))
+        (&gap_clear (:Key E) D *K (:Src P))
+        (dir_elem D)
+        (neighbor P D *Q)
+        (NOT (&changed E (:P Q))))))
+
+  ;; The narrowest such run: the band the fill leaves.
+  (INIT &narrowest Order
+    (member ((:t K))
+      (&run.maximal (:t *K)))
+    (score ((:t K) (:S K))
+      (&run.maximal (:t *K))))
+
+  (DET &margin
+    (&narrowest.minimal (:t *K)))
+
+  (RULE &rim
+    (&rect_cell *B *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (margin (:B P_rel) *D *K)
+    (&margin (:K *M))
+    (< K M))
+
+  (INIT &area Cardinality
+    (key ((&rect_cell ^B *P))
+      (member ((:m P))
+        (&rect_cell B *P))))
+
+  ;; The hole under each ranking: the rectangle no other outscores.
+  (INIT &rank Order
+    (member ((:t B))
+      (&hull.box *B))
+    (score ((:t B) (:S N))
+      (&area.size (:key *B) *N)))
+
+  ;; The cells of a rectangle outside its rim.
+  (INIT &inner Cardinality
+    (key ((OR ((&rect_cell ^B *P)
+               (NOT (&rim B P)))
+              ((&hull.box B))))
+      (member ((:m P))
+        (&rect_cell B *P)
+        (NOT (&rim B P)))
+      (domain ()
+        (&hull.box B))))
+
+  (INIT &side Order
+    (key ((&rect_cell ^B *P)
+          (box_extent B P *A *N))
+      (member ((:t N))
+        (&rect_cell B *P)
+        (box_extent B P *A *N))
+      (score ((:t N) (:S N))
+        (&rect_cell B *P)
+        (box_extent B P *A *N))))
+
+  ;; The rows and the columns a rectangle spans.
+  (INIT &span Cardinality
+    (key ((&rect_cell ^B *P)
+          (split P *A (:Along *L)))
+      (member ((:m A L))
+        (&rect_cell B *P)
+        (split P *A (:Along *L))))))
+
+(OUTPUT fill-inset "the cells of the largest &hole_color rectangle that are &margin or more cells in from each of its edges take &fill_color"
+
+  (DET &fill_color
+    (&changed *E *P)
+    (ex_output E P (:Col *C))))
+
+(OUTPUT copy-input "every cell that fill-inset does not paint keeps its input color")
+
+(ALTS $ranking "which rectangle of &hole_color is the hole" $LargestArea
+  (ALT $RankInterior
+    (INPUT one-largest-hole "one rectangle has more inside cells, those &margin or more in from each edge, than every other"
+      ;; The hole under each ranking: the rectangle no other outscores.
+      (INIT &rank Order
+        (member ((:t B))
+          (&hull.box *B))
+        (score ((:t B) (:S N))
+          (&inner.size (:key *B) *N))))
+    (OUTPUT fill-inset "the hole is the rectangle with the most inside cells"))
+  (ALT $RankMinSide
+    (INPUT one-largest-hole "one rectangle has the longest shorter side, and the larger area breaks a tie"
+      ;; The hole under each ranking: the rectangle no other outscores.
+      (INIT &rank Order
+        (member ((:t B))
+          (&hull.box *B))
+        (score ((:t B) (:S N))
+          (&side.minimal (:key *B) (:t *N)))
+        (secondary_score ((:t B) (:S N))
+          (&area.size (:key *B) *N))))
+    (OUTPUT fill-inset "the hole is the rectangle with the longest shorter side, and the larger area breaks a tie"))
+  (ALT $RankPerimeter
+    (INPUT one-largest-hole "one rectangle spans more rows and columns together than every other"
+      ;; The hole under each ranking: the rectangle no other outscores.
+      (INIT &rank Order
+        (member ((:t B))
+          (&hull.box *B))
+        (score ((:t B) (:S N))
+          (&span.size (:key *B) *N))))
+    (OUTPUT fill-inset "the hole is the rectangle that spans the most rows and columns together")))
+
+(ALTS $edge "the margin on a side of the hole that lies on the grid edge" $MarginEverySide
+  (ALT $FrameAsHole
+    (OUTPUT fill-inset "cells past the grid edge count as &hole_color, so a side of the hole on the grid edge keeps no margin")
+    (RULE &kept
+      (&rank.maximal (:t *B))
+      (dir_elem *D)
+      (NOT (margin B D (:K 0))))))
+
+(RULE &kept
+  (&rank.maximal (:t *B))
+  (dir_elem *D))
+
+(RULE &edge_rim
+  (&kept *B *D)
+  (&rim B *P D))
+
+(RULE &paint
+  (&rank.maximal (:t *B))
+  (&rect_cell B *P)
+  (NOT (&edge_rim B P)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&paint P))
+      ((&fill_color (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

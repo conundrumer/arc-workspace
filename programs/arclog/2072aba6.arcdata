@@ -1,0 +1,13 @@
+;; inputs d369d2d243896baad96215e0d728975ed8949951c53e3347478ade6c79e562fa programs/solvers/2072aba6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2072aba6
+
+(param &bg Color (0))
+(param &ink Color (5))
+(param &scale number (2))
+(param &template (Position Color)
+  (grid
+    (1 2)
+    (2 1)))
+(param &seed_diag DiagAxis (DAXIS_DG))
+(param &phase_color (Color number) (1 0) (2 1))

@@ -1,0 +1,76 @@
+;; inputs 59740ef8ab7b91e51e52c34886ec0e2acd65b3ba0491109ec4a025ee75eea70c programs/solvers/5c0a986e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5c0a986e
+
+(DET &bg DominantColor)
+
+;; Each ink color's block, as the box bounding it.
+(INIT &bx2 BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bx BoundingBox
+  (key ((ex_input ^E *P ^Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (ex_input E *P Col)
+      (NOT (&bg (:C Col))))))
+
+(DET &new_ink
+  (ex_output *E *P *Col)
+  (ex_input E P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(DET &heading
+  (&bx.cell (:key *E *Col) *P)
+  (&bx.box (:key E Col) *B)
+  (inside (:A P) B)
+  (same_corner *D (:P1 P) (:P2 B))
+  (neighbor P D *Q)
+  (&new_ink E Col (:P Q)))
+
+(RULE &beam_mark
+  (&heading (:Col *Key) *D)
+  (&bx2.cell (:key (:Col Key)) *P)
+  (&bx2.box (:key (:Col Key)) *B)
+  (inside (:A P) B)
+  (same_corner D (:P1 P) (:P2 B)))
+
+(INIT &beam_frame Frame
+  (key ((&beam_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&beam_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+;; The ray a block casts.
+(INIT &beam Ray
+  (key ((OR ((&beam_mark (:Key ^Ky) *P))
+            ((&heading (:Col Ky) *D))
+            ((&beam_frame.cell (:key Ky) P))))
+    (source (P)
+      (&beam_mark (:Key Ky) *P))
+    (node (P)
+      (&beam_frame.cell (:key Ky) *P))
+    (dir (D)
+      (&heading (:Col Ky) *D))))
+
+(RULE &beam_cell
+  (&heading (:Col *Key))
+  (input *P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(RULE &beam_ray
+  (&beam.ray (:key (:Ky *Key)) *P *D *K (:Origin *Src))
+  (&beam_cell Key P))
+
+(RULE &output
+  (OR ((&beam.ray (:key (:Ky *Col)) *P)
+       (&beam_cell (:Key Col) P))
+      ((input P Col)
+       (NOT (&beam_ray P)))))
+
+(OUT (&output ^P ^Col))

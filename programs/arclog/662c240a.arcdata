@@ -1,0 +1,8 @@
+;; inputs 9772e3d5e12429c240b493eac5ba04dc9c8c91762036c9089b42bec69103bb9e programs/solvers/662c240a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 662c240a
+
+(param &tile_axis Axis (AXIS_V))
+(param &tile_count number (3))
+(param &tile_size number (3))
+(param &sym D4 (D4_DG))

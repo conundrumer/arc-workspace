@@ -1,0 +1,30 @@
+;; inputs d94ff7638f797882cb1f8f103a10342e1db337d69721425cd770b4315cd13869 programs/solvers/9b4c17c4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9b4c17c4
+
+(param &ink Color (2))
+(param &slide (Color Dir) (1 DIR_R) (8 DIR_L))
+
+(alts $choice
+  (alt $Pack
+    (witness shared-line borderline $Pack
+      (relaxed lane)
+      (separates "$Flush from $Pack: two shapes on one field share their rows, and the whole shape flush to the edge overlaps the nearer shape while the packed rows keep every cell")
+      (input (grid
+        (1 1 1 1 1 1 1 1 8 8 8 8)
+        (1 2 2 1 2 2 1 1 8 8 2 8)
+        (1 2 2 1 2 2 1 1 8 8 2 8)
+        (1 1 1 1 1 1 1 1 8 8 8 8)
+        (1 1 1 1 1 1 1 1 8 8 8 8)))
+      (output concept (grid
+        (1 1 1 1 1 1 1 1 8 8 8 8)
+        (1 1 1 1 1 1 2 2 2 8 8 8)
+        (1 1 1 1 1 1 2 2 2 8 8 8)
+        (1 1 1 1 1 1 1 1 8 8 8 8)
+        (1 1 1 1 1 1 1 1 8 8 8 8)))
+      (output $Pack (grid
+        (1 1 1 1 1 1 1 1 8 8 8 8)
+        (1 1 1 1 2 2 2 2 2 8 8 8)
+        (1 1 1 1 2 2 2 2 2 8 8 8)
+        (1 1 1 1 1 1 1 1 8 8 8 8)
+        (1 1 1 1 1 1 1 1 8 8 8 8))))))

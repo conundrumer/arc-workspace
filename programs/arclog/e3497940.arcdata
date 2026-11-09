@@ -1,0 +1,11 @@
+;; inputs ffe0cecd4c92a9f401197715e622329fccba47de86069d479b11a2026ee9124d programs/solvers/e3497940.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e3497940
+
+(param &frame_dim (Axis number) (AXIS_V 10) (AXIS_H 4))
+(param &base Dir (DIR_L))
+(param &bg Color (0))
+(param &arr_dim (Axis number) (AXIS_V 1) (AXIS_H 2))
+(param &gap number (1))
+(param &divide_gap number (1))
+(param &divisor number (2))

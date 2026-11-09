@@ -1,0 +1,72 @@
+;; inputs 424fad17dfd702928e40ac1d31ae46f47664d497b83348267434cd716cc918e6 programs/solvers/40f6cd08.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 40f6cd08
+
+(DET &bg DominantColor)
+
+(INIT &rects Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&rects.component *P ^Id))
+    (cell (P)
+      (&rects.component *P Id))))
+
+(RULE &rect_view
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &rect_color Singleton
+  (key ((&bbox.cell (:key ^Id) *P)
+        (input P *Col))
+    (member ((:v Col))
+      (&bbox.cell (:key Id) *P)
+      (input P *Col))))
+
+(INIT &layer BoundingBox
+  (key ((&rect_color.plural (:key *Id))
+        (&rect_view Id *P *P_inner)
+        (input P ^Col))
+    (cell ((:P P_inner))
+      (&rect_color.plural (:key *Id))
+      (&rect_view Id *P *P_inner)
+      (input P Col))))
+
+(RULE &nested
+  (&layer.box (:key (:Col *Col_in)) (:B *B_in))
+  (&layer.box (:key (:Col *Col_out)) (:B *B_out))
+  (inside (:A B_in) (:B B_out))
+  (!= B_in B_out))
+
+(RULE &covers
+  (&rect_view *P *P_inner)
+  (&layer.box (:key *Col) *B)
+  (inside (:A P_inner) B))
+
+(RULE &shadowed
+  (&covers *P (:Col *Col_in))
+  (&nested Col_in (:Col_out *Col)))
+
+(RULE &paint
+  (&covers *P *Col)
+  (NOT (&shadowed P Col)))
+
+(RULE &stamp
+  (&paint *P *Col))
+
+(ALTS $choice "the outermost layer's margins are all zero, and every plain rectangle already carries its color, so no pair separates these two cases" $Repaint
+  (ALT $Overlay
+    (RULE &stamp
+      (&paint *P *Col)
+      (&nested (:Col_in Col)))))
+
+(RULE &output
+  (OR ((&stamp *P *Col))
+      ((input P Col)
+       (NOT (&stamp P)))))
+
+(OUT (&output ^P ^Col))

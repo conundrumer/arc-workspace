@@ -1,0 +1,59 @@
+;; inputs 2a7277109883d8465720761c5d37678ba9f072c8fb2f33ec845bf5fbf8432eec programs/solvers/e7dd8335.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e7dd8335
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &dir DirDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &framed
+  (&ink *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(ALTS $choice "what owns a half" $Whole
+  (ALT $Each
+    (INIT &comps Connectivity
+      (node (P)
+        (&ink *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (INIT &comp_box BoundingBox
+      (key ((&comps.component *P ^Id))
+        (cell (P)
+          (&comps.component *P Id))))
+
+    (RULE &framed
+      (&comps.component *P *Id)
+      (&comp_box.box (:key Id) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))))
+
+(RULE &half
+  (&framed *P *P_inner)
+  (&dir *D)
+  (dist_pair (:P P_inner) D *K *K2)
+  (< K K2))
+
+(RULE &output
+  (OR ((&half *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&half P)))))
+
+(OUT (&output ^P ^Col))

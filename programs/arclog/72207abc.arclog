@@ -1,0 +1,68 @@
+;; inputs 00437290ce73e14d2388dd268c8a4a67343a0a394be97a459556d548b38db2bc programs/solvers/72207abc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 72207abc
+
+(DET &grow DirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The seeds run in order of nearness to the grow edge.
+(INIT &order Order
+  (member ((:t P))
+    (&ink *P))
+  (score ((:t P) (:S K))
+    (&ink *P)
+    (&grow *D)
+    (opposite D (:Opp *D_opp))
+    (margin (:B P) (:D D_opp) *K)))
+
+(RULE &seed_next
+  (OR ((&order.successor (:a *P1) (:b *P2)))
+      ((&order.maximal (:t P1))
+       (&order.minimal (:t P2)))))
+
+(RULE &jump_size
+  (input *P)
+  (&grow *D)
+  (margin (:B P) D *K)
+  (jump_offset D K (:V *Delta)))
+
+;; The first seed arrives with no jump; each step lengthens the jump by one
+;; cell, and the walk stops where it leaves the grid.
+(INIT &grown Distance
+  (edge ((:a (:P P1) (:Delta V1)) (:b (:P P2) (:Delta V2)))
+    (input (:P *P1))
+    (&jump_size (:Delta *V1))
+    (&grow *D)
+    (neighbor (:P V1) D (:Q *V2))
+    (compose (:A P1) (:B V2) (:C *P2))
+    (input (:P P2)))
+  (source ((:n P Delta))
+    (&order.minimal (:t *P))
+    (= *Delta 0)))
+
+;; Each step advances the color cursor one seed.
+(INIT &cursor Walk
+  (successor ((:p P1) (:p_next P2))
+    (&seed_next *P1 *P2))
+  (steps (N)
+    (&grown.distance (:K *N))))
+
+(RULE &marked
+  (OR ((&ink *P *Col))
+      ((&grown.distance (:n P) (:K *N))
+       (&order.minimal (:t *P0))
+       (&cursor.walk (:p0 P0) N (:p *Q))
+       (&ink (:P Q) Col))))
+
+(RULE &output
+  (OR ((&marked *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&marked P)))))
+
+(OUT (&output ^P ^Col))

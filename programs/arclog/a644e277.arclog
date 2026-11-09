@@ -1,0 +1,217 @@
+;; inputs e29bac57ba3d0837313501aea643e3f443108dac0e9dfcffcec1fa72b199c683 programs/solvers/a644e277.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a644e277
+
+(INPUT tiling "rows and columns of a line color, one cell wide, cut the grid into a tiling of cells wider than one cell, on a background color, the commonest color other than the line color; a separator line is a line along which two neighboring cells hold the line color, and some separator line holds the line color along its whole length; every band between two neighboring separator lines has one width")
+
+(INPUT gap-crossings "exactly four crossings of a separator row and a separator column hold the background color in place of the line color, and they are the corners of an axis-aligned rectangle; every other cell of a separator line holds the line color")
+
+(OUTPUT crop-gap-rectangle "the output is the input cropped to that rectangle, its corner rows and columns included, and every cell inside is copied unchanged"
+
+  ;; The color of each line that holds one color along its whole length.
+  (INIT &uniform Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^P_line)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along P_line)))))
+
+  (INIT &bg_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&uniform.value (:v Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&uniform.value (:v Col))))))
+
+  (RULE &separator
+    (&uniform.value (:v *Col))
+    (input *P Col)
+    (split P *A (:Along *P_line))
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (neighbor P D *Q)
+    (input (:P Q) Col))
+
+  (RULE &on_separator
+    (input *P)
+    (split P *A (:Along *P_line))
+    (&separator A P_line))
+
+  (RULE &crossing
+    (&on_separator *A *P)
+    (perp A *A2)
+    (&on_separator (:A A2) P))
+
+  (INIT &bg Order
+    (member ((:t Col))
+      (&bg_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_count.size (:key *Col) *N)))
+
+  (RULE &gap_colored
+    (input *P *Col)
+    (&bg.maximal (:t Col)))
+
+  (RULE &gap
+    (&gap_colored *P)
+    (&crossing P))
+
+  (INIT &gap_box BoundingBox
+    (cell (P)
+      (&gap *P)))
+
+  (RULE &box_corner_cell
+    (&gap_box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B)))
+
+  (RULE &misplaced
+    (OR ((&gap *P)
+         (NOT (&box_corner_cell P)))
+        ((&gap_box.box *B)
+         (&box_corner_cell (:P *P2))
+         (inside (:A P2) B)
+         (same_corner *D (:P1 P2) (:P2 B))
+         (OR ((NOT (&gap (:P P2))))
+             ((inside (:A P2) B)
+              (same_corner (:D *D2) (:P1 P2) (:P2 B))
+              (!= D2 D))))))
+
+  (RULE &frame
+    (&gap_box.box *B)
+    (NOT (&misplaced)))
+
+  ;; The distance from edge D of a rectangle to each separator line of D's axis
+  ;; past it; the least is the first band's width plus one.
+  (INIT &first_band Order
+    (key ((&frame ^B)
+          (axis_of ^D *A)
+          (&on_separator A *P)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_inner))
+          (margin (:B P_inner) D *K)
+          (> K 0))
+      (member ((:t K))
+        (&frame B)
+        (axis_of D *A)
+        (&on_separator A *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (margin (:B P_inner) D *K)
+        (> K 0))
+      (score ((:t K) (:S K))
+        (&frame B)
+        (axis_of D *A)
+        (&on_separator A *P)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner))
+        (margin (:B P_inner) D *K)
+        (> K 0))))
+
+  (RULE &periodic
+    (&first_band.minimal (:key *B *D) (:t *N))
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))
+    (margin (:B P_inner) D *K)
+    (divide (:T K) (:Side N) (:Gap 0) (:Remainder 0)))
+
+  (INIT &broken BoundingBox
+    (key ((&gap *P)
+          (&on_separator ^A P)
+          (split P A (:Along *P_line)))
+      (cell ((:P P_line))
+        (&gap *P)
+        (&on_separator A P)
+        (split P A (:Along *P_line)))))
+
+  (RULE &redrawn
+    (&frame *B)
+    (input *P (:Col *C))
+    (inside (:A P) B)
+    (IF ((&on_separator P))
+        ((&uniform.value (:v *Col)))
+        ((= Col C))))
+
+  ;; The cell's color under each pair of edges, one per axis.
+  (INIT &banded Singleton
+    (key ((&frame ^B)
+          (input ^P (:Col *C))
+          (inside (:A P) B)
+          (perp_dir (:D *D1) *D2)
+          (OR ((OR ((&periodic B (:D D1) P))
+                   ((&periodic B (:D D2) P)))
+               (&uniform.value (:v *Col)))
+              ((NOT (&periodic B (:D D1) P))
+               (NOT (&periodic B (:D D2) P))
+               (= Col C))))
+      (member ((:v Col))
+        (&frame B)
+        (input P (:Col *C))
+        (inside (:A P) B)
+        (perp_dir (:D *D1) *D2)
+        (OR ((OR ((&periodic B (:D D1) P))
+                 ((&periodic B (:D D2) P)))
+             (&uniform.value (:v *Col)))
+            ((NOT (&periodic B (:D D1) P))
+             (NOT (&periodic B (:D D2) P))
+             (= Col C)))))))
+
+(ALTS $gap "which color on a separator line marks a gap" $Background
+  (ALT $NonlineGap
+    (INPUT gap-crossings "a gap holds any color other than the line color; undefined when those gaps are not the four corners of a rectangle"
+      (RULE &gap_colored
+        (input *P *Col)
+        (NOT (&uniform.value (:v Col)))))))
+
+(ALTS $site "which separator cells can be gaps" $Crossing
+  (ALT $SeparatorCell
+    (INPUT gap-crossings "a gap is any separator cell in the gap color, at a crossing or not; undefined when those gaps are not the four corners of a rectangle"
+      (RULE &gap
+        (&gap_colored *P)
+        (&on_separator P)))))
+
+(ALTS $frame "how the gaps give the crop rectangle" $GapCorners
+  (ALT $GapBbox
+    (OUTPUT crop-gap-rectangle "the rectangle is the bounding box of the gaps, however many there are; undefined when there is none"
+      (RULE &frame
+        (&gap_box.box *B))))
+  (ALT $BrokenLines
+    (OUTPUT crop-gap-rectangle "the rectangle runs from the first to the last separator row, and from the first to the last separator column, that hold a gap; undefined when no separator row or no separator column does"
+      (RULE &frame
+        (&broken.box (:key *A) (:B *B1))
+        (perp A *A2)
+        (&broken.box (:key (:A A2)) (:B *B2))
+        (compose (:A B1) (:B B2) (:C *B))))))
+
+(ALTS $content "what fills the cropped rectangle" $Copy
+  (ALT $RedrawTiling
+    (OUTPUT crop-gap-rectangle "inside the rectangle, every separator cell is drawn in the line color and the four corners in the background color; the other cells are copied"
+      (RULE &frame_corner
+        (&frame *B)
+        (input *P)
+        (inside (:A P) B)
+        (same_corner (:P1 P) (:P2 B))))
+    (RULE &output
+      (&frame *B)
+      (OR ((&frame_corner B (:P *P2))
+           (&bg.maximal (:t *Col)))
+          ((&redrawn B (:P P2) Col)
+           (NOT (&frame_corner B (:P P2)))))
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P)))
+    (ALTS $bands "which cells a redrawn tiling draws as lines" $SeparatorLines
+      (ALT $FirstBand
+        (OUTPUT crop-gap-rectangle "on each axis, the lines drawn inside the rectangle fall at every multiple of the first band's width plus one, counted from a side of the rectangle; the first band runs from that side to the next separator line; undefined where the two sides of an axis draw different lines"
+          (RULE &redrawn
+            (&banded.value (:key *B *P) (:v *Col))))))))
+
+(RULE &output
+  (&frame *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

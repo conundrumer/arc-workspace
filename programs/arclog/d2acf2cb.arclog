@@ -1,0 +1,97 @@
+;; inputs a226efce934254e96cfec9cf2adc45583dac7804aaf3abf292bad0fd88ac4e8e programs/solvers/d2acf2cb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d2acf2cb
+
+(INPUT marker-pairs "each &marker cell sits on a grid edge, and a &marker cell faces it on the opposite edge, on the same row or column"
+
+  (DET &inside
+    (ex_input *E *P *Col)
+    (ex_output E)
+    (margin (:B P) *D (:K 0))
+    (axis_of D *A)
+    (opposite D (:Opp *D2))
+    (ex_input E (:P *P2) Col)
+    (margin (:B P2) (:D D2) (:K 0))
+    (same_line A P (:Q P2))
+    (ex_input E (:P *Q))
+    (same_line A P Q)
+    (nearer D P Q)
+    (nearer (:D D2) (:P P2) Q))
+
+  (DET &kept_inside
+    (&inside *E *P *Q)
+    (ex_input E (:P Q) *Col)
+    (ex_output E (:P Q) Col))
+
+  (DET_OR_RULE &marker RarestColor
+    (&inside *E *P)
+    (NOT (&kept_inside E P))
+    (ex_input E P (:Col *C))))
+
+(INPUT recodable-field "every cell that is not a &marker cell has a color that is a key of &recolor"
+
+  (DET &recolor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2)))
+
+(OUTPUT recode-between "each cell strictly between the two &marker cells of a marked line takes the color that &recolor maps its color to")
+
+(OUTPUT rest-kept "every other cell keeps its color"
+
+  (RULE &marker_on
+    (input *P *Col)
+    (&marker (:C Col))
+    (margin (:B P) *D (:K 0)))
+
+  (RULE &family
+    (axis_elem *A))
+
+  (RULE &from_end
+    (&marker_on *P *D)
+    (&family *A)
+    (input (:P *Q))
+    (same_line A P Q)
+    (nearer D P Q)))
+
+(ALTS $l "which lines a pair of markers can mark" $Straight
+  (ALT $WithDiagonals
+    (INPUT marker-pairs "a marker may also face another across the grid on a diagonal, and that diagonal is marked too"
+      (RULE &family
+        (axis4_elem *A)))))
+
+(ALTS $s "which cells of a line are recoded" $EdgePair
+  (ALT $OneEnd
+    (INPUT marker-pairs "a marker at either end of a line marks it, with no marker facing it")
+    (OUTPUT recode-between "every cell of a marked line that is not a marker is recoded")
+    (RULE &recoded
+      (&from_end *Q)
+      (input (:P Q) *Col)
+      (NOT (&marker (:C Col))))))
+
+(ALTS $u "what a recoded cell whose color is no key of &recolor does" $Strict
+  (ALT $KeepUnmapped
+    (INPUT recodable-field "a non-marker cell may hold any color")
+    (OUTPUT recode-between "a recoded cell whose color is no key of &recolor keeps its color")
+    (RULE &recode
+      (OR ((&recolor (:C *Col) (:C2 *Col2)))
+          ((input Col)
+           (NOT (&recolor (:C Col)))
+           (= Col2 Col))))))
+
+(RULE &recode
+  (&recolor (:C *Col) (:C2 *Col2)))
+
+(RULE &recoded
+  (&from_end *D *A *Q)
+  (opposite D (:Opp *D2))
+  (&from_end (:D D2) A Q))
+
+(RULE &output
+  (OR ((&recoded (:Q *P))
+       (input P (:Col *Col3))
+       (&recode (:Col Col3) (:Col2 *Col)))
+      ((input P Col)
+       (NOT (&recoded (:Q P))))))
+
+(OUT (&output ^P ^Col))

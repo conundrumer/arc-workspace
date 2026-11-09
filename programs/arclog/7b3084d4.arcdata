@@ -1,0 +1,8 @@
+;; inputs 4739837c895354a1c7fa98a39015f52e1c3c0b7cd38863c2ab4e7b13e621561f programs/solvers/7b3084d4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b3084d4
+
+(param &bg Color (0))
+(param &marker Color (5))
+(param &corner DiagDir (DIAG_TL))
+(param &group Sym (SYM_C4))

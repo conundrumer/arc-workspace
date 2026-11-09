@@ -1,0 +1,8 @@
+;; inputs 002cad2342e332a4c96e6ff01c49420d1abb6694c9f5941bdbfddd08d0c5b68c programs/solvers/84551f4c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 84551f4c
+
+(param &bg Color (0))
+(param &ground Dir (DIR_B))
+(param &pusher Color (1))
+(param &topple Sense (SENSE_CW))

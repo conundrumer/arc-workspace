@@ -1,0 +1,81 @@
+;; inputs 141a8c3ed4b1138c75c3c476cd6b4622c66446c5990ebba524fa2b3e04f78403 programs/solvers/b60334d2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b60334d2
+
+(DET &bg DominantColor)
+
+(DET &marker ChangedColor)
+
+(RULE &marker_at2
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(DET &marker_at
+  (ex_input *E *P *Col)
+  (&marker (:C Col)))
+
+(DET &painted
+  (ex_output *E *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; A painted cell belongs to the marker in its blob; markers join as
+;; nodes because the erased center leaves the ring markerless.
+(INIT &blob Connectivity
+  (key ((OR ((&painted ^E *P))
+            ((&marker_at E P))))
+    (node (P)
+      (OR ((&painted E *P))
+          ((&marker_at E P))))))
+
+(DET &template
+  (&painted *E *P *Col)
+  (&blob.component (:key E) P *Id)
+  (&blob.component (:key E) (:P *M) Id)
+  (&marker_at E (:P M))
+  (relative (:Base M) (:X P) (:X_rel *Off)))
+
+(RULE &halo
+  (&marker_at2 (:P *Q))
+  (&template *Off *Col)
+  (compose (:A Q) (:B Off) (:C *P))
+  (input P))
+
+(ALTS $choice "how a marker's ring is drawn" $Stamp
+  (ALT $Halo
+    (DET &side_col AnyOutNewColor)
+
+    (DET &corner_col ChangedColor)
+
+    (RULE &halo
+      ;; Side neighbors, shared by both corner cases.
+      (OR ((&marker_at2 (:P *Q))
+           (&side_col (:C *Col))
+           (dir_elem *D)
+           (neighbor (:P Q) D (:Q *P))
+           (input P))
+          ((&marker_at2 (:P *Q2))
+           (&corner_col (:C Col))
+           (diag_dir_elem (:D *Dg))
+           (neighbor (:P Q2) (:D Dg) (:Q P))
+           (input P))))
+    (ALTS $corner "the color a ring's corner cells take" $Fixed
+      (ALT $Prop
+        (RULE &halo
+          ;; Side neighbors, shared by both corner cases.
+          (OR ((&marker_at2 (:P *Q))
+               (&side_col (:C *Col))
+               (dir_elem *D)
+               (neighbor (:P Q) D (:Q *P))
+               (input P))
+              ((&marker_at2 (:P *Q2) Col)
+               (diag_dir_elem (:D *Dg))
+               (neighbor (:P Q2) (:D Dg) (:Q P))
+               (input P))))))))
+
+(RULE &output
+  (OR ((&halo *P *Col))
+      ((input P)
+       (NOT (&halo P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,47 @@
+;; inputs 50f078540dc2367515d08ba8aafede927e34c826d8c9f9a5960a5a4d3c20eeaa programs/solvers/ba97ae07.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ba97ae07
+
+(param &background_stored Color (0))
+(param &background Color (0))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor ordinary concept
+      (separates "a vertical band 3 columns wide in a 6-column grid has more cells than the background 0: the concept reads 0 as background and puts the horizontal band 5 on top at the crossing; DominantColor reads the band color 4 as background, finds no horizontal band, and returns the input")
+      (input (grid
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (5 4 4 4 5 5)
+        (5 4 4 4 5 5)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)))
+      (output &background=$Stored (grid
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (5 5 5 5 5 5)
+        (5 5 5 5 5 5)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)))
+      (output &background=$Derived (grid
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (5 4 4 4 5 5)
+        (5 4 4 4 5 5)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0)
+        (0 4 4 4 0 0))))))

@@ -1,0 +1,151 @@
+;; inputs f1fa9d91286e7119bdfe725f50bc5130b32739c1f997a47e4e43cad924c1a93b programs/solvers/f3e62deb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f3e62deb
+
+(param &background Color (0))
+(param &direction_of_color (Color Dir) (8 DIR_R) (4 DIR_B) (6 DIR_T) (3 DIR_L))
+
+(alts $m
+  (alt $PerObject
+    (witness two-rings-one-color variant $PerObject
+      (relaxed one-object)
+      (separates "two rings of one color on different rows: as one body they keep their spacing and only the right one reaches the edge (concept, $PerColor, background=DominantColor); as separate objects both reach the right edge ($PerObject); reflected as one body, the pair swaps columns ($Reflected)")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 0 0 0 0 0 0)
+        (0 8 0 8 0 0 0 0 0 0)
+        (0 8 8 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $PerColor concept (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 8 0 8)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $PerObject (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 8 0 8)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 8 0 8)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Reflected (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 8 0 8)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 8 0 8 0 0 0)
+        (0 0 0 0 8 8 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))))
+  (alt $PerColor
+    (witness rings-of-two-colors variant $PerColor
+      (relaxed one-object)
+      (separates "rings of two colors that have different headings: one body has no single heading and is undefined (concept, $Reflected, background=DominantColor); each ring, as its own object or color class, slides its own way ($PerObject, $PerColor)")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 0 0 0 0 0 0)
+        (0 8 0 8 0 0 0 0 0 0)
+        (0 8 8 8 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 4 4 4 0 0)
+        (0 0 0 0 0 4 0 4 0 0)
+        (0 0 0 0 0 4 4 4 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Whole undefined)
+      (output $PerColor $PerObject (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 8 0 8)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 4 4 4 0 0)
+        (0 0 0 0 0 4 0 4 0 0)
+        (0 0 0 0 0 4 4 4 0 0))))))
+
+(alts $a
+  (alt $Reflected
+    (witness asymmetric-object variant concept
+      (relaxed object-shape)
+      (separates "an L-shaped object that no reflection along its heading maps to itself: it arrives unchanged (concept and the other branches) or mirrored left to right ($Reflected)")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0 0 0 0)
+        (0 0 8 0 0 0 0 0 0 0)
+        (0 0 8 8 8 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Unchanged (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 8 0 0)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Reflected (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 8)
+        (0 0 0 0 0 0 0 0 0 8)
+        (0 0 0 0 0 0 0 8 8 8)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed one-object)
+      (separates "a field of 8, the color with the most cells, holding a 4 ring: on the stored background 0, the content holds 8 and 4 and every stored-background branch is undefined; with the derived background 8, the 4 ring slides down")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 4 4 4 8 8 8 8)
+        (8 8 8 4 8 4 8 8 8 8)
+        (8 8 8 4 4 4 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 4 4 4 8 8 8 8)
+        (8 8 8 4 8 4 8 8 8 8)
+        (8 8 8 4 4 4 8 8 8 8))))))

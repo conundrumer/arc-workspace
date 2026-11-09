@@ -1,0 +1,68 @@
+;; inputs 0a704db1154177556f8e82460c228f92841df9e2e972389e05bd146c28049c69 programs/solvers/7e0986d6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7e0986d6
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &tally_count Cardinality
+  (key ((&ink *P ^Col))
+    (member ((:m P))
+      (&ink *P Col))))
+
+(INIT &tally Order
+  (member ((:t Col))
+    (&tally_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&tally_count.size (:key *Col) *N)))
+
+(RULE &rect
+  (&tally.maximal (:t *Col)))
+
+(ALTS $choice "which color is the rectangle and which is the sprinkle" $Sparse
+  (ALT $Isolated
+    (INIT &rim Boundary
+      (key ((&ink *P ^Col))
+        (cell (P)
+          (&ink *P Col))))
+
+    (RULE &touching
+      (&ink *P *Col)
+      (dir_elem *D)
+      (NOT (&rim.exposed (:key Col) P D)))
+
+    (RULE &sprinkle_color
+      (&ink *P *Col)
+      (NOT (&touching P)))
+
+    (RULE &rect
+      (&ink *Col)
+      (NOT (&sprinkle_color Col)))))
+
+(RULE &sprinkle
+  (&ink *P *Col)
+  (NOT (&rect Col)))
+
+(RULE &within
+  (&sprinkle *P)
+  (&rect *Col)
+  (diag_dirs *D1 *D2)
+  (neighbor P (:D D1) (:Q *Q1))
+  (input (:P Q1) Col)
+  (neighbor P (:D D2) (:Q *Q2))
+  (input (:P Q2) Col))
+
+(RULE &output
+  (input *P (:Col *C))
+  (OR ((&within P)
+       (&rect *Col))
+      ((NOT (&sprinkle P))
+       (= Col C))
+      ((&sprinkle P)
+       (NOT (&within P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

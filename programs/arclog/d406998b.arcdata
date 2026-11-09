@@ -1,0 +1,9 @@
+;; inputs 3aaf58b5666e5402e37fe6e42b11661c6cdc6541453968246373d65b4047f3dd programs/solvers/d406998b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d406998b
+
+(param &anchor Dir (DIR_R))
+(param &dot Color (5))
+(param &mark Color (3))
+(param &mark_run number (1))
+(param &keep_run number (1))

@@ -1,0 +1,99 @@
+;; inputs 55a15a200eb8c58d1b637790c6959d7954a4399f2b4fab9ac84cb22a778fbf42 programs/solvers/984d8a3e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 984d8a3e
+
+;; The edge the movers run against; the zone lies toward the opposite edge.
+(DET &from_dir DirDomain)
+
+;; Each color's cells as runs toward the four edges.
+(INIT &run Ray
+  (key ((OR ((input *P (:Col ^C)))
+            ((input (:Col C))
+             (dir_elem *D))))
+    (source (P)
+      (input *P (:Col C)))
+    (node (P)
+      (input *P (:Col C)))
+    (dir (D)
+      (input (:Col C))
+      (dir_elem *D))))
+
+(RULE &broken
+  (dir_elem *D)
+  (&run.end (:key (:C *Col)) *P D)
+  (NOT (margin (:B P) D (:K 0))))
+
+(RULE &flush
+  (input *Col)
+  (dir_elem *D)
+  (NOT (&broken Col D)))
+
+(RULE &far_dir
+  (&from_dir (:D *D0))
+  (opposite (:D D0) (:Opp *D)))
+
+(RULE &mover
+  (&from_dir *D)
+  (&flush (:Col *C) D))
+
+(RULE &far
+  (&far_dir *D)
+  (&flush (:Col *C) D))
+
+(RULE &bg
+  (input (:Col *C))
+  (NOT (&mover C))
+  (NOT (&far C)))
+
+(RULE &cell_split
+  (input *P *Col)
+  (&far_dir *D)
+  (axis_of D *A)
+  (split P A (:Across *L))
+  (margin (:B P) D *K))
+
+(RULE &zone
+  (&cell_split (:Col *C) *K)
+  (&far C))
+
+(RULE &slot
+  (&cell_split *P (:Col *C) *L *K)
+  (&bg C)
+  (&zone K))
+
+(RULE &mover_cell
+  (&cell_split *P (:Col *C) *L *K)
+  (&mover C))
+
+;; Both runs counted off from the far edge inward.
+(INIT &slot_rank Order
+  (key ((&slot ^L *K))
+    (member ((:t K))
+      (&slot L *K))
+    (score ((:t K) (:S K))
+      (&slot L *K))))
+
+(INIT &mover_rank Order
+  (key ((&mover_cell ^L *K))
+    (member ((:t K))
+      (&mover_cell L *K))
+    (score ((:t K) (:S K))
+      (&mover_cell L *K))))
+
+(RULE &move
+  (&mover_cell *L (:P *P_from) *K)
+  (&mover_rank.rank (:key L) (:t K) *R)
+  (&slot L (:P *P_to) (:K *K2))
+  (&slot_rank.rank (:key L) (:t K2) R))
+
+(RULE &output
+  (input *P (:Col *C))
+  (OR ((&move (:P_to P))
+       (&mover (:C *Col)))
+      ((&move (:P_from P))
+       (&bg (:C Col)))
+      ((NOT (&move (:P_from P)))
+       (NOT (&move (:P_to P)))
+       (= Col C))))
+
+(OUT (&output ^P ^Col))

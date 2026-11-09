@@ -1,0 +1,17 @@
+;; inputs 87db45eb8975b51b50fd50b09b6ab14460f285a6ba4a12aece927cf394c15999 programs/solvers/a85d4709.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a85d4709
+
+(param &axis Axis (AXIS_H))
+(param &mapping_member (Ident Position Color)
+  (0 (grid
+    (5 0 0)))
+  (1 (grid
+    (0 5 0)))
+  (2 (grid
+    (0 0 5))))
+(param &mapping_out (Ident Color) (0 2) (1 4) (2 3))
+(param &marker Color (5))
+(param &position_color (Position Color)
+  (grid
+    (2 4 3)))

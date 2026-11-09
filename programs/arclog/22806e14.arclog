@@ -1,0 +1,76 @@
+;; inputs b58b4f8aa872923fc3d9caebc275b5c353c61a4d788659344adb9677422a325c programs/solvers/22806e14.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22806e14
+
+(DET &bg DominantColor)
+
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component ^Id *P))
+    (cell (P)
+      (&comps.component Id *P))))
+
+(RULE &marker
+  (input *P)
+  (&bbox.box (:key *Id) *B)
+  (inside (:A P) B)
+  (NOT (&comps.component Id P)))
+
+(RULE &marker_cell
+  (&marker *Id)
+  (&comps.component Id *P))
+
+(RULE &rect
+  (&comps.component *Id)
+  (NOT (&marker Id)))
+
+(RULE &center
+  (&rect *Id)
+  (input *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(INIT &size_cmp Excess
+  (plus ((:m P))
+    (&marker_cell *P))
+  (minus ((:m P))
+    (&center *P)))
+
+(RULE &erase
+  (&size_cmp.excess))
+
+(ALTS $choice "what counts as enough marks" $MarkerSize
+  (ALT $Majority
+    (INIT &rect_cmp Excess
+      (plus ((:m Id))
+        (&center *Id))
+      (minus ((:m Id))
+        (&rect *Id)
+        (NOT (&center Id))))
+
+    (RULE &erase
+      (NOT (&rect_cmp.excess)))))
+
+(RULE &gone
+  (&erase)
+  (&marker_cell *P))
+
+(RULE &output
+  (OR ((&center *P)
+       (&marker_cell (:P *Q))
+       (input (:P Q) *Col))
+      ((&gone P)
+       (&bg (:C Col)))
+      ((input P Col)
+       (NOT (&center P))
+       (NOT (&gone P)))))
+
+(OUT (&output ^P ^Col))

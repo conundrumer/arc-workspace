@@ -1,0 +1,87 @@
+;; inputs 3793c629cc7573afc3ce1bde66e58172d106b28dd5fea5ef307fa724d124dc49 programs/solvers/e0fb7511.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e0fb7511
+
+(INPUT field-with-marks "the grid is a field of 1 with scattered cells of &mark, and holds no other color"
+
+  (DET &changed
+    (ex_input *E *P (:Col *C_in))
+    (ex_output E P (:Col *C_out))
+    (!= C_in C_out))
+
+  (DET_OR_RULE &mark RarestColor
+    (&changed (:C_in *C))))
+
+(OUTPUT recolor-groups "each 4-connected component of &mark cells with at least &min_size cells takes &fill in every cell"
+
+  (RULE &mark_cell
+    (input *P *Col)
+    (&mark (:C Col)))
+
+  (INIT &groups Connectivity
+    (node (P)
+      (&mark_cell *P)))
+
+  (INIT &group_size Cardinality
+    (key ((&groups.component *P ^Id))
+      (member ((:m P))
+        (&groups.component *P Id))))
+
+  (INIT &neighbors Cardinality
+    (key ((&mark_cell ^P))
+      (member ((:m Q))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&mark_cell (:P Q)))))
+
+  (DET &fill
+    (&changed (:C_out *C)))
+
+  ;; The sizes of the recolored groups.
+  (INIT &recolored_size Order
+    (member ((:t N))
+      (&changed *E *P)
+      (&groups.component E P *Id)
+      (&group_size.size E (:key Id) *N))
+    (score ((:t N) (:S N))
+      (&changed *E *P)
+      (&groups.component E P *Id)
+      (&group_size.size E (:key Id) *N)))
+
+  (DET &min_size
+    (&recolored_size.minimal (:t *N))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $choice "which mark cells recolor" $GroupSize
+  (ALT $NeighborCount
+    (OUTPUT recolor-groups "each &mark cell with at least &min_neighbors 4-neighbors of &mark takes &fill"
+      ;; The mark-neighbor counts of the recolored cells.
+      (INIT &recolored_neighbors Order
+        (member ((:t N))
+          (&changed *E *P)
+          (&neighbors.size E (:key P) *N))
+        (score ((:t N) (:S N))
+          (&changed *E *P)
+          (&neighbors.size E (:key P) *N)))
+
+      (DET &min_neighbors
+        (&recolored_neighbors.minimal (:t *N))))
+    (RULE &recolor
+      (&neighbors.size (:key *P) *N)
+      (&min_neighbors (:N *M))
+      (>= N M))))
+
+(RULE &recolor
+  (&groups.component *P *Id)
+  (&group_size.size (:key Id) *N)
+  (&min_size (:N *M))
+  (>= N M))
+
+(RULE &output
+  (OR ((&recolor *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&recolor P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,116 @@
+;; inputs 8527314b527eb11986ee60bbcbf2b3c794a9d13245b11ca6e0a151859baa8894 programs/solvers/522fdd07.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 522fdd07
+
+(DET &bg DominantColor)
+
+;; The extent a square that loses its last ring comes back at.
+(DET &bloom NumberDomain)
+
+;; One square per connected body of a single color.
+(INIT &comps Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &center
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(RULE &shrunk
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (interior (:A P) B))
+
+(ALTS $choice "Three models redraw a square" $Box
+  (ALT $Erode
+    (INIT &exposed Boundary
+      (key ((&comps.node (:key ^Col) *P))
+        (cell (P)
+          (&comps.node (:key Col) *P))))
+
+    (RULE &shrunk
+      (&comps.component (:key *Col) *P *Id)
+      (NOT (&exposed.boundary (:key Col) P))))
+  (ALT $Lookup
+    (INIT &in_box BoundingBox
+      (key ((ex_input ^E *P ^Col)
+            (NOT (&bg (:C Col))))
+        (cell (P)
+          (ex_input E *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (INIT &out_box BoundingBox
+      (key ((ex_output ^E *P ^Col)
+            (NOT (&bg (:C Col))))
+        (cell (P)
+          (ex_output E *P Col)
+          (NOT (&bg (:C Col))))))
+
+    (DET &next_extent
+      (&in_box.cell (:key (:E *Sq_e) (:Col *Sq_col)) *P)
+      (&in_box.box (:key (:E Sq_e) (:Col Sq_col)) *B)
+      (perp *A *A2)
+      (box_extent B P A *N)
+      (box_extent B P (:A A2) N)
+      (&out_box.cell (:key (:E Sq_e) (:Col Sq_col)) (:P *P2))
+      (&out_box.box (:key (:E Sq_e) (:Col Sq_col)) (:B *B2))
+      (box_extent (:B B2) (:P P2) A (:N *N2))
+      (box_extent (:B B2) (:P P2) (:A A2) (:N N2)))
+
+    (RULE &target_extent
+      (&bbox.cell (:key *Id) *P)
+      (&bbox.box (:key Id) *B)
+      (perp *A *A2)
+      (box_extent B P A (:N *N3))
+      (box_extent B P (:A A2) (:N N3))
+      (&next_extent (:N N3) (:N2 *N)))
+
+    (RULE &paint
+      (&placed *Id *P)
+      (&comps.component Id (:key *Col)))))
+
+(RULE &target_extent
+  (&comps.component *Id)
+  (NOT (&shrunk Id))
+  (&bloom *N))
+
+(INIT &target Frame
+  (key ((&target_extent ^Id *N)
+        (perp *A *A2))
+    (extent (A N)
+      (&target_extent Id *N)
+      (axis_elem *A))))
+
+(RULE &placed
+  (&target.cell (:key *Id) (:P *T_c))
+  (centered (:P T_c))
+  (&target.cell (:key Id) (:P *T))
+  (relative (:Base T_c) (:X T) (:X_rel *V))
+  (&center Id (:P *C))
+  (compose (:A C) (:B V) (:C *P))
+  (input P))
+
+(RULE &paint
+  (OR ((&shrunk *Id *P)
+       (&comps.component Id (:key *Col)))
+      ((&placed (:Id *Id2) P)
+       (&comps.component (:Id Id2) (:key Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

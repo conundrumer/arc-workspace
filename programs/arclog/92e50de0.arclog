@@ -1,0 +1,164 @@
+;; inputs 674ef9beb48bab46c6b12ab698b385c77563bef41134ed7784541b3c1b8271f0 programs/solvers/92e50de0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 92e50de0
+
+(DET &bg DominantColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+;; A line of one non-bg color cuts the grid.
+(RULE &tiling_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&bg (:C Col))))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&tiling_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &tiling_rank Order
+  (key ((OR ((&tiling_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiling_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiling_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; Tiles from one copy to the next.
+(DET &tile_period TileCount)
+
+(RULE &tile_phase_edge
+  (&tiling_tile_of (:P_tile *Key))
+  (&tile_period (:N *K2))
+  (margin (:B Key) *D (:K *T))
+  (divide T (:Side K2) (:Gap 0) (:Remainder *K)))
+
+(RULE &tile_phase_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tile_phase_edge *Key D (:K *K1))
+  (&tile_phase_edge Key (:D D2) (:K *K2))
+  (axis_inset D K1 K2 *B))
+
+(RULE &tile_phase
+  (&tile_phase_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&tile_phase_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+;; The corner of its tile a copy aligns to.
+(DET &anchor DiagDirDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &tile_box BoundingBox
+  (key ((&tiling_tile_of *P ^P_tile))
+    (cell (P)
+      (&tiling_tile_of *P P_tile))))
+
+(RULE &tile_cell
+  (&tiling_tile_of *P *P_tile)
+  (&tile_box.box (:key P_tile) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(RULE &copy_tile
+  (&tiling_tile_of *P (:P_tile *P_tile3))
+  (&ink P)
+  (&tile_phase (:Key P_tile3) *B)
+  (&tile_phase (:Key *P_tile) B))
+
+(RULE &paint
+  (&tile_cell (:P *P2) *P_intile)
+  (&ink (:P P2) *Col)
+  (&copy_tile *P_tile)
+  (&tile_cell P_tile *P (:P_intile *Q_intile))
+  (&anchor (:D *Dg))
+  (same_corner (:D Dg) (:P1 P_intile) (:P2 Q_intile)))
+
+(ALTS $choice "where the copies stand" $Alternate
+  (ALT $Wallpaper
+    ;; The output stands still under a shift of one period, and under no
+    ;; shorter one.
+    (INIT &repeat Periods
+      (key ((ex_output ^E *P *Col))
+        (cell (P (:v Col))
+          (ex_output E *P *Col))))
+
+    (DET &period
+      (&repeat.fundamental_period *A *K))
+
+    (RULE &phase_edge
+      (input (:P *Key))
+      (axis_of *D *A)
+      (&period A (:K *K2))
+      (margin (:B Key) D (:K *T))
+      (divide T (:Side K2) (:Gap 0) (:Remainder *K)))
+
+    (RULE &phase_axis
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&phase_edge *Key D (:K *K1))
+      (&phase_edge Key (:D D2) (:K *K2))
+      (axis_inset D K1 K2 *B))
+
+    (RULE &phase
+      (&phase_axis *Key *A (:B *B1))
+      (perp A *A2)
+      (&phase_axis Key (:A A2) (:B *B2))
+      (compose (:A B1) (:B B2) (:C *B)))
+
+    ;; A cell at the place in the period of an ink cell.
+    (RULE &paint
+      (&ink (:P *P2) *Col)
+      (&phase (:Key P2) *B)
+      (&phase (:Key *P) B))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

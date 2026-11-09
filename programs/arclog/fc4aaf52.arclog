@@ -1,0 +1,193 @@
+;; inputs 28f2115fc5521cf6d2d712122f920cbb2c3414c091a607218e3210d4e3670720 programs/solvers/fc4aaf52.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fc4aaf52
+
+(INPUT one-shape "every input holds one 4-connected shape of non-bg cells on a field of bg (8).")
+
+(INPUT two-colors "the shape holds exactly two colors, and each half holds both.")
+
+(INPUT contiguous-cut-row "each cut row is one unbroken run of shape cells.")
+
+(OUTPUT swap-colors "every shape cell takes the shape's other color; bg cells away from the shape stay bg."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (RULE &shape
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; Each color's fewest steps from bg through touching colors.
+  (INIT &depth Distance
+    (edge ((:a Col) (:b Col2))
+      (input *P *Col)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (input (:P Q) (:Col *Col2))
+      (!= Col Col2))
+    (source ((:n Col))
+      (&bg (:C *Col))))
+
+  ;; The shape's colors, outermost first.
+  (INIT &layer Order
+    (member ((:t Col))
+      (&shape *Col))
+    (score ((:t Col) (:S K))
+      (&shape *Col)
+      (&depth.distance (:n Col) *K))))
+
+(OUTPUT cut-at-middle "the shape splits on the line between its two middle rows across the moved_half axis, into the half on the moved_half side and the half on the opposite side.")
+
+(OUTPUT other-half-stays "the half opposite moved_half keeps its place.")
+
+(OUTPUT slide-to-clear "the moved half moves toward slide_dir by the least amount after which every cell of its cut row lies beyond every cell of the other half's cut row toward slide_dir."
+
+  ;; the side of the cut whose half moves
+  (DET &moved_half DirDomain)
+
+  ;; the quarter turn from moved_half to the slide direction
+  (DET &slide_sense SenseDomain)
+
+  (RULE &slide_dir
+    (&moved_half (:D *H))
+    (&slide_sense *S)
+    (turn S (:D H) (:D2 *D)))
+
+  (INIT &box BoundingBox
+    (cell (P)
+      (&shape *P)))
+
+  (RULE &side
+    (input *P)
+    (&box.box *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner))
+    (dist_pair (:P P_inner) *D (:K *K1) *K2)
+    (< K1 K2))
+
+  (RULE &cut_row
+    (&side *P *D)
+    (&shape P)
+    (opposite D (:Opp *D2))
+    (neighbor P (:D D2) *Q)
+    (&side (:P Q) (:D D2)))
+
+  ;; The back-most cell of the moved cut row and the front-most cell of the
+  ;; other, along slide_dir.
+  (INIT &reach Order
+    (key ((&cut_row *P ^D)
+          (&slide_dir (:D *S))
+          (margin (:B P) (:D S) *K))
+      (member ((:t (:V P) (:S K)))
+        (&cut_row *P D)
+        (&slide_dir (:D *S))
+        (margin (:B P) (:D S) *K))
+      (score ((:t (:V P) (:S K)) (:S K))
+        (&cut_row *P D)
+        (&slide_dir (:D *S))
+        (margin (:B P) (:D S) *K))))
+
+  (INIT &cut_size Cardinality
+    (member ((:m P))
+      (&moved_half (:D *H))
+      (&cut_row *P (:D H)))
+    (domain ())))
+
+(OUTPUT vacated-to-bg "cells the moved half leaves become bg, and a moved cell that lands past the frame is dropped.")
+
+(ALTS $s "how far the moved half slides" $Clear
+  (ALT $CellClear
+    (OUTPUT slide-to-clear "the least move at which no cell of the moved cut row stands across the cut from a cell of the other cut row."
+      (RULE &collide
+        (&moved_half (:D *H))
+        (&cut_row *P (:D H))
+        (opposite (:D H) (:Opp *H2))
+        (&cut_row (:P *Q) (:D H2))
+        (relative (:Base P) (:X Q) (:X_rel *W))
+        (axis_of (:D H) *A)
+        (split (:P W) A (:Across *V))
+        (&slide_dir (:D *S))
+        (nearer (:D S) (:P V) (:Q 0)))
+
+      (RULE &clear_cand
+        (&slide_dir (:D *S))
+        (OR ((step_offset (:D S) *V))
+            ((&collide (:V *V0))
+             (neighbor (:P V0) (:D S) (:Q V))))
+        (NOT (&collide V)))
+
+      (RULE &farther
+        (&clear_cand *V)
+        (&clear_cand (:V *V2))
+        (&slide_dir (:D *S))
+        (nearer (:D S) (:P V) (:Q V2))))
+    (RULE &move
+      (&clear_cand *V)
+      (NOT (&farther V))))
+  (ALT $CutCount
+    (OUTPUT slide-to-clear "the move is the moved cut row's cell count.")
+    (RULE &move
+      (&cut_size.size *N)
+      (&slide_dir (:D *S))
+      (jump_offset (:D S) (:K N) *V))))
+
+(ALTS $r "which color each shape cell takes" $Swap
+  (ALT $LayerReverse
+    (OUTPUT swap-colors "the shape's colors, ordered outermost first by their fewest steps from bg through touching colors, take their colors in reverse order; undefined where two colors tie in that order.")
+    (RULE &recolor
+      (&layer.rank (:t *Col) *R)
+      (&layer.dual_rank (:t *Col2) R)))
+  (ALT $LayerShiftOut
+    (OUTPUT swap-colors "each color takes the next color inward, and the innermost takes the outermost; undefined where two colors tie.")
+    (RULE &recolor
+      (OR ((&layer.successor (:a *Col) (:b *Col2)))
+          ((&layer.maximal (:t Col))
+           (&layer.minimal (:t Col2))))))
+  (ALT $LayerShiftIn
+    (OUTPUT swap-colors "each color takes the next color outward, and the outermost takes the innermost; undefined where two colors tie.")
+    (RULE &recolor
+      (OR ((&layer.successor (:a *Col2) (:b *Col)))
+          ((&layer.minimal (:t Col))
+           (&layer.maximal (:t Col2)))))))
+
+;; The move takes the moved row's back-most cell one step past the other row's
+;; front-most cell.
+(RULE &move
+  (&moved_half (:D *H))
+  (&reach.maximal (:key (:D H)) (:t (:V *P)))
+  (opposite (:D H) (:Opp *H2))
+  (&reach.minimal (:key (:D H2)) (:t (:V *Q)))
+  (&slide_dir (:D *S))
+  (neighbor (:P Q) (:D S) (:Q *Q_past))
+  (relative (:Base P) (:X Q_past) (:X_rel *W))
+  (axis_of (:D H) *A)
+  (split (:P W) A (:Across *V)))
+
+(RULE &recolor
+  (&shape *Col)
+  (&shape (:Col *Col2))
+  (!= Col Col2))
+
+(RULE &placed
+  (&move *V)
+  (&moved_half (:D *H))
+  (&shape *P *Col)
+  (OR ((&side P (:D H))
+       (compose (:A P) (:B V) (:C *Q)))
+      ((opposite (:D H) (:Opp *H2))
+       (&side P (:D H2))
+       (= Q P))))
+
+(RULE &output
+  ;; The shape, recolored, where it stands within the frame.
+  (OR ((&placed (:Q *P) (:Col *Col3))
+       (&recolor (:Col Col3) (:Col2 *Col))
+       (input P))
+      ;; bg cells and the moved half's cells that no shape cell stands on.
+      ((input P (:Col *Col0))
+       (&bg (:C Col))
+       (OR ((= Col0 Col))
+           ((&moved_half (:D *H))
+            (&side P (:D H))))
+       (NOT (&placed (:Q P))))))
+
+(OUT (&output ^P ^Col))

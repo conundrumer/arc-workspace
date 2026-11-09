@@ -1,0 +1,261 @@
+;; inputs 39a1feb40d4751152c8b2714ee199f18ead319384b37ce292963151a94f880f7 programs/solvers/f28a3cbb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f28a3cbb
+
+(param &bg Color (6))
+
+(alts $c
+  (alt $Merge
+    (witness same-line-strays ordinary concept
+      (separates "two strays of the top-left square's color on row 0 right of it: the concept piles them at (0,3) and (0,4); $Merge lands both on the one cell against the side, (0,3)")
+      (input (grid
+        (9 9 9 6 6 9 6 9 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $Pile (grid
+        (9 9 9 9 9 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $Merge (grid
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4))))
+    (witness domino-along-motion ordinary concept
+      (separates "a vertical two-cell stray piece in the top-left square's column band: the concept and $RigidPieces keep it two cells long, at (3,1) and (4,1); $Merge moves each cell to (3,1), one cell")
+      (input (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 9 6 6 6 6 6 6 6)
+        (6 9 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $Pile (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 9 6 6 6 6 6 6 6)
+        (6 9 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $Merge (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 9 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4))))))
+
+(alts $u
+  (alt $RigidPieces
+    (witness piece-across-band-edge ordinary concept
+      (separates "a two-cell stray piece at (5,2)-(5,3), one cell in the top-left square's column band and one beyond its corner: the concept moves (5,2) up the band and (5,3) diagonally into it, piling them at (3,2) and (4,2); $RigidPieces moves the piece up as one body to (3,2) and (3,3)")
+      (input (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 9 9 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output ($Pile $PerCell) (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 9 6 6 6 6 6 6)
+        (6 6 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $Merge (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $RigidPieces (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 9 9 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4))))))
+
+(alts $l
+  (alt $NearestSide
+    (witness corner-diagonal-stray ordinary concept
+      (separates "a stray on the top-left square's corner diagonal at (4,4): the concept steps it diagonally to the corner cell (3,3); $NearestSide paints both nearest side cells (2,3) and (3,2)")
+      (input (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 9 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $DiagonalApproach (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 9 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $NearestSide (grid
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 9 6 6 6 6 6)
+        (6 6 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4))))))
+
+(alts $s
+  (alt $SquarelessKept
+    (witness squareless-color variant any
+      (relaxed strays-of-square-colors)
+      (separates "a cell of a color with no square at (4,6): the concept clears it; $SquarelessKept keeps it")
+      (input (grid
+        (9 9 9 6 6 6 9 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 2 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $SquarelessClears (grid
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)))
+      (output $SquarelessKept (grid
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 2 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4))))))
+
+(alts $q
+  (alt $LargestPiece
+    (witness stray-touching-side variant concept
+      (relaxed strays-of-square-colors)
+      (separates "a stray already touching the top-left square's side at (0,3): the concept keeps it there; $LargestPiece takes the square and stray as one piece, not a solid square, so the color has no square and every cell of it clears")
+      (input (grid
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 4 6 6 6 4 4 4)))
+      (output $LargestSquare (grid
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 4 4 4 4)))
+      (output $LargestPiece (grid
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 4 4 4 4))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed background)
+      (separates "`bg=DominantColor` from the stored value: train 0 with 6 and 0 swapped")
+      (input (grid
+        (9 9 9 0 0 0 0 9 4)
+        (9 9 9 0 0 0 4 4 0)
+        (9 9 9 0 0 9 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 9 0 0 0 0 0 0)
+        (0 9 0 0 0 0 0 0 0)
+        (9 0 0 0 0 0 4 4 4)
+        (0 0 4 0 0 0 4 4 4)
+        (0 0 0 4 0 0 4 4 4)))
+      (output ($LargestSquare &bg=$Stored) undefined)
+      (output $LargestPiece (grid
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (9 9 9 9 6 6 6 6 6)
+        (9 9 9 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 6 4 4 4)
+        (6 6 6 6 6 4 4 4 4)
+        (6 6 6 6 6 4 4 4 4)))
+      (output &bg=$Derived (grid
+        (9 9 9 9 0 0 0 0 0)
+        (9 9 9 0 0 0 0 0 0)
+        (9 9 9 9 0 0 0 0 0)
+        (9 9 9 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 4 4 4)
+        (0 0 0 0 0 0 4 4 4)
+        (0 0 0 0 0 4 4 4 4)
+        (0 0 0 0 0 4 4 4 4))))))

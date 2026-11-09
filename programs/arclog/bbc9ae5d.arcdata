@@ -1,0 +1,7 @@
+;; inputs 4998241b80a5091fb4b4c27b525b36cb0f2db4b35ad69b715e298a4f03d79466 programs/solvers/bbc9ae5d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bbc9ae5d
+
+(param &diag DiagDir (DIAG_BR))
+(param &divisor number (2))
+(param &bg Color (0))

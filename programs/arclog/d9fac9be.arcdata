@@ -1,0 +1,7 @@
+;; inputs ed2e772ea9e9efb69b08f7ef94d70ed899266cba56bec3bee6405d09609db3d4 programs/solvers/d9fac9be.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d9fac9be
+
+(param &bg Color (0))
+(param &out_dim (Axis number) (AXIS_V 1) (AXIS_H 1))
+(param &dim number (3))

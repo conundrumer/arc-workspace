@@ -1,0 +1,7 @@
+;; inputs a3de5adfb0ce19b9b07cf728eccc7f0b0837e498d0662e63f5f4543bf73c95fe programs/solvers/2de01db2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2de01db2
+
+(param &axis Axis (AXIS_H))
+(param &bg Color (0))
+(param &ink Color (4) (6) (8))

@@ -1,0 +1,49 @@
+;; inputs 51a1827a7da17b358d2293ad7d394d78e8887a1ddf186ff6822aaf510fa23fab programs/solvers/d13f3404.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d13f3404
+
+(DET &side ConstOutDim)
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side *N)))
+
+(DET &bg DominantColor)
+
+(DET &sweep DiagDirDomain)
+
+(RULE &seated
+  (input (:P *P_in) *Col)
+  (NOT (&bg (:C Col)))
+  (&frame.cell *P)
+  (&sweep (:D *Diag))
+  (diag_opposite (:D Diag) (:Opp *Anchor))
+  (same_corner (:D Anchor) (:P1 P_in) (:P2 P)))
+
+(INIT &rays_frame Frame
+  (extent (A N)
+    (&seated *P)
+    (frame_extent P *A *N)))
+
+(INIT &rays Ray
+  (source (P)
+    (&seated *P))
+  (node (P)
+    (&rays_frame.cell *P))
+  (dir (D)
+    (&sweep *D)))
+
+(RULE &rays_ray
+  (&rays.ray *P *D *K (:Origin *Src))
+  (&frame.cell P))
+
+(RULE &output
+  (OR ((&rays.ray *P (:Origin *Q))
+       (&frame.cell P)
+       (&seated (:P Q) *Col))
+      ((&frame.cell P)
+       (NOT (&rays_ray P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

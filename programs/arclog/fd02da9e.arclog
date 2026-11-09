@@ -1,0 +1,200 @@
+;; inputs 25a143bc1c177f6e8bbafaee29a04d37ac1fb28faf564c1286f88211779dd291 programs/solvers/fd02da9e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fd02da9e
+
+(INPUT background-field "every input is an 8×8 grid filled with &bg"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT corner-markers "one or more of the four corner cells each hold a single marker cell of a color other than &bg, and no other cell differs from &bg")
+
+(OUTPUT markers-cleared "each marker cell becomes &bg")
+
+(OUTPUT face-part "each marked corner paints the cells of its &corner_stamp entry in its marker's color, each cell placed by its distances from that corner's two edges"
+
+  (INIT &field_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The field: each input's commonest color.
+  (INIT &field Order
+    (key ((&field_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&field_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&field_count.size (:key E *Col) *N))))
+
+  (DET &marker
+    (ex_input *E *P *Col)
+    (NOT (&field.maximal (:key E) (:t Col)))
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  (DET &corner_stamp
+    (&marker *E *D (:P *C) *Col)
+    (ex_output E (:P *Q) Col)
+    (relative (:Base C) (:X Q) (:X_rel *V)))
+
+  (DET &face_reach
+    (ex_output *E (:P *C))
+    (inside (:A C) (:B 0))
+    (same_corner *D (:P1 C) (:P2 0))
+    (diag_opposite D (:Opp *O))
+    (diag_dirs (:D O) *D1 *D2)
+    (margin (:B C) (:D D1) *K)
+    (margin (:B C) (:D D2) K)))
+
+(OUTPUT rest-background "every other cell is &bg"
+
+  ;; The box of the face whose corners the face parts are placed from, bounded
+  ;; by these cells.
+  (INIT &face2 BoundingBox
+    (cell (P)
+      (input *P)))
+
+  (RULE &marker2
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (inside (:A P) (:B 0))
+    (same_corner *D (:P1 P) (:P2 0)))
+
+  (RULE &own_stamp
+    (&corner_stamp *D (:V *B)))
+
+  (RULE &stamp
+    (&own_stamp *D *B))
+
+  (RULE &placed
+    (&face2.box (:B *F))
+    (&stamp *D *B)
+    (input (:P *C))
+    (inside (:A C) (:B F))
+    (same_corner D (:P1 C) (:P2 F))
+    (compose (:A C) B (:C *Q))
+    (input (:P Q)))
+
+  (RULE &unplaced
+    (OR ((NOT (&face2.box)))
+        ((&marker2 *D)
+         (&stamp D *B)
+         (NOT (&placed D B)))))
+
+  (RULE &painted
+    (NOT (&unplaced))
+    (&placed *D *Q)
+    (&marker2 D *Col))
+
+  (RULE &unpainted
+    (NOT (&unplaced))
+    (input (:P *Q))
+    (NOT (&painted Q))))
+
+(ALTS $placement "where a stamp cell lands" $CornerAnchored
+  (ALT $CenterPlacement
+    (OUTPUT face-part "the face cells keep their offsets from the grid centre in a &face_reach face; undefined where the grid's extent less the face's is odd on an axis, or where a cell falls outside the frame"
+      ;; The box of the face whose corners the face parts are placed from, bounded
+      ;; by these cells.
+      (INIT &face2 BoundingBox
+        (cell ((:P C))
+          (input (:P *C))
+          (&face_reach *K)
+          (diag_opposite *D (:Opp *O))
+          (jump (:P C) D K (:Q *C2))
+          (diag_dist (:P C) (:Diag O) *A *K1 *K2)
+          (diag_dist (:P C2) (:Diag D) A K1 K2)))))
+  (ALT $AnchorPlacement
+    (OUTPUT face-part "the face cells keep their places in a &face_reach face whose corner &anchor_corner is the grid's; undefined where a cell falls outside the frame"
+      (DET &anchor_corner DiagDirDomain)
+
+      ;; The box of the face whose corners the face parts are placed from, bounded
+      ;; by these cells.
+      (INIT &face2 BoundingBox
+        (cell ((:P C2))
+          (input (:P *C))
+          (&anchor_corner *D)
+          (inside (:A C) (:B 0))
+          (same_corner D (:P1 C) (:P2 0))
+          (OR ((diag_opposite D (:Opp *O))
+               (&face_reach *K)
+               (jump (:P C) (:D O) K (:Q *C2)))
+              ((= C2 C))))))))
+
+(ALTS $source "what gives the cells a marker paints" $CornerTable
+  (ALT $QuadrantPartition
+    (OUTPUT face-part "a stored face picture &face, each cell painted by the marker of the corner whose quadrant holds it"
+      (DET &face
+        (&marker *E *Col)
+        (ex_output E *P Col))
+
+      (RULE &quadrant_nearer
+        (&face *P)
+        (dist_pair P *D *K *K2)
+        (< K K2))
+
+      (RULE &quadrant_quadrant
+        (diag_dirs (:D *Diag) *D1 *D2)
+        (&quadrant_nearer *P (:D D1))
+        (&quadrant_nearer P (:D D2)))
+
+      (RULE &own_stamp
+        (&quadrant_quadrant (:P *B) (:Diag *D)))
+
+      (RULE &placed
+        (&face2.box (:B *F))
+        (&stamp *D *B)
+        (input (:P *Q))
+        (inside (:A Q) (:B F))
+        (relative (:Base F) (:X Q) (:X_rel *Q_rel))
+        (same_corner D (:P1 B) (:P2 Q_rel))))))
+
+(ALTS $right "whether the right corners' stamps are their own values" $OwnStamps
+  (ALT $MirroredHalves
+    (OUTPUT face-part "the stamps of the corners away from &mirror_source are the mirrors of those on its side"
+      ;; The side whose corners' stamps are stored.
+      (DET &mirror_source DirDomain)
+
+      (RULE &stamp
+        (&mirror_source (:D *E))
+        (&own_stamp (:D *D0) (:B *B0))
+        (corner_dir (:C D0) *A (:D E))
+        (axis_inversion A (:T *M))
+        (OR ((apply_diag_dir (:D M) (:Dir D0) (:Dir_out *D))
+             (apply (:D M) (:P B0) (:P_out *B)))
+            ((= D D0)
+             (= B B0)))))))
+
+(ALTS $other "what a cell that is neither a marker nor a stamp cell becomes" $Cleared
+  (ALT $KeepStrayCells
+    (OUTPUT rest-background "every other cell keeps its input color")
+    (RULE &output
+      (OR ((&unpainted (:Q *P))
+           (IF ((&marker2 P))
+               ((&bg (:C *Col)))
+               ((input P Col))))
+          ((&painted (:Q P) Col))))))
+
+(ALTS $site "which cells are markers, and of which corner" $CornerCell
+  (ALT $NearestCorner
+    (INPUT corner-markers "every cell of a color other than &bg is a marker of the corner whose quadrant holds it; a cell on a middle line is no marker"
+      (RULE &quadrant_of_nearer
+        (input *P)
+        (dist_pair P *D *K *K2)
+        (< K K2))
+
+      (RULE &quadrant_of_quadrant
+        (diag_dirs (:D *Diag) *D1 *D2)
+        (&quadrant_of_nearer *P (:D D1))
+        (&quadrant_of_nearer P (:D D2)))
+
+      (RULE &marker2
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (&quadrant_of_quadrant P (:Diag *D))))))
+
+(RULE &output
+  (OR ((&painted (:Q *P) *Col))
+      ((&unpainted (:Q P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

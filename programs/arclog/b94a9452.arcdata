@@ -1,0 +1,149 @@
+;; inputs ca54f983ecfc8d38c6d66c4adb3b5d43bcf72a16d69edbd5bc798468aaa2d67c programs/solvers/b94a9452.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b94a9452
+
+(param &background Color (0))
+
+(alts $lone
+  (alt $LoneStays
+    (witness one-color borderline $LoneStays
+      (relaxed nested-squares)
+      (separates "the object is a square of one color, 2: swapping finds no partner color, so the concept is undefined; keeping a lone color, or permuting the colors of the one nesting level, gives the square unchanged")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 2 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Partnered undefined)
+      (output $LoneStays $LayerReverse $LayerShiftOut $LayerShiftIn (grid
+        (2 2 2)
+        (2 2 2)
+        (2 2 2))))))
+
+(alts $recolor
+  (alt $LayerReverse
+    (witness three-layers borderline concept
+      (relaxed nested-squares)
+      (separates "the object nests three regions colored 2, 4, 2: the concept swaps 2 and 4; reversing the layers keeps the object as it is; shifting the layer colors outward or inward gives 4, 2, 2 or 2, 2, 4")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 2 2 0 0)
+        (0 0 2 4 4 4 4 2 0 0)
+        (0 0 2 4 2 2 4 2 0 0)
+        (0 0 2 4 2 2 4 2 0 0)
+        (0 0 2 4 4 4 4 2 0 0)
+        (0 0 2 2 2 2 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Swap (grid
+        (4 4 4 4 4 4)
+        (4 2 2 2 2 4)
+        (4 2 4 4 2 4)
+        (4 2 4 4 2 4)
+        (4 2 2 2 2 4)
+        (4 4 4 4 4 4)))
+      (output $LayerReverse (grid
+        (2 2 2 2 2 2)
+        (2 4 4 4 4 2)
+        (2 4 2 2 4 2)
+        (2 4 2 2 4 2)
+        (2 4 4 4 4 2)
+        (2 2 2 2 2 2)))
+      (output $LayerShiftOut (grid
+        (4 4 4 4 4 4)
+        (4 2 2 2 2 4)
+        (4 2 2 2 2 4)
+        (4 2 2 2 2 4)
+        (4 2 2 2 2 4)
+        (4 4 4 4 4 4)))
+      (output $LayerShiftIn (grid
+        (2 2 2 2 2 2)
+        (2 2 2 2 2 2)
+        (2 2 4 4 2 2)
+        (2 2 4 4 2 2)
+        (2 2 2 2 2 2)
+        (2 2 2 2 2 2)))))
+  (alt $LayerShiftOut
+    (witness three-layers borderline concept))
+  (alt $LayerShiftIn
+    (witness three-layers borderline concept)))
+
+(alts $box
+  (alt $KeepBackground
+    (witness cut-corners borderline $KeepBackground
+      (relaxed nested-squares)
+      (separates "the object's four corner cells are background, so its box holds background: the concept is undefined there; keeping background cells as they are swaps the other two colors")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 2 0 0 0 0)
+        (0 0 0 0 2 4 4 2 0 0 0)
+        (0 0 0 0 2 4 4 2 0 0 0)
+        (0 0 0 0 0 2 2 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Solid undefined)
+      (output $KeepBackground (grid
+        (0 4 4 0)
+        (4 2 2 4)
+        (4 2 2 4)
+        (0 4 4 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed one-object)
+      (separates "the field is 5, not 0: the stored background 0 makes the whole grid the object, which holds three colors, so the concept is undefined; the derived background 5 crops the 2/4 square and swaps its colors")
+      (input (grid
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 2 2 2 2 5 5 5)
+        (5 5 5 2 4 4 2 5 5 5)
+        (5 5 5 2 4 4 2 5 5 5)
+        (5 5 5 2 2 2 2 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5)))
+      (output ($Swap &background=$Stored) undefined)
+      (output &background=$Derived (grid
+        (4 4 4 4)
+        (4 2 2 4)
+        (4 2 2 4)
+        (4 4 4 4)))
+      (output $LayerReverse (grid
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 2 2 2 2 4 4 4)
+        (4 4 4 2 5 5 2 4 4 4)
+        (4 4 4 2 5 5 2 4 4 4)
+        (4 4 4 2 2 2 2 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)))
+      (output $LayerShiftOut (grid
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 4 4 4 4 2 2 2)
+        (2 2 2 4 5 5 4 2 2 2)
+        (2 2 2 4 5 5 4 2 2 2)
+        (2 2 2 4 4 4 4 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)))
+      (output $LayerShiftIn (grid
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 5 5 5 5 4 4 4)
+        (4 4 4 5 2 2 5 4 4 4)
+        (4 4 4 5 2 2 5 4 4 4)
+        (4 4 4 5 5 5 5 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4))))))

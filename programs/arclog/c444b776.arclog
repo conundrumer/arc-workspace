@@ -1,0 +1,322 @@
+;; inputs bd534e02efc317e2fd2806d09dbc4184e1eb58ee36e77ad3c8d4f3f5e252229b programs/solvers/c444b776.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c444b776
+
+(INPUT divider-lines "full rows and full columns of divider (4) cut the grid into equal panels, with no divider on the grid edge"
+
+  (DET &cell
+    (ex_input *E *P *Col)
+    (ex_output E))
+
+  ;; The color of each line that holds one color alone.
+  (INIT &line_color2 Singleton
+    (key ((&cell (:E ^Ky) *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (&cell (:E Ky) *P *Col)
+        (split P A (:Along L)))))
+
+  (DET &unfilled
+    (&line_color2.value (:v *Col))
+    (&cell *E)
+    (NOT (&line_color2.value (:key (:Ky E)) (:v Col))))
+
+  (DET &divider
+    (&line_color2.value (:v *C))
+    (NOT (&unfilled (:Col C))))
+
+  (DET &cut2
+    (&divider (:C *Col))
+    (&cell))
+
+  (DET &tiling_cell2
+    (&cut2)
+    (&cell *E)
+    (&cell E *P))
+
+  (DET &tiling_divider2
+    (&cut2 *Col)
+    (&cell *E)
+    (&line_color2.value (:key (:Ky E) *A *L) (:v Col)))
+
+  (DET &tiling_on_divider2
+    (&tiling_cell2 *E *P)
+    (&tiling_divider2 E *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank2 Order
+    (key ((OR ((&tiling_divider2 (:E ^Ky) *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&tiling_cell2 (:E Ky) *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiling_divider2 (:E Ky) *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiling_divider2 (:E Ky) *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&tiling_cell2 (:E Ky) *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&tiling_cell2 (:E Ky) *P)
+        (margin (:B P) D *K))))
+
+  (DET &tiling_part_idx2
+    (&tiling_cell2 *E *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider2 E P A))
+    (margin (:B P) D *K)
+    (&tiling_rank2.rank (:key (:Ky E) D) (:t K) (:R *N)))
+
+  (DET &tiling_part_of2
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx2 *E *P D (:N *N1))
+    (&tiling_part_idx2 E P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (DET &tiling_tile_of2
+    (&tiling_part_of2 *E *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiling_part_of2 E P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box2 BoundingBox
+    (key ((&tiling_tile_of2 (:E ^Ky) *P ^P_tile))
+      (cell (P)
+        (&tiling_tile_of2 (:E Ky) *P P_tile))))
+
+  (DET &panel2
+    (&tiling_tile_of2 *E *P *P_tile)
+    (&tile_box2.box (:key (:Ky E) P_tile) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  ;; The runs of adjacent divider lines.
+  (INIT &divider_run Connectivity
+    (key ((&tiling_divider2 ^E ^A *L))
+      (node ((:P L))
+        (&tiling_divider2 E A *L))))
+
+  (INIT &band_width Cardinality
+    (key ((&divider_run.component (:key ^E ^A) (:P *L) ^Id))
+      (member ((:m L))
+        (&divider_run.component (:key E A) (:P *L) Id))))
+
+  (INIT &width Singleton
+    (member ((:v N))
+      (&band_width.size *N)))
+
+  (DET_OR_RULE &gap "The width of the lines between the panels." SepThickness TileDim
+    (&width.value (:v *G)))
+
+  ;; The extent of every train input's panels on each axis.
+  (INIT &extent Singleton
+    (key ((axis_elem ^A))
+      (member ((:v K))
+        (&panel2 *E *P *P_tile)
+        (&tile_box2.box (:key (:Ky E) P_tile) *B)
+        (box_extent B P A (:N *K)))))
+
+  (DET &panel_size
+    (&extent.value (:key *A) (:v *K)))
+
+  (INIT &stored Division
+    (cell (P)
+      (input *P))
+    (side (A K)
+      (&panel_size *A *K))
+    (gap (A G)
+      (&panel_size *A *K)
+      (&gap *G))))
+
+(INPUT one-drawn-panel "exactly one panel holds cells other than background (0), and every other panel is all background"
+
+  (RULE &cut
+    (&divider (:C *Col)))
+
+  (RULE &tiling_cell
+    (&cut)
+    (input *P))
+
+  ;; The color of each line that holds one color alone.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &tiling_divider
+    (&cut *Col)
+    (&line_color.value (:key *A *L) (:v Col)))
+
+  (RULE &tiling_on_divider
+    (&tiling_cell *P)
+    (&tiling_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank Order
+    (key ((OR ((&tiling_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&tiling_cell *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiling_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiling_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&tiling_cell *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&tiling_cell *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiling_part_idx
+    (&tiling_cell *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiling_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx *P D (:N *N1))
+    (&tiling_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &tiling_tile_of
+    (&tiling_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiling_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET &stained
+    (&panel2 *E *P *P_tile)
+    (&cell E P (:Col *Col2))
+    (&cell E *Col)
+    (!= Col Col2))
+
+  (DET &blank
+    (&panel2 *E *P *P_tile)
+    (&cell E P *Col)
+    (NOT (&stained E P_tile Col)))
+
+  (DET &unblank
+    (&blank *Col)
+    (&cell *E)
+    (NOT (&blank E Col)))
+
+  (DET_OR_RULE &background DominantColor
+    (&blank (:Col *C))
+    (NOT (&unblank (:Col C))))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiling_tile_of *P ^P_tile))
+      (cell (P)
+        (&tiling_tile_of *P P_tile))))
+
+  (RULE &panel
+    (&tiling_tile_of *P *P_tile)
+    (&tile_box.box (:key P_tile) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (RULE &panel3
+    (&panel *P *P_tile *P_intile))
+
+  (INIT &one_drawn Singleton
+    (member ((:v P_tile))
+      (&panel3 *P *P_tile)
+      (input P *Col)
+      (NOT (&background (:C Col))))))
+
+(OUTPUT copy-to-every-panel "each panel of the output is the drawn panel of the input, and the divider lines stay as they are"
+
+  ;; The colors other than background that the panels hold at each place.
+  (INIT &overlay Singleton
+    (key ((&panel3 *P ^P_intile)
+          (input P *Col)
+          (NOT (&background (:C Col))))
+      (member ((:v Col))
+        (&panel3 *P P_intile)
+        (input P *Col)
+        (NOT (&background (:C Col))))))
+
+  ;; The cells other than background that each panel holds.
+  (INIT &drawn_count Cardinality
+    (key ((&panel3 ^P_tile))
+      (member ((:m P))
+        (&panel3 *P P_tile)
+        (input P *Col)
+        (NOT (&background (:C Col))))
+      (domain ()
+        (&panel3 P_tile))))
+
+  (INIT &most Order
+    (member ((:t (:V P_tile) (:S N)))
+      (&drawn_count.size (:key *P_tile) *N))
+    (score ((:t (:V P_tile) (:S N)) (:S N))
+      (&drawn_count.size (:key *P_tile) *N)))
+
+  (INIT &most_drawn Singleton
+    (member ((:v P_tile))
+      (&most.maximal (:t (:V *P_tile))))))
+
+(ALTS $pn "how the panels are found" $DividerLines
+  (ALT $DividerFromLines
+    (INPUT divider-lines "the divider is the one color other than background that fills a whole row or column; undefined where no such color exists, or where several do"
+      ;; The one color other than background that fills a whole line.
+      (INIT &line_divider Singleton
+        (member ((:v Col))
+          (&line_color.value (:v *Col))
+          (NOT (&background (:C Col)))))
+
+      (RULE &cut
+        (&line_divider.value (:v *Col)))))
+  (ALT $StoredTiling
+    (INPUT divider-lines "panels of panel_size (9 by 9), with lines gap (1) wide between them, cut the grid, whatever the lines' color; undefined where an extent of the grid is not a whole number of panels and gaps"
+      (RULE &panel3
+        (&stored.tile *P (:P_outer *P_tile) (:P_inner *P_intile))))))
+
+(ALTS $s "what each panel of the output takes" $OneDrawn
+  (ALT $Overlay
+    (OUTPUT copy-to-every-panel "each panel of the output is the overlay of the input's panels, where a cell other than background in any panel shows; undefined where two panels hold different such colors at one place")
+    (RULE &fill
+      (&panel3 *P_intile)
+      (OR ((&overlay.value (:key P_intile) (:v *Col)))
+          ((NOT (&overlay.member (:key P_intile)))
+           (&background (:C Col))))))
+  (ALT $MostDrawn
+    (OUTPUT copy-to-every-panel "each panel of the output is the input panel with the most cells other than background; undefined on a tie")
+    (RULE &source
+      (&most_drawn.value (:v *P_tile)))))
+
+(RULE &source
+  (&one_drawn.value (:v *P_tile)))
+
+(RULE &fill
+  (&source *P_tile)
+  (&panel3 *P P_tile *P_intile)
+  (input P *Col))
+
+(RULE &output
+  (OR ((&panel3 *P *P_intile)
+       (&fill P_intile *Col))
+      ((&panel3)
+       (input P Col)
+       (NOT (&panel3 P)))))
+
+(OUT (&output ^P ^Col))

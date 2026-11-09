@@ -1,0 +1,6 @@
+;; inputs 28fdf420ad825ac56e1bfb41ada15439ddde9609c35f867fd9476717b4de2158 programs/solvers/97a05b5b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97a05b5b
+
+(param &bg Color (0))
+(param &board_color Color (2))

@@ -1,0 +1,355 @@
+;; inputs 75e1bac6eb783a58322b133f073d9aecee1cc2cc02cfdbea51326e8c159ee1a4 programs/solvers/afe3afe9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; afe3afe9
+
+(INPUT edge-line "one full edge of the grid is a line of color &line_color; every other cell outside the squares is &bg_color"
+
+  (DET_OR_RULE &line_color RarestColor)
+
+  (DET_OR_RULE &bg_color DominantColor))
+
+(INPUT ring-tiling "hollow squares of side &ring_side sit on a square tiling of 7 by 7 slots, with a gap of &ring_gap between neighboring slots; each square has one color"
+
+  ;; The rectangle outlines of each color.
+  (INIT &outline Outlines
+    (key ((input *P ^Col)
+          (NOT (&bg_color (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg_color (:C Col))))))
+
+  (RULE &filled
+    (&outline.box *B)
+    (input *P *Col)
+    (interior (:A P) B)
+    (NOT (&bg_color (:C Col))))
+
+  (DET &ring_side TileCount)
+
+  (RULE &square
+    (&outline.box (:key *Col) *B)
+    (NOT (&filled B))
+    (&outline.node (:key Col) *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (&ring_side (:N *W))
+    (axis_extents (:P P_rel) *A (:N1 W) (:N2 W)))
+
+  (RULE &line
+    (input *P)
+    (perp *A *A2)
+    (axis_of *D (:A A2))
+    (margin (:B P) D (:K 0))
+    (split P A (:Along *L)))
+
+  ;; The lines between two squares, the second toward d from the first.
+  (INIT &between Cardinality
+    (key ((&square ^E (:B ^B1))
+          (&square E (:B ^B2))
+          (dir_elem ^D)
+          (opposite D (:Opp *O))
+          (axis_of D *A)
+          (&line E A *L)
+          (nearer D (:P L) (:Q B1))
+          (nearer (:D O) (:P L) (:Q B2)))
+      (member ((:m L))
+        (&square E (:B B1))
+        (&square E (:B B2))
+        (opposite D (:Opp *O))
+        (axis_of D *A)
+        (&line E A *L)
+        (nearer D (:P L) (:Q B1))
+        (nearer (:D O) (:P L) (:Q B2)))))
+
+  ;; The fewest lines between two squares.
+  (INIT &gaps Order
+    (member ((:t N))
+      (&between.size *N))
+    (score ((:t N) (:S N))
+      (&between.size *N)))
+
+  (DET &ring_gap
+    (&gaps.minimal (:t *K))))
+
+(INPUT pack-gap-empty "on the pack axis, the middle slot line holds no square")
+
+(OUTPUT pack-side "the pack side is the line's side turned a quarter turn in sense &turn_sense"
+
+  (RULE &unit
+    (&square *B *Col))
+
+  ;; The units' span.
+  (INIT &span BoundingBox
+    (cell ((:P B))
+      (&unit *B)))
+
+  ;; The sense of the quarter turn from the line's side to the pack side.
+  (DET &turn_sense SenseDomain)
+
+  ;; The lines of each slot, the slot counted by its place from the
+  ;; span's edge e: slots of ring_side lines, ring_gap lines apart.
+  (INIT &slot BoundingBox
+    (key ((&span.box *B)
+          (&line *A *L)
+          (axis_of (:D ^E) A)
+          (relative (:Base B) (:X L) (:X_rel *L_rel))
+          (margin (:B L_rel) (:D E) (:K *T))
+          (&ring_side (:N *W))
+          (&ring_gap (:K *G))
+          (divide T (:Side W) (:Gap G) (:Part ^N)))
+      (cell ((:P L))
+        (&span.box *B)
+        (&line *A *L)
+        (axis_of (:D E) A)
+        (relative (:Base B) (:X L) (:X_rel *L_rel))
+        (margin (:B L_rel) (:D E) (:K *T))
+        (&ring_side (:N *W))
+        (&ring_gap (:K *G))
+        (divide T (:Side W) (:Gap G) (:Part N)))))
+
+  (RULE &slot_line
+    (&slot.box (:key *E *N) (:B *S))
+    (axis_of (:D E) *A)
+    (&slot.cell (:key E N) (:P *L))
+    (&ring_side (:N *W))
+    (box_extent (:B S) (:P L) A (:N W)))
+
+  (RULE &span_line
+    (&slot_line *A *S)
+    (&span.box *B)
+    (split (:P B) A (:Along *B_a))
+    (inside (:A S) (:B B_a)))
+
+  (RULE &middle
+    (&span_line *A *S)
+    (&span.box *B)
+    (relative (:Base B) (:X S) (:X_rel *S_rel))
+    (axis_of *D A)
+    (dist_pair (:P S_rel) D *K (:K2 K)))
+
+  (RULE &half
+    (&unit *B *Col)
+    (&middle *A *S)
+    (axis_of *D A)
+    (nearer D (:P B) (:Q S)))
+
+  (INIT &half_color Singleton
+    (key ((&half ^D *Col))
+      (member ((:v Col))
+        (&half D *Col)))))
+
+(OUTPUT ring-cell "each square stands for one cell of its color at its slot"
+
+  ;; The 4-connected pieces off the background.
+  (INIT &piece Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg_color (:C Col)))))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece.component *P ^Id))
+      (cell (P)
+        (&piece.component *P Id)))))
+
+(OUTPUT pack-lines "along each slot line on the pack axis, the cells keep their order and slide to the pack side with no gaps between them"
+
+  (RULE &line_defect
+    (input *P *Col)
+    (margin (:B P) *D (:K 0))
+    (NOT (&line_color (:C Col))))
+
+  (RULE &pack
+    (&span.box)
+    (&turn_sense (:S *Sn))
+    (turn (:S Sn) (:D *D0) (:D2 *D))
+    (NOT (&line_defect (:D D0))))
+
+  (RULE &axes
+    (&pack *D)
+    (axis_of D (:A *A_pack))
+    (perp (:A A_pack) (:A2 *A_cross)))
+
+  (RULE &unit_line
+    (&unit *B)
+    (&span_line *A *S)
+    (split (:P B) A (:Along *B_a))
+    (inside (:A B_a) (:B S)))
+
+  (RULE &along_order_elem
+    (&axes (:A_cross *Ac))
+    (&unit_line *B (:A Ac) *S))
+
+  ;; The units of each slot line across the pack axis, in order from the
+  ;; pack side.
+  (INIT &along_order Order
+    (key ((&along_order_elem ^S *B))
+      (member ((:t B))
+        (&along_order_elem S *B))
+      (score ((:t B) (:S N))
+        (&along_order_elem S *B)
+        (&pack *D)
+        (margin B D (:K *N))))))
+
+(OUTPUT output-extent "the output has one row or column per slot line across the pack axis, from the first line that holds a square to the last, and along the pack axis it holds the slot lines that hold a square; the rest is &bg_color"
+
+  (RULE &cross
+    (&axes (:A_cross *Ac))
+    (&span_line (:A Ac) *S))
+
+  ;; Each output line's place across the pack axis.
+  (INIT &cross_frame Order
+    (key ((&axes (:A_cross ^Ac))
+          (axis_of ^D (:A Ac)))
+      (before ((:a S) (:b S2))
+        (&cross *S)
+        (&cross (:S *S2))
+        (!= S S2)
+        (margin (:B S) D (:K *K1))
+        (margin (:B S2) D (:K *K2))
+        (< K1 K2)))
+    (member ((:t S))
+      (&cross *S)))
+
+  ;; The slot lines on the pack axis that hold a unit.
+  (INIT &occupied Cardinality
+    (member ((:m S))
+      (&axes (:A_pack *Ap))
+      (&unit_line (:A Ap) *S)))
+
+  ;; The units of each line across the pack axis.
+  (INIT &line_count Cardinality
+    (key ((&along_order_elem ^S *B))
+      (member ((:m B))
+        (&along_order_elem S *B))))
+
+  (INIT &fullest Order
+    (member ((:t N))
+      (&line_count.size *N))
+    (score ((:t N) (:S N))
+      (&line_count.size *N))))
+
+(ALTS $side "how the pack side is found" $TurnFromLine
+  (ALT $PackTowardUniformHalf
+    (OUTPUT pack-side "on each axis, the middle slot line of the squares' span cuts the tiling into two halves; the pack side is the side of the only half whose squares share one color; undefined where an axis spans an even number of slot lines, or where the one-colored halves are not exactly one"
+
+      ;; The only qualifying side.
+      (INIT &toward_one Singleton
+        (member ((:v D))
+          (&half_color.value (:key *D))))
+
+      (RULE &pack
+        (&toward_one.value (:v *D))
+        (NOT (&even)))))
+  (ALT $PackTowardColorHalf
+    (OUTPUT pack-side "on each axis, the middle slot line of the squares' span cuts the tiling into two halves; the pack side is the side of the only half whose squares are all &band_color; undefined where an axis spans an even number of slot lines, or where such halves are not exactly one"
+      (DET &band_color SharedColor)
+
+      (RULE &off_band
+        (&half *D *Col)
+        (NOT (&band_color (:C Col))))
+
+      (RULE &toward
+        (&half *D)
+        (NOT (&off_band D)))
+
+      ;; The only qualifying side.
+      (INIT &toward_one Singleton
+        (member ((:v D))
+          (&toward *D)))
+
+      (RULE &pack
+        (&toward_one.value (:v *D))
+        (NOT (&even))))))
+
+(ALTS $piece "what one cell of the output stands for" $HollowSquare
+  (ALT $ComponentUnit
+    (OUTPUT ring-cell "each 4-connected piece of cells off &bg_color that fits in a &ring_side box stands for one cell, at the slot of its box; undefined where a piece holds two colors, or where the pieces are off one tiling"
+      (RULE &wide
+        (&piece_box.box (:key *Id) *B)
+        (&piece.component *P Id)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (frame_extent (:P P_rel) *A *N)
+        (&ring_side (:N *W))
+        (> N W))
+
+      (RULE &unit
+        (&piece_box.box (:key *Id) *B)
+        (NOT (&wide Id))
+        (&piece.component *P Id)
+        (input P *Col)))))
+
+(ALTS $cross "which slot lines across the pack axis the output holds" $TilingSpan
+  (ALT $RankedLines
+    (OUTPUT output-extent "across the pack axis, one output line per slot line that holds a square"
+      (RULE &cross
+        (&axes (:A_cross *Ac))
+        (&unit_line (:A Ac) *S))))
+  (ALT $FrameTiling
+    (OUTPUT output-extent "across the pack axis, one output line per slot line whose slot fits inside the frame"
+      (RULE &cross
+        (&axes (:A_cross *Ac))
+        (&slot_line (:A Ac) *S)))))
+
+(ALTS $along "how long the output is along the pack axis" $OccupiedLines
+  (ALT $MostRingsExtent
+    (OUTPUT output-extent "along the pack axis, the output is as long as the most squares that any line holds")
+    (RULE &along_extent
+      (&fullest.maximal (:t *N))))
+  (ALT $StoredAlongExtent
+    (OUTPUT output-extent "along the pack axis, the output is &along_count long; undefined where a line holds more squares than that"
+      (DET &along_count
+        (ex_output *E *P)
+        (axis_of *D *A)
+        (NOT (&line_defect E D))
+        (perp A *A2)
+        (frame_extent P (:A A2) *N)))
+    (RULE &along_extent
+      (&pack)
+      (&along_count *N))))
+
+(RULE &cross_frame_pos
+  (&cross_frame.rank (:key (:Ac *A) *D) (:t *M) (:R *R1))
+  (&cross_frame.dual_rank (:key (:Ac A) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &even
+  (&span.box)
+  (axis_elem *A)
+  (NOT (&middle A)))
+
+(RULE &along_extent
+  (&occupied.size *N))
+
+(INIT &along_axis Frame
+  (key ((&axes (:A_pack ^Ap)))
+    (extent ((:A Ap) N)
+      (&along_extent *N))))
+
+(RULE &frame
+  (&cross_frame_pos (:P_pos *P1))
+  (&along_axis.cell (:P *P2))
+  (compose (:A P1) (:B P2) (:C *P)))
+
+(RULE &placed
+  (&along_order.rank (:key *S) (:t *B) *R)
+  (&cross_frame_pos (:M S) (:P_pos *P1))
+  (&along_axis.cell (:P *P2))
+  (&pack *D)
+  (margin (:B P2) D (:K R))
+  (compose (:A P1) (:B P2) (:C *P)))
+
+(RULE &lost
+  (&unit *B)
+  (NOT (&placed B)))
+
+(RULE &output
+  (OR ((&placed *B *P)
+       (&unit B *Col)
+       (NOT (&lost)))
+      ((&frame P)
+       (NOT (&placed P))
+       (&bg_color (:C Col))
+       (NOT (&lost)))))
+
+(OUT (&output ^P ^Col))

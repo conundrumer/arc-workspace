@@ -1,0 +1,98 @@
+;; inputs acaacf2ee8dc5328de75cfbcace1d5f38799e9cb4f3da6be66a6c7e3a07cdb98 programs/solvers/2b9ef948.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2b9ef948
+
+(DET &bg DominantColor)
+
+(DET &frame SharedColor)
+
+(DET &path ChangedColor)
+
+(RULE &free_color
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col)))
+  (NOT (&path (:C Col))))
+
+(RULE &beside_trail
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&path (:C Col)))
+
+(RULE &travel
+  (input *P *Col)
+  (&free_color Col)
+  (&beside_trail P)
+  (input (:P *Q) (:Col *Col2))
+  (&frame (:C Col2))
+  (&beside_trail (:P Q))
+  (relative (:Base P) (:X Q) (:X_rel *V)))
+
+(RULE &box
+  (input *P *Col)
+  (&frame (:C Col))
+  (NOT (&beside_trail P)))
+
+(RULE &core
+  (input *P *Col)
+  (&free_color Col)
+  (NOT (&beside_trail P)))
+
+(RULE &moved_box
+  (&box (:P *P3))
+  (&travel *V)
+  (compose (:A P3) (:B V) (:C *P)))
+
+;; The moved core casts a diagonal each way.
+(INIT &diag Ray
+  (source ((:P P2))
+    (&core *P)
+    (&travel *V)
+    (compose (:A P) (:B V) (:C *P2)))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (diag_dir_elem *D)))
+
+(RULE &ink
+  (OR ((&moved_box *P))
+      ((&diag.ray P *K)
+       (!= K 0))))
+
+(ALTS $choice "what casts the diagonals" $Core
+  (ALT $Corner
+    (INIT &bx BoundingBox
+      (cell (P)
+        (&moved_box *P)))
+
+    ;; Each corner of the moved box casts one ray, toward the corner's own side.
+    (INIT &corner_ray Ray
+      (key ((OR ((&moved_box *P)
+                 (&bx.box *B)
+                 (inside (:A P) B)
+                 (same_corner (:D ^Dg) (:P1 P) (:P2 B)))
+                ((diag_dir_elem (:D Dg)))))
+        (source (P)
+          (&moved_box *P)
+          (&bx.box *B)
+          (inside (:A P) B)
+          (same_corner (:D Dg) (:P1 P) (:P2 B)))
+        (node (P)
+          (diag_dir_elem (:D Dg))
+          (input *P))
+        (dir ((:D Dg))
+          (diag_dir_elem (:D Dg)))))
+
+    (RULE &ink
+      (OR ((&corner_ray.ray *P))
+          ((&moved_box P))))))
+
+(RULE &output
+  (input *P)
+  (IF ((&ink P))
+      ((&frame (:C *Col)))
+      ((&free_color Col))))
+
+(OUT (&output ^P ^Col))

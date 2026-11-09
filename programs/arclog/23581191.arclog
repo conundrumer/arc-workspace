@@ -1,0 +1,43 @@
+;; inputs 163617f3823cfa9721bccc528ab56d265d8e945dddfe7e8a5ef14b082d8010dd programs/solvers/23581191.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 23581191
+
+(DET &bg DominantColor)
+
+(DET &cross_color AnyOutNewColor)
+
+(RULE &cross
+  (input (:P *Q) *Col)
+  (NOT (&bg (:C Col)))
+  (input *P)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(INIT &cover_color Singleton
+  (key ((&cross ^P *Col))
+    (member ((:v Col))
+      (&cross P *Col))))
+
+(RULE &collide
+  (&cover_color.plural (:key *P)))
+
+(ALTS $choice "what counts as a meeting" $Color
+  (ALT $Mark
+    (INIT &cover_mark Singleton
+      (key ((&cross ^P *Q))
+        (member ((:v Q))
+          (&cross P *Q))))
+
+    (RULE &collide
+      (&cover_mark.plural (:key *P)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&collide P)
+       (&cross_color (:C *Col)))
+      ((&cross P Col)
+       (NOT (&collide P)))
+      ((NOT (&cross P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

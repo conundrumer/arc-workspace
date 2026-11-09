@@ -1,0 +1,160 @@
+;; inputs 9757e0fa478b87dff24b259536da94d52c506f8601f3acf901a5edaa398d02c6 programs/solvers/891232d6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 891232d6
+
+(DET &climb_dir DirDomain)
+
+(DET &wall SharedColor)
+
+(RULE &open
+  (input *P *Col)
+  (NOT (&wall (:C Col))))
+
+;; A climb runs through open cells.
+(INIT &climb Ray
+  (source (P)
+    (&open *P))
+  (node (P)
+    (&open *P))
+  (dir (D)
+    (&climb_dir *D)))
+
+(RULE &climb_run_full
+  (&climb.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+  (!= N 0))
+
+(DET &aside_sense SenseDomain)
+
+(RULE &aside_dir
+  (&climb_dir (:D *D_up))
+  (&aside_sense *S)
+  (turn S (:D D_up) (:D2 *D)))
+
+;; A slide runs through open cells with a wall cell directly ahead of the
+;; climb.
+(INIT &slide Ray
+  (source (P)
+    (&open *P)
+    (&climb_dir *D)
+    (neighbor P D *Q)
+    (input (:P Q) *Col)
+    (&wall (:C Col)))
+  (node (P)
+    (&open *P)
+    (&climb_dir *D)
+    (neighbor P D *Q)
+    (input (:P Q) *Col)
+    (&wall (:C Col)))
+  (dir (D)
+    (&aside_dir *D)))
+
+(RULE &slide_run_full
+  (&slide.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+  (!= N 0))
+
+(DET &marker RarestColor)
+
+(RULE &turn_step
+  (&slide.end (:P *Q) (:Origin *B))
+  (&aside_dir *D)
+  (neighbor (:P Q) D (:Q *R))
+  (&open (:P R)))
+
+;; The climb starts the walk reaches: a climb from p rests under a wall,
+;; and the turn there leads to the next start r.
+(INIT &walk Propagation
+  (source ((:n P))
+    (input *P *Col)
+    (&marker (:C Col)))
+  (edge ((:a P) (:b R))
+    (&climb.end (:P *B) (:Origin *P))
+    (&turn_step B *R)))
+
+(RULE &climb_leg
+  (&walk.reached (:n *P))
+  (&climb.end (:P *Q) (:Origin P)))
+
+(RULE &turned
+  (&climb_leg (:Q *B))
+  (&turn_step B *R))
+
+(RULE &trail2
+  (OR ((&climb_leg (:P *P2))
+       (&climb_run_full (:V1 P2) (:V3 *P)))
+      ((&turned *B)
+       (&slide_run_full (:V1 B) (:V3 P)))))
+
+(DET &changed
+  (ex_input *E *P (:Col *Col_in))
+  (ex_output E P *Col)
+  (!= Col Col_in))
+
+(DET &hit_cell
+  (&changed *E *P)
+  (ex_input E P *Col)
+  (&wall (:C Col)))
+
+(DET &aside_cell
+  (&hit_cell *E (:P *P2))
+  (&climb_dir *D)
+  (opposite D (:Opp *D2))
+  (neighbor (:P P2) (:D D2) (:Q *P)))
+
+(DET &aside
+  (&aside_cell *E *P)
+  (ex_output E P *Col))
+
+(DET &onward_cell
+  (&changed *E *P)
+  (&climb_dir *D)
+  (neighbor P D (:Q *W))
+  (ex_input E (:P W) (:Col *Col_w))
+  (NOT (&wall (:C Col_w)))
+  (&aside_dir (:D *D_a))
+  (opposite (:D D_a) (:Opp *D_b))
+  (neighbor P (:D D_b) *Q)
+  (&changed E (:P Q))
+  (NOT (&hit_cell E (:P Q)))
+  (neighbor (:P Q) D (:Q *W_q))
+  (ex_input E (:P W_q) (:Col *Col_q))
+  (&wall (:C Col_q)))
+
+(DET &onward
+  (&onward_cell *E *P)
+  (ex_output E P *Col))
+
+(DET &hit
+  (&hit_cell *E *P)
+  (ex_output E P *Col))
+
+(RULE &mark
+  (OR ((&turned (:B *P))
+       (&aside *Col))
+      ((&turned (:R P))
+       (&onward Col))
+      ((&turned *B)
+       (&climb_dir *D)
+       (neighbor (:P B) D (:Q P))
+       (&hit Col))
+      ((&climb_leg (:Q P))
+       (NOT (&turned (:B P)))
+       (&marker (:C Col)))))
+
+(DET &trail
+  (&changed *Col)
+  (NOT (&hit Col))
+  (NOT (&aside Col))
+  (NOT (&onward Col))
+  (NOT (&marker (:C Col))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&mark P *Col))
+      ((NOT (&mark P))
+       (&trail2 P)
+       (&trail Col))
+      ((NOT (&mark P))
+       (NOT (&trail2 P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

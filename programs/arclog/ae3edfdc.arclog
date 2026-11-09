@@ -1,0 +1,242 @@
+;; inputs 824e4e75a217aac6f9b4c84bdcd4e0fd8c2e5ffd2d54e0606f6c732a28e1bdd0 programs/solvers/ae3edfdc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ae3edfdc
+
+(INPUT single-cells "on a &background field, every non-background cell stands alone, with no other non-background cell next to it"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT one-center-per-color "each center color of &pair has exactly one cell"
+
+  (DET &pair
+    (ex_input *E *P (:Col *C_center))
+    (NOT (&background (:C C_center)))
+    (ex_output E P (:Col C_center))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_output E (:P Q) (:Col *C_satellite))
+    (NOT (&background (:C C_satellite)))))
+
+(INPUT satellites-in-line "each cell of a satellite color of &pair lies in the row or the column of the center its color is paired with")
+
+(INPUT one-per-side "each center has at most one satellite on each of its four sides")
+
+(OUTPUT pull-in "each satellite moves along its line to the cell next to its center on the satellite's side. Undefined where two cells of different colors land on one cell."
+
+  (RULE &line_dir
+    (dir_elem *D))
+
+  ;; The lines through each non-background cell, in the case's directions.
+  (INIT &line Ray
+    (source (P)
+      (input *P *Col)
+      (NOT (&background (:C Col))))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&line_dir *D)))
+
+  (RULE_OR_DET &partner "Col2 is a satellite color of center color Col."
+    (&pair (:C_center *Col) (:C_satellite *Col2)))
+
+  (RULE &center_color
+    (&partner *Col))
+
+  (RULE &center
+    (&center_color *Col)
+    (input *P Col))
+
+  (RULE &in_line
+    (&center *P *Col)
+    (&partner Col *Col2)
+    (input (:P *Q) (:Col Col2))
+    (&line.ray (:P Q) *D *K (:Origin P)))
+
+  (RULE &pull
+    (&in_line *P *Q *D *K))
+
+  ;; The obstacle nearest Q, which Q comes to rest against.
+  (INIT &stop Order
+    (key ((&pull ^P ^Q *D)
+          (&line.ray P D *K (:Origin P))
+          (input P))
+      (member ((:t (:V P) (:S K)))
+        (&pull P Q *D)
+        (&line.ray P D *K (:Origin P))
+        (input P))
+      (score ((:t (:V P) (:S K)) (:S K))
+        (&pull P Q *D)
+        (&line.ray P D *K (:Origin P))
+        (input P))))
+
+  (RULE &rest_on
+    (&stop.maximal (:key *P *Q) (:t (:V *F)))
+    (&pull P Q *D))
+
+  ;; The satellites that rest against F, in order of their distance from P:
+  ;; F, the nearest, ranks 0, and the satellite of rank N lands N cells beyond
+  ;; the pile's base.
+  (INIT &pile Order
+    (key ((&rest_on ^P ^D ^F))
+      (member ((:t T))
+        (OR ((&rest_on P D F (:Q *T)))
+            ((&rest_on P D F)
+             (= T F))))
+      (score ((:t T) (:S K))
+        (OR ((&rest_on P D F (:Q *T))
+             (&pull P (:Q T) D *K))
+            ((&rest_on P D F *Q)
+             (&stop.maximal (:key P Q) (:t (:V F) (:S K)))
+             (= T F)))))))
+
+(OUTPUT centers-stay "each center stays where it is")
+
+(OUTPUT rest-background "every other cell of the output is &background")
+
+(ALTS $s "which non-center cells a center pulls" $PartnerColor
+  (ALT $PartnerColor
+    (ALTS $source "where the pairing of center colors with satellite colors comes from" $StoredPair
+      (ALT $PairFromAlignment
+        (INPUT one-center-per-color "a center color is a color with exactly one cell that some other color is paired with"
+          (RULE &line_ray
+            (&line.ray *P *D *K (:Origin *Src))
+            (input P))
+          (RULE &lone
+            (input *P *Col)
+            (NOT (&background (:C Col)))
+            (ALL ((input (:P *Pm) Col)
+                  (input (:P *Q) Col))
+                 ((= Pm Q)))
+            (input (:Col *Col2))
+            (NOT (&background (:C Col2)))
+            (!= Col Col2))
+          (RULE_OR_DET &off_line "A cell of Col2 lies on no line through the one cell of Col."
+            (&lone *P *Col *Col2)
+            (input (:P *Q) (:Col Col2))
+            (NOT (&line_ray (:P Q) (:Src P))))
+          (RULE &partner
+            (&lone *Col *Col2)
+            (NOT (&off_line Col Col2))))
+        (INPUT satellites-in-line "a color is paired with that center color when it is not &background and each of its cells lies in a line through the center, in the directions the case reads"))))
+  (ALT $AnyColorSatellite
+    (INPUT satellites-in-line "a center is a cell of a color in &centers. Each cell that is not &background, whose color is not in &centers, and that lies in a line with a center is its satellite.")
+    (OUTPUT pull-in "each satellite moves to the cell next to each center it lies in line with, on its side"
+      (DET_OR_RULE &centers RarestColor (SET))
+
+      (RULE &center_color
+        (&centers (:C *Col)))
+
+      (RULE &partner
+        (&centers (:C *Col))
+        (input (:Col *Col2))
+        (NOT (&background (:C Col2)))
+        (NOT (&centers (:C Col2)))))))
+
+(ALTS $l "the directions in which a satellite lies in line with its center" $FourDirections
+  (ALT $EightDirections
+    (INPUT satellites-in-line "each satellite lies in the row, the column or a diagonal of its center")
+    (OUTPUT pull-in "a satellite on a diagonal of its center moves to the diagonal neighbor of the center on its side"
+      (RULE &line_dir
+        (dir8_elem *D)))))
+
+(ALTS $c "which centers pull a satellite that lies in line with several centers it is paired with" $EveryCenter
+  (ALT $NearestCenter
+    (OUTPUT pull-in "only the nearest of those centers pulls it, ties keeping all"
+      ;; The centers nearest each satellite.
+      (INIT &nearest Order
+        (key ((&in_line *P ^Q *K))
+          (member ((:t (:V P) (:S K)))
+            (&in_line *P Q *K))
+          (score ((:t (:V P) (:S K)) (:S K))
+            (&in_line *P Q *K))))
+
+      (RULE &pull
+        (&nearest.minimal (:key *Q) (:t (:V *P) (:S *K)))
+        (&in_line P Q *D K)))))
+
+(ALTS $ld "where several satellites on one side of a center land" $SameCell
+  (ALT $Stack
+    (OUTPUT pull-in "the k-th nearest satellite on a side of a center lands k cells from the center")
+    (RULE &lands_at
+      (&rest_on *P *D *F *Q)
+      (&pile.rank (:key P D F) (:t Q) (:R *N))
+      (jump (:P F) D (:K N) (:Q *X)))
+    (ALT $StoredGap
+      (RULE &lands_at
+        (&rest_on *P *D *F *Q)
+        (&pile.rank (:key P D F) (:t Q) (:R *N))
+        (&gap (:N *K))
+        (jump (:P F) D K (:Q *F_base))
+        (jump (:P F_base) D (:K N) (:Q *X))))
+    (ALT $SlideBlocked
+      (OUTPUT pull-in "each satellite slides toward its center and stops next to the first non-background input cell in its path. With $Stack, a satellite of the same center and side stops it at its resting place."
+        ;; Each satellite falls against the cell before it at that cell's resting
+        ;; place, so only the cells P does not pull stay where they are and stop it.
+        (RULE &obstacle
+          (&in_path *P *Q *R *K)
+          (NOT (&pull P (:Q R))))))))
+
+(ALTS $g "how far from the cell it rests against a satellite stops" $NoGap
+  (ALT $StoredGap
+    (OUTPUT pull-in "each satellite stops with &gap empty cells between it and the cell it rests against"
+      (DET &gap NumberDomain))
+    ;; The satellites that rest against F from side D land beyond F_base,
+    ;; &gap cells past F.
+    (RULE &lands_at
+      (&rest_on *D *F *Q)
+      (&gap (:N *K))
+      (jump (:P F) D K (:Q *F_base))
+      (neighbor (:P F_base) D (:Q *X)))))
+
+(ALTS $b "whether cells between a satellite and its center stop it" $PassOver
+  (ALT $SlideBlocked
+    (OUTPUT pull-in "each satellite slides toward its center and stops next to the first non-background input cell in its path. With $Stack, a satellite of the same center and side stops it at its resting place."
+      (RULE &in_path
+        (&pull *P *Q *D (:K *K_q))
+        (&line.ray (:P *R) D *K (:Origin P))
+        (< K K_q)
+        (input (:P R) *Col)
+        (NOT (&background (:C Col))))
+
+      (RULE &obstacle
+        (&in_path *P *Q *R *K))
+
+      ;; The obstacle nearest Q, which Q comes to rest against.
+      (INIT &stop Order
+        (key ((&obstacle ^P ^Q *R *K))
+          (member ((:t (:V R) (:S K)))
+            (&obstacle P Q *R *K))
+          (score ((:t (:V R) (:S K)) (:S K))
+            (&obstacle P Q *R *K)))))))
+
+(ALTS $u "what becomes of a non-center cell that no center pulls" $ClearUnmatched
+  (ALT $KeepUnmatched
+    (OUTPUT rest-background "a non-center cell that no center pulls stays in place. Undefined where a pulled cell lands on a kept cell of another color.")
+    (RULE &paint
+      (OR ((input *P *Col)
+           (NOT (&background (:C Col)))
+           (NOT (&pull (:Q P))))
+          ((&center P Col))
+          ((&lands_at *Q (:X P))
+           (input (:P Q) Col))))))
+
+(RULE &satellite_color_choice)
+
+(RULE &lands_at
+  (&rest_on *D *F *Q)
+  (neighbor (:P F) D (:Q *X)))
+
+(RULE &paint
+  (OR ((&center *P *Col))
+      ((&lands_at *Q (:X P))
+       (input (:P Q) Col))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&background (:C Col)))))
+
+(RULE_OR_DET &repeated "A color with more than one cell.")
+
+(OUT (&output ^P ^Col))

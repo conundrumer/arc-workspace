@@ -1,0 +1,220 @@
+;; inputs 8c7f27e9b60b409a1ade9c0fd7f7e4bcf02cd8a81d327e45b58f48bfedaa58d4 programs/solvers/db3e9e38.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db3e9e38
+
+(param &background Color (0))
+(param &run number (1))
+(param &anchor_edge Dir (DIR_T))
+(param &stripe_color Color (8))
+(param &even_color Color (7))
+(param &stripe_of_line (Color Color) (7 8))
+
+(alts $e
+  (alt $ToEdge
+    (witness floating-line borderline concept
+      (relaxed hanging-line)
+      (separates "the line does not touch the top edge: the concept hangs the steps from the line's top end, $ToEdge fills the triangle from the line's far end up to the edge, $EdgeAligned hangs columns of length L - d from the edge, and $EdgeFromLine finds no touched edge")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $LineRows (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 8 7 8 7 8 7 8 0)
+        (0 0 7 8 7 8 7 0 0)
+        (0 0 0 8 7 8 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $ToEdge (grid
+        (7 8 7 8 7 8 7 8 7)
+        (7 8 7 8 7 8 7 8 7)
+        (0 8 7 8 7 8 7 8 0)
+        (0 0 7 8 7 8 7 0 0)
+        (0 0 0 8 7 8 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $EdgeAligned (grid
+        (0 8 7 8 7 8 7 8 0)
+        (0 0 7 8 7 8 7 0 0)
+        (0 0 0 8 7 8 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 7 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $EdgeFromLine undefined)))
+  (alt $EdgeAligned
+    (witness floating-line borderline concept)))
+
+(alts $a
+  (alt $EdgeFromLine
+    (witness line-from-bottom variant $EdgeFromLine
+      (relaxed hanging-line)
+      (separates "the line touches the bottom edge: the concept hangs the steps downward from the line's top end, $EdgeFromLine grows them up from the bottom edge, and $ToEdge and $EdgeAligned fill from the top edge")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 0 7 0 0 0)))
+      (output $LineRows (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (8 7 8 7 8 7 8)
+        (0 7 8 7 8 7 0)
+        (0 0 8 7 8 0 0)
+        (0 0 0 7 0 0 0)))
+      (output $ToEdge (grid
+        (8 7 8 7 8 7 8)
+        (8 7 8 7 8 7 8)
+        (8 7 8 7 8 7 8)
+        (8 7 8 7 8 7 8)
+        (0 7 8 7 8 7 0)
+        (0 0 8 7 8 0 0)
+        (0 0 0 7 0 0 0)))
+      (output $EdgeAligned (grid
+        (8 7 8 7 8 7 8)
+        (0 7 8 7 8 7 0)
+        (0 0 8 7 8 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 0 7 0 0 0)))
+      (output $EdgeFromLine (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 7 0 0 0)
+        (0 0 8 7 8 0 0)
+        (0 7 8 7 8 7 0)
+        (8 7 8 7 8 7 8))))))
+
+(alts $v
+  (alt $StoredEvenColor
+    (witness recolored-line variant concept
+      (relaxed hanging-line)
+      (separates "the line's color is 3: the concept alternates 3 and 8, and $StoredEvenColor paints the even columns 7")
+      (input (grid
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($LineColor $StoredStripe) &even_color=$Derived (grid
+        (8 3 8 3 8 3 8)
+        (0 3 8 3 8 3 0)
+        (0 0 8 3 8 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $StripeByLineColor undefined)
+      (output ($StoredEvenColor &even_color=$Stored) (grid
+        (8 7 8 3 8 7 8)
+        (0 7 8 3 8 7 0)
+        (0 0 8 3 8 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $s
+  (alt $StripeByLineColor
+    (witness recolored-line-keyed variant concept
+      (relaxed hanging-line)
+      (separates "the line's color is 3 and the stripe table maps 3 to 2: $StripeByLineColor alternates 3 and 2, and the concept alternates 3 and 8")
+      (assign &stripe_of_line (7 8) (3 2))
+      (input (grid
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($LineColor $StoredStripe) &even_color=$Derived (grid
+        (8 3 8 3 8 3 8)
+        (0 3 8 3 8 3 0)
+        (0 0 8 3 8 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $StripeByLineColor (grid
+        (2 3 2 3 2 3 2)
+        (0 3 2 3 2 3 0)
+        (0 0 2 3 2 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($StoredEvenColor &even_color=$Stored) (grid
+        (8 7 8 3 8 7 8)
+        (0 7 8 3 8 7 0)
+        (0 0 8 3 8 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $n
+  (alt $PerLine
+    (witness two-lines variant $PerLine
+      (relaxed hanging-line)
+      (separates "two lines hang from the top edge: $PerLine grows a staircase from each, and the concept finds no single line")
+      (input (grid
+        (0 0 7 0 0 0 0 0 0 7 0 0)
+        (0 0 7 0 0 0 0 0 0 7 0 0)
+        (0 0 7 0 0 0 0 0 0 7 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $OneLine undefined)
+      (output $PerLine (grid
+        (7 8 7 8 7 0 0 7 8 7 8 7)
+        (0 8 7 8 0 0 0 0 8 7 8 0)
+        (0 0 7 0 0 0 0 0 0 7 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed hanging-line)
+      (separates "the field is 5: the commonest color as background grows the staircase, and a stored background of 0 finds no line")
+      (input (grid
+        (5 5 5 7 5 5 5)
+        (5 5 5 7 5 5 5)
+        (5 5 5 7 5 5 5)
+        (5 5 5 7 5 5 5)
+        (5 5 5 5 5 5 5)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (8 7 8 7 8 7 8)
+        (5 7 8 7 8 7 5)
+        (5 5 8 7 8 5 5)
+        (5 5 5 7 5 5 5)
+        (5 5 5 5 5 5 5))))))
+
+(alts &even_color
+  (alt &even_color=$Derived
+    (witness even_color=RarestColor variant &even_color=$Derived
+      (relaxed hanging-line)
+      (separates "`even_color=RarestColor` from the stored value: train 0 with 7 and 1 swapped")
+      (input (grid
+        (0 0 0 1 0 0 0)
+        (0 0 0 1 0 0 0)
+        (0 0 0 1 0 0 0)
+        (0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output ($LineColor $StoredStripe) &even_color=$Derived (grid
+        (8 1 8 1 8 1 8)
+        (0 1 8 1 8 1 0)
+        (0 0 8 1 8 0 0)
+        (0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $StripeByLineColor undefined)
+      (output ($StoredEvenColor &even_color=$Stored) (grid
+        (8 7 8 1 8 7 8)
+        (0 7 8 1 8 7 0)
+        (0 0 8 1 8 0 0)
+        (0 0 0 1 0 0 0)
+        (0 0 0 0 0 0 0))))))

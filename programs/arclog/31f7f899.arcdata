@@ -1,0 +1,7 @@
+;; inputs af2116c3d8ba34beb23805093efccda6cd1b671e234b29f26144a2f28083a9d6 programs/solvers/31f7f899.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 31f7f899
+
+(param &bg Color (8))
+(param &spine Color (6))
+(param &short_dir Dir (DIR_L))

@@ -1,0 +1,148 @@
+;; inputs 4422062699059dd5ee6004364d6fcb9bc81701f249b21b14864f6b54c366b426 programs/solvers/9aec4887.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9aec4887
+
+(INPUT sides "four colors each draw one straight segment, and the four segments are the four sides of a rectangle, its corners left open"
+
+  ;; the color the task fixes: the tie's under Derived(t=Clash), the shape's under Stored
+  (DET &fixed SharedColor))
+
+(INPUT shape "the rest of the ink is one shape in a fifth color, drawn outside that rectangle")
+
+(INPUT extent "the shape's box has the extent of the rectangle's interior")
+
+(OUTPUT frame "the output is the rectangle's box, each side in its place")
+
+(OUTPUT place "the shape fills the rectangle's interior, each cell at its place in the shape's own box"
+
+  (DET &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &aligned
+    (&ink *Col *P)
+    (&ink Col (:P *Q))
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (RULE &side_cell
+    (&ink *Col *P)
+    (axis_elem *A)
+    (ALL ((&ink Col (:P *Pm))
+          (&ink Col (:P *Q)))
+         ((&aligned Col A (:P Pm) Q))))
+
+  (INIT &frame_box BoundingBox
+    (cell (P)
+      (&side_cell *P)))
+
+  (RULE &box_cell
+    (&frame_box.box *B)
+    (input (:P *P2))
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  ;; The rectangle's interior: the box cells off its border.
+  (INIT &inner BoundingBox
+    (cell (P)
+      (&box_cell *P)
+      (interior (:A P) (:B 0)))))
+
+(OUTPUT recolor "a shape cell takes the color of the side nearest it, and a cell with no single nearest side keeps the shape's color"
+
+  (RULE &shape_from_choice)
+
+  (RULE &shape_cell
+    (&ink *Col *P)
+    (&shape_from_choice)
+    (NOT (&side_cell Col P)))
+
+  (RULE &placed_side
+    (&frame_box.box *B)
+    (&side_cell *Col (:P *P2))
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (RULE &side
+    (&placed_side *P *Col)
+    (margin (:B P) *D (:K 0)))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (&shape_cell *P)))
+
+  (RULE &shape_pos
+    (&shape_box.box *B)
+    (&shape_cell *Col *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+  ;; The edges a shape cell sits nearest, ties kept.
+  (INIT &near Order
+    (key ((&shape_pos ^P_inner))
+      (member ((:t (:V D) (:S K)))
+        (margin (:B P_inner) *D *K))
+      (score ((:t (:V D) (:S K)) (:S K))
+        (margin (:B P_inner) *D *K))))
+
+  ;; The one nearest side of a shape cell, absent at a tie.
+  (INIT &near_side Singleton
+    (key ((&near.minimal (:key ^P_inner) (:t (:V *D))))
+      (member ((:v D))
+        (&near.minimal (:key P_inner) (:t (:V *D)))))))
+
+(ALTS $shape "how the shape is told from the sides" $Derived
+  (ALT $Derived
+    (ALTS $t "what a tied cell takes" $Own
+      (ALT $Clash
+        (OUTPUT recolor "a shape cell takes the color of the side nearest it, and a cell with no single nearest side takes the color &fixed names")
+        (RULE &tie_color
+          (&fixed (:C *Col))))))
+  (ALT $Stored
+    (INPUT shape "the ink of the color &fixed names is one shape, drawn outside that rectangle"
+      (RULE &side_cell
+        (&ink *Col *P)
+        (NOT (&fixed (:C Col)))))))
+
+(ALTS $border "what the border draws" $Cells
+  (ALT $Runs
+    (OUTPUT frame "the output is the rectangle's box, each side drawn as a full run along its edge, the corners left open"
+      (RULE &at_corner
+        (&box_cell *P)
+        (inside (:A P) (:B 0))
+        (same_corner (:D *C) (:P1 P) (:P2 0))))
+    (RULE &draw
+      (OR ((&side *D *Col)
+           (&box_cell *P)
+           (margin (:B P) D (:K 0))
+           (NOT (&at_corner P)))
+          ((&shape_pos *P_inner)
+           (&inner.box (:B *I))
+           (compose (:A I) (:B P_inner) (:C P))
+           (OR ((&near_side.value (:key P_inner) (:v *D2))
+                (&side (:D D2) Col))
+               ((NOT (&near_side.value (:key P_inner)))
+                (&tie_color Col))))))))
+
+(RULE &tie_color
+  (&shape_cell *Col))
+
+(RULE &draw
+  (OR ((&placed_side *P *Col))
+      ((&shape_pos *P_inner)
+       (&inner.box (:B *I))
+       (compose (:A I) (:B P_inner) (:C P))
+       (OR ((&near_side.value (:key P_inner) (:v *D))
+            (&side D Col))
+           ((NOT (&near_side.value (:key P_inner)))
+            (&tie_color Col))))))
+
+(RULE &output
+  (OR ((&draw *P *Col))
+      ((&box_cell P)
+       (NOT (&draw P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

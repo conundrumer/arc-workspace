@@ -1,0 +1,74 @@
+;; inputs 7746593accfdb05ab9e6e1185421a567cb6c8cdaba764a3e48c87c30e5dc5646 programs/solvers/28e73c20.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 28e73c20
+
+(DET &ink AnyOutNewColor)
+
+;; The corner the spiral starts from.
+(DET &corner DiagDirDomain)
+
+;; The sense the spiral winds in.
+(DET &sense SenseDomain)
+
+;; Spacing between successive arms.
+(DET &pitch SepTileCount)
+
+(RULE &inset
+  (&pitch (:N *K))
+  (uniform_inset K *B))
+
+(RULE &cycle_end
+  (&corner (:D *C))
+  (diag_dirs (:D C) (:D1 *D) *D2)
+  (&sense *S)
+  (turn S D D2))
+
+(RULE &turn_box
+  (input *P)
+  (margin (:B P) *D *K)
+  (uniform_inset K *B))
+
+;; The walk starts at the corner cell, on the frame.
+(INIT &spiral Propagation
+  (source ((:n P D B))
+    (input *P)
+    (&corner (:D *C))
+    (corner_dist P (:Diag C) (:K 0))
+    (&cycle_end (:D *D_end))
+    (opposite (:D D_end) (:Opp *D))
+    (= *B 0))
+  (edge ((:a P D B) (:b (:P P2) (:D D2) (:B B2)))
+    (input *P)
+    (dir_elem *D)
+    (&turn_box *B)
+    (OR ((same_dist D (:P1 B) (:P2 P))
+         (= *P2 P)
+         (&sense *S)
+         (turn S D *D2)
+         (IF ((&cycle_end D))
+             ((&inset (:B *B_inset))
+              (compose (:A B) (:B B_inset) (:C *B2)))
+             ((= B2 B))))
+        ((nearer D (:P B) (:Q P))
+         (= D2 D)
+         (= B2 B)
+         (neighbor P D (:Q P2))))))
+
+(ALTS $choice "how an off-spiral cell is filled — every input is blank, so this is underdetermined" $Passthrough
+  (ALT $Repaint
+    (DET &bg DominantColor)
+
+    (RULE &output
+      (OR ((input *P)
+           (NOT (&spiral.reached (:n P)))
+           (&bg (:C *Col)))
+          ((&spiral.reached (:n P))
+           (&ink (:C Col)))))))
+
+(RULE &output
+  (OR ((&spiral.reached (:n *P))
+       (&ink (:C *Col)))
+      ((input P Col)
+       (NOT (&spiral.reached (:n P))))))
+
+(OUT (&output ^P ^Col))

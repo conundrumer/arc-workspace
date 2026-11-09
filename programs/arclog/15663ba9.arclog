@@ -1,0 +1,59 @@
+;; inputs d7c25ee3566d55766b1e609dacc57ebb9e409a28988ce9200ad9b1f7aeed0375 programs/solvers/15663ba9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 15663ba9
+
+(DET &bg DominantColor)
+
+(DET &open_paint AnyOutNewColor)
+
+(DET &enclosed_paint AnyOutNewColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(INIT &outside Flood
+  (node (P)
+    (&bg_cell *P))
+  (source (P)
+    (&bg_cell *P)
+    (margin (:B P) *D (:K 0))))
+
+(RULE &enclosed
+  (&bg_cell *P)
+  (NOT (&outside.reached P)))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&ink *P)))
+
+(RULE &arm
+  (&ink *P)
+  (dir_elem *D)
+  (NOT (&rim.exposed P D)))
+
+(RULE &bend
+  (diag_dirs (:D *Arms) *D1 *D2)
+  (&arm *P (:D D1))
+  (&arm P (:D D2))
+  (diag_opposite (:D *Open) (:Opp Arms)))
+
+(RULE &faces_open
+  (&bend *P *Open)
+  (corner_dir (:C Open) *D)
+  (neighbor P D *Q)
+  (NOT (&enclosed (:P Q))))
+
+(RULE &output
+  (OR ((&bend *P)
+       (IF ((&faces_open P))
+           ((&open_paint (:C *Col)))
+           ((&enclosed_paint (:C Col)))))
+      ((input P Col)
+       (NOT (&bend P)))))
+
+(OUT (&output ^P ^Col))

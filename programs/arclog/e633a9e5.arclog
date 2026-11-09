@@ -1,0 +1,129 @@
+;; inputs 08ebe5a34d1209c08be4e32bb0f6bcc9d661640ec7fd60f8574678dd5a34a132 programs/solvers/e633a9e5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e633a9e5
+
+(DET &fat DimDiff)
+
+(DET &cand
+  (ex_input *E (:P *P_in) (:Col *C))
+  (ex_output E (:P *P_out) (:Col C)))
+
+(DET &broken
+  (&cand *P_in *P_out)
+  (ex_output *E)
+  (NOT (&cand E P_in P_out)))
+
+(DET &pair
+  (&cand *P_in *P_out)
+  (NOT (&broken P_in P_out)))
+
+(DET &tile_line
+  (&pair *P_in *P_out)
+  (split (:P P_out) *A (:Along *P_along)))
+
+(INIT &tile_dim Cardinality
+  (key ((&tile_line ^P_in ^A *P_along))
+    (member ((:m P_along))
+      (&tile_line P_in A *P_along))))
+
+(DET &ext
+  (&tile_dim.size (:key *P_in *A) *N)
+  (split (:P P_in) A (:Along *P)))
+
+(RULE &ext_in_use
+  (OR ((&fat (:D *N)))
+      ((&ext N))))
+
+(INIT &ext_pos_frame Frame
+  (key ((&ext_in_use ^N)
+        (axis_elem ^A))))
+
+(DET &ext_pos
+  (&ext_pos_frame.cell (:key *N *A) *P))
+
+(RULE &fat_pos
+  (&fat (:D *N))
+  (&ext_pos *A N (:P *P_in_ax)))
+
+(RULE &ax_pos
+  (input (:P *P_tile))
+  (axis_of *D *A)
+  (OR ((margin (:B P_tile) D (:K 0))
+       (&fat_pos A *P_in_ax))
+      ((dist_pair (:P P_tile) D *K *K2)
+       (!= K 0)
+       (!= K2 0)
+       (= P_in_ax 0))))
+
+(ALTS $choice "how a cell's tile size is found" $Edge
+  (ALT $Table
+    (RULE &line_pos
+      (&ext *A (:P *P_along) *N)
+      (&ext_pos A N (:P *P_in_ax)))
+
+    (RULE &ax_pos
+      (input (:P *P_tile))
+      (split (:P P_tile) *A (:Along *P_along))
+      (&line_pos A P_along *P_in_ax)))
+  (ALT $Map
+    (INIT &ident Quotient
+      (equivalent ((:a P_in) (:b P_in))
+        (&pair *P_in)))
+
+    (DET &dst
+      (&pair *P_in (:P_out *P))
+      (&ident.class (:a P_in) *Id))
+
+    (DET &src
+      (&pair (:P_in *P))
+      (&ident.class (:a P) *Id))
+
+    (RULE &map
+      (&src (:P *P_in) *Id)
+      (&dst (:P *P_out) Id))
+
+    (RULE &output
+      (input (:P *P_in) *Col)
+      (&map P_in (:P_out *P)))))
+
+(RULE &tile
+  (input (:P *P_tile) *Col)
+  (perp (:A *A1) *A2)
+  (&ax_pos P_tile (:A A1) (:P_in_ax *P1))
+  (&ax_pos P_tile (:A A2) (:P_in_ax *P2))
+  (compose (:A P1) (:B P2) (:C *P_intile)))
+
+;; The output lines the tiles between edge d and the tile cover.
+(INIT &lines_before Cardinality
+  (key ((&tile ^P_tile)
+        (dir_elem ^D))
+    (member ((:m Q_tile (:P_in_ax Pi)))
+      (axis_of D *A)
+      (input (:P *Q_tile))
+      (same_line A (:P P_tile) (:Q Q_tile))
+      (nearer D (:P Q_tile) (:Q P_tile))
+      (&ax_pos (:P_tile Q_tile) A (:P_in_ax *Pi)))))
+
+(RULE &edge_off
+  (&lines_before.size (:key *D *P_tile) (:N *K))
+  (edge_inset D K (:B *P_off)))
+
+(RULE &axis_off
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&edge_off D *P_tile (:P_off *P1))
+  (&edge_off (:D D2) P_tile (:P_off *P2))
+  (compose (:A P1) (:B P2) (:C *P_off)))
+
+(RULE &tile_offset
+  (perp (:A *A1) *A2)
+  (&axis_off (:A A1) *P_tile (:P_off *P1))
+  (&axis_off (:A A2) P_tile (:P_off *P2))
+  (compose (:A P1) (:B P2) (:C *P_off)))
+
+(RULE &output
+  (&tile *P_tile *P_intile *Col)
+  (&tile_offset P_tile *P_off)
+  (compose (:A P_off) (:B P_intile) (:C *P)))
+
+(OUT (&output ^P ^Col))

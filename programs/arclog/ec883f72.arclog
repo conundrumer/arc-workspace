@@ -1,0 +1,239 @@
+;; inputs d5aeebde6a2a127856b01c0aa4a0b37bd5cf28f3df882121c450c38d81351edc programs/solvers/ec883f72.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ec883f72
+
+(INPUT background "every cell outside the two objects is background (0)")
+
+(INPUT core "one solid rectangle of one color, the core")
+
+(INPUT wall "one 1-wide wall of another color, made of straight arms that meet at right-angle bends; each free end of an arm reaches the grid edge, and together with the grid edge the wall encloses the core")
+
+(INPUT wall-gap "a background band 1 cell wide separates the core from each wall arm that faces it")
+
+(OUTPUT keep-input "the output starts as a copy of the input")
+
+(OUTPUT corner-rays "at each bend of the wall (a wall cell with wall neighbors on two perpendicular sides), a diagonal ray in the core's color starts at the diagonal neighbor that points away from both of those neighbors, and continues in that direction to the grid edge"
+
+  (DET &missing
+    (ex_input *Col)
+    (ex_output *E)
+    (NOT (ex_input E Col)))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input (:Col *C))
+    (NOT (&missing (:Col C))))
+
+  ;; The objects: the connected parts of each non-background color.
+  (INIT &objs Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background (:C Col))))))
+
+  (RULE &bend
+    (&objs.component *Id *P)
+    (diag_dirs *D *D1 *D2)
+    (opposite (:D D1) (:Opp *D1_back))
+    (neighbor P (:D D1_back) (:Q *Q1))
+    (&objs.component Id (:P Q1))
+    (opposite (:D D2) (:Opp *D2_back))
+    (neighbor P (:D D2_back) (:Q *Q2))
+    (&objs.component Id (:P Q2)))
+
+  (INIT &obj_box BoundingBox
+    (key ((&objs.component ^Id *P))
+      (cell (P)
+        (&objs.component Id *P))))
+
+  (RULE &hole
+    (&obj_box.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&objs.component Id P)))
+
+  ;; The object each reading picks by its shape: the core, or the wall.
+  (INIT &picked Singleton
+    (member ((:v Id))
+      (&obj_box.box (:key *Id))
+      (NOT (&hole Id))))
+
+  ;; The one object besides the picked one.
+  (INIT &other Singleton
+    (member ((:v Id))
+      (&picked.value (:v *Id_picked))
+      (&obj_box.box (:key *Id))
+      (!= Id Id_picked)))
+
+  (RULE &wall
+    (&other.value (:v *Id)))
+
+  (RULE &origin
+    (&wall *Id)
+    (&bend Id *P *D))
+
+  (INIT &beam_frame Frame
+    (extent (A N)
+      (&origin *P)
+      (frame_extent P *A *N)))
+
+  (INIT &beam_full Ray
+    (source (P)
+      (&origin *P))
+    (node (P)
+      (&beam_frame.cell *P))
+    (dir (D)
+      (&origin *D)))
+
+  (RULE &core
+    (&picked.value (:v *Id)))
+
+  (RULE &corner
+    (&core *Id)
+    (&obj_box.box (:key Id) *B)
+    (&objs.component Id *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (INIT &corner_cast_frame Frame
+    (extent (A N)
+      (&corner *P)
+      (frame_extent P *A *N)))
+
+  (RULE &core_color
+    (&core *Id)
+    (&objs.component (:key *Col) Id))
+
+  (RULE &wall_cell
+    (&wall *Id)
+    (&objs.component Id *P))
+
+  (RULE &beam_blocked
+    (&origin)
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &beam Ray
+    (source (P)
+      (&origin *P))
+    (node (P)
+      (&beam_frame.cell *P)
+      (NOT (&beam_blocked P)))
+    (dir (D)
+      (&origin *D)))
+
+  (RULE &beam_cell
+    (&origin)
+    (input))
+
+  (RULE &ray
+    (&beam_full.ray *P *D *K (:Origin *Src))
+    (&beam_cell)
+    (input P)
+    (!= K 0)
+    (&origin (:P Src) D))
+
+  ;; The pocket: the non-wall cells the core reaches.
+  (INIT &pocket Flood
+    (node (P)
+      (&core)
+      (input *P)
+      (NOT (&wall_cell P)))
+    (source (P)
+      (&core *Id)
+      (&objs.component Id *P)))
+
+  (INIT &corner_cast Ray
+    (source (P)
+      (&corner *P))
+    (node (P)
+      (&corner_cast_frame.cell *P)
+      (NOT (&wall_cell P)))
+    (dir (D)
+      (&corner *D))))
+
+(ALTS $o "where the rays come from" $WallBends
+  (ALT $WallBends
+    (ALTS $s "which bends cast" $EveryBend
+      (ALT $ConvexBendsOnly
+        (OUTPUT corner-rays "only a bend whose outward diagonal neighbor lies outside the pocket, the 4-connected non-wall region that holds the core, casts"
+          (RULE &origin
+            (&wall *Id)
+            (&bend Id *P *D)
+            (neighbor P D *Q)
+            (NOT (&pocket.reached (:P Q))))))))
+  (ALT $CoreCornerRays
+    (OUTPUT corner-rays "from each corner of the core's box, a ray runs along that corner's outward diagonal, and each cell past the ray's first wall cell takes the core's color"
+      (INIT &corner_cast_full Ray
+        (source (P)
+          (&corner *P))
+        (node (P)
+          (&corner_cast_frame.cell *P))
+        (dir (D)
+          (&corner *D)))
+
+      (RULE &corner_cast_stop_full
+        (&corner_cast.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&corner_cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      ;; The first wall cell on each corner's diagonal.
+      (RULE &origin
+        (&corner_cast_stop_full (:V1 *P) (:V2 *D) (:V4 *Src))
+        (&corner (:P Src) D)))))
+
+(ALTS $b "what a ray does at a non-background cell" $PaintThrough
+  (ALT $RayStopsAtInk
+    (OUTPUT corner-rays "a ray stops before the first non-background cell")
+    (RULE &paint
+      (&beam.ray *P *D *K (:Origin *Src))
+      (&beam_cell)
+      (input P)
+      (!= K 0)
+      (&origin (:P Src) D)
+      (&core_color *Col)))
+  (ALT $RayKeepsInk
+    (OUTPUT corner-rays "a ray paints background cells only, and goes on past ink")
+    (RULE &paint
+      (&ray *P)
+      (input P (:Col *Col_in))
+      (&background (:C Col_in))
+      (&core_color *Col))))
+
+(ALTS $c "which object is the core" $SolidCore
+  (ALT $WallByShape
+    (INPUT core "the wall is the 1-wide object (no 2×2 block) that has a bend, and the core is the one other object, whatever its shape; undefined unless exactly one object is 1-wide with a bend"
+      (RULE &thick
+        (&objs.component *Id *P)
+        (diag_dirs *D *D1 *D2)
+        (neighbor P (:D D1) (:Q *Q1))
+        (&objs.component Id (:P Q1))
+        (neighbor P (:D D2) (:Q *Q2))
+        (&objs.component Id (:P Q2))
+        (neighbor P D (:Q *Q3))
+        (&objs.component Id (:P Q3)))
+
+      ;; The object each reading picks by its shape: the core, or the wall.
+      (INIT &picked Singleton
+        (member ((:v Id))
+          (&bend *Id)
+          (NOT (&thick Id))))
+
+      (RULE &wall
+        (&picked.value (:v *Id)))
+
+      (RULE &core
+        (&other.value (:v *Id))))))
+
+(RULE &paint
+  (&ray *P)
+  (&core_color *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((&core)
+       (&wall)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

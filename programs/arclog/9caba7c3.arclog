@@ -1,0 +1,99 @@
+;; inputs cd63752cd347052a1d6e43e8967f07a2c9f0d7bd9904f88abd86934bd20f9f58 programs/solvers/9caba7c3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9caba7c3
+
+(INPUT squares "3×3 squares of &field cells, with &mark in place of some rim cells, lie on noise of field cells and background; no two squares share a cell, and every mark is in a square."
+
+  (DET_OR_RULE &field DominantColor)
+
+  (DET_OR_RULE &mark RarestColor))
+
+(OUTPUT square "a square is a 3×3 window of field and mark cells with a field center and some mark; where such windows overlap, the square is the one holding the most marks."
+
+  (RULE &field_cell
+    (input *P *Col)
+    (&field (:C Col)))
+
+  (RULE &mark_cell
+    (input *P *Col)
+    (&mark (:C Col)))
+
+  (RULE &window
+    (&field_cell (:P *P_center))
+    (interior (:A P_center) (:B 0))
+    (OR ((neighbor (:P P_center) *D *Q))
+        ((= Q P_center))))
+
+  (RULE &broken
+    (&window *P_center *Q)
+    (NOT (&field_cell (:P Q)))
+    (NOT (&mark_cell (:P Q))))
+
+  (RULE &cand_mark
+    (&window *P_center *Q)
+    (&mark_cell (:P Q))
+    (NOT (&broken P_center)))
+
+  (INIT &marks Cardinality
+    (key ((&cand_mark (:P_center ^P) *Q))
+      (member ((:m Q))
+        (&cand_mark (:P_center P) *Q))))
+
+  ;; The candidates' mark sets on both sides, so candidates compare with each other.
+  (INIT &maximal Inclusion
+    (pattern ((:pattern P) (:m Q))
+      (&cand_mark (:P_center *P) *Q))
+    (observed ((:observed P) (:m Q))
+      (&cand_mark (:P_center *P) *Q))))
+
+(OUTPUT paint "the square's center becomes &center_paint and its other field cells &rim_paint; the marks stay."
+
+  (DET &center_paint AnyOutNewColor)
+
+  (DET &rim_paint AnyOutNewColor)
+
+  (RULE &overlap
+    (&cand_mark *P_center)
+    (&cand_mark (:P_center *P_center2))
+    (&window P_center *Q)
+    (&window (:P_center P_center2) Q)
+    (!= P_center P_center2)))
+
+(ALTS $choice "which of the overlapping windows is the square" $Count
+  (ALT $Maximal
+    (OUTPUT square "a square is a 3×3 window of field and mark cells with a field center and some mark, unless another such window's marks strictly contain its own.")
+    (RULE &dominated
+      (&maximal.superset (:observed *P2) (:pattern *P_center))
+      (NOT (&maximal.equal (:observed P2) (:pattern P_center)))))
+  (ALT $Complete
+    (OUTPUT square "a square is a 3×3 window of field and mark cells with a field center and some mark, holding every mark of the windows it overlaps.")
+    (RULE &dominated
+      (&overlap *P_center (:P_center2 *P2))
+      (&cand_mark (:P_center P2) *Q)
+      (NOT (&window P_center Q)))))
+
+(RULE &dominated
+  (&overlap *P_center (:P_center2 *P2))
+  (&marks.size (:key (:P P_center)) *N)
+  (&marks.size (:key (:P P2)) (:N *N2))
+  (> N2 N))
+
+(RULE &square
+  (&cand_mark *P_center)
+  (NOT (&dominated P_center)))
+
+(RULE &painted
+  (&square (:P_center *P2))
+  (&window (:P_center P2) (:Q *P))
+  (OR ((= P P2)
+       (&center_paint (:C *Col)))
+      ((!= P P2)
+       (&field_cell P)
+       (&rim_paint (:C Col)))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,15 @@
+;; inputs 9325ee7ce76ebc3c9c4039359e3392cb1e6d9914c308ef52e16b55173e5de047 programs/solvers/332efdb3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 332efdb3
+
+(param &bg Color (1))
+(param &dot Color (0))
+(param &tile_size number (1))
+(param &tile_gap number (1))
+(param &period (Axis number) (AXIS_V 2) (AXIS_H 2))
+(param &motif (Position Color)
+  (grid
+    (1 1 1)
+    (1 0 1)
+    (1 1 1)))
+(param &border_width number (1))

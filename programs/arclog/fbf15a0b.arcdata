@@ -1,0 +1,168 @@
+;; inputs e0bd4cb7213828530edad4eca99d46ce8f5bba8eaf83899f487faf76e394056c programs/solvers/fbf15a0b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fbf15a0b
+
+(param &marker_color Color (5))
+(param &background Color (8))
+(param &part_count number (2))
+
+(alts $pc
+  (alt $CountMarkers
+    (witness marker-count borderline concept
+      (relaxed marker-pair)
+      (separates "three markers down one column of an 18-row grid: the concept cuts by the stored part count into halves and keeps the top 9 rows; $CountMarkers cuts into as many parts as there are markers and keeps the top 6 rows")
+      (input (grid
+        (5 8 8 8)
+        (8 8 1 8)
+        (5 8 8 8)
+        (8 8 1 8)
+        (5 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)))
+      (output $Stored $MarkerSpacing (grid
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)))
+      (output $CountMarkers (grid
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)))))
+  (alt $MarkerSpacing
+    (witness marker-spacing variant concept
+      (relaxed marker-pair)
+      (separates "two markers three apart down one column of a 12-row grid: the concept keeps the top half, 6 rows; $MarkerSpacing cuts into as many parts as the markers are apart and keeps the top 4 rows")
+      (input (grid
+        (5 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (5 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)))
+      (output $Stored $CountMarkers (grid
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8)))
+      (output $MarkerSpacing (grid
+        (8 8 8 8)
+        (8 8 1 8)
+        (8 8 8 8)
+        (8 8 1 8))))))
+
+(alts $uc
+  (alt $FloorPart
+    (witness odd-extent borderline any
+      (relaxed even-extent)
+      (separates "a 7-row grid with the pair down its right column: the concept and every exact cut are undefined; $FloorPart keeps the top 3 rows, dropping the middle row; $CeilPart keeps the top 4 rows, middle row included")
+      (input (grid
+        (8 8 8 5)
+        (8 1 8 8)
+        (8 8 8 5)
+        (8 1 8 8)
+        (8 8 8 8)
+        (8 1 8 8)
+        (8 8 8 8)))
+      (output $Exact undefined)
+      (output $FloorPart (grid
+        (8 8 8 8)
+        (8 1 8 8)
+        (8 8 8 8)))
+      (output $CeilPart (grid
+        (8 8 8 8)
+        (8 1 8 8)
+        (8 8 8 8)
+        (8 1 8 8)))))
+  (alt $CeilPart
+    (witness odd-extent borderline any)))
+
+(alts &marker_color
+  (alt &marker_color=$Derived
+    (witness marker_color=RarestColor borderline concept
+      (separates "the pattern color has as few cells as the marker color, two dots in the marker column: the concept erases only the 5 markers and keeps the 1 dots; the rarest-color derivation takes both colors as markers and erases all four cells")
+      (input (grid
+        (5 8 8 8)
+        (8 8 8 8)
+        (5 8 8 8)
+        (8 8 8 8)
+        (1 8 8 8)
+        (8 8 8 8)
+        (1 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)))
+      (output &marker_color=$Stored (grid
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (1 8 8 8)
+        (8 8 8 8)
+        (1 8 8 8)
+        (8 8 8 8)))
+      (output &marker_color=$Derived (grid
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8)
+        (8 8 8 8))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "the pattern color outnumbers the background: the concept erases the markers to 8; the dominant-color derivation takes 1 as background and erases the markers to 1")
+      (input (grid
+        (5 1 8 1)
+        (8 1 8 1)
+        (5 1 8 1)
+        (8 1 8 1)
+        (8 1 8 1)
+        (8 1 8 1)
+        (8 1 8 1)
+        (8 1 8 1)))
+      (output &background=$Stored (grid
+        (8 1 8 1)
+        (8 1 8 1)
+        (8 1 8 1)
+        (8 1 8 1)))
+      (output &background=$Derived (grid
+        (1 1 8 1)
+        (8 1 8 1)
+        (1 1 8 1)
+        (8 1 8 1))))))

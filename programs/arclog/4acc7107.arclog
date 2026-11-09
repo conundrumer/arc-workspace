@@ -1,0 +1,169 @@
+;; inputs 341d3092f30eb6cf7d74aafb65b64db917e3f13b048f04ee426023ec2fa4ae04 programs/solvers/4acc7107.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4acc7107
+
+(DET &bg DominantColor)
+
+;; The corner the layout builds from: lanes pile from one of its edges, and the shapes of a lane pile from the other.
+(DET &corner DiagDirDomain)
+
+;; The axis the shapes of a lane pile along.
+(DET &stack_axis AxisDomain)
+
+;; Blank lines between adjacent lanes, and between adjacent slots.
+(DET &gap DivisorRatio)
+
+(RULE &stack_dir
+  (&corner (:D *Cnr))
+  (&stack_axis *A)
+  (diag_dirs (:D Cnr) A (:D1 *D)))
+
+(RULE &lane_dir
+  (&corner (:D *Cnr))
+  (&stack_axis *A)
+  (diag_dirs (:D Cnr) A (:D2 *D)))
+
+;; The shapes: connected runs of one color.
+(INIT &shapes Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component *P ^Id))
+    (cell (P)
+      (&shapes.component *P Id))))
+
+(RULE &shape_size
+  (&shapes.component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (&stack_axis *A)
+  (perp A *A2)
+  (box_extent B P A (:N *Depth))
+  (box_extent B P (:A A2) (:N *Width)))
+
+(RULE &lane_dist
+  (&lane_dir *D)
+  (&bbox.box (:key *Id) *B)
+  (margin B D *K))
+
+;; Shapes of one color rank by nearness to the lane edge.
+(INIT &shape_ord Order
+  (key ((&shapes.component *Id (:key ^Col)))
+    (member ((:t Id))
+      (&shapes.component *Id (:key Col)))
+    (score ((:t Id) (:S K))
+      (&shapes.component *Id (:key Col))
+      (&lane_dist Id *K))))
+
+;; A color ranks by its nearest shape.
+(INIT &color_ord Order
+  (member ((:t Col))
+    (&shapes.component (:key *Col)))
+  (score ((:t Col) (:S K))
+    (&shape_ord.minimal (:key *Col) (:t *Id))
+    (&lane_dist Id *K)))
+
+;; A lane is as wide as its widest shape.
+(INIT &lane_size Order
+  (key ((&shapes.component *Id (:key ^Col))
+        (&shape_size Id (:Width *W)))
+    (member ((:t W))
+      (&shapes.component *Id (:key Col))
+      (&shape_size Id (:Width *W)))
+    (score ((:t W) (:S W))
+      (&shapes.component *Id (:key Col))
+      (&shape_size Id (:Width *W)))))
+
+(RULE &corner_cell
+  (input *P)
+  (&corner (:D *Cnr))
+  (corner_dist P (:Diag Cnr) (:K 0)))
+
+(RULE &claims
+  (OR ((&lane_size.maximal (:t *N))
+       (&lane_dir *D))
+      ((&shape_size (:Depth N))
+       (&stack_dir D)))
+  (&corner_cell (:P *Z))
+  (opposite D (:Opp *D_on))
+  (&gap (:K *G))
+  (jump (:P Z) (:D D_on) (:K N) *Q)
+  (jump (:P Q) (:D D_on) (:K G) (:Q *Y))
+  (input *P)
+  (margin (:B P) D *K)
+  (jump (:P Z) (:D D_on) K (:Q *L))
+  (nearer D (:P L) (:Q Y)))
+
+(RULE &lane_line
+  (&lane_size.maximal (:key *Col) (:t *W))
+  (&lane_dir *D)
+  (&claims D (:N W) *K))
+
+;; Lanes pile from the lane edge in color rank: each lane's lines, gap
+;; included, come before every later lane's.
+(INIT &lane_pile Order
+  (member ((:t Col K))
+    (&lane_line *Col *K))
+  (score ((:t Col K) (:S R))
+    (&lane_line *Col *K)
+    (&color_ord.rank (:t Col) *R)))
+
+(RULE &lane
+  (&lane_pile.rank (:t *Col) *R)
+  (&corner_cell (:P *Z))
+  (&lane_dir *D)
+  (opposite D (:Opp *D_on))
+  (jump (:P Z) (:D D_on) (:K R) (:Q *P)))
+
+(RULE &shape_line
+  (&shape_size *Id (:Depth *N))
+  (&stack_dir *D)
+  (&claims D N *K))
+
+;; Within a lane, shapes pile from the stack edge in shape rank.
+(INIT &slot_pile Order
+  (key ((OR ((&shapes.component *Id (:key ^Col))
+             (&shape_line Id *K))
+            ((&shape_line Id K)
+             (&shape_ord.rank (:key Col) (:t Id) *R))))
+    (member ((:t Id K))
+      (&shapes.component *Id (:key Col))
+      (&shape_line Id *K))
+    (score ((:t Id K) (:S R))
+      (&shape_line *Id *K)
+      (&shape_ord.rank (:key Col) (:t Id) *R))))
+
+(RULE &slot
+  (&slot_pile.rank (:key *Col) (:t *Id) *R)
+  (&lane Col (:P *P0))
+  (&stack_dir *D)
+  (opposite D (:Opp *D_on))
+  (jump (:P P0) (:D D_on) (:K R) (:Q *P)))
+
+(RULE &anchor
+  (&bbox.box (:key *Id) *B)
+  (&corner (:D *Cnr))
+  (input *P)
+  (inside (:A P) B)
+  (same_corner (:D Cnr) (:P1 P) (:P2 B)))
+
+(RULE &move
+  (&anchor *Id (:P *A))
+  (&slot Id (:P *P_slot))
+  (relative (:Base A) (:X P_slot) (:X_rel *V)))
+
+(RULE &placed
+  (&shapes.component (:key *Col) (:P *P2) *Id)
+  (&move Id *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&placed *P *Col))
+      ((input P)
+       (NOT (&placed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

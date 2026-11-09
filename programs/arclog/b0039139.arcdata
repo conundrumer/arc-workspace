@@ -1,0 +1,183 @@
+;; inputs 06a7580a208ff1ee70261bb633dd608e7e47254c2443234860d98db19842f77f programs/solvers/b0039139.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0039139
+
+(param &divider_color Color (1))
+(param &shape_color Color (4))
+(param &mark_color Color (3))
+(param &mark_size number (2))
+(param &margin number (1))
+(param &start_corner DiagDir (DIAG_TL))
+(param &gap_width number (1))
+(param &background Color (0))
+
+(alts $m
+  (alt $MarkCells
+    (witness mixed-mark-sizes borderline concept
+      (relaxed count-panel)
+      (separates "a count panel holding one domino and one 2x2 block of marks: two marks hold six mark cells, so counting marks gives two copies and counting cell pairs gives three")
+      (input (grid
+        (0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 4 4 0 1 0 3 0 3 3 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 0 4 0 1 0 3 0 3 3 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)))
+      (output $Marks4 $Marks8 (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $MarkCells (grid
+        (2 2 2 8 2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2 8 2 8 2)))))
+  (alt $Marks8
+    (witness marks-touch-at-corner borderline concept
+      (relaxed count-panel)
+      (separates "two dominoes that touch only at a corner: 4-adjacency counts two marks and gives two copies, 8-adjacency counts one mark and gives one copy")
+      (input (grid
+        (0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 4 4 0 1 0 3 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 0 4 0 1 0 3 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 1 0 0 3 3 0 0 1 2 2 2 2 2 1 8 8 8 8)))
+      (output ($Marks4 $StoredGap) $GapFromDivider $GapFromShapeMargin $MarkCells (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $GapFromMarkSpacing undefined)
+      (output $Marks8 (grid
+        (2 2 2)
+        (2 8 2))))))
+
+(alts $s
+  (alt $PanelInset
+    (witness wide-margin variant concept
+      (separates "a shape panel with two background columns right of the shape: the shape's bounding box gives 3-wide copies, the panel inset by one gives 4-wide copies with a field column")
+      (input (grid
+        (0 0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 4 4 0 0 1 0 3 0 3 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 0 4 0 0 1 0 3 0 3 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)))
+      (output ($ShapeBox $StoredGap) $GapFromMarkSpacing $GapFromDivider (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $GapFromShapeMargin undefined)
+      (output $PanelInset (grid
+        (2 2 2 8 8 2 2 2 8)
+        (2 8 2 8 8 2 8 2 8))))))
+
+(alts $r
+  (alt $PanelOrder
+    (witness solid-shape-panel foreign $PanelOrder
+      (relaxed shape-panel)
+      (separates "a solid panel of the shape color at the left end, where the shape panel stands: reading roles by position takes it as the shape panel and stamps its whole box, reading roles by content finds no end panel holding a shape on background and is undefined")
+      (input (grid
+        (4 4 4 4 4 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (4 4 4 4 4 1 0 3 0 3 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (4 4 4 4 4 1 0 3 0 3 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (4 4 4 4 4 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)))
+      (output $RolesByContent undefined)
+      (output ($ShapeBox $PanelOrder $StoredGap) (grid
+        (2 2 2 2 2 8 2 2 2 2 2)
+        (2 2 2 2 2 8 2 2 2 2 2)
+        (2 2 2 2 2 8 2 2 2 2 2)
+        (2 2 2 2 2 8 2 2 2 2 2)))
+      (output ($PanelOrder $GapFromShapeMargin) (grid
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2)))
+      (output ($PanelInset $PanelOrder) (grid
+        (2 2 2 8 2 2 2)
+        (2 2 2 8 2 2 2))))
+    (witness shape-panel-right variant concept
+      (separates "the shape panel at the right end of the row: reading roles by content finds it and gives two copies, reading roles from the top-left corner takes the solid left panel as the shape panel and the solid panel next to it as the count panel, finds no mark and is undefined")
+      (input (grid
+        (8 8 8 8 1 2 2 2 2 2 1 0 0 0 0 0 0 1 0 0 0 0 0)
+        (8 8 8 8 1 2 2 2 2 2 1 0 0 3 0 3 0 1 0 4 4 4 0)
+        (8 8 8 8 1 2 2 2 2 2 1 0 0 3 0 3 0 1 0 4 0 4 0)
+        (8 8 8 8 1 2 2 2 2 2 1 0 0 0 0 0 0 1 0 0 0 0 0)))
+      (output $RolesByContent (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $PanelOrder undefined))))
+
+(alts $g
+  (alt $GapFromMarkSpacing
+    (witness marks-two-apart variant concept
+      (separates "two marks two cells apart: the stored gap gives copies one line apart, the gap read from the mark spacing gives copies two lines apart")
+      (input (grid
+        (0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 4 4 0 1 0 3 0 0 3 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 4 0 4 0 1 0 3 0 0 3 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)))
+      (output $StoredGap $GapFromDivider $GapFromShapeMargin (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $GapFromMarkSpacing (grid
+        (2 2 2 8 8 2 2 2)
+        (2 8 2 8 8 2 8 2)))))
+  (alt $GapFromDivider
+    (witness thick-dividers borderline concept
+      (relaxed panels)
+      (separates "divider lines two cells wide: the stored gap gives copies one line apart, the gap read from the divider thickness gives copies two lines apart")
+      (input (grid
+        (0 0 0 0 0 1 1 0 0 0 0 0 0 1 1 2 2 2 2 2 1 1 8 8 8 8)
+        (0 4 4 4 0 1 1 0 3 0 3 0 0 1 1 2 2 2 2 2 1 1 8 8 8 8)
+        (0 4 0 4 0 1 1 0 3 0 3 0 0 1 1 2 2 2 2 2 1 1 8 8 8 8)
+        (0 0 0 0 0 1 1 0 0 0 0 0 0 1 1 2 2 2 2 2 1 1 8 8 8 8)))
+      (output $StoredGap $GapFromMarkSpacing $GapFromShapeMargin (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $GapFromDivider (grid
+        (2 2 2 8 8 2 2 2)
+        (2 8 2 8 8 2 8 2)))))
+  (alt $GapFromShapeMargin
+    (witness shape-margin-two variant concept
+      (separates "a shape two cells in from every side of its panel: the stored gap gives copies one line apart, the gap read from the shape's margin gives copies two lines apart")
+      (input (grid
+        (0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 4 4 4 0 0 1 0 3 0 3 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 4 0 4 0 0 1 0 3 0 3 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)
+        (0 0 0 0 0 0 0 1 0 0 0 0 0 0 1 2 2 2 2 2 1 8 8 8 8)))
+      (output ($ShapeBox $StoredGap) $GapFromMarkSpacing $GapFromDivider (grid
+        (2 2 2 8 2 2 2)
+        (2 8 2 8 2 8 2)))
+      (output $GapFromShapeMargin (grid
+        (2 2 2 8 8 2 2 2)
+        (2 8 2 8 8 2 8 2)))
+      (output $PanelInset (grid
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (8 2 2 2 8 8 8 2 2 2 8)
+        (8 2 8 2 8 8 8 2 8 2 8)
+        (8 8 8 8 8 8 8 8 8 8 8))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed shape-panel)
+      (relaxed count-panel)
+      (separates "`background=DominantColor` from the stored value: train 0 with 0 and 5 swapped")
+      (input (grid
+        (5 5 5 5)
+        (5 4 4 5)
+        (5 4 5 5)
+        (5 5 5 5)
+        (1 1 1 1)
+        (5 5 5 5)
+        (5 3 5 3)
+        (5 3 5 3)
+        (5 5 5 5)
+        (1 1 1 1)
+        (2 2 2 2)
+        (2 2 2 2)
+        (2 2 2 2)
+        (2 2 2 2)
+        (1 1 1 1)
+        (9 9 9 9)
+        (9 9 9 9)
+        (9 9 9 9)))
+      (output $StoredGap &background=$Derived $GapFromDivider $GapFromShapeMargin (grid
+        (2 2)
+        (2 9)
+        (9 9)
+        (2 2)
+        (2 9)))
+      (output ($GapFromMarkSpacing &background=$Stored) undefined))))

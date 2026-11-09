@@ -1,0 +1,247 @@
+;; inputs d0bdef2600da52d7f85e7bf05539dea8bb919243d8688c61c49499e0085c81d5 programs/solvers/aa4ec2a5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aa4ec2a5
+
+(INPUT field "the background is &bg, and it covers the grid border"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT shapes "several shapes of &shape_color sit on the field; each shape is a 4-connected component of &shape_color, and no two shapes touch, not even at a corner"
+
+  (DET_OR_RULE &shape_color RarestColor)
+
+  (RULE &shape_cell
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (INIT &shapes8 Connectivity
+    (node (P)
+      (&shape_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT holes "some shapes each enclose one region of &bg cells that is cut off from the grid border")
+
+(OUTPUT hole-fill "a &bg cell with no 4-connected path of &bg cells to the grid border is a hole cell, and becomes &hole_color"
+
+  (DET &hole_color AnyOutNewColor)
+
+  (RULE &bg_cell
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (INIT &shapes4 Connectivity
+    (node (P)
+      (&shape_cell *P)))
+
+  (RULE &shape
+    (&shapes4.component *P (:Id *O)))
+
+  (RULE &off_wall
+    (&shape (:O *W))
+    (input *P)
+    (NOT (&shape P (:O W))))
+
+  (INIT &own_holes4 Enclosure
+    (key ((&off_wall (:W ^O) *P))
+      (cell (P)
+        (&off_wall (:W O) *P))))
+
+  (RULE &own_hole
+    (&own_holes4.enclosed (:key (:O *W)) *P))
+
+  (INIT &open8 Flood
+    (node (P)
+      (&bg_cell *P))
+    (source (P)
+      (&bg_cell *P)
+      (margin (:B P) *D (:K 0)))
+    (step ((:Delta V))
+      (step_offset *V)))
+
+  (INIT &own_hole_cells Cardinality
+    (key ((&own_hole ^W *P))
+      (member ((:m P))
+        (&own_hole W *P)))))
+
+(OUTPUT holed-shape "every cell of a shape that alone encloses a hole cell becomes &holed_color; a shape alone encloses a cell when the cell has no 4-connected path to the grid border that avoids that shape's cells"
+
+  (DET &holed_color AnyOutNewColor)
+
+  (INIT &own_open8 Flood
+    (key ((&off_wall (:W ^O) *P))
+      (node (P)
+        (&off_wall (:W O) *P))
+      (source (P)
+        (&off_wall (:W O) *P)
+        (margin (:B P) *D (:K 0))))
+    (step ((:Delta V))
+      (step_offset *V))))
+
+(OUTPUT plain-shape "a shape that alone encloses no hole cell keeps &shape_color")
+
+(OUTPUT outline "a &bg cell that is not a hole cell and has a shape cell among its 8 neighbors becomes &outline_color"
+
+  (DET &outline_color AnyOutNewColor))
+
+(OUTPUT rest "every other cell keeps its input color"
+
+  (INIT &holes4 Enclosure
+    (cell (P)
+      (input *P *Col)
+      (&bg (:C Col))))
+
+  (INIT &hole_cells Cardinality
+    (key ((&holes4.enclosed *P ^Id))
+      (member ((:m P))
+        (&holes4.enclosed *P Id))))
+
+  (RULE &hole_size
+    (&holes4.enclosed *P *Id)
+    (&hole_cells.size (:key Id) *N))
+
+  (RULE &shape_near
+    (&bg_cell *P)
+    (neighbor P *Q)
+    (&shape_cell (:P Q)))
+
+  (RULE &enclosed
+    (&holes4.enclosed *P))
+
+  (RULE &sole_holed
+    (&own_hole *W *P)
+    (&enclosed P))
+
+  (RULE &holed
+    (&sole_holed (:W *O)))
+
+  (RULE &holed_cell
+    (&holed *O)
+    (&shape *P O))
+
+  (RULE &rim
+    (&shape_near *P)
+    (NOT (&enclosed P)))
+
+  (RULE &hole_size2
+    (&hole_size *P *N)))
+
+(ALTS $owner "which cells are hole cells, which shapes turn &holed_color, and which cells take the outline" $SoleEncloser
+  (ALT $BboxHole
+    (OUTPUT hole-fill "a cell that a shape alone encloses is a hole cell, whatever its color, and becomes &hole_color unless it is a cell of a holed shape"
+
+      (RULE &holed
+        (&own_hole (:W *O))))
+    (OUTPUT holed-shape "every cell of a shape that alone encloses some cell becomes &holed_color")
+    (RULE &hole_cell
+      (&own_hole *P)
+      (NOT (&holed_cell P)))
+
+    (RULE &outline_cell
+      (&shape_near *P)
+      (NOT (&own_hole P)))
+    (ALT $SizeLookup
+      (OUTPUT hole-fill "a hole cell becomes the color &hole_size_color gives the cell count of its hole, and is undefined when no color is stored for that count; a hole is a region of hole cells, connected as the path to the grid border is, and under BboxHole it is every cell that one shape alone encloses"
+        (RULE &hole_count
+          (&own_hole (:W *O) *P)
+          (&own_hole_cells.size (:key (:W O)) *N)))))
+  (ALT $AdjacentHoled
+    (OUTPUT holed-shape "every cell of a shape with a hole cell among the 8 neighbors of one of its cells becomes &holed_color"
+      (RULE &holed
+        (&enclosed *P)
+        (neighbor P *Q)
+        (&shape (:P Q) *O))))
+  (ALT $PerShapeOutline
+    (OUTPUT outline "a &bg cell becomes &outline_color when it has a cell of some shape among its 8 neighbors and that shape does not alone enclose it; the outline takes priority over &hole_color"
+      (RULE &own_rim
+        (&bg_cell *P)
+        (neighbor P *Q)
+        (&shape (:P Q) *O)
+        (NOT (&own_hole (:W O) P))))
+    (RULE &outline_cell
+      (&own_rim *P))
+
+    (RULE &hole_cell
+      (&enclosed *P)
+      (NOT (&own_rim P)))))
+
+(ALTS $leak "the path that keeps a cell from being enclosed" $Hole4conn
+  (ALT $Hole8conn
+    (OUTPUT hole-fill "a &bg cell with no 8-connected path of &bg cells to the grid border is a hole cell, and becomes &hole_color"
+      (RULE &enclosed
+        (&bg_cell *P)
+        (NOT (&open8.reached P)))
+
+      (RULE &own_hole
+        (&off_wall *W *P)
+        (NOT (&own_open8.reached (:key (:O W)) P)))
+
+      (INIT &holes8 Connectivity
+        (node (P)
+          (&enclosed *P))
+        (step ((:Delta S))
+          (OR ((diag_dir_elem *D)
+               (step_offset D (:V *S)))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) (:V S))))))
+
+      (INIT &hole8_cells Cardinality
+        (key ((&holes8.component *P ^Id))
+          (member ((:m P))
+            (&holes8.component *P Id))))
+
+      (RULE &hole_size2
+        (&holes8.component *P *Id)
+        (&hole8_cells.size (:key Id) *N)))
+    (OUTPUT holed-shape "every cell of a shape that alone encloses a hole cell becomes &holed_color; a shape alone encloses a cell when the cell has no 8-connected path to the grid border that avoids that shape's cells")))
+
+(ALTS $shape "how shape cells join into one shape" $Shape4conn
+  (ALT $Shape8conn
+    (INPUT shapes "several shapes of &shape_color sit on the field; each shape is an 8-connected component of &shape_color"
+      (RULE &shape
+        (&shapes8.component *P (:Id *O))))))
+
+(ALTS $fill "where a hole cell's color comes from" $OneHoleColor
+  (ALT $SizeLookup
+    (OUTPUT hole-fill "a hole cell becomes the color &hole_size_color gives the cell count of its hole, and is undefined when no color is stored for that count; a hole is a region of hole cells, connected as the path to the grid border is, and under BboxHole it is every cell that one shape alone encloses"
+      (RULE &hole_count
+        (&hole_size2 *P *N))
+
+      (DET &hole_size_color
+        (&hole_size *E *P *N)
+        (ex_output E P (:Col *C))))
+    (RULE &output
+      (OR ((&holed_cell *P)
+           (&holed_color (:C *Col)))
+          ((&outline_cell P)
+           (&outline_color (:C Col)))
+          ((input P Col)
+           (NOT (&holed_cell P))
+           (NOT (&hole_cell P))
+           (NOT (&outline_cell P)))
+          ((&hole_cell P)
+           (&hole_count P *N)
+           (&hole_size_color N (:C Col)))))))
+
+(RULE &outline_cell
+  (&rim *P))
+
+(RULE &hole_cell
+  (&enclosed *P))
+
+(RULE &output
+  (OR ((&holed_cell *P)
+       (&holed_color (:C *Col)))
+      ((&outline_cell P)
+       (&outline_color (:C Col)))
+      ((input P Col)
+       (NOT (&holed_cell P))
+       (NOT (&hole_cell P))
+       (NOT (&outline_cell P)))
+      ((&hole_cell P)
+       (&hole_color (:C Col)))))
+
+(OUT (&output ^P ^Col))

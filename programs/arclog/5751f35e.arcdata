@@ -1,0 +1,6 @@
+;; inputs 9961c1c00f33cb77efe0b955d3310b5a4e2e28fcbc3ad529b6c2f0a1a7bc17f5 programs/solvers/5751f35e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5751f35e
+
+(param &bg Color (0))
+(param &sym Sym (SYM_D4))

@@ -1,0 +1,121 @@
+;; inputs 7c74472087729787cba4dfa7665865086754c0401be2a4c3f730a335ee429c19 programs/solvers/e4888269.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e4888269
+
+(INPUT background "the commonest color fills the field.")
+
+(INPUT legend "one solid block of non-background cells, two cells wide and one or more entries long, shares no side with any other non-background cell; it is the one 4-connected group of non-background cells that holds more than one color.")
+
+(INPUT legend-entry "each line of the legend across its width is one entry: the cell on the &source_dir side holds the source color, and the other cell the target color."
+
+  ;; the side of each entry that holds the source color
+  (DET &source_dir DirDomain))
+
+(OUTPUT legend-kept "the legend is unchanged.")
+
+(OUTPUT sequential-replace "the entries apply in order, from the entry nearest the &order_dir edge to the farthest; each entry recolors every cell outside the legend that holds its source color at that step to its target color."
+
+  ;; the edge of the legend whose entry applies first
+  (DET &order_dir DirDomain))
+
+(OUTPUT rest-kept "a cell whose color no step changes keeps its color."
+
+  (INIT &field_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&field_count.size (:key *Col) *N)))
+
+  (INIT &groups Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&field.maximal (:t Col)))))
+
+  (INIT &group_color Singleton
+    (key ((&groups.component *P ^Id)
+          (input P *Col))
+      (member ((:v Col))
+        (&groups.component *P Id)
+        (input P *Col))))
+
+  (RULE &legend
+    (&groups.component *P *Id)
+    (&group_color.plural (:key Id)))
+
+  (RULE &entry
+    (&legend (:P *E1))
+    (&source_dir *D)
+    (neighbor (:P E1) D *Q)
+    (NOT (&legend (:P Q)))
+    (opposite D (:Opp *D2))
+    (neighbor (:P E1) (:D D2) (:Q *T)))
+
+  (INIT &entries Order
+    (member ((:t E))
+      (&entry (:E1 *E)))
+    (before ((:a E1) (:b E2))
+      (&entry *E1)
+      (&entry (:E1 *E2))
+      (&order_dir *D)
+      (nearer D (:P E1) (:Q E2))))
+
+  (RULE &after
+    (&entry *E1 *T)
+    (input (:P E1) (:Col *C_src))
+    (input (:Col *C))
+    (OR ((= C C_src)
+         (input (:P T) (:Col *C2)))
+        ((!= C C_src)
+         (= C2 C))))
+
+  (INIT &replace Propagation
+    (source ((:n C0 (:C C0) E))
+      (&entries.minimal (:t *E))
+      (input (:Col *C0)))
+    (edge ((:a C0 C E) (:b C0 (:C C2) (:E E2)))
+      (&entries.successor (:a *E) (:b *E2))
+      (&after (:E1 E) *C *C2)
+      (input (:Col *C0))))
+
+  (RULE &recolor
+    (input *P (:Col *C0))
+    (NOT (&legend P))
+    (&replace.reached (:n C0 *C *E))
+    (&entries.maximal (:t E))
+    (&after (:E1 E) C (:C2 *Col)))
+
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L))))))
+
+(ALTS $choice "which cells outside the legend recolor" $RecolorAll
+  (ALT $KeepDivider
+    (OUTPUT divider-kept "a cell on a row or column that the input fills with one non-background color keeps its color."
+      (RULE &divider
+        (input *P)
+        (split P *A (:Along *L))
+        (&line_color.value (:key A L) (:v *Col))
+        (NOT (&field.maximal (:t Col)))))
+    (RULE &output
+      (OR ((&recolor *P *Col)
+           (NOT (&divider P)))
+          ((&divider P)
+           (input P Col))
+          ((&legend P)
+           (input P Col))))))
+
+(RULE &output
+  (OR ((&legend *P)
+       (input P *Col))
+      ((&recolor P Col))))
+
+(OUT (&output ^P ^Col))

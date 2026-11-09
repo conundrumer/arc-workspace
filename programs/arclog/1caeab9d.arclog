@@ -1,0 +1,73 @@
+;; inputs 102967482f9671bce1ee5a667a04e8eba48236514937a5500e1b9935513aacc8 programs/solvers/1caeab9d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1caeab9d
+
+(DET &bg DominantColor)
+
+;; The color of the block the others come to.
+(DET &anchor UnchangedColor)
+
+;; The edge whose line the blocks share once moved. Every block in this task is the same shape, so the opposite edge fits the pairs as well.
+(DET &align_dir DirDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &hue Quotient
+  (equivalent ((:a P) (:b Q))
+    (&ink *P *Col)
+    (&ink (:P *Q) Col)))
+
+(RULE &group
+  (&hue.class (:a *P) *Id))
+
+(ALTS $choice "what a block is" $ByColor
+  (ALT $ByObject
+    (INIT &piece Connectivity
+      (node (P)
+        (&ink *P))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (RULE &group
+      (&piece.component *P *Id))))
+
+(INIT &bbox BoundingBox
+  (key ((&group *P ^Id))
+    (cell (P)
+      (&group *P Id))))
+
+(RULE &front
+  (&align_dir *D)
+  (&bbox.cell (:key (:Id *Ky)) *P)
+  (&bbox.box (:key (:Id Ky)) *B)
+  (inside (:A P) B)
+  (same_dist D (:P1 P) (:P2 B))
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(RULE &slide
+  (&front *Ky *L)
+  (&group *P (:Id *Id_a))
+  (input P *Col)
+  (&anchor (:C Col))
+  (&front (:Ky Id_a) (:L *L_a))
+  (relative (:Base L) (:X L_a) (:X_rel *Delta)))
+
+(RULE &moved
+  (&group (:P *P2) *Id)
+  (input (:P P2) *Col)
+  (&slide (:Ky Id) *Delta)
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&moved P)))))
+
+(OUT (&output ^P ^Col))

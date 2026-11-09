@@ -1,0 +1,78 @@
+;; inputs 77245f59981d8fa35f3f608e9d80c31e4e1c47617c37b0898241636af1920bf4 programs/solvers/52364a65.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 52364a65
+
+(DET &bg DominantColor)
+
+(DET &peel_dir DirDomain)
+
+(DET &depth TileCount)
+
+(RULE &obj_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Each object's bounding box.
+(INIT &bbox BoundingBox
+  (key ((&obj_cell ^Col *P))
+    (cell (P)
+      (&obj_cell Col *P))))
+
+(RULE &layer
+  (&bbox.cell (:key *Col) *P)
+  (&bbox.box (:key Col) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&peel_dir *D)
+  (margin (:B P_inner) D *K))
+
+(ALTS $choice "The cases differ in what a layer is" $Strip
+  (ALT $Occupied
+    (RULE &obj_line
+      (&obj_cell *Col *P)
+      (&peel_dir *D)
+      (axis_of D *A)
+      (split P A (:Along *L)))
+
+    (RULE &order_axis
+      (&obj_cell (:Col *Key))
+      (&peel_dir *D)
+      (axis_of D *A))
+
+    ;; The lines the object occupies, ordered along that axis.
+    (INIT &order Order
+      (key ((&order_axis (:Key ^Col) ^A)
+            (axis_of ^D A))
+        (member ((:t L))
+          (&obj_line Col *L))
+        (before ((:a L) (:b L2))
+          (&obj_line Col *L)
+          (&obj_line Col (:L *L2))
+          (!= L L2)
+          (margin (:B L) D (:K *K1))
+          (margin (:B L2) D (:K *K2))
+          (< K1 K2))))
+
+    (RULE &order_pos
+      (&order.rank (:key (:Col *Key) *A *D) (:t *M) (:R *R1))
+      (&order.dual_rank (:key (:Col Key) A D) (:t M) (:R *R2))
+      (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+    (RULE &layer
+      (&obj_line *Col *P *L)
+      (&order_pos (:Key Col) (:M L) (:P_pos *P_order))
+      (&peel_dir *D)
+      (margin (:B P_order) D *K))))
+
+(RULE &peeled
+  (&layer *P *K)
+  (&depth *N)
+  (< K N))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&peeled P)))
+      ((&peeled P)
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

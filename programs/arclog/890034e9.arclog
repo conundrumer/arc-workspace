@@ -1,0 +1,80 @@
+;; inputs 1e048f1b083c5d01d5b5cf6228710b0f0b1f1a4866c3916043e09486ee9d1893 programs/solvers/890034e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 890034e9
+
+;; The rectangle outlines each color draws.
+(INIT &drect Outlines
+  (key ((input *P ^Col))
+    (node (P)
+      (input *P Col))))
+
+(RULE &on_edge
+  (&drect.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(RULE &stray
+  (&drect.box (:key *Col) *B)
+  (input *P Col)
+  (NOT (&on_edge B P)))
+
+(RULE &frame
+  (&drect.box (:key *Col) *B)
+  (NOT (&stray B)))
+
+(RULE &hole
+  (&frame *B)
+  (input *P)
+  (interior (:A P) B))
+
+;; The hole's twins, the hole itself among them: the cases value the hole's
+;; cells differently.
+(INIT &occ Occurrences
+  (key ((OR ((&frame ^B)
+             (input *P *Col))
+            ((&hole B (:P *S))
+             (input (:P S) Col))))
+    (cell (P (:v Col))
+      (&frame B)
+      (input *P *Col))
+    (shape ((:P S) (:v Col))
+      (&hole B (:P *S))
+      (input (:P S) *Col))))
+
+(ALTS $choice "what the hole's twin is" $Content
+  (ALT $Empty
+    (DET &bg SharedColor)
+
+    ;; The hole's twins, the hole itself among them: the cases value the hole's
+    ;; cells differently.
+    (INIT &occ Occurrences
+      (key ((OR ((&frame ^B)
+                 (input *P *Col))
+                ((&hole B (:P *S))
+                 (&bg (:C Col)))))
+        (cell (P (:v Col))
+          (&frame B)
+          (input *P *Col))
+        (shape ((:P S) (:v Col))
+          (&hole B (:P *S))
+          (&bg (:C *Col)))))))
+
+(RULE &twin
+  (&occ.occurrence (:key *B) (:P *M))
+  (&hole B (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+(RULE &outline
+  (&twin *B (:P *P2))
+  (neighbor (:P P2) *D (:Q *P))
+  (input P)
+  (NOT (&twin B P)))
+
+(RULE &output
+  (OR ((&outline *B *P)
+       (&frame *Col B))
+      ((input P Col)
+       (NOT (&outline P)))))
+
+(OUT (&output ^P ^Col))

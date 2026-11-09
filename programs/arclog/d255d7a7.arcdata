@@ -1,0 +1,164 @@
+;; inputs 3b591a4fe8517902eafa88bdd261203fd5b2c8493d65875eb61d93685d746cf3 programs/solvers/d255d7a7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d255d7a7
+
+(param &background Color (7))
+(param &frame Color (0))
+(param &cup_width number (3))
+
+(alts $r
+  (alt $EdgeSlab
+    (witness inset-cup borderline concept
+      (relaxed cup)
+      (separates "The cup's open side lies one cell in from the left edge, with a mark at (2,0) beyond the opening. The concept moves the bracket and the cells inside it and leaves (2,0); $EdgeSlab moves the slab from the edge to the closed side, so the mark travels too.")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 0 0 0 7 7 7 7 7)
+        (9 7 9 0 0 0 0 0 0)
+        (7 0 0 0 7 7 7 7 7)
+        (9 7 7 7 7 7 7 7 7)))
+      (output $BracketBox (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 0 0 0)
+        (9 7 7 7 7 7 7 9 0)
+        (7 7 7 7 7 7 0 0 0)
+        (9 7 7 7 7 7 7 7 7)))
+      (output $EdgeSlab (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 9 7 9 0)
+        (7 7 7 7 7 7 0 0 0)
+        (9 7 7 7 7 7 7 7 7))))))
+
+(alts $l
+  (alt $EdgeLanding
+    (witness short-handle variant concept
+      (relaxed handle)
+      (separates "The handle stops two cells short of the right edge. The concept lands the cup with its closed side on the handle's last cell (cols 3-5); $EdgeLanding lands it on the right edge (cols 5-7).")
+      (input (grid
+        (7 7 7 7 7 7 7 7)
+        (0 0 0 7 7 7 7 7)
+        (9 7 0 0 0 0 7 7)
+        (0 0 0 7 7 7 7 7)
+        (7 9 7 7 7 7 7 7)))
+      (output $HandleEnd (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 0 0 0 7 7)
+        (7 7 7 9 7 0 7 7)
+        (7 7 7 0 0 0 7 7)
+        (7 9 7 7 7 7 7 7)))
+      (output $EdgeLanding (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 9 7 0)
+        (7 7 7 7 7 0 0 0)
+        (7 9 7 7 7 7 7 7))))))
+
+(alts $o
+  (alt $MarksOnTop
+    (witness mark-in-landing variant concept
+      (separates "A loose mark at (1,6) lies in the box where the cup lands. The concept paints the cup over it; $MarksOnTop keeps the mark over the cup.")
+      (input (grid
+        (7 7 7 7 7 7 7 7)
+        (0 0 0 7 7 7 9 7)
+        (9 7 0 0 0 0 0 0)
+        (0 0 0 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7)))
+      (output $CupOnTop (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 9 7 0)
+        (7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 7 7 7)))
+      (output $MarksOnTop (grid
+        (7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 0 9 0)
+        (7 7 7 7 7 9 7 0)
+        (7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 7 7 7))))))
+
+(alts $e
+  (alt $StoredWidth
+    (witness deep-cup variant concept
+      (relaxed cup)
+      (separates "The cup is 3 across and 4 deep. The concept moves the whole cup; at the stored width 3 $StoredWidth takes the 3 lines at the open end as the cup and the back wall as handle, so the back wall is lost.")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7)
+        (0 0 0 0 7 7 7 7 7)
+        (9 7 9 0 0 0 0 0 0)
+        (0 0 0 0 7 7 7 7 7)
+        (9 7 7 7 7 7 7 7 7)))
+      (output $Spanning (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 0 0 0 0)
+        (7 7 7 7 7 9 7 9 0)
+        (7 7 7 7 7 0 0 0 0)
+        (9 7 7 7 7 7 7 7 7)))
+      (output $StoredWidth (grid
+        (7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 7 9 7 9)
+        (7 7 7 7 7 7 0 0 0)
+        (9 7 7 7 7 7 7 7 7))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant concept
+      (separates "Frame cells outnumber the 7 cells. The concept clears vacated cells to 7; the derivation gives 0, so the old cup boxes and handles become 0.")
+      (input (grid
+        (0 0 0 7 7 7)
+        (9 9 0 0 0 0)
+        (0 0 0 7 7 7)
+        (9 7 7 7 7 7)
+        (0 0 0 7 7 7)
+        (9 7 0 0 0 0)
+        (0 0 0 7 7 7)))
+      (output &background=$Stored (grid
+        (7 7 7 0 0 0)
+        (7 7 7 9 9 0)
+        (7 7 7 0 0 0)
+        (9 7 7 7 7 7)
+        (7 7 7 0 0 0)
+        (7 7 7 9 7 0)
+        (7 7 7 0 0 0)))
+      (output ($CupOnTop &background=$Derived) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 9 9 0)
+        (0 0 0 0 0 0)
+        (9 7 7 7 7 7)
+        (0 0 0 0 0 0)
+        (0 0 0 9 7 0)
+        (0 0 0 0 0 0)))
+      (output ($MarksOnTop &background=$Derived) (grid
+        (0 0 0 7 7 7)
+        (0 0 0 9 9 0)
+        (0 0 0 7 7 7)
+        (9 7 7 7 7 7)
+        (0 0 0 7 7 7)
+        (0 0 0 9 7 0)
+        (0 0 0 7 7 7))))))
+
+(alts &cup_width
+  (alt &cup_width=$Derived
+    (witness cup_width=TileCount variant concept
+      (relaxed cup)
+      (separates "The cup is 5 across and 3 deep, on a 5 x 10 grid. The concept moves the 3-deep cup to cols 7-9; the stored width 3 fits no piece, so $StoredWidth is undefined; TileCount derives 5 among its widths from this grid, so $StoredWidth & cup_width=TileCount takes cols 0-4 as the cup and lands it at cols 5-9.")
+      (input (grid
+        (0 0 0 7 7 7 7 7 7 7)
+        (7 7 0 7 7 7 7 7 7 7)
+        (9 7 0 0 0 0 0 0 0 0)
+        (7 7 0 7 7 7 7 7 7 7)
+        (0 0 0 7 7 7 7 7 7 7)))
+      (output $Spanning (grid
+        (7 7 7 7 7 7 7 0 0 0)
+        (7 7 7 7 7 7 7 7 7 0)
+        (7 7 7 7 7 7 7 9 7 0)
+        (7 7 7 7 7 7 7 7 7 0)
+        (7 7 7 7 7 7 7 0 0 0)))
+      (output ($StoredWidth &cup_width=$Stored) undefined)
+      (output &cup_width=$Derived (grid
+        (7 7 7 7 7 0 0 0 7 7)
+        (7 7 7 7 7 7 7 0 7 7)
+        (7 7 7 7 7 9 7 0 0 0)
+        (7 7 7 7 7 7 7 0 7 7)
+        (7 7 7 7 7 0 0 0 7 7))))))

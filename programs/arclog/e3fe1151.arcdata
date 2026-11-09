@@ -1,0 +1,103 @@
+;; inputs fdb7cb689956b12c18134f17e151c4a10b442a74c644dcd145c6742b3d9b5d67 programs/solvers/e3fe1151.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e3fe1151
+
+(param &divider_color Color (7))
+(param &blank_color Color (7))
+
+(exclude ($CenterCross &blank_color=$Derived) "with the center cross, divider_color is read only as the blank color, so these cases are equivalent to `$DividerBlank & divider_color=DominantColor`")
+
+(alts $b
+  (alt $OwnBlankColor
+    (witness blank-color-apart variant $OwnBlankColor
+      (relaxed blanks)
+      (separates "the blanks are 0 inside a 7 cross; with the blank color stored apart from the cross color each 0 cell takes its quadrant's missing color, and with one color for both no cell is a blank and the quadrants' missing colors have nowhere to go, so the model is undefined")
+      (assign &blank_color (0))
+      (input (grid
+        (0 2 7 1 0)
+        (3 4 7 3 4)
+        (7 7 7 7 7)
+        (1 2 7 1 2)
+        (0 4 7 3 0)))
+      (output $DividerBlank $LineCross undefined)
+      (output ($OwnBlankColor $CenterCross) (grid
+        (1 2 7 1 2)
+        (3 4 7 3 4)
+        (7 7 7 7 7)
+        (1 2 7 1 2)
+        (3 4 7 3 4))))))
+
+(alts $x
+  (alt $LineCross
+    (witness blank-row-across-top borderline concept
+      (relaxed blanks)
+      (separates "the blanks of both top quadrants fill row 0, so row 0 and row 2 are both full rows of 7; the center cross fills each top quadrant with its two missing colors, and the line reading finds two full rows and is undefined")
+      (input (grid
+        (7 7 7 7 7)
+        (2 2 7 1 1)
+        (7 7 7 7 7)
+        (1 2 7 2 1)
+        (2 1 7 1 2)))
+      (output $CenterCross (grid
+        (1 1 7 2 2)
+        (2 2 7 1 1)
+        (7 7 7 7 7)
+        (1 2 7 2 1)
+        (2 1 7 1 2)))
+      (output $LineCross undefined))
+    (witness cross-at-top borderline $LineCross
+      (relaxed cross)
+      (separates "the full row of 7 is row 0, off the grid's center; the line reading takes row 0 and column 2 as the cross and fills the blank at (1,4) with 2, the one color its quadrant lacks, and the center reading takes row 1 as the cross, finds the top quadrants all blank and lacking two colors, and is undefined")
+      (input (grid
+        (7 7 7 7 7)
+        (1 2 7 1 7)
+        (3 4 7 3 4)))
+      (output $CenterCross undefined)
+      (output $LineCross (grid
+        (7 7 7 7 7)
+        (1 2 7 1 2)
+        (3 4 7 3 4))))))
+
+(alts &divider_color
+  (alt &divider_color=$Derived
+    (witness divider_color=DominantColor variant &divider_color=$Derived
+      (relaxed cross)
+      (relaxed blanks)
+      (separates "`divider_color=DominantColor` from the stored value: train 0 with 7 and 2 swapped")
+      (input (grid
+        (2 1 2 8 0)
+        (0 8 2 2 1)
+        (2 2 2 2 2)
+        (8 2 2 2 1)
+        (0 1 2 8 5)))
+      (output &divider_color=$Stored undefined)
+      (output &divider_color=$Derived (grid
+        (5 1 2 8 0)
+        (0 8 2 5 1)
+        (2 2 2 2 2)
+        (8 5 2 0 1)
+        (0 1 2 8 5))))))
+
+(alts &blank_color
+  (alt &blank_color=$Derived
+    (witness blank_color=DominantColor borderline &blank_color=$Derived
+      (relaxed cross)
+      (relaxed blanks)
+      (separates "the blanks are 0, the commonest color, inside a 7 cross; with the blank color derived as the commonest color each 0 cell takes its quadrant's missing color, and with the stored blank color 7 no cell is a blank, the quadrants do not hold one multiset, and the model is undefined")
+      (input (grid
+        (2 2 2 7 1 1 1)
+        (2 0 0 7 1 1 0)
+        (0 0 0 7 0 0 0)
+        (7 7 7 7 7 7 7)
+        (0 0 0 7 0 0 0)
+        (0 0 2 7 0 1 1)
+        (2 2 2 7 1 1 1)))
+      (output (&divider_color=$Stored &blank_color=$Stored) undefined)
+      (output &divider_color=$Derived &blank_color=$Derived (grid
+        (2 2 2 7 1 1 1)
+        (2 1 1 7 1 1 2)
+        (1 1 1 7 2 2 2)
+        (7 7 7 7 7 7 7)
+        (1 1 1 7 2 2 2)
+        (1 1 2 7 2 1 1)
+        (2 2 2 7 1 1 1))))))

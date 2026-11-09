@@ -1,0 +1,15 @@
+;; inputs 4624f92f3bd15972845beee051938819feb5fd95f628380424f5dff20231424d programs/solvers/ccd554ac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ccd554ac
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(RULE &output
+  (&output_tiling.cell (:P_inner *P_intile) *P)
+  (input (:P P_intile) *Col))
+
+(OUT (&output ^P ^Col))

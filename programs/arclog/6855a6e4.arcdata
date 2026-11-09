@@ -1,0 +1,7 @@
+;; inputs d28cdb5145da2d79a93f6f23b889d63efa0e7dd27b2e123654636b32e3499969 programs/solvers/6855a6e4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6855a6e4
+
+(param &bg Color (0))
+(param &mirror Color (2))
+(param &mover Color (5))

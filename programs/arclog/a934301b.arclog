@@ -1,0 +1,139 @@
+;; inputs 92442589dfb7a1673de52613c6c54d6fbfcf51aa5c817c803c0fe6ba26f8045d programs/solvers/a934301b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a934301b
+
+(INPUT rectangles "the input is a &background field holding solid rectangles, each made of cells of 1 and &mark cells, and no two rectangles touch, so each rectangle is one connected component of non-&background cells"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET_OR_RULE &mark RarestColor))
+
+(OUTPUT count-marks "an object is a 4-connected component of non-&background cells, and its mark count is the number of its &mark cells"
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &objects4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (RULE &object
+    (&objects4.component *P *Id))
+
+  (INIT &objects8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &mark2
+    (input *P *Col)
+    (&mark (:C Col)))
+
+  (INIT &groups Connectivity
+    (node (P)
+      (&mark2 *P)))
+
+  (INIT &group_count Cardinality
+    (key ((&object ^Id))
+      (member ((:m G))
+        (&object Id *P)
+        (&groups.component P (:Id *G)))
+      (domain ()
+        (&object Id)))))
+
+(OUTPUT erase-crowded "an object whose mark count exceeds &max_marks becomes &background"
+
+  ;; the largest mark count an object keeps
+  (DET &max_marks DivisorRatio))
+
+(OUTPUT keep-rest "every other cell of the output is the input cell"
+
+  (INIT &mark_cells Cardinality
+    (key ((&object ^Id))
+      (member ((:m P))
+        (&object Id *P)
+        (&mark2 P))
+      (domain ()
+        (&object Id))))
+
+  (RULE &mark_count
+    (&mark_cells.size (:key (:Id *M)) *N)))
+
+(ALTS $a "which cells join one object" $FourAdjacent
+  (ALT $EightAdjacent
+    (OUTPUT count-marks "an object is an 8-connected component of non-&background cells"
+      (RULE &object
+        (&objects8.component *P *Id)))))
+
+(ALTS $k "which cells of an object count as marks" $MarkColor
+  (ALT $NonBody
+    (OUTPUT count-marks "a mark is any object cell not of &body"
+      (DET &body ColorDomain)
+
+      (RULE &mark2
+        (&ink *P *Col)
+        (NOT (&body (:C Col)))))))
+
+(ALTS $u "what the mark count counts" $MarkCells
+  (ALT $MarkGroups
+    (OUTPUT count-marks "the mark count is the number of 4-connected groups of mark cells in the object"
+      (RULE &mark_count
+        (&group_count.size (:key (:Id *M)) *N)))))
+
+(ALTS $s "which mark counts erase an object" $Threshold
+  (ALT $CountTable
+    (OUTPUT erase-crowded "an object whose mark count is in &drop_count becomes &background, one whose count is in &keep_count stays, and an object whose count is in neither leaves the output undefined"
+      (INIT &changes Cardinality
+        (key ((&object ^E ^Id)
+              (ex_output E))
+          (member ((:m P))
+            (&object E Id *P)
+            (ex_input E P *Col)
+            (ex_output E P (:Col *Col2))
+            (!= Col Col2))
+          (domain ()
+            (&object E Id)
+            (ex_output E))))
+
+      (DET_OR_RULE &drop_count TileCount
+        (&mark_count *E (:M *Id) *N)
+        (&changes.size (:key E Id) (:N *C))
+        (> C 0))
+
+      (DET &keep_count
+        (&mark_count *E (:M *Id) *N)
+        (&changes.size (:key E Id) (:N 0))))
+    (RULE &crowded
+      (&mark_count (:M *Id) *N)
+      (&drop_count N))
+
+    (RULE &spared
+      (&mark_count (:M *Id) *N)
+      (&keep_count N))))
+
+(RULE &crowded
+  (&mark_count (:M *Id) *N)
+  (&max_marks (:K *Max))
+  (> N Max))
+
+(RULE &spared
+  (&mark_count (:M *Id) *N)
+  (&max_marks (:K *Max))
+  (<= N Max))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&background (:C Col)))
+      ((&object *Id P)
+       (&crowded Id)
+       (&background (:C Col)))
+      ((&object (:Id *Id2) P)
+       (&spared (:Id Id2))
+       (input P Col))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,7 @@
+;; inputs 895b3fcc4f16207db5719531ee0fdc153e0cbbf99a191b8776f3321611800a89 programs/solvers/d10ecb37.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d10ecb37
+
+(param &diag DiagDir (DIAG_TL))
+(param &window_dim number (2))
+(param &tile_dim number (2))

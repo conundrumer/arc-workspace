@@ -1,0 +1,28 @@
+;; inputs a16aa698174edd0a2d42330be8bab4cc71c51602da8be6cb1268d845c4c40e73 programs/solvers/ecb67b6d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ecb67b6d
+
+(param &mark_color Color (5))
+(param &fill_color Color (8))
+(param &min_run number (3))
+
+(alts &mark_color
+  (alt &mark_color=$Derived
+    (witness mark_color=RarestColor borderline concept
+      (relaxed marks-on-field)
+      (separates "mark_color cells outnumber background cells, so the rarest color is the background 7: the stored mark color 5 recolors the one clump of 5, which holds the diagonal run (0,0)-(3,3), to 8; the derived mark color 7 recolors instead the clump of 7 that holds the run (0,3), (1,2), (2,1) and leaves the 5s")
+      (input (grid
+        (5 5 5 7 5)
+        (5 5 7 5 5)
+        (5 7 5 5 5)
+        (5 5 5 5 7)))
+      (output &mark_color=$Stored (grid
+        (8 8 8 7 8)
+        (8 8 7 8 8)
+        (8 7 8 8 8)
+        (8 8 8 8 7)))
+      (output &mark_color=$Derived (grid
+        (5 5 5 8 5)
+        (5 5 8 5 5)
+        (5 8 5 5 5)
+        (5 5 5 5 7))))))

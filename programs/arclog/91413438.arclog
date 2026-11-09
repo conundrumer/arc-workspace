@@ -1,0 +1,59 @@
+;; inputs 33f6c9a21b6352122bcee6c12071943ca90a22c752c22d6942091b92b2b5e791 programs/solvers/91413438.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 91413438
+
+(DET &bg SharedColor)
+
+(INIT &side Cardinality
+  (member ((:m P))
+    (input *P *Col)
+    (&bg (:C Col))))
+
+(INIT &tiles Frame
+  (extent (A (:N S))
+    (axis_elem *A)
+    (&side.size (:N *S))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tiles.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &lex_corner DiagDirDomain)
+
+(DET &lex_axis AxisDomain)
+
+(INIT &copy_count Cardinality
+  (member ((:m P))
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &lex Order
+  (member ((:t P))
+    (&tiles.cell *P))
+  (score ((:t P) (:S K1))
+    (&tiles.cell *P)
+    (&lex_corner *D)
+    (&lex_axis *A)
+    (diag_dist P (:Diag D) A *K1 *K2))
+  (secondary_score ((:t P) (:S K2))
+    (&tiles.cell *P)
+    (&lex_corner *D)
+    (&lex_axis *A)
+    (diag_dist P (:Diag D) A *K1 *K2)))
+
+(RULE &copy
+  (&lex.rank (:t *P_tile) *R)
+  (&copy_count.size *N)
+  (< R N))
+
+(RULE &output
+  (&output_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) *P)
+  (input (:P P_intile) (:Col *Col_in))
+  (OR ((NOT (&copy P_tile))
+       (&bg (:C *Col)))
+      ((&copy P_tile)
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

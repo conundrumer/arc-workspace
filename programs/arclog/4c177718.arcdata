@@ -1,0 +1,14 @@
+;; inputs 7e3fce629499aafeda7bfa7108603282a03b60de3c13bb1681487a28e4f14d90 programs/solvers/4c177718.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4c177718
+
+(param &bg Color (0))
+(param &divider Color (5))
+(param &anchor Color (1))
+(param &arrow Color (2))
+(param &chart.glyph Position
+  (grid
+    (_ 1 _)
+    (_ 1 _)
+    (1 1 1)))
+(param &chart.tip Dir (DIR_T))

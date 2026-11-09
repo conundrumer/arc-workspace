@@ -1,0 +1,10 @@
+;; inputs 08afcbe2a1ce7d01934358eb6289d7f5347d19de53e5b7ef655e6e229fc65247 programs/solvers/5207a7b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5207a7b5
+
+(param &bg Color (0))
+(param &bar Color (5))
+(param &paint (Color Dir) (8 DIR_L) (6 DIR_R))
+(param &slant_dir DiagDir (DIAG_BL))
+(param &rise_axis Axis (AXIS_V))
+(param &rise number (2))

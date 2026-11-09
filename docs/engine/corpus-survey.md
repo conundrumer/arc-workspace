@@ -29,7 +29,7 @@ Count of list nodes with the head, and the number of files with at least one.
 - Declaration forms per file: median 15, p90 32, max 121 (a32d8b75). All headed nodes per file: median 117, p90 301, max 1259 (20a9e565).
 - TODO markers: 9 in total; head-term 5, alt-undefined 4.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## Alts structure
 
@@ -54,7 +54,7 @@ Here an `ALTS` form includes each `DET_OR_RULE` and `RULE_OR_DET` line, and its 
 | 17–64 | 52 |
 | more than 64 | 48 |
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/` and their `.arcdata` files, and the records of `.cache/parity/` of the 953 of them that have one. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/` and their `.arcdata` files, and the records of `.cache/parity/` of the 953 of them that have one. Computed on 2026-10-19.
 
 ## Instances
 
@@ -93,7 +93,7 @@ Inputs: the 953 `.arclog` files of `work/arclog/gen/` and their `.arcdata` files
 - The components no instance of which takes a key clause: Inclusion, Quotient, Wallpaper.
 - The `CHOOSE` `for` key widths {width: n}: 1:13, 2:3, 3:2.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## Recursion
 
@@ -109,7 +109,7 @@ Each declaration's `&` reads, with `&x.out` counted as a read of `&x`; a read un
 | a8d7556c | 1 relations, 0 negated edges: `&claim` |
 | cycles on an alt path and in no concept graph | 0; 0 through a negation |
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## Arcdata
 
@@ -125,7 +125,7 @@ Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
 
 A `grid` value of a param counts one row per cell that is not `_`.
 
-Inputs: the 953 `.arcdata` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the 953 `.arcdata` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## Columns
 
@@ -140,7 +140,7 @@ A derived relation is one a clause with a body derives, and its columns are its 
 | lib atoms with fewer sites than the lib arity | 993 of 13049 |
 | instance-output atoms | 4583 |
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`, with the lib's columns from `src/arclog_convert/lib-signature.dl`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`, with the lib's columns from `src/arclog_convert/lib-signature.dl`. Computed on 2026-10-19.
 
 ## Rare constructs
 
@@ -151,7 +151,7 @@ Inputs: the 953 `.arclog` files of `work/arclog/gen/`, with the lib's columns fr
 - Param column-type tuples: 48 kinds under 5 uses, such as `Color Dir`, `Color Offset`, `DiagDir DiagDir`, `Position Position`, `number Position`.
 - Constraint operators: `=` 746, `!=` 668, `<` 256, `>` 114, `<=` 80, `>=` 67.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/` and `.arcdata` files, with the proposers of `src/arclog_convert/lib.py`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/` and `.arcdata` files, with the proposers of `src/arclog_convert/lib.py`. Computed on 2026-10-19.
 
 ## Tasks
 
@@ -175,7 +175,7 @@ A body is the body of a `RULE`, `DET`, `DET_OR_RULE`, `RULE_OR_DET` or `RIGID_DE
 | vertices of the atom–variable graph | 6 | 13 | 24 | 60 (88bcf3b4 `&walk`) |
 | nesting depth of `OR`, `IF`, `ALL`, `NOT` | 0 | 1 | 1 | 3 (83302e8f `&output`, a09f6c25 `&output`, 10 more) |
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## Body symmetry
 
@@ -197,7 +197,7 @@ Each body is a graph: a vertex per atom, colored by its relation and its negatio
 
 - The bodies of the largest automorphism group: c803e39c `&roles`.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## Join shapes
 
@@ -213,7 +213,7 @@ The top-level positive atoms of each clause body and instance input, 19957 bodie
 | algebra outputs joined on a computed key | 212 bodies: input 118, `RULE` 80, `DET` 12, `RULE_OR_DET` 2; by relation split 95, margin 25, sub_extent 25, neighbor 16, divide 14, relative 11, box_extent 6, frame_extent 6, compose 4, axis_extents 3, apply 2, diag_dist 2, frame_offset 2, jump_offset 1, jump 1 |
 | bodies cyclic through stored relations | 98 |
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`, with the lib's columns from `src/arclog_convert/lib-signature.dl`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`, with the lib's columns from `src/arclog_convert/lib-signature.dl`. Computed on 2026-10-19.
 
 ## Prefix sizes
 
@@ -228,7 +228,7 @@ The row count of each written prefix of a body's top-level items, against the bo
 | prefix over 10^6 with the full body under 1/100 of it | 0 |
 | bodies over 10^4 that another order the modes allow brings under it | 23 of the 103 of at most 12 items whose search ended within 120 s, such as 80214e03 `&separated`, 309256 rows to 1368 |
 
-Inputs: Souffle runs of the solvers of the 953 `.arclog` files of `work/arclog/gen/`, on their tasks' train inputs, with the converter's name maps under `work/arclog/names/`. Computed on 2026-10-19.
+Inputs: Souffle runs of the solvers of the 953 `.arclog` files of `programs/arclog/`, on their tasks' train inputs, with the converter's name maps under `work/arclog/names/`. Computed on 2026-10-19.
 
 ## Join orders
 
@@ -254,7 +254,7 @@ An algebra check applies once its labels are bound, and a function once the inpu
 - cyclic: 0 bodies under the rule have a largest intermediate over 10^4 and over 10 times the best order's, or work over 10^5 and over 10 times the best order's.
 - cyclic: 44 bodies are not measured: unresolved 43, timeout 1.
 
-Inputs: the rows of Prefix sizes, over the bodies of Join shapes of the 953 `.arclog` files of `work/arclog/gen/`. Computed on 2026-10-19.
+Inputs: the rows of Prefix sizes, over the bodies of Join shapes of the 953 `.arclog` files of `programs/arclog/`. Computed on 2026-10-19.
 
 ## `DET` domains
 
@@ -264,7 +264,7 @@ Inputs: the rows of Prefix sizes, over the bodies of Join shapes of the 953 `.ar
 - The forms with no body that name `BoxDomain` or `PositionDomain`: none.
 - The 20318 plans under `.cache/determination-plan/`, from every version of the Souffle solvers, with each covered line's `enumerable(n)` or `narrowed(n)` multiplied: product 1 in 8078, 2 to 10 in 9509, 11 to 100 in 2727, over 100 in 4. The tool's `ENUMERATION_LIMIT` is 100. 86 plans report a product over it, up to 2258530576.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`, and the plans of `.cache/determination-plan/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`, and the plans of `.cache/determination-plan/`. Computed on 2026-10-19.
 
 ## Open values and constraint search
 
@@ -272,7 +272,7 @@ Inputs: the 953 `.arclog` files of `work/arclog/gen/`, and the plans of `.cache/
 - The largest products of those rows per file: 9f8de559 64, a2d730bd 64, abc82100 64, abbfd121 16, b7f8a4d8 16.
 - `gen/` has 18 `CHOOSE` forms, 8 `RULE` clauses with `ONE` marks in 7 files, and 7 `DEMONSTRATED` forms.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/` and `.arcdata` files. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/` and `.arcdata` files. Computed on 2026-10-19.
 
 ### Models per case per input
 
@@ -313,7 +313,7 @@ Declaration forms per file, a relation that more than one block derives, and suc
 
 - 439 files have a relation rederived with another column set.
 
-Inputs: the 953 `.arclog` files of `work/arclog/gen/`, and the records of `.cache/parity/`. Computed on 2026-10-19.
+Inputs: the 953 `.arclog` files of `programs/arclog/`, and the records of `.cache/parity/`. Computed on 2026-10-19.
 
 ## Runs
 

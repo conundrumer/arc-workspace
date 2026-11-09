@@ -1,0 +1,85 @@
+;; inputs 7d81b22f003facda7122b1ceffcab10db32d21dc3a34506315bb999b4b78e343 programs/solvers/8886d717.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8886d717
+
+(DET &mark ColorDomain)
+
+;; Marks in this region take its color.
+(DET &absorb UnchangedColor)
+
+;; Marks in this region copy themselves toward the edge line.
+(DET &extend DominantColor)
+
+(DET &border UnchangedColor)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(RULE &around
+  (&mark2 *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (NOT (&mark (:C Col))))
+
+(INIT &cell_region Singleton
+  (key ((&around ^P *Col))
+    (member ((:v Col))
+      (&around P *Col))))
+
+(RULE &region
+  (&cell_region.value (:key *P) (:v *Col)))
+
+;; The one color of each edge line, where it has one.
+(INIT &edge_color Singleton
+  (key ((dir_elem ^D))
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) D (:K 0)))))
+
+(RULE &border_dir
+  (&edge_color.value (:key *D) (:v *Col))
+  (&border (:C Col)))
+
+(ALTS $region "how a mark reads the region it sits in" $Cell
+  (ALT $Cluster
+    (INIT &clusters Connectivity
+      (node (P)
+        (&mark2 *P)))
+
+    (INIT &cluster_region Singleton
+      (key ((&clusters.component *P ^Id)
+            (&around P *Col))
+        (member ((:v Col))
+          (&clusters.component *P Id)
+          (&around P *Col))))
+
+    (RULE &region
+      (&clusters.component *P *Id)
+      (&cluster_region.value (:key Id) (:v *Col)))))
+
+(ALTS $border "which edge the line runs along" $Stored
+  (ALT $Uniform
+    (RULE &border_dir
+      (&edge_color.value (:key *D)))))
+
+(RULE &copy
+  (&region (:P *P2) *Col)
+  (&extend (:C Col))
+  (&border_dir *D)
+  (neighbor (:P P2) D (:Q *P)))
+
+(RULE &output
+  (OR ((&copy *P)
+       (&mark (:C *Col)))
+      ((&region P (:Col *Col2))
+       (OR ((&extend (:C Col2))
+            (&mark (:C Col)))
+           ((&absorb (:C Col2))
+            (= Col Col2))))
+      ((input P Col)
+       (NOT (&mark2 P))
+       (NOT (&copy P)))))
+
+(OUT (&output ^P ^Col))

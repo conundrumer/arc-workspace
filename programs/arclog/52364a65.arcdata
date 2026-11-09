@@ -1,0 +1,7 @@
+;; inputs 77245f59981d8fa35f3f608e9d80c31e4e1c47617c37b0898241636af1920bf4 programs/solvers/52364a65.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 52364a65
+
+(param &bg Color (8))
+(param &peel_dir Dir (DIR_L))
+(param &depth number (2))

@@ -1,0 +1,72 @@
+;; inputs 25297d5d79ba9368b2ab3fd65cbd85229d79935f3b157e047187853f82abc24f programs/solvers/4612dd53.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4612dd53
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(DET &min_marks TileCount)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&mark *P)))
+
+(RULE &line_cell
+  (input *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (split P *A (:Across *L)))
+
+(RULE &line_mark
+  (&line_cell *A *L *P)
+  (&mark P))
+
+(RULE &line_gap
+  (&line_cell *A *L *P)
+  (NOT (&mark P)))
+
+(INIT &marks Cardinality
+  (key ((&line_mark ^A ^L *P))
+    (member ((:m P))
+      (&line_mark A L *P))))
+
+(RULE &line
+  (&marks.size (:key *A *L) *N)
+  (&min_marks (:N *K))
+  (>= N K))
+
+(ALTS $choice "what makes a row or column a line" $Threshold
+  (ALT $Majority
+    (INIT &lead Excess
+      (key ((OR ((&line_mark ^A ^L *P))
+                ((&line_gap A L P))))
+        (plus ((:m P))
+          (&line_mark A L *P))
+        (minus ((:m P))
+          (&line_gap A L *P))))
+
+    (RULE &line
+      (&lead.excess (:key *A *L))))
+  (ALT $Segment
+    (RULE &line
+      (&line_mark *A *L *P)
+      (&line_mark A L (:P *Q))
+      (axis_of *D A)
+      (neighbor P D Q))))
+
+(RULE &repaired
+  (&line *A *L)
+  (&line_gap A L *P))
+
+(RULE &output
+  (OR ((&repaired *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&repaired P)))))
+
+(OUT (&output ^P ^Col))

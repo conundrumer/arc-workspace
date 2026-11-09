@@ -1,0 +1,258 @@
+;; inputs efe7b2d7231e48a8b56bf27aceb9f544fa706dfe847d727e339e04b411acbd22 programs/solvers/9f8de559.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9f8de559
+
+(INPUT field "a solid rectangle of &field_color sits inside the grid and does not touch the grid edge"
+
+  (DET &body_color UnchangedColor)
+
+  (DET_OR_RULE &head_color RarestColor)
+
+  (RULE &pointer_of
+    (&head_color (:C *Head))
+    (&body_color (:C *Body)))
+
+  (RULE &body
+    (&pointer_of *Head *Body)
+    (input *P (:Col Body)))
+
+  (RULE &head
+    (&pointer_of *Head *Body)
+    (input *P (:Col Head)))
+
+  (DET_OR_RULE &field_color DominantColor)
+
+  (INIT &around_count Cardinality
+    (key ((OR ((&head (:Head ^H) (:Body ^B) *P))
+              ((&body (:Head H) (:Body B) P)))
+          (neighbor P *Q)
+          (input (:P Q) ^Col)
+          (!= Col H)
+          (!= Col B))
+      (member ((:m Q))
+        (OR ((&head (:Head H) (:Body B) *P))
+            ((&body (:Head H) (:Body B) P)))
+        (neighbor P *Q)
+        (input (:P Q) Col)
+        (!= Col H)
+        (!= Col B))))
+
+  ;; The commonest color among the cells next to the pointer, other than the
+  ;; pointer colors.
+  (INIT &around Order
+    (key ((&around_count.size (:key (:H ^Head) (:B ^Body) *Col)))
+      (member ((:t Col))
+        (&around_count.size (:key (:H Head) (:B Body) *Col)))
+      (score ((:t Col) (:S N))
+        (&around_count.size (:key (:H Head) (:B Body) *Col) *N)))))
+
+(INPUT pointer "inside the field, a straight line of &body_color cells runs along a row, a column, or a diagonal, and one &head_color cell continues that line at one end")
+
+(OUTPUT ray "the ray starts at the head and steps away from the body, in the direction from the body cell next to the head to the head"
+
+  ;; The axis on which body cells touch.
+  (INIT &aligned Singleton
+    (key ((&body ^Head ^Body *P)
+          (&body Head Body (:P *Q))
+          (neighbor P *D Q)
+          (axis4_of D *A))
+      (member ((:v A))
+        (&body Head Body *P)
+        (&body Head Body (:P *Q))
+        (neighbor P *D Q)
+        (axis4_of D *A))))
+
+  ;; The step on that axis from each body cell toward the head cell.
+  (INIT &away Singleton
+    (key ((&head (:Head ^Ptr_head) (:Body ^Ptr_body) ^P))
+      (member ((:v D))
+        (&aligned.value (:key (:Head Ptr_head) (:Body Ptr_body)) (:v *A))
+        (axis4_of *D A)
+        (&body (:Head Ptr_head) (:Body Ptr_body) (:P *Q))
+        (nearer D P Q)))))
+
+(OUTPUT exit "the ray passes over field cells, and the first cell it reaches outside the field takes the field color; no other cell changes"
+
+  ;; The step from each body cell next to a head cell.
+  (INIT &touch Singleton
+    (key ((&head (:Head ^Ptr_head) (:Body ^Ptr_body) ^P))
+      (member ((:v D))
+        (&body (:Head Ptr_head) (:Body Ptr_body) (:P *Q))
+        (neighbor (:P Q) *D (:Q P)))))
+
+  (RULE &heading
+    (&touch.value (:key (:Ptr_head *Head) (:Ptr_body *Body) *P) (:v *D)))
+
+  (RULE &field_of
+    (&pointer_of *Head *Body)
+    (&field_color (:C *F)))
+
+  (RULE &palette
+    (&pointer_of *Head *Body)
+    (&field_of Head Body *F))
+
+  ;; The bounding box of each color's cells.
+  (INIT &field BoundingBox
+    (key ((input *P ^Col))
+      (cell (P)
+        (input *P Col))))
+
+  (RULE &ray_mark
+    (&palette (:F *Field) *Head *Body)
+    (&heading Head Body *P))
+
+  (RULE &ray_blocked
+    (&ray_mark *Field *Head *Body)
+    (&field.box (:key (:Col Field)) *B)
+    (input *P)
+    (NOT (inside (:A P) B)))
+
+  (INIT &ray_frame Frame
+    (key ((&palette ^F (:Head ^Ptr_head) (:Body ^Ptr_body)))
+      (extent (A N)
+        (&heading (:Head Ptr_head) (:Body Ptr_body) *P)
+        (frame_extent P *A *N))))
+
+  ;; The cast from each head cell toward its step.
+  (INIT &ray Ray
+    (key ((OR ((&palette ^F (:Head ^Ptr_head) (:Body ^Ptr_body))
+               (&heading (:Head Ptr_head) (:Body Ptr_body) *P))
+              ((&palette F (:Head Ptr_head) (:Body Ptr_body))
+               (&heading (:Head Ptr_head) (:Body Ptr_body) *D))
+              ((&ray_frame.cell (:key F Ptr_head Ptr_body) P)
+               (NOT (&ray_blocked (:Field F) (:Head Ptr_head) (:Body Ptr_body) P)))))
+      (source (P)
+        (&palette F (:Head Ptr_head) (:Body Ptr_body))
+        (&heading (:Head Ptr_head) (:Body Ptr_body) *P))
+      (node (P)
+        (&ray_frame.cell (:key F Ptr_head Ptr_body) *P)
+        (NOT (&ray_blocked (:Field F) (:Head Ptr_head) (:Body Ptr_body) P)))
+      (dir (D)
+        (&palette F (:Head Ptr_head) (:Body Ptr_body))
+        (&heading (:Head Ptr_head) (:Body Ptr_body) *D))))
+
+  (INIT &ray_full Ray
+    (key ((OR ((&palette ^F (:Head ^Ptr_head) (:Body ^Ptr_body))
+               (&heading (:Head Ptr_head) (:Body Ptr_body) *P))
+              ((&palette F (:Head Ptr_head) (:Body Ptr_body))
+               (&heading (:Head Ptr_head) (:Body Ptr_body) *D))
+              ((&ray_frame.cell (:key F Ptr_head Ptr_body) P))))
+      (source (P)
+        (&palette F (:Head Ptr_head) (:Body Ptr_body))
+        (&heading (:Head Ptr_head) (:Body Ptr_body) *P))
+      (node (P)
+        (&ray_frame.cell (:key F Ptr_head Ptr_body) *P))
+      (dir (D)
+        (&palette F (:Head Ptr_head) (:Body Ptr_body))
+        (&heading (:Head Ptr_head) (:Body Ptr_body) *D))))
+
+  (RULE &ray_stop_full
+    (&ray.end (:key (:F *Field) (:Ptr_head *Head) (:Ptr_body *Body)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&ray_full.ray (:key (:F Field) (:Ptr_head Head) (:Ptr_body Body)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &unaimed
+    (&heading *Head *Body)
+    (&head Head Body *P)
+    (NOT (&heading Head Body P)))
+
+  (RULE &exit
+    (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+    (&heading (:Head Ptr_head) (:Body Ptr_body) (:P *Src) *D)
+    (&head (:Head Ptr_head) (:Body Ptr_body) (:P Src))
+    (&ray_stop_full (:Field F) (:Head Ptr_head) (:Body Ptr_body) (:V1 *P) (:V2 D) (:V4 Src)))
+
+  (RULE &framed
+    (&field.box (:key (:Col *F)))))
+
+(ALTS $direction "how the ray's direction is read" $Adjacent
+  (ALT $BodyAxis
+    (OUTPUT ray "the ray steps from the head along the axis on which body cells touch, away from the body; undefined when body cells touch on two axes or lie on both sides of the head"
+      (RULE &heading
+        (&away.value (:key (:Ptr_head *Head) (:Ptr_body *Body) *P) (:v *D))))))
+
+(ALTS $stop "which cell the ray paints" $FieldExit
+  (ALT $FirstNonfield
+    (OUTPUT exit "the first cell on the ray that is not the field color takes the field color; no field cell needs to exist"
+      (RULE &framed
+        (&palette *F))
+
+      (RULE &ray_blocked
+        (&ray_mark *Field *Head *Body)
+        (input *P *Col)
+        (!= Col Field)))))
+
+(ALTS $paint "the color the painted cell takes" $FieldPaint
+  (ALT $StoredPaint
+    (OUTPUT exit "the first cell the ray reaches outside the field takes &paint_color"
+      (DET_OR_RULE &paint_color DominantColor)
+
+      ;; The exit cells take the stored paint color.
+      (RULE &paint_of
+        (&palette *F)
+        (&paint_color (:C *Col))))
+    ;; One grid.
+    (RULE &output
+      (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+      (&heading (:Head Ptr_head) (:Body Ptr_body))
+      (NOT (&unaimed (:Head Ptr_head) (:Body Ptr_body)))
+      (&framed F)
+      (&paint_of F (:Col *C))
+      (OR ((input *P *Col)
+           (NOT (&exit P)))
+          ((&exit P)
+           (= Col C))))))
+
+(ALTS $field "how the field color is found" $StoredField
+  (ALT $DerivedField
+    (INPUT field "a solid rectangle of the color most common among the cells next to the pointer, other than the pointer colors; undefined at a tie"
+      (RULE &field_of
+        (&around.maximal (:key *Head *Body) (:t *F))))))
+
+(ALTS $pointer "how the head and body colors are found" $StoredPointer
+  (ALT $DerivedPointer
+    (INPUT pointer "inside the field's bounding box, the cells not of the field color have two colors; the head color has one cell and the body color more; undefined otherwise"
+      (RULE &inset
+        (&field.box (:key (:Col *F)) *B)
+        (input *P *Col)
+        (inside (:A P) B)
+        (!= Col F))
+
+      (RULE &repeated
+        (&inset *F *P *Col)
+        (&inset F (:P *Q) Col)
+        (!= P Q))
+
+      (RULE &third
+        (&inset *F (:Col *H))
+        (&inset F (:Col *B))
+        (&inset F *Col)
+        (!= Col H)
+        (!= Col B))
+
+      (RULE &derived_pointer
+        (&inset *F (:Col *Head))
+        (NOT (&repeated F (:Col Head)))
+        (&inset F (:Col *Body))
+        (&repeated F (:Col Body))
+        (NOT (&third F (:H Head) (:B Body))))
+
+      (RULE &pointer_of
+        (&derived_pointer *Head *Body))
+
+      (RULE &palette
+        (&derived_pointer *F *Head *Body)
+        (&field_of Head Body F)))))
+
+;; One grid.
+(RULE &output
+  (&palette *F (:Head *Ptr_head) (:Body *Ptr_body))
+  (&heading (:Head Ptr_head) (:Body Ptr_body))
+  (NOT (&unaimed (:Head Ptr_head) (:Body Ptr_body)))
+  (&framed F)
+  (OR ((input *P *Col)
+       (NOT (&exit P)))
+      ((&exit P)
+       (= Col F))))
+
+(OUT (&output ^P ^Col))

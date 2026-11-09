@@ -1,0 +1,119 @@
+;; inputs d836a6afd21ec5e5f500541d9fbd938b4e15d8cd659f03f958f50b5f23ca2443 programs/solvers/f21745ec.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f21745ec
+
+(param &bg Color (0))
+(param &copy_d4 D4 (D4_ID))
+
+(alts $s
+  (alt $SourceMostCells
+    (witness most-cells-source ordinary concept
+      (separates "a small rectangle with a sparse pattern and a larger empty outline with more cells: the concept copies the pattern into the same-size 2 outline and erases the 3 outline; $SourceMostCells takes the 3 outline as the source, keeps it, and erases the 8 rectangle and the 2 outline")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0 0 0 0 0)
+        (0 8 8 0 8 0 0 2 0 0 2 0 0 0 0 0)
+        (0 8 0 0 8 0 0 2 0 0 2 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 3 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 3 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 3 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $PatternedSource (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0 0 0 0 0)
+        (0 8 8 0 8 0 0 2 2 0 2 0 0 0 0 0)
+        (0 8 0 0 8 0 0 2 0 0 2 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $SourceMostCells (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 3 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 3 0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 3 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $c
+  (alt $CopyTransformed
+    (witness copy-reflected ordinary concept
+      (separates "an asymmetric pattern and a same-size outline, at copy_d4 D4_LR: the concept copies the pattern unchanged; $CopyTransformed copies it mirrored left to right")
+      (assign &copy_d4 (D4_LR))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0)
+        (0 8 8 0 8 0 0 2 0 0 2 0)
+        (0 8 0 0 8 0 0 2 0 0 2 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $CopyInPlace (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0)
+        (0 8 8 0 8 0 0 2 2 0 2 0)
+        (0 8 0 0 8 0 0 2 0 0 2 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $CopyTransformed (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0)
+        (0 8 8 0 8 0 0 2 0 2 2 0)
+        (0 8 0 0 8 0 0 2 0 0 2 0)
+        (0 8 8 8 8 0 0 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed rectangles-on-background)
+      (separates "a field of 8 with a patterned 0 rectangle and a same-size 2 outline: the concept, at bg 0, takes the 8 field as the patterned rectangle and erases the 2 outline to 0; bg=DominantColor takes 8 as bg and copies the 0 rectangle's pattern into the 2 outline")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 0 0 0 0 8 8 2 2 2 2 8 8)
+        (8 8 0 0 8 0 8 8 2 8 8 2 8 8)
+        (8 8 0 8 8 0 8 8 2 8 8 2 8 8)
+        (8 8 0 0 0 0 8 8 2 2 2 2 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)))
+      (output &bg=$Stored (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 0 0 0 0 8 8 0 0 0 0 8 8)
+        (8 8 0 0 8 0 8 8 0 8 8 0 8 8)
+        (8 8 0 8 8 0 8 8 0 8 8 0 8 8)
+        (8 8 0 0 0 0 8 8 0 0 0 0 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)))
+      (output &bg=$Derived (grid
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 0 0 0 0 8 8 2 2 2 2 8 8)
+        (8 8 0 0 8 0 8 8 2 2 8 2 8 8)
+        (8 8 0 8 8 0 8 8 2 8 8 2 8 8)
+        (8 8 0 0 0 0 8 8 2 2 2 2 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8)
+        (8 8 8 8 8 8 8 8 8 8 8 8 8 8))))))

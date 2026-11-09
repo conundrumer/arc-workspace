@@ -1,0 +1,7 @@
+;; inputs c60667a1e0cb580f6c4ca5de884f3901ea6dd51c012636bfffbf95bf84a9cfef programs/solvers/6ffe8f07.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ffe8f07
+
+(param &source Color (8))
+(param &wall Color (1))
+(param &beam Color (4))

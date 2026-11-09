@@ -1,0 +1,50 @@
+;; inputs e2ae455a078e3f0a6118cbb52d84a2d795f0bc657d06d01524dcbd4fda232161 programs/solvers/746b3537.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 746b3537
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Across ^P_across)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Across P_across)))))
+
+(RULE &seq_axis
+  (perp (:A *A2) (:A2 *A))
+  (NOT (&line_color.plural (:key (:A A2)))))
+
+;; A run: adjacent sequence lines of one color.
+(INIT &runs Connectivity
+  (key ((&seq_axis *A)
+        (input *P ^Col)
+        (split P A (:Along *P_line)))
+    (node ((:P P_line))
+      (&seq_axis *A)
+      (input *P Col)
+      (split P A (:Along *P_line)))))
+
+;; One output cell per run — the frame the runs induce.
+(INIT &seq Order
+  (key ((&seq_axis ^A)
+        (axis_of ^D A))
+    (before ((:a Id) (:b Id2))
+      (&runs.component (:P *P_line) *Id)
+      (&runs.component (:P *P_line2) (:Id *Id2))
+      (!= Id Id2)
+      (margin (:B P_line) D (:K *K1))
+      (margin (:B P_line2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Id))
+    (&runs.component (:P *P_line) *Id)))
+
+(RULE &seq_pos
+  (&seq.rank (:key *A *D) (:t *M) (:R *R1))
+  (&seq.dual_rank (:key A D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &output
+  (&runs.component (:key *Col) *Id)
+  (&seq_pos (:M Id) (:P_pos *P)))
+
+(OUT (&output ^P ^Col))

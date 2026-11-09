@@ -1,0 +1,58 @@
+;; inputs d1c725881e67482c83a4bd7454199bdc9bc8bb66f35c3e29aa3aeb555b69d82e programs/solvers/5c2c9af4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5c2c9af4
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The marks' bounding box is the innermost outline: the outer dots sit at
+;; two of its corners, and the middle dot at its center.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&mark *P)))
+
+(RULE &center
+  (&bbox.cell *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (centered (:P P_inner)))
+
+(RULE &spacing
+  (&center *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (margin (:B P_inner) *D *K))
+
+(RULE &drawn
+  (input *P)
+  (&center (:P *C))
+  (relative (:Base C) (:X P) (:X_rel *V))
+  (margin (:B V) *D *K)
+  (&spacing (:K *G))
+  (divide (:T K) (:Side G) (:Gap 0) (:Remainder 0))
+  (uniform_outset K (:B *B_out))
+  (compose (:A C) (:B B_out) (:C *B))
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(ALTS $choice "what a cell off the outlines does" $Passthrough
+  (ALT $Repaint
+    (RULE &output
+      (OR ((&drawn *P)
+           (&mark *Col))
+          ((input P)
+           (NOT (&drawn P))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&drawn *P)
+       (&mark *Col))
+      ((input P Col)
+       (NOT (&drawn P)))))
+
+(OUT (&output ^P ^Col))

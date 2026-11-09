@@ -1,0 +1,8 @@
+;; inputs 5e2da28415ce30629bc6615febb917a8712e573992fa19a7a673d7dda247da4a programs/solvers/9bebae7a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9bebae7a
+
+(param &bg Color (0))
+(param &shape_color Color (4))
+(param &mark_color Color (6))
+(param &turn_sense Sense (SENSE_CC))

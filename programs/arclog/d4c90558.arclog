@@ -1,0 +1,280 @@
+;; inputs 18246a10e78dd66e7bb958f691308eeeaee0f0d5dce19737b8736b3964b6ac9d programs/solvers/d4c90558.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d4c90558
+
+(INPUT background "the background is &background_color"
+
+  (DET &bar_sense SenseDomain)
+
+  (DET &short_end DirDomain)
+
+  (DET_OR_RULE &background_color DominantColor
+    (ex_output *P (:Col *C))
+    (&short_end *D)
+    (margin (:B P) D (:K 0))
+    (&bar_sense *S)
+    (turn S D (:D2 *D_start))
+    (opposite (:D D_start) (:Opp *D_end))
+    (margin (:B P) (:D D_end) (:K 0))))
+
+(INPUT frames "the input holds several frames, each a closed rectangular outline of one color, with no two frames of one color; a frame may have one or more sides thicker than one cell")
+
+(INPUT marks-inside "each frame's enclosed region holds cells of &mark_color, scattered on background, and no other color; no &mark_color cell lies outside a frame"
+
+  (DET_OR_RULE &mark_color RarestColor
+    (ex_input *E (:Col *C))
+    (ex_output E)
+    (NOT (ex_output (:Col C)))))
+
+(INPUT distinct-counts "no two frames hold the same number of &mark_color cells")
+
+(OUTPUT count "each frame's count is the number of &mark_color cells in the region it encloses"
+
+  (INIT &piece Connectivity
+    (key ((input *P ^Col)
+          (NOT (&background_color (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&background_color (:C Col))))))
+
+  (INIT &box BoundingBox
+    (key ((&piece.component *P (:Id ^F)))
+      (cell (P)
+        (&piece.component *P (:Id F))))))
+
+(OUTPUT bar "each frame gives one line of the output, filled with the frame's color for as many cells as its count, from the edge a quarter turn in &bar_sense from &short_end, and background after")
+
+(OUTPUT order "the lines are ordered by count, the smallest count at the &short_end edge")
+
+(OUTPUT size "the output has one line per frame, and each line is as long as the largest count"
+
+  (INIT &closed Enclosure
+    (key ((&piece.component (:Id ^F)))
+      (cell (P)
+        (input *P)
+        (NOT (&piece.component P (:Id F))))))
+
+  (RULE &region
+    (&closed.enclosed (:key *F) *P))
+
+  (RULE &frame
+    (&region *F))
+
+  (RULE &counted
+    (&frame *F)
+    (&region F *P)
+    (input P *Col)
+    (&mark_color (:C Col)))
+
+  (RULE &member
+    (&frame (:F *U)))
+
+  (INIT &held Cardinality
+    (key ((&member (:U ^L)))
+      (member ((:m P))
+        (&member (:U L))
+        (&counted (:F L) *P))
+      (domain ()
+        (&member (:U L)))))
+
+  (RULE &key
+    (&held.size (:key (:L *U)) *N))
+
+  (RULE &line
+    (&member *U))
+
+  (INIT &ascending Order
+    (member ((:t L))
+      (&line (:U *L)))
+    (before ((:a L1) (:b L2))
+      (&key (:U *L1) (:N *N1))
+      (&key (:U *L2) (:N *N2))
+      (< N1 N2)))
+
+  (INIT &lines Cardinality
+    (member ((:m L))
+      (&line (:U *L))))
+
+  (INIT &longest Order
+    (member ((:t N))
+      (&held.size *N))
+    (score ((:t N) (:S N))
+      (&held.size *N)))
+
+  (RULE &bar_start
+    (&short_end (:D *D3))
+    (&bar_sense *S)
+    (turn S (:D D3) (:D2 *D)))
+
+  (INIT &chart Frame
+    (extent (A N)
+      (OR ((&short_end *D)
+           (axis_of D *A)
+           (&lines.size *N))
+          ((&bar_start (:D *D2))
+           (axis_of (:D D2) A)
+           (&longest.maximal (:t N))))))
+
+  (RULE &row
+    (&chart.cell *P)
+    (&short_end *D)
+    (margin (:B P) D *K))
+
+  (RULE &seat
+    (&ascending.rank (:t *U) (:R *K)))
+
+  (CHOOSE &ties
+    (for ((&seat ^K))
+      (from (&seat (:U *L) K)))
+    (never
+      (&seat (:U *L) *K)
+      (&seat (:U L) (:K *K2))
+      (!= K K2))))
+
+(ALTS $cells "which cells of a frame's region the count reads" $CountMarks
+  (ALT $CountAnyColor
+    (OUTPUT count "every non-background cell of the region counts"
+      (RULE &counted
+        (&frame *F)
+        (&region F *P)
+        (input P *Col)
+        (NOT (&background_color (:C Col)))))))
+
+(ALTS $area "the region a frame's count reads" $CountEnclosed
+  (ALT $CountInBbox
+    (OUTPUT count "the region is the frame's bounding box"
+      (RULE &region
+        (&box.box (:key *F) *B)
+        (input *P)
+        (inside (:A P) B))
+
+      (RULE &frame
+        (&piece.component (:key *Col) *P (:Id *F))
+        (&piece.component (:key Col) (:P *Q) (:Id F))
+        (!= P Q)
+        (NOT (&mark_color (:C Col)))))
+    (INPUT frames "a frame is any one-color piece of more than one cell, of a color other than &mark_color, whether or not its outline is closed")))
+
+(ALTS $nested "a frame that lies in another frame's region" $IncludeNested
+  (ALT $ExcludeNested
+    (OUTPUT count "the cells of a frame that lies in the region, and of that frame's own region, do not count"
+      (RULE &shielded
+        (&frame *F)
+        (&frame (:F *G))
+        (!= G F)
+        (&piece.component (:P *Q) (:Id G))
+        (&region F (:P Q))
+        (OR ((&piece.component *P (:Id G)))
+            ((&region (:F G) P))))
+
+      (INIT &held Cardinality
+        (key ((&member (:U ^L)))
+          (member ((:m P))
+            (&member (:U L))
+            (&counted (:F L) *P)
+            (NOT (&shielded (:F L) P)))
+          (domain ()
+            (&member (:U L))))))
+    (ALT $FramePerColor
+      (OUTPUT bar "each frame color gives one line, which counts the cells of all the frames of that color"
+        (INIT &held Cardinality
+          (key ((&member (:U ^L)))
+            (member ((:m P))
+              (&member (:U L) *F)
+              (&counted F *P)
+              (NOT (&shielded F P)))
+            (domain ()
+              (&member (:U L)))))))))
+
+(ALTS $unit "what one line of the output stands for" $BarPerFrame
+  (ALT $FramePerColor
+    (OUTPUT bar "each frame color gives one line, which counts the cells of all the frames of that color"
+      ;; One class per color.
+      (INIT &same_color Quotient
+        (edge ((:a F1) (:b F2))
+          (&piece.component (:Id *F1) (:key *Col))
+          (&piece.component (:Id *F2) (:key Col))))
+
+      (RULE &member
+        (&frame *F)
+        (&same_color.class (:a F) (:Id *U)))
+
+      (INIT &held Cardinality
+        (key ((&member (:U ^L)))
+          (member ((:m P))
+            (&member (:U L) *F)
+            (&counted F *P))
+          (domain ()
+            (&member (:U L))))))
+    (RULE &output
+      (&row *P *K)
+      (&ties K *L)
+      (&held.size (:key L) *N)
+      (&bar_start (:D *Db))
+      (margin (:B P) (:D Db) (:K *K2))
+      (OR ((< K2 N)
+           (&member (:U L) *F)
+           (&piece.component (:Id F) (:key *Col)))
+          ((>= K2 N)
+           (&background_color (:C Col)))))
+    (ALT $OrderBySize
+      (OUTPUT order "the lines ascend by the cell count of the bounding boxes of their frames"
+        ;; The cells of the bounding boxes of a line's frames.
+        (INIT &area Cardinality
+          (key ((&member (:U ^L) *F)
+                (&box.box (:key F) *B)
+                (input *P)
+                (inside (:A P) B))
+            (member ((:m P))
+              (&member (:U L) *F)
+              (&box.box (:key F) *B)
+              (input *P)
+              (inside (:A P) B))))))))
+
+(ALTS $order "the key the lines ascend by" $OrderByCount
+  (ALT $OrderBySize
+    (OUTPUT order "the lines ascend by the cell count of the bounding boxes of their frames"
+      ;; The cells of the bounding boxes of a line's frames.
+      (INIT &area Cardinality
+        (key ((&member (:U ^L))
+              (&box.box (:key (:F L)) *B)
+              (input *P)
+              (inside (:A P) B))
+          (member ((:m P))
+            (&member (:U L))
+            (&box.box (:key (:F L)) *B)
+            (input *P)
+            (inside (:A P) B))))
+
+      (RULE &key
+        (&area.size (:key (:L *U)) *N)))))
+
+(ALTS $tie "lines of one key" $TiesUndefined
+  (ALT $TiesEitherOrder
+    (OUTPUT either-order "lines of one key take either order, and the output holds each order"
+      ;; Every line of a smaller key lies between this one and the short_end edge,
+      ;; so a line sits no nearer that edge than their number.
+      (RULE &seat
+        (&row *K)
+        (&ascending.rank (:t *U) *R)
+        (<= R K)))))
+
+(ALTS $empty "a frame whose count is 0" $KeepEmpty
+  (ALT $DropEmpty
+    (OUTPUT size "a frame whose count is 0 gives no line"
+      (RULE &line
+        (&held.member (:key (:L *U)))))))
+
+(RULE &output
+  (&row *P *K)
+  (&ties K *L)
+  (&held.size (:key L) *N)
+  (&bar_start (:D *Db))
+  (margin (:B P) (:D Db) (:K *K2))
+  (OR ((< K2 N)
+       (&member (:U L))
+       (&piece.component (:Id L) (:key *Col)))
+      ((>= K2 N)
+       (&background_color (:C Col)))))
+
+(OUT (&output ^P ^Col))

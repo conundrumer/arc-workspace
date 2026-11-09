@@ -1,0 +1,92 @@
+;; inputs cd18b3c132201203d4536b1204d60a10e8416b046c308870e589765f2466c2ea programs/solvers/4f537728.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4f537728
+
+(DET &bg DominantColor)
+
+(DET &base SharedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&base (:C Col))))
+
+(RULE &painted
+  (input *P *Col)
+  (&base (:C Col))
+  (&mark (:P *P_mark))
+  (axis_elem *A)
+  (same_line A P (:Q P_mark)))
+
+(ALTS $choice "how far the mark color spreads" $Cell
+  (ALT $Block
+    (RULE &inked_line
+      (input *P *Col)
+      (NOT (&bg (:C Col)))
+      (split P *A (:Along *L)))
+
+    (RULE &blocks_divider
+      (input *P)
+      (split P *A (:Along *L))
+      (NOT (&inked_line L)))
+
+    (RULE &blocks_on_divider
+      (input *P)
+      (&blocks_divider *A *L)
+      (axis_of *D A)
+      (same_dist D (:P1 P) (:P2 L)))
+
+    (INIT &blocks_rank Order
+      (key ((OR ((&blocks_divider *A *L)
+                 (axis_of ^D A)
+                 (margin (:B L) D *K))
+                ((input *P)
+                 (margin (:B P) D K))))
+        (member ((:t K))
+          (&blocks_divider *A *L)
+          (axis_of D A)
+          (margin (:B L) D *K))
+        (score ((:t K) (:S K))
+          (OR ((&blocks_divider *A *L)
+               (axis_of D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+        (probe ((:t K))
+          (input *P)
+          (margin (:B P) D *K))))
+
+    (RULE &blocks_part_idx
+      (input *P)
+      (axis_of *D *A)
+      (NOT (&blocks_on_divider P A))
+      (margin (:B P) D *K)
+      (&blocks_rank.rank (:key D) (:t K) (:R *N)))
+
+    (RULE &blocks_part_of
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&blocks_part_idx *P D (:N *N1))
+      (&blocks_part_idx P (:D D2) (:N *N2))
+      (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+    (RULE &blocks_tile_of
+      (&blocks_part_of *P *A (:P_part *P1))
+      (perp A *A2)
+      (&blocks_part_of P (:A A2) (:P_part *P2))
+      (compose (:A P1) (:B P2) (:C *P_tile)))
+
+    (RULE &painted
+      (&blocks_tile_of *P *P_tile)
+      (&mark (:P *P_mark))
+      (&blocks_tile_of (:P P_mark) (:P_tile *P_tile_mark))
+      (axis_elem *A)
+      (same_line A (:P P_tile) (:Q P_tile_mark)))))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&mark *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

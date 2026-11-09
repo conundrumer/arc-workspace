@@ -1,0 +1,246 @@
+;; inputs a1d8f048d695403e5c4af99254f887037c7e944611804fe694b201eeef53a6a1 programs/solvers/5545f144.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5545f144
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The background: the color that covers the grid.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &panels_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &panels_on_divider
+  (input *P)
+  (&panels_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A drawn line running the whole way across separates snapshots.
+(INIT &panels_rank Order
+  (key ((OR ((&panels_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panels_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panels_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panels_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panels_on_divider P A))
+  (margin (:B P) D *K)
+  (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panels_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panels_part_idx *P D (:N *N1))
+  (&panels_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &ink
+  (&panels_tile_of (:P_tile *Pan) *P)
+  (input P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+(INIT &figure Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &sym_cell
+  (&figure.component (:P *T) *Id)
+  (&figure.component *P Id)
+  (axis_of *D *A)
+  (perp A *A2)
+  (axis_inversion (:A A2) (:T *G))
+  (relative (:Base T) (:X P) (:X_rel *V))
+  (apply (:D G) (:P V) (:P_out *V2))
+  (compose (:A T) (:B V2) (:C *Q))
+  (&figure.component (:P Q) Id))
+
+(RULE &blunt
+  (&sym_cell *T *D *P)
+  (!= P T)
+  (margin (:B P) D *K)
+  (margin (:B T) D (:K *K2))
+  (<= K K2))
+
+(INIT &size Cardinality
+  (key ((&sym_cell ^T ^D *P))
+    (member ((:m P))
+      (&sym_cell T D *P))))
+
+;; The arrow is the widest mirror-symmetric set the panel holds.
+(INIT &widest Order
+  (key ((&size.size (:key *T *D) *N)
+        (NOT (&blunt T D))
+        (&panels_tile_of (:P_tile ^Pan) (:P T)))
+    (member ((:t T D (:S N)))
+      (&size.size (:key *T *D) *N)
+      (NOT (&blunt T D))
+      (&panels_tile_of (:P_tile Pan) (:P T)))
+    (score ((:t T D (:S N)) (:S N))
+      (&size.size (:key *T *D) *N)
+      (NOT (&blunt T D))
+      (&panels_tile_of (:P_tile Pan) (:P T)))))
+
+(RULE &arrow
+  (&widest.maximal (:key *Pan) (:t *T *D))
+  (&sym_cell T D *P))
+
+(RULE &dot
+  (&ink *Pan *P)
+  (NOT (&arrow Pan P)))
+
+(RULE &sight_dir
+  (&panels_tile_of (:P_tile *Key))
+  (dir_elem *D))
+
+(RULE &sight_mark
+  (OR ((&dot (:Pan *Key) *P))
+      ((&widest.maximal (:key (:Pan Key)) (:t (:T P))))))
+
+(INIT &sight_frame Frame
+  (key ((&sight_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&sight_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+(INIT &sight Ray
+  (key ((OR ((&sight_mark (:Key ^Ky) *P))
+            ((&sight_dir (:Key Ky) *D))
+            ((&sight_frame.cell (:key Ky) P)
+             (NOT (&dot (:Pan Ky) P)))))
+    (source (P)
+      (&sight_mark (:Key Ky) *P))
+    (node (P)
+      (&sight_frame.cell (:key Ky) *P)
+      (NOT (&dot (:Pan Ky) P)))
+    (dir (D)
+      (&sight_dir (:Key Ky) *D))))
+
+(INIT &sight_full Ray
+  (key ((OR ((&sight_mark (:Key ^Ky) *P))
+            ((&sight_dir (:Key Ky) *D))
+            ((&sight_frame.cell (:key Ky) P))))
+    (source (P)
+      (&sight_mark (:Key Ky) *P))
+    (node (P)
+      (&sight_frame.cell (:key Ky) *P))
+    (dir (D)
+      (&sight_dir (:Key Ky) *D))))
+
+(RULE &sight_stop_full
+  (&sight.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&sight_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &reach
+  (&sight_stop_full (:V0 *Pan) (:V1 *Q) (:V2 *D) (:V3 *K) (:V4 *P))
+  (dir_elem D))
+
+(RULE &way
+  (OR ((perp_dir *D *D2))
+      ((dir_elem D)
+       (= D2 D))))
+
+;; The steps to the first dot on each way.
+(INIT &steps Order
+  (key ((&way ^D *D2)
+        (&reach ^Pan ^P (:D D2) *K))
+    (member ((:t K))
+      (&way D *D2)
+      (&reach Pan P (:D D2) *K))
+    (score ((:t K) (:S K))
+      (&way D *D2)
+      (&reach Pan P (:D D2) *K))))
+
+(RULE &hop
+  (OR ((perp_dir *D *D2)
+       (&reach *Pan *P (:D D2) *Q *K)
+       (NOT (&reach Pan P D))
+       (&steps.minimal (:key Pan P D) (:t K)))
+      ((&reach Pan P D Q)
+       (= D2 D))))
+
+(INIT &frame BoundingBox
+  (key ((&panels_tile_of (:P_tile ^Pan) *P))
+    (cell (P)
+      (&panels_tile_of (:P_tile Pan) *P))))
+
+(ALTS $choice "which dot the arrow takes next" $Momentum
+  (ALT $Nearest
+    (RULE &hop
+      (&way *D *D2)
+      (&reach *Pan *P (:D D2) *Q *K)
+      (&steps.minimal (:key Pan P D) (:t K)))))
+
+;; The journey: from the tip, one hop after another.
+(INIT &journey Propagation
+  (source ((:n Pan (:P P0) (:D D0)))
+    (&widest.maximal (:key *Pan) (:t (:T *P0) (:D *D0))))
+  (edge ((:a Pan P D) (:b Pan (:P Q) (:D D2)))
+    (&hop *Pan *P *D *Q *D2)))
+
+(RULE &placed
+  (&widest.maximal (:key *Pan) (:t *T (:D *D0)))
+  (&arrow Pan (:P *P3))
+  (&journey.reached (:n Pan (:P *R) *D))
+  (NOT (&hop Pan (:P R) D))
+  (c4_elem (:D *G))
+  (apply_dir (:D G) (:Dir D0) (:Dir_out D))
+  (relative (:Base T) (:X P3) (:X_rel *V))
+  (apply (:D G) (:P V) (:P_out *V2))
+  (compose (:A R) (:B V2) (:C *P)))
+
+(RULE &output
+  (&panels_tile_of (:P_tile *Pan) (:P *P2))
+  (&frame.box (:key Pan) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (IF ((&placed Pan (:P P2)))
+      ((&ink Pan *Col))
+      ((&field.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

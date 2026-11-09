@@ -1,0 +1,334 @@
+;; inputs 68df0ef50a7aea83a295ff0a493d1a0a1238dedae4aa63fce345018210a1ceea programs/solvers/e9fc42f2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e9fc42f2
+
+(INPUT field "a field of 2 holds several pieces, each a 4-connected set of cells other than 2, with 2 between any two pieces."
+
+  (INIT &field_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The field: the commonest color of every input.
+  (INIT &field Order
+    (key ((&field_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&field_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&field_count.size (:key E *Col) *N))))
+
+  (DET &field_miss
+    (&field.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&field.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&field.maximal (:t *C))
+    (NOT (&field_miss (:Col C))))
+
+  (INIT &pieces8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT pieces "each piece is drawn in 1, and holds one or more connector cells, each of a color that is neither 1 nor 2.")
+
+(INPUT connector-side "each connector lies on exactly one edge of its piece's bounding box, and faces out from that edge.")
+
+(INPUT connector-pairs "each connector color occurs once or twice in the input; the two connectors of a pair lie on different pieces and face opposite directions.")
+
+(INPUT one-assembly "the pairs link every piece into one connected assembly with no cycle, and in that assembly no two pieces overlap.")
+
+(OUTPUT snap "each piece moves by translation alone, so that the two connectors of each pair are adjacent cells, each one step past its partner's facing edge."
+
+  (DET &bg_determined
+    (&field.maximal (:t *Col))
+    (NOT (&field_miss Col)))
+
+  (INIT &drawn_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (NOT (&bg_determined Col)))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (NOT (&bg_determined Col)))))
+
+  ;; The body: the commonest color of every input's pieces.
+  (INIT &drawn Order
+    (key ((&drawn_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&drawn_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&drawn_count.size (:key E *Col) *N))))
+
+  (DET &drawn_miss
+    (&drawn.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&drawn.maximal (:key E) (:t Col))))
+
+  (DET &body
+    (&drawn.maximal (:t *Col))
+    (NOT (&drawn_miss Col)))
+
+  (RULE &connector2
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&body Col)))
+
+  (INIT &pieces4 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (RULE &piece_cell
+    (&pieces4.component *P (:Id *O)))
+
+  (RULE &pair
+    (&connector2 (:P *C1) *Col)
+    (&piece_cell (:O *O1) (:P C1))
+    (&connector2 (:P *C2) Col)
+    (&piece_cell (:O *O2) (:P C2))
+    (!= O1 O2))
+
+  (INIT &piece_size Cardinality
+    (key ((&piece_cell ^O))
+      (member ((:m P))
+        (&piece_cell O *P))
+      (domain ()
+        (&piece_cell O))))
+
+  (INIT &largest Order
+    (member ((:t (:V O) (:S N)))
+      (&piece_size.size (:key *O) *N))
+    (score ((:t (:V O) (:S N)) (:S N))
+      (&piece_size.size (:key *O) *N)))
+
+  ;; One class per pair and way of joining: connector c1's partner c2 one step
+  ;; toward d is c2's partner c1 one step back.
+  (INIT &sides Quotient
+    (equivalent ((:a (:C C1) D) (:b (:C C2) (:D D2)))
+      (&pair *C1 *C2)
+      (opposite *D (:Opp *D2))))
+
+  ;; The color of each class of sides.
+  (INIT &side_color Singleton
+    (key ((&pair *C1 *Col)
+          (dir_elem *D)
+          (&sides.class (:a (:C C1) D) (:Id ^S)))
+      (member ((:v Col))
+        (&pair *C1 *Col)
+        (dir_elem *D)
+        (&sides.class (:a (:C C1) D) (:Id S))))))
+
+(OUTPUT crop "the output is the bounding box of the assembly; each cell of a piece keeps its color, unpaired connectors included, and every other cell is the background."
+
+  (RULE &shift
+    (input *P)
+    (input (:P *Q))
+    (relative (:Base P) (:X Q) (:X_rel *V)))
+
+  (INIT &piece_box BoundingBox
+    (key ((&piece_cell ^O *P))
+      (cell (P)
+        (&piece_cell O *P))))
+
+  (RULE &facing
+    (&connector2 *P)
+    (&piece_cell *O P)
+    (&piece_box.box (:key O) *B)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B)))
+
+  (RULE &held_turn
+    (d4_compose (:A *T) (:B T) (:C T)))
+
+  (RULE &origin
+    (&piece_cell *O (:P *C))
+    (&connector2 (:P C)))
+
+  (RULE &key
+    (&origin (:C *Ky)))
+
+  (RULE &snap_step
+    (&key *Ky)
+    (&shift (:V *V1))
+    (&held_turn (:T *T1))
+    (&pair (:O1 *A) *C1 (:O2 *B) *C2)
+    (&facing (:O A) (:P C1) (:D *D1))
+    (relative (:Base Ky) (:X C1) (:X_rel *R0))
+    (apply (:D T1) (:P R0) (:P_out *R1))
+    (compose (:A R1) (:B V1) (:C *Q1))
+    (apply_dir (:D T1) (:Dir D1) (:Dir_out *D1_t))
+    (neighbor (:P Q1) (:D D1_t) *Q)
+    (opposite (:D D1_t) (:Opp *D2_t)))
+
+  (RULE &join_step
+    (&snap_step *Ky *A *T1 *V1 *B *C2 (:D2_t *D2) *Q)
+    (&facing (:O B) (:P C2) (:D D2)))
+
+  (INIT &asm Propagation
+    (key ((OR ((&key (:Ky ^C))
+               (&origin *O C)
+               (d4_compose (:A *T) (:B T) (:C T)))
+              ((&join_step (:Ky C) *A *T1 *V1 *B *C2 *Q)
+               (relative (:Base C) (:X C2) (:X_rel *R0))
+               (apply (:D T1) (:P R0) (:P_out *R1))
+               (relative (:Base R1) (:X Q) (:X_rel *V2)))))
+      (source ((:n O T V))
+        (&key (:Ky C))
+        (&origin *O C)
+        (d4_compose (:A *T) (:B T) (:C T))
+        (= *V 0))
+      (edge ((:a (:O A) (:T T1) (:V V1)) (:b (:O B) (:T T1) (:V V2)))
+        (&join_step (:Ky C) *A *T1 *V1 *B *C2 *Q)
+        (relative (:Base C) (:X C2) (:X_rel *R0))
+        (apply (:D T1) (:P R0) (:P_out *R1))
+        (relative (:Base R1) (:X Q) (:X_rel *V2)))))
+
+  (RULE &placed_cell
+    (&asm.reached (:key (:C *Ky)) (:n *O *T *V))
+    (&piece_cell O *P)
+    (input P *Col)
+    (relative (:Base Ky) (:X P) (:X_rel *R0))
+    (apply (:D T) (:P R0) (:P_out *R1))
+    (compose (:A R1) (:B V) (:C *Q)))
+
+  (RULE &incomplete
+    (&key *Ky)
+    (&piece_cell *O)
+    (NOT (&asm.reached (:key (:C Ky)) (:n O))))
+
+  (RULE &joined_in_place
+    (&connector2 (:P *C1) *Col)
+    (&connector2 (:P *C2) Col)
+    (!= C1 C2)
+    (&piece_cell *O (:P C1))
+    (&piece_cell O (:P C2)))
+
+  (RULE &assembled
+    (&key *Ky)
+    (NOT (&incomplete Ky))
+    (NOT (&joined_in_place)))
+
+  (INIT &asm_box BoundingBox
+    (key ((&assembled (:Ky ^Origin)))
+      (cell ((:P Q))
+        (&placed_cell (:Ky Origin) *Q)))))
+
+(ALTS $join "How the two connectors of a pair are placed against each other." $Snap
+  (ALT $Snap
+    (ALTS $motion "How a piece moves to meet its partner." $Translate
+      (ALT $TurnToFace
+        (OUTPUT snap "the assembly builds out from the piece with the most cells, and the piece that joins turns by the quarter turns that make its connector face its partner; undefined where pieces tie for the most cells and the roots give different outputs."
+          (RULE &join_step
+            (&snap_step *Ky *A *T1 *V1 *B *C2 *D2_t *Q)
+            (c4_elem (:D *T2))
+            (&facing (:O B) (:P C2) (:D *D2))
+            (apply_dir (:D T2) (:Dir D2) (:Dir_out D2_t)))
+          (RULE &origin
+            (&largest.maximal (:t (:V *O)))
+            (&piece_cell O (:P *C))
+            (&connector2 (:P C)))
+          (INIT &asm Propagation
+            (key ((OR ((&key (:Ky ^C))
+                       (&origin *O C)
+                       (d4_compose (:A *T) (:B T) (:C T)))
+                      ((&join_step (:Ky C) *A *T1 *V1 *B *C2 *T2 *Q)
+                       (relative (:Base C) (:X C2) (:X_rel *R0))
+                       (apply (:D T2) (:P R0) (:P_out *R1))
+                       (relative (:Base R1) (:X Q) (:X_rel *V2)))))
+              (source ((:n O T V))
+                (&key (:Ky C))
+                (&origin *O C)
+                (d4_compose (:A *T) (:B T) (:C T))
+                (= *V 0))
+              (edge ((:a (:O A) (:T T1) (:V V1)) (:b (:O B) (:T T2) (:V V2)))
+                (&join_step (:Ky C) *A *T1 *V1 *B *C2 *T2 *Q)
+                (relative (:Base C) (:X C2) (:X_rel *R0))
+                (apply (:D T2) (:P R0) (:P_out *R1))
+                (relative (:Base R1) (:X Q) (:X_rel *V2)))))
+          (RULE &held_turn
+            (c4_elem (:D *T))))
+        (INPUT connector-pairs "the two connectors of a pair lie on different pieces, facing any directions."))))
+  (ALT $NoOverlapJoin
+    (OUTPUT snap "a pair's second connector sits one step from the first toward any of the four directions at which no two pieces share a cell, and the output holds each such assembly; undefined where no choice of directions keeps the pieces apart."
+      ;; Each pair takes one of the four directions.
+      (RULE &dirs
+        (&side_color.value (:key *S) (:v *Col))
+        (ONE Col))
+
+      (RULE &key
+        (&dirs)
+        (&origin (:C *Ky)))
+
+      (RULE &overlap
+        (&placed_cell *Ky (:O *O1) *Q)
+        (&placed_cell Ky (:O *O2) Q)
+        (!= O1 O2))
+
+      (RULE &assembled
+        (&key *Ky)
+        (NOT (&incomplete Ky))
+        (NOT (&overlap Ky))
+        (NOT (&joined_in_place)))
+
+      (RULE &join_step
+        (&key *Ky)
+        (&shift (:V *V1))
+        (d4_compose (:A *T1) (:B T1) (:C T1))
+        (&pair (:O1 *A) *C1 (:O2 *B) *C2 *Col)
+        (&dirs Col *S)
+        (dir_elem *D)
+        (&sides.class (:a (:C C1) D) (:Id S))
+        (relative (:Base Ky) (:X C1) (:X_rel *R0))
+        (compose (:A R0) (:B V1) (:C *Q1))
+        (neighbor (:P Q1) D *Q)))))
+
+(ALTS $conn "Which cells make one piece." $FourConnected
+  (ALT $EightConnected
+    (INPUT field "a piece is 8-connected."
+      (RULE &piece_cell
+        (&pieces8.component *P (:Id *O))))))
+
+(ALTS $colors "Which colors are connectors." $AnyColor
+  (ALT $StoredConnectorColors
+    (INPUT pieces "a connector is a cell of a color in `connector`; a cell of any other color than 1 is a mark of its piece and keeps its color."
+      (DET &connector
+        (ex_output *E *P *Col)
+        (NOT (&bg_determined Col))
+        (NOT (&body Col))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (ex_output E (:P Q) Col))
+
+      (RULE &connector2
+        (input *P *Col)
+        (&connector Col)))))
+
+(INIT &frame Frame
+  (key ((&asm_box.box (:key ^Origin) *B)
+        (box_extent B (:P 0) *A *N)
+        (&asm_box.box (:key Origin) (:B *B2))
+        (box_extent (:B B2) (:P 0) (:A *A2) (:N *N2))
+        (perp A A2))
+    (extent (A N)
+      (&asm_box.box (:key Origin) *B)
+      (box_extent B (:P 0) *A *N))))
+
+(RULE &assembled_cell
+  (&asm_box.box (:key (:Origin *Ky)) *B)
+  (&placed_cell Ky *Q *Col)
+  (inside (:A Q) B)
+  (relative (:Base B) (:X Q) (:X_rel *P)))
+
+(RULE &output
+  (OR ((&assembled_cell (:Ky *C) *P *Col))
+      ((&frame.cell (:key (:Origin *C2)) P)
+       (NOT (&assembled_cell (:Ky C2) P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

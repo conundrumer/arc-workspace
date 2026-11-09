@@ -1,0 +1,73 @@
+;; inputs 1e290c31a56b3af9c6832629b8cca3455a06c3bf9e188675fb3156a5fd60752d programs/solvers/3bdb4ada.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3bdb4ada
+
+;; The dash's period: the ink run, then the gap run.
+(DET &dash DivisorRatio)
+
+;; The axis the dash runs along.
+(DET &dash_axis AxisDomain)
+
+(DET &gap DivisorRatio)
+
+(DET &bg DominantColor)
+
+(INIT &rect Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&rect.component *P ^Id))
+    (cell (P)
+      (&rect.component *P Id))))
+
+(RULE &rect_cell
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(INIT &ink_run_division Division
+  (cell ((:P P_inner))
+    (&rect_cell *P_inner))
+  (side (A K)
+    (&dash_axis *A)
+    (&dash *K))
+  (gap (A G)
+    (&dash_axis *A)
+    (&gap (:K *G))))
+
+(RULE &ink_run
+  (&rect_cell *P *P_inner)
+  (&ink_run_division.tile (:P P_inner)))
+
+(RULE &dash_cover
+  (&rect_cell *P *P_inner)
+  (&dash_axis *A)
+  (perp A *A2)
+  (axis_of *D (:A A2))
+  (dist_pair (:P P_inner) D *K (:K2 K)))
+
+(ALTS $choice "which cells the dash covers" $Midline
+  (ALT $Interior
+    (INIT &rim Boundary
+      (key ((&rect.component *P ^Id))
+        (cell (P)
+          (&rect.component *P Id))))
+
+    (RULE &dash_cover
+      (&rect.component *P *Id)
+      (NOT (&rim.boundary (:key Id) P)))))
+
+(RULE &erased
+  (&dash_cover *P)
+  (NOT (&ink_run P)))
+
+(RULE &output
+  (OR ((&erased *P)
+       (&bg (:C *Col)))
+      ((input P Col)
+       (NOT (&erased P)))))
+
+(OUT (&output ^P ^Col))

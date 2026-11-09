@@ -1,0 +1,188 @@
+;; inputs b116a5b471008aad057b28f381f0e96cb50ddb29787bdb82868eb994fe9b24e5 programs/solvers/bf699163.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bf699163
+
+(INPUT background "a field of &background."
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT rings "several hollow squares of side 3, each one color, no two of the same color, none of &frame_color."
+
+  ;; The cells of each color other than the background.
+  (INIT &color_box BoundingBox
+    (key ((input *P (:Col ^C))
+          (NOT (&background C)))
+      (cell (P)
+        (input *P (:Col C))
+        (NOT (&background C)))))
+
+  (RULE &has_hole
+    (&color_box.box *B)
+    (input *P)
+    (interior (:A P) B))
+
+  (RULE &not_ring
+    (&color_box.box (:key *C) *B)
+    (OR ((input *P (:Col C))
+         (perp *A *A2)
+         (box_extent B P A *N)
+         (box_extent B P (:A A2) (:N *N2))
+         (!= N N2))
+        ((input P (:Col C))
+         (interior (:A P) B))
+        ((input P)
+         (inside (:A P) B)
+         (same_dist (:P1 P) (:P2 B))
+         (NOT (input P (:Col C))))
+        ((NOT (&has_hole B)))))
+
+  (DET &not_ring_train
+    (&not_ring (:E *E_train) *C)
+    (ex_output (:E E_train)))
+
+  ;; In every train input, the one color that forms no ring.
+  (INIT &frame Singleton
+    (member ((:v C))
+      (&not_ring_train *C)))
+
+  (DET &frame_color
+    (&frame.value (:v *C))))
+
+(INPUT dashed-frame "dashed straight lines of &frame_color that are sides of one axis-aligned rectangle; the sides that the grid holds meet at the rectangle's corners, the other sides lie past the grid edge, and each line has gaps."
+
+  (RULE &frame_col
+    (&frame_color *C))
+
+  (RULE &frame2
+    (&frame_col *C)
+    (input *P (:Col C)))
+
+  ;; The frame color: the one color that forms no ring.
+  (INIT &frame_by_shape Singleton
+    (member ((:v C))
+      (&not_ring *C)))
+
+  (INIT &frame_box BoundingBox
+    (cell (P)
+      (&frame2 *P))))
+
+(INPUT one-ring-inside "exactly one ring lies inside that rectangle, clear of its sides, and every other ring lies outside it."
+
+  (RULE &ring
+    (&color_box.box (:key *C))
+    (&frame_col)
+    (NOT (&frame_col C)))
+
+  (RULE &ring_cell
+    (&ring *C)
+    (input *P (:Col C)))
+
+  (RULE &line_cell
+    (&frame2 *P)
+    (axis_of *D *A)
+    (neighbor P D *Q)
+    (&frame2 (:P Q)))
+
+  (RULE &inner_side
+    (&line_cell *P *A)
+    (perp A *A2)
+    (axis_of *D (:A A2))
+    (&frame2 (:P *G))
+    (nearer D (:P G) (:Q P)))
+
+  (RULE &outside
+    (&ring_cell *P *C)
+    (&inner_side (:P *L) *D)
+    (NOT (nearer D P (:Q L))))
+
+  (RULE &selected
+    (&ring *C)
+    (NOT (&outside C)))
+
+  ;; The directions toward which a frame cell is in line with ring c, past its
+  ;; box.
+  (INIT &framed Cardinality
+    (key ((OR ((&ring ^C))
+              ((&ring_cell *P C)
+               (&color_box.box (:key C) *B)
+               (&frame2 (:P *G))
+               (axis_of *D *A)
+               (same_line A P (:Q G))
+               (nearer D (:P G) (:Q B)))))
+      (member ((:m D))
+        (&ring_cell *P C)
+        (&color_box.box (:key C) *B)
+        (&frame2 (:P *G))
+        (axis_of *D *A)
+        (same_line A P (:Q G))
+        (nearer D (:P G) (:Q B)))
+      (domain ()
+        (&ring C))))
+
+  (INIT &most_framed Order
+    (member ((:t (:V C) (:S N)))
+      (&framed.size (:key *C) *N))
+    (score ((:t (:V C) (:S N)) (:S N))
+      (&framed.size (:key *C) *N))))
+
+(OUTPUT crop-enclosed-ring "the output is the bounding box of the ring inside the frame, copied from the input, its hole included.")
+
+(ALTS $sel "which ring the frame marks" $Enclosed
+  (ALT $FrameBbox
+    (INPUT dashed-frame "cells of &frame_color, in any arrangement")
+    (INPUT one-ring-inside "exactly one ring lies inside the bounding box of the frame-colored cells"
+      (RULE &selected
+        (&ring *C)
+        (&color_box.box (:key C) *B)
+        (&frame_box.box (:B *B2))
+        (inside (:A B) (:B B2))))
+    (OUTPUT crop-enclosed-ring "the ring is the one inside the bounding box of the frame-colored cells; undefined where that box holds no ring or more than one"))
+  (ALT $MostFramedSides
+    (INPUT one-ring-inside "one ring has frame cells in line with it toward more of the four directions than any other ring"
+      (RULE &selected
+        (&most_framed.maximal (:t (:V *C)))))
+    (OUTPUT crop-enclosed-ring "the ring is the one with frame cells in line with it, past its box, toward the most of the four directions; undefined where two rings tie")))
+
+(ALTS $content "what the output draws for the selected ring" $Crop
+  (ALT $StoredShape
+    (OUTPUT crop-enclosed-ring "the output is &shape, a stored ring, drawn in the selected ring's color, with &background in its hole"
+      (DET &drawn
+        (ex_output *E *P *Col)
+        (NOT (&background (:C Col))))
+
+      (DET &undrawn
+        (&drawn *P)
+        (ex_output *E)
+        (NOT (&drawn E P)))
+
+      (DET &shape
+        (&drawn *P)
+        (NOT (&undrawn P)))
+
+      ;; The frame of the stored shape.
+      (INIT &shape_frame Frame
+        (extent (A N)
+          (&shape *P)
+          (frame_extent P *A *N))))
+    (RULE &output
+      (&selected *C)
+      (&shape_frame.cell *P)
+      (OR ((NOT (&shape P))
+           (&background (:C *Col)))
+          ((&shape P)
+           (= Col C))))))
+
+(ALTS $frame "where the frame color comes from" $StoredFrameColor
+  (ALT $FrameColorByShape
+    (INPUT dashed-frame "the frame color is the one color other than &background whose cells do not form one hollow square; undefined where no color or more than one is such"
+      (RULE &frame_col
+        (&frame_by_shape.value (:v *C))))))
+
+(RULE &output
+  (&selected *C)
+  (&color_box.box (:key C) *B)
+  (input (:P *P2) *Col)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

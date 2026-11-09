@@ -1,0 +1,90 @@
+;; inputs f3a7a43294f3bc26c7bd7aa93eb6a4e3952de95f1c92166ec3bf2650ae6ba4a6 programs/solvers/66e6c45b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 66e6c45b
+
+(RULE &gdp_nearer
+  (input *P)
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(RULE &gdp_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&gdp_nearer *P (:D D1))
+  (&gdp_nearer P (:D D2)))
+
+(RULE &gdp_diag_cell
+  (&gdp_quadrant *P *Diag)
+  (diag_dist P Diag (:K1 *Ring) (:K2 Ring)))
+
+(DET &bg DominantColor)
+
+(RULE &shape
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &target
+  (&shape (:P *P2) *Col)
+  (&gdp_quadrant (:P P2) *Diag)
+  (&gdp_diag_cell *P Diag (:Ring 0)))
+
+(INIT &bb BoundingBox
+  (cell (P)
+    (&shape *P)))
+
+(ALTS $choice "hypotheses of the motion" $Quad
+  (ALT $Stretch
+    (RULE &target
+      (&shape (:P *P2) *Col)
+      (&bb.box *B)
+      (inside (:A P2) B)
+      (same_corner (:D *Diag) (:P1 P2) (:P2 B))
+      (&gdp_diag_cell *P Diag (:Ring 0))))
+  (ALT $Explode
+    (RULE &target
+      (&shape (:P *P2) *Col)
+      (&bb.box *B)
+      (inside (:A P2) B)
+      (same_corner (:D *Diag) (:P1 P2) (:P2 B))
+      (neighbor (:P P2) (:D Diag) (:Q *P))))
+  (ALT $Table
+    (DET &cand
+      (ex_input *E (:P *P_in) (:Col *C))
+      (NOT (&bg C))
+      (ex_output E (:P *P_out) (:Col C)))
+
+    (DET &broken
+      (&cand *P_in *P_out)
+      (ex_output *E)
+      (NOT (&cand E P_in P_out)))
+
+    (DET &pair
+      (&cand *P_in *P_out)
+      (NOT (&broken P_in P_out)))
+
+    (INIT &ident Quotient
+      (equivalent ((:a P_in) (:b P_in))
+        (&pair *P_in)))
+
+    (DET &in_label
+      (&pair (:P_in *P))
+      (&ident.class (:a P) *Id))
+
+    (DET &out_label
+      (&pair *P_in (:P_out *P))
+      (&ident.class (:a P_in) *Id))
+
+    (RULE &map
+      (&in_label (:P *P_in) *Id)
+      (&out_label (:P *P_out) Id))
+
+    (RULE &target
+      (input (:P *P_in) *Col)
+      (&map P_in (:P_out *P)))))
+
+(RULE &output
+  (OR ((&target *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&target P)))))
+
+(OUT (&output ^P ^Col))

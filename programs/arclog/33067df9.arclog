@@ -1,0 +1,141 @@
+;; inputs 186d814f8ac7bdd9f5e087d776e8c2f82f99ca4ea73bfd2df0f8323382e1c9a4 programs/solvers/33067df9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 33067df9
+
+(DET &bg DominantColor)
+
+;; Tiling widths.
+(DET &in_line TileDim)
+
+(DET &in_tile TileDim)
+
+(INIT &tile_col_division Division
+  (key ((&in_line (:D ^G)))
+    (cell ((:P P_field))
+      (input (:P *P_grid_in))
+      (uniform_inset (:K G) *B)
+      (inside (:A P_grid_in) B)
+      (relative (:Base B) (:X P_grid_in) (:X_rel *P_field)))
+    (gap (A G)
+      (axis_elem *A)))
+  (side (A K)
+    (axis_elem *A)
+    (&in_tile (:D *K))))
+
+(RULE &tile_col
+  (input (:P *P_grid_in) *Col)
+  (&tile_col_division.tile (:key *G) (:P *P_field) (:P_outer *P_tile))
+  (uniform_inset (:K G) *B)
+  (inside (:A P_grid_in) B)
+  (relative (:Base B) (:X P_grid_in) (:X_rel P_field)))
+
+(RULE &ink
+  (&tile_col *P_tile *Col)
+  (NOT (&bg (:C Col))))
+
+(DET &run_axis AxisDomain)
+
+;; Like tiles neighboring along the run axis make a run.
+(INIT &run Ray
+  (key ((OR ((&ink *P_tile ^Col))
+            ((&ink Col)
+             (&run_axis *A)
+             (axis_of *D A))))
+    (source ((:P P_tile))
+      (&ink *P_tile Col))
+    (node ((:P P_tile))
+      (&ink *P_tile Col))
+    (dir (D)
+      (&ink Col)
+      (&run_axis *A)
+      (axis_of *D A))))
+
+(RULE &run_reach
+  (&ink *P_tile *Col)
+  (&run.end (:key Col) (:P *E_tile) *D (:Origin P_tile))
+  (margin (:B E_tile) D *K))
+
+(RULE &span_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&run_reach (:P_tile *Key) D *K)
+  (&run_reach (:P_tile Key) (:D D2) (:K *K2))
+  (axis_inset D (:K1 K) K2 *B))
+
+(RULE &span
+  (&span_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&span_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(DET &out_line TileCount)
+
+(DET &canvas_side ConstOutDim)
+
+(RULE &join
+  (&ink *P_tile *Col)
+  (&ink (:P_tile *Q_tile) Col)
+  (&run_axis *A)
+  (OR ((axis_of *D A)
+       (neighbor (:P P_tile) D (:Q Q_tile)))
+      ((perp A *A2)
+       (axis_of (:D *D_across) (:A A2))
+       (neighbor (:P P_tile) (:D D_across) (:Q Q_tile))
+       (&span_axis (:Key P_tile) A (:B *P_span))
+       (&span_axis (:Key Q_tile) A (:B P_span)))))
+
+;; A group is what the joins connect.
+(INIT &group Quotient
+  (edge ((:a P_tile) (:b B))
+    (OR ((&join *P_tile (:Q_tile *B)))
+        ((&ink P_tile)
+         (= B P_tile)))))
+
+(INIT &canvas Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&canvas_side *N)))
+
+(RULE &out_field
+  (&canvas.cell (:P *P_grid_out))
+  (&out_line (:N *K))
+  (uniform_inset K *B)
+  (inside (:A P_grid_out) B)
+  (relative (:Base B) (:X P_grid_out) (:X_rel *P_field)))
+
+;; The canvas holds as many tiles as the input does, so its field fixes how
+;; large they come out.
+(INIT &out_cells Division
+  (cell ((:P P_field))
+    (&out_field *P_field))
+  (parts (A N)
+    (&tile_col *P_tile)
+    (frame_extent (:P P_tile) *A *N))
+  (gap (A G)
+    (&tile_col *P_tile)
+    (frame_extent (:P P_tile) *A *N)
+    (&out_line (:N *G))))
+
+(INIT &group_box BoundingBox
+  (key ((&group.class (:a *P_tile) ^Id)
+        (&out_field *P_grid_out *P_field)
+        (&out_cells.tile (:P P_field) (:P_outer P_tile)))
+    (cell ((:P P_grid_out))
+      (&group.class (:a *P_tile) Id)
+      (&out_field *P_grid_out *P_field)
+      (&out_cells.tile (:P P_field) (:P_outer P_tile)))))
+
+(RULE &paint
+  (&group_box.box (:key *Id) *B)
+  (&canvas.cell (:P *P_grid_out))
+  (inside (:A P_grid_out) B)
+  (&group.class (:a *P_tile) Id)
+  (&ink P_tile *Col))
+
+(RULE &output
+  (&canvas.cell *P)
+  (OR ((&paint (:P_grid_out P) *Col))
+      ((NOT (&paint (:P_grid_out P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

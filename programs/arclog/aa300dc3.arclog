@@ -1,0 +1,256 @@
+;; inputs abdb589e76bf4c11970dcca4d8b21b8dd0f471447e9f30b802a8b1cf130b909b programs/solvers/aa300dc3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aa300dc3
+
+(INPUT hole "a connected region of &hole_color cells sits inside a field of 5 that includes the whole border ring of the grid"
+
+  (DET_OR_RULE &hole_color RarestColor)
+
+  ;; The one color of the border ring.
+  (INIT &ring Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) *D (:K 0))))
+
+  (RULE_OR_DET &ring.value "The one color of the border ring.")
+
+  ;; The one color off the ring's color.
+  (INIT &other Singleton
+    (member ((:v Col))
+      (input *Col)
+      (NOT (&ring.value (:v Col))))))
+
+(INPUT diagonal-runs "the hole cells form maximal runs along each of the two diagonal axes; a run ends where the next cell along its diagonal is not a hole cell")
+
+(OUTPUT longest-run "the longest diagonal run, over both diagonal axes, is painted &paint_color; every other cell keeps its color"
+
+  (DET &paint_color AnyOutNewColor)
+
+  ;; The edge whose two corners anchor the competing lines.
+  (DET &anchor_edge DirDomain)
+
+  (RULE &hole
+    (&hole_color (:C *Col))
+    (input *P Col))
+
+  (INIT &region Connectivity
+    (node (P)
+      (&hole *P)))
+
+  (INIT &arena Quotient
+    (equivalent ((:a P) (:b Q))
+      (&hole *P)
+      (&hole (:P *Q))))
+
+  (RULE &diag_step
+    (&arena.class (:Id *A) (:a *P))
+    (diag_axis_of *D *Da)
+    (neighbor P D *Q)
+    (&arena.class (:Id A) (:a Q)))
+
+  (RULE &link
+    (&diag_step *A *Da *P *Q))
+
+  ;; A segment is what the links connect.
+  (INIT &seg Quotient
+    (edge ((:a A (:Da DA) P) (:b A (:Da DA) (:P P2)))
+      (OR ((&link *A (:Da *DA) *P (:Q *P2)))
+          ((&arena.class (:Id A) (:a P))
+           (diag_axis_elem (:Da DA))
+           (= P2 P)))))
+
+  (INIT &seg_len Cardinality
+    (key ((&seg.class (:Id ^Sg) (:a *P)))
+      (member ((:m P))
+        (&seg.class (:Id Sg) (:a *P)))))
+
+  ;; Distance from a segment's line to the nearer of the two corners it
+  ;; separates; the larger it is, the nearer the line passes to the center.
+  (INIT &center Order
+    (key ((&seg.class (:Id ^Sg) (:a (:Da *DA) *P))
+          (diag_perp (:Da DA) (:Da2 *DA2))
+          (diag_axis_of (:D *Dc) (:Da DA2))
+          (corner_dist P (:Diag Dc) *K))
+      (member ((:t K))
+        (&seg.class (:Id Sg) (:a (:Da *DA) *P))
+        (diag_perp (:Da DA) (:Da2 *DA2))
+        (diag_axis_of (:D *Dc) (:Da DA2))
+        (corner_dist P (:Diag Dc) *K))
+      (score ((:t K) (:S K))
+        (&seg.class (:Id Sg) (:a (:Da *DA) *P))
+        (diag_perp (:Da DA) (:Da2 *DA2))
+        (diag_axis_of (:D *Dc) (:Da DA2))
+        (corner_dist P (:Diag Dc) *K))))
+
+  (RULE &passed
+    (&arena.class (:Id *A) (:a *P))
+    (&arena.class (:Id A) (:a *Q))
+    (diag_dir_elem (:D *Dc))
+    (nearer (:D Dc) (:P Q) (:Q P)))
+
+  (RULE &corner
+    (&arena.class (:Id *A) (:a *P))
+    (diag_dir_elem (:D *Dc))
+    (NOT (&passed A Dc P)))
+
+  (RULE &cand
+    (&seg.class (:a (:A *Pool)) (:Id *Sg)))
+
+  (RULE &anchor
+    (&anchor_edge *D)
+    (corner_dir (:C *Dc) D))
+
+  (INIT &longest Order
+    (key ((&cand (:Pool ^A) *Sg)
+          (&seg_len.size (:key Sg) *N))
+      (member ((:t (:V Sg) (:S N)))
+        (&cand (:Pool A) *Sg)
+        (&seg_len.size (:key Sg) *N))
+      (score ((:t (:V Sg) (:S N)) (:S N))
+        (&cand (:Pool A) *Sg)
+        (&seg_len.size (:key Sg) *N))))
+
+  (INIT &nearest Order
+    (key ((&longest.maximal (:key ^A) (:t (:V *Sg)))
+          (&center.minimal (:key Sg) (:t *K)))
+      (member ((:t (:V Sg) (:S K)))
+        (&longest.maximal (:key A) (:t (:V *Sg)))
+        (&center.minimal (:key Sg) (:t *K)))
+      (score ((:t (:V Sg) (:S K)) (:S K))
+        (&longest.maximal (:key A) (:t (:V *Sg)))
+        (&center.minimal (:key Sg) (:t *K)))))
+
+  (RULE &finalist
+    (&nearest.maximal (:key (:A *Pool)) (:t (:V *Sg))))
+
+  ;; The one segment the contest keeps.
+  (INIT &pick Singleton
+    (key ((&finalist ^Pool *Sg))
+      (member ((:v Sg))
+        (&finalist Pool *Sg)))))
+
+(OUTPUT tie-center "when several runs tie for longest, the painted run is the one whose diagonal line passes nearest the grid's center"
+
+  (RULE &middle_elem
+    (&longest.maximal (:key *A) (:t (:V *Sg)))
+    (&seg.class (:Id Sg) (:a (:Da *DA)))
+    (diag_perp (:Da DA) (:Da2 *DA2))
+    (diag_axis_of (:D *Dc) (:Da DA2)))
+
+  ;; The tied segments ordered by their line's distance to corner Dc.
+  (INIT &middle Order
+    (key ((&middle_elem ^A ^Dc *Sg))
+      (member ((:t Sg))
+        (&middle_elem A Dc *Sg))
+      (score ((:t Sg) (:S K))
+        (&middle_elem A Dc *Sg)
+        (&seg.class (:Id Sg) (:a *P))
+        (corner_dist P (:Diag Dc) *K)))))
+
+(ALTS $extent "what one competing line holds" $Run
+  (ALT $LineCount
+    (INPUT diagonal-runs "a whole diagonal line of the grid competes, and its hole cells, across any gap, are what it counts and what is painted"
+      (RULE &link
+        (&arena.class (:Id *A) (:a *P))
+        (&arena.class (:Id A) (:a *Q))
+        (diag_axis_elem *Da)
+        (same_line (:A Da) P Q))))
+  (ALT $NoPinch
+    (INPUT diagonal-runs "a run also ends at a diagonal step where both cells beside the step are not hole cells"
+      (RULE &link
+        (&diag_step *A *Da *P *Q)
+        (neighbor P *D Q)
+        (corner_dir (:C D) (:D *D_side))
+        (neighbor P (:D D_side) (:Q *R))
+        (&arena.class (:Id A) (:a R))))))
+
+(ALTS $cand "which runs compete" $EveryRun
+  (ALT $CornerRun
+    (OUTPUT longest-run "only a run that holds a corner cell of the hole competes; a corner cell is a hole cell nearest one grid corner"
+      (RULE &cand
+        (&seg.class (:a (:A *Pool) *P) (:Id *Sg))
+        (&corner (:A Pool) P))))
+  (ALT $AnchorCorner
+    (OUTPUT longest-run "only a run through a corner cell of an anchor corner, along that corner's own diagonal, competes; the anchor corners are the two corners of &anchor_edge"
+      (RULE &cand
+        (&anchor *Dc)
+        (diag_axis_of (:D Dc) (:Da *DA))
+        (&corner (:A *Pool) Dc *P)
+        (&seg.class (:a (:A Pool) (:Da DA) P) (:Id *Sg))))
+    (ALTS $corners "which grid corners anchor a line" $EdgeCorners
+      (ALT $EveryCorner
+        (OUTPUT longest-run "every grid corner is an anchor corner"
+          (RULE &anchor
+            (diag_dir_elem (:D *Dc))))))))
+
+(ALTS $scope "where one run is painted" $WholeGrid
+  (ALT $PerRegion
+    (OUTPUT longest-run "each 4-connected region of hole cells has its own runs compete and its own longest run painted; undefined when some region leaves its tie unbroken"
+      (INIT &arena Quotient
+        (equivalent ((:a P) (:b Q))
+          (&region.component *P *Id)
+          (&region.component (:P *Q) Id))))))
+
+(ALTS $tie "which of the runs tied for longest is painted" $TieCenter
+  (ALT $TieMiddle
+    (OUTPUT tie-center "when the tied runs are parallel and odd in number, the middle one is painted; undefined otherwise"
+      (RULE &mixed
+        (&longest.maximal (:key (:A *Pool)) (:t (:V *Sg1)))
+        (&longest.maximal (:key (:A Pool)) (:t (:V *Sg2)))
+        (&seg.class (:Id Sg1) (:a (:Da *DA1)))
+        (&seg.class (:Id Sg2) (:a (:Da *DA2)))
+        (diag_perp (:Da DA1) (:Da2 DA2)))
+
+      (RULE &finalist
+        (&middle.rank (:key (:A *Pool) *Dc) (:t *Sg) *R)
+        (&middle.dual_rank (:key (:A Pool) Dc) (:t Sg) R)
+        (NOT (&mixed Pool)))))
+  (ALT $TieCorner
+    (OUTPUT tie-center "the painted run is the tied run that holds the one cell nearest some grid corner; undefined when no single tied run holds such a cell"
+      (RULE &contested
+        (&longest.maximal (:key (:A *Pool)) (:t (:V *Sg1)))
+        (&longest.maximal (:key (:A Pool)) (:t (:V *Sg2)))
+        (!= Sg1 Sg2))
+
+      (RULE &finalist
+        (&longest.maximal (:key (:A *Pool)) (:t (:V *Sg)))
+        (OR ((NOT (&contested Pool)))
+            ((&contested Pool)
+             (&seg.class (:a *A *P) (:Id Sg))
+             (&corner A *Dc P)
+             (ALL ((&corner A Dc (:P *Pmm))
+                   (&corner A Dc (:P *Qm)))
+                  ((= Pmm Qm)))))))))
+
+(ALTS $hole "where the hole color comes from" $HoleStored
+  (ALT $HoleDerived
+    (INPUT hole "the hole color is the one color other than the color of the border ring; undefined when the ring has two colors or the rest of the grid has two other colors"
+      (RULE &hole
+        (&other.value (:v *Col))
+        (input *P Col)))))
+
+(RULE &has_winner
+  (&arena.class (:Id *A))
+  (&pick.value (:key (:Pool A))))
+
+(RULE &unsettled
+  (&has_winner)
+  (&arena.class (:Id *A))
+  (NOT (&pick.value (:key (:Pool A)))))
+
+(RULE &painted
+  (&has_winner)
+  (NOT (&unsettled))
+  (&arena.class (:Id *A))
+  (&pick.value (:key (:Pool A)) (:v *Sg))
+  (&seg.class (:Id Sg) (:a *P)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&paint_color (:C *Col)))
+      ((&has_winner)
+       (NOT (&unsettled))
+       (input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

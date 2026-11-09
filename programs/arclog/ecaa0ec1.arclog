@@ -1,0 +1,276 @@
+;; inputs b61eef8f719a1ad14b2c7b6d085a5510a3aaae4b8d1cf8a3c00b44e922babe88 programs/solvers/ecaa0ec1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ecaa0ec1
+
+(INPUT tile "one 3×3 tile of cells of colors 1 and 8, the only cells that are neither &bg nor &marker"
+
+  (INIT &in_mode_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; the commonest input color of each example
+  (INIT &in_mode Order
+    (key ((&in_mode_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&in_mode_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&in_mode_count.size (:key E *Col) *N))))
+
+  (INIT &bg_value Singleton
+    (member ((:v Col))
+      (&in_mode.maximal (:t *Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&bg_value.value (:v *C)))
+
+  ;; a color whose input cell is bg in the output
+  (INIT &marker_value Singleton
+    (member ((:v Col))
+      (ex_input *E *P *Col)
+      (ex_output E P (:Col *Col_bg))
+      (&bg_value.value (:v Col_bg))
+      (NOT (&bg_value.value (:v Col)))))
+
+  (DET &marker
+    (&marker_value.value (:v *C))))
+
+(INPUT pointer "one &marker cell on the outward diagonal of one corner of the tile, &pointer_gap cells out from the corner"
+
+  (DET &extent_step
+    (ex_input *E *P)
+    (margin (:B P) *D *K))
+
+  (DET &tile_out
+    (ex_output *E *P *Col)
+    (NOT (&bg_value.value (:v Col)))
+    (NOT (&marker (:C Col))))
+
+  (INIT &box_out BoundingBox
+    (key ((&tile_out ^E *P))
+      (cell (P)
+        (&tile_out E *P))))
+
+  ;; the output's marker cell stands k steps out on a corner's diagonal
+  (INIT &pointer_value Singleton
+    (member ((:v K))
+      (&box_out.box (:key *E) *B)
+      (ex_output E (:P *P_corner))
+      (inside (:A P_corner) B)
+      (same_corner *D (:P1 P_corner) (:P2 B))
+      (&marker (:C *Col))
+      (&extent_step E *K)
+      (jump (:P P_corner) D K (:Q *P))
+      (ex_output E P Col)))
+
+  (DET &pointer_gap
+    (&pointer_value.value (:v *K))))
+
+(INPUT marks "three &marker cells around one other corner of the tile, each &mark_gap cells out: one on the corner's outward diagonal, and one in line with each of the corner's two sides, past the tile on that side's axis"
+
+  (DET &tile_in
+    (ex_input *E *P *Col)
+    (NOT (&bg_value.value (:v Col)))
+    (NOT (&marker (:C Col))))
+
+  (INIT &box_in BoundingBox
+    (key ((&tile_in ^E *P))
+      (cell (P)
+        (&tile_in E *P))))
+
+  ;; the input's marker cells stand k steps out from a corner, on its
+  ;; diagonal and in line with both of its sides
+  (INIT &mark_value Singleton
+    (member ((:v K))
+      (&box_in.box (:key *E) *B)
+      (ex_input E (:P *P_corner))
+      (inside (:A P_corner) B)
+      (same_corner *D (:P1 P_corner) (:P2 B))
+      (&extent_step E *K)
+      (diag_dirs D *D1 *D2)
+      (jump (:P P_corner) D K *Q)
+      (ex_input E (:P Q) *Col)
+      (&marker (:C Col))
+      (jump (:P P_corner) (:D D1) K (:Q *Q1))
+      (ex_input E (:P Q1) Col)
+      (jump (:P P_corner) (:D D2) K (:Q *Q2))
+      (ex_input E (:P Q2) Col)))
+
+  (DET &mark_gap
+    (&mark_value.value (:v *K))))
+
+(INPUT no-other-marker "the pointer and the three marks are the only &marker cells")
+
+(OUTPUT turn-tile "the tile turns about its center by the rotation that takes the pointer's corner to the marked corner")
+
+(OUTPUT turn-pointer "the pointer turns with the tile, so it lands &pointer_gap cells out on the marked corner's diagonal")
+
+(OUTPUT wipe-marks "the three marks become &bg; every other cell outside the tile and the turned pointer is &bg"
+
+  (RULE_OR_DET &tile_color "The colors of the tile."
+    (input (:Col *C))
+    (NOT (&bg C))
+    (NOT (&marker C)))
+
+  (RULE &tile_cell
+    (input *P *Col)
+    (&tile_color (:C Col)))
+
+  (INIT &tile_box BoundingBox
+    (cell (P)
+      (&tile_cell *P)))
+
+  (RULE &corner
+    (&tile_box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B)))
+
+  (RULE &marker_cell
+    (input *P *Col)
+    (&marker (:C Col)))
+
+  (RULE &off_quadrant
+    (&marker_cell *P)
+    (&corner *D (:P *P_corner))
+    (diag_dirs D *D1)
+    (opposite (:D D1) (:Opp *D_away))
+    (nearer (:D D_away) P (:Q P_corner)))
+
+  (RULE &in_quadrant
+    (&marker_cell *P)
+    (&corner *D)
+    (NOT (&off_quadrant P D)))
+
+  (RULE &marked
+    (&corner *D *P)
+    (&mark_gap *K)
+    (jump P D K *Q)
+    (&marker_cell (:P Q))
+    (diag_dirs D *D1 *D2)
+    (jump P (:D D1) K (:Q *Q1))
+    (&marker_cell (:P Q1))
+    (jump P (:D D2) K (:Q *Q2))
+    (&marker_cell (:P Q2)))
+
+  (RULE &target
+    (&marked *D))
+
+  (RULE &pointer
+    (&corner *D (:P *P_corner))
+    (&pointer_gap *K)
+    (jump (:P P_corner) D K (:Q *P))
+    (&marker_cell P))
+
+  (RULE &tile_turn
+    (&target (:D *D_to))
+    (&pointer (:D *D_from))
+    (c4_elem (:D *R))
+    (apply_diag_dir (:D R) (:Dir D_from) (:Dir_out D_to)))
+
+  (RULE &turned
+    (&tile_turn *R)
+    (&tile_box.box *B)
+    (input *P)
+    (relative (:Base B) (:X P) (:X_rel *P_rel))
+    (apply (:D R) (:P P_rel) (:P_out *P_rel_out))
+    (compose (:A B) (:B P_rel_out) (:C *P_out))))
+
+(ALTS $target "which corner the marks pick" $ThreeMarks
+  (ALT $TargetByDiagonal
+    (INPUT marks "the marked corner is the one corner with a &marker cell &mark_gap out on its diagonal; undefined where no corner, or more than one, has one"
+      (RULE &marked
+        (&corner *D *P)
+        (&mark_gap *K)
+        (jump P D K *Q)
+        (&marker_cell (:P Q)))))
+  (ALT $TargetBySideMarks
+    (INPUT marks "the marked corner is the one corner with &marker cells &mark_gap out in line with both of its sides, with no diagonal mark needed; undefined where no corner, or more than one, has them"
+      (RULE &marked
+        (&corner *D *P)
+        (&mark_gap *K)
+        (diag_dirs D *D1 *D2)
+        (jump P (:D D1) K (:Q *Q1))
+        (&marker_cell (:P Q1))
+        (jump P (:D D2) K (:Q *Q2))
+        (&marker_cell (:P Q2)))))
+  (ALT $TargetByQuadrant
+    (INPUT marks "the marked corner is the corner whose quadrant holds every &marker cell but the pointer, a corner's quadrant being the cells on that corner's side of the tile, or in line with the corner, on both axes; undefined where those cells span two quadrants, or one lies in no quadrant"
+      (RULE &stray
+        (&pointer (:P *P_pointer))
+        (&marker_cell *P)
+        (!= P P_pointer)
+        (&corner *D)
+        (NOT (&in_quadrant P D)))
+
+      (RULE &target
+        (&pointer)
+        (&corner *D)
+        (NOT (&stray D))))
+    (ALT $PointerByQuadrant
+      (INPUT pointer "the pointer is the one &marker cell outside the marked corner's quadrant, and its corner is the quadrant it lies in; with $TargetByQuadrant, it is the one &marker cell alone in its quadrant; undefined where no such cell, or more than one, exists, or the pointer lies in no quadrant"
+        (RULE &crowded
+          (&in_quadrant *P *D)
+          (&in_quadrant (:P *Q) D)
+          (!= P Q))
+
+        (RULE &candidate
+          (&in_quadrant *P)
+          (NOT (&crowded P)))))))
+
+(ALTS $pointer "which marker is the pointer" $DiagonalPointer
+  (ALT $PointerByQuadrant
+    (INPUT pointer "the pointer is the one &marker cell outside the marked corner's quadrant, and its corner is the quadrant it lies in; with $TargetByQuadrant, it is the one &marker cell alone in its quadrant; undefined where no such cell, or more than one, exists, or the pointer lies in no quadrant"
+      (RULE &candidate
+        (&marked *D)
+        (&marker_cell *P)
+        (NOT (&in_quadrant P D)))
+
+      (RULE &ambiguous
+        (&candidate *P)
+        (&candidate (:P *Q))
+        (!= P Q))
+
+      (RULE &pointer
+        (&candidate *P)
+        (NOT (&ambiguous))
+        (&in_quadrant P *D)))
+    (RULE &drawn
+      (OR ((&tile_turn *R)
+           (&pointer (:P *P2))
+           (&turned R (:P P2) (:P_out *P))
+           (input (:P P2) *Col))
+          ((&tile_turn (:R *R2))
+           (&tile_cell (:P *P22) Col)
+           (&turned (:R R2) (:P P22) (:P_out P)))))
+    (ALTS $placement "where the turned pointer is drawn" $TurnWithTile
+      (ALT $PointerSnapsToDiagonal
+        (OUTPUT turn-pointer "the pointer is drawn &pointer_gap out on the marked corner's diagonal, wherever it stood")
+        (RULE &drawn
+          (OR ((&pointer (:P *P2))
+               (input (:P P2) *Col)
+               (&target *D)
+               (&corner D (:P *P_corner))
+               (&pointer_gap *K)
+               (jump (:P P_corner) D K (:Q *P)))
+              ((&tile_turn *R)
+               (&tile_cell (:P *P22) Col)
+               (&turned R (:P P22) (:P_out P)))))))))
+
+(RULE &drawn
+  (OR ((&tile_turn *R)
+       (&tile_cell (:P *P2) *Col)
+       (&turned R (:P P2) (:P_out *P)))
+      ((&tile_turn (:R *R2))
+       (&pointer (:P *P22))
+       (&turned (:R R2) (:P P22) (:P_out P))
+       (input (:P P22) Col))))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((&tile_turn)
+       (input P)
+       (NOT (&drawn P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

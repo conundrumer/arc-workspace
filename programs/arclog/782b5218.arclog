@@ -1,0 +1,65 @@
+;; inputs c365e1ccae3957a9fbbb581a5f46e76c5e2723d07dd9684fb1492ac80b68c606 programs/solvers/782b5218.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 782b5218
+
+(DET &bg SharedColor)
+
+(DET &barrier RarestColor)
+
+(DET &fill_dir DirDomain)
+
+(RULE &clear_dir
+  (&fill_dir (:D *F))
+  (opposite (:D F) (:Opp *D)))
+
+(RULE &barrier_cell
+  (input *P *Col)
+  (&barrier (:C Col)))
+
+(RULE &field_cell
+  (input *P)
+  (NOT (&barrier_cell P)))
+
+(RULE &fill_color
+  (input *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&barrier (:C Col))))
+
+(INIT &cleared Flood
+  (node (P)
+    (&field_cell *P))
+  (source (P)
+    (&field_cell *P)
+    (&clear_dir *D)
+    (margin (:B P) D (:K 0))))
+
+(RULE &fill_cell
+  (&field_cell *P)
+  (NOT (&cleared.reached P)))
+
+(ALTS $choice "which cells are the fill side" $Region
+  (ALT $Cast
+    (INIT &flow Ray
+      (source (P)
+        (&barrier_cell *P))
+      (node (P)
+        (input *P))
+      (dir (D)
+        (&fill_dir *D)))
+
+    (RULE &fill_cell
+      (&flow.ray *P)
+      (&field_cell P))))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&field_cell P)
+       (&fill_cell P)
+       (&fill_color *Col))
+      ((&barrier_cell P)
+       (= Col C_in))
+      ((&field_cell P)
+       (NOT (&fill_cell P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

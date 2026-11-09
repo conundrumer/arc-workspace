@@ -1,0 +1,406 @@
+;; inputs d4a67e6a85d44dfb34febfea8cb007b42998c716d3aab1016f7772ed6d0e6f26 programs/solvers/cbebaa4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cbebaa4b
+
+(INPUT pieces "on a field of `background`, the input holds several pieces, each a 4-connected shape of one color other than `background` and `connector`, with single `connector` cells beside it, each 4-adjacent to that piece and to no other.")
+
+(INPUT one-anchor "exactly one piece has the color `anchor`.")
+
+(INPUT pieces-fit "there is exactly one way to translate each piece other than the anchor piece, the anchor piece fixed, such that each `connector` cell lands on a `connector` cell of exactly one other piece, no other cells of two pieces share a place, and the whole assembly lies inside the grid."
+
+  (INIT &counts_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &counts Order
+    (key ((&counts_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&counts_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&counts_count.size (:key E *Col) *N))))
+
+  (DET &uncommon
+    (&counts.maximal (:t *Col))
+    (ex_output *E)
+    (NOT (&counts.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&counts.maximal (:t *C))
+    (NOT (&uncommon (:Col C))))
+
+  ;; The one-color parts of the ink. Under each dot color, the parts of the
+  ;; other colors are the pieces.
+  (INIT &comps Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col))))))
+
+  (DET &bg_determined
+    (&counts.maximal (:t *Col))
+    (NOT (&uncommon Col)))
+
+  (DET &beside_other
+    (ex_input *E *P *Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *Col2))
+    (!= Col2 Col)
+    (NOT (&bg_determined (:Col Col2))))
+
+  (DET &lone
+    (ex_input *E *P *Col)
+    (ex_output E)
+    (NOT (&beside_other E P)))
+
+  (DET &connector
+    (ex_input *E *Col)
+    (ex_output E)
+    (NOT (&bg_determined Col))
+    (NOT (&lone Col)))
+
+  (RULE &dot_color
+    (&connector *Col))
+
+  (RULE &body
+    (&comps.component (:Id *O) *P (:key *Col))
+    (NOT (&dot_color Col)))
+
+  (RULE &dot
+    (&dot_color *Col)
+    (input *P Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&body *O (:P Q)))
+
+  (RULE &shape
+    (OR ((&body *O *P *Col))
+        ((&dot O P)
+         (&dot_color Col))))
+
+  (RULE &meet
+    (&dot (:O *A) (:P *D))
+    (&dot (:O *B) (:P *E1))
+    (!= A B)
+    (relative (:Base E1) (:X D) (:X_rel *V)))
+
+  ;; A join: two pieces at an offset, the same join seen from either piece.
+  (INIT &join Quotient
+    (equivalent ((:a (:A Oa) (:B Ob) V) (:b (:A Ob) (:B Oa) (:V W)))
+      (&meet (:A *Oa) (:B *Ob) *V *D (:E1 *E))
+      (&meet (:A Ob) (:B Oa) (:V *W) (:D E) (:E1 D))))
+
+  (RULE &overlap
+    (&join.class (:a (:A *Oa) (:B *Ob) *V) (:Id *J))
+    (&shape (:O Ob) (:P *E))
+    (compose (:A E) (:B V) (:C *P))
+    (&shape (:O Oa) P)
+    (OR ((&body (:O Ob) (:P E)))
+        ((&body (:O Oa) P))))
+
+  (RULE &join_dot
+    (&meet (:A *Oa) (:B *Ob) *V *D)
+    (&join.class (:a (:A Oa) (:B Ob) V) (:Id *J))
+    (NOT (&overlap J)))
+
+  (RULE &rival
+    (&join.class (:a (:A *Oa) (:B *Ob) *V) (:Id *J))
+    (&join.class (:a (:A Oa) (:B Ob) (:V *V2)) (:Id *J2))
+    (!= V V2))
+
+  (RULE &matched_item
+    (&join_dot *J *D)
+    (&meet (:A *Oa) (:B *Ob) *V D)
+    (&join.class (:a (:A Oa) (:B Ob) V) (:Id J))
+    (&meet (:A Oa) (:B Ob) V (:D *D2))
+    (!= D2 D))
+
+  ;; First the joins at which two or more dots of each piece meet: a dot that
+  ;; only one of them can take takes it, and a join that shares a dot or a pair of
+  ;; pieces with a taken join is out.
+  (CHOOSE &matched
+    (for ((&matched_item ^D))
+      (from (&matched_item D *J)))
+    (never
+      (&matched_item *J)
+      (&matched_item (:J *J2))
+      (&rival J J2))
+    (never
+      (&matched_item *J)
+      (&matched_item (:D *D2) (:J *J2))
+      (&matched_item (:D D2) J)
+      (!= J J2)))
+
+  (RULE &stale
+    (&join_dot *J *D)
+    (&matched (:J *J2))
+    (&matched_item D (:J J2)))
+
+  (RULE &paired_up_item
+    (&join_dot *J *D)
+    (NOT (&stale J)))
+
+  ;; Then the dots left pair up in the same way.
+  (CHOOSE &paired_up
+    (for ((&paired_up_item ^D))
+      (from (&paired_up_item D *J)))
+    (never
+      (&paired_up_item *J)
+      (&paired_up_item (:J *J2))
+      (&rival J J2))
+    (never
+      (&paired_up_item *J)
+      (&paired_up_item (:D *D2) (:J *J2))
+      (&paired_up_item (:D D2) J)
+      (!= J J2))))
+
+(OUTPUT anchor-stays "the anchor piece and its `connector` cells keep their places.")
+
+(OUTPUT assemble "the pieces join by forced steps, and no step is undone. First, two pieces join at an offset at which two or more of their `connector` cells meet and no other cells of the two share a place, where some `connector` cell has that join alone left; a join that shares a `connector` cell, or the two pieces at another offset, with a join made is no longer left. Then, in the same way, each `connector` cell no join took meets the one `connector` cell no join took that is left for it. Every other piece, with its `connector` cells, moves by the offsets of the joins on its way from the anchor piece. Undefined where a step leaves a choice, so that a `connector` cell meets no cell, as where a `connector` cell has two cells left that it could meet; where two joins made share a `connector` cell or two pieces; where a piece takes no place or two; and where the result is no fit as `pieces-fit` gives it.")
+
+(OUTPUT rest-background "every other output cell is `background`."
+
+  (INIT &box BoundingBox
+    (key ((&comps.component (:Id ^O) *P))
+      (cell (P)
+        (&comps.component (:Id O) *P))))
+
+  (RULE &gap
+    (&box.box (:key *O) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&comps.component (:Id O) P)))
+
+  (RULE &spans
+    (&comps.component (:Id *O) *P)
+    (axis_of *D *A)
+    (neighbor P D *Q)
+    (&comps.component (:Id O) (:P Q)))
+
+  (RULE &solid
+    (&comps.component (:Id *O))
+    (NOT (&gap O))
+    (ALL ((axis_elem *A))
+         ((&spans O A))))
+
+  (DET &absent
+    (ex_input *Col)
+    (ex_output *E)
+    (NOT (ex_input E Col)))
+
+  (DET &anchor
+    (&solid *E *O)
+    (&comps.component E (:Id O) (:key *Col))
+    (NOT (&absent Col)))
+
+  (RULE &anchor_piece
+    (&body *O *Col)
+    (&anchor Col)))
+
+(ALTS $a "which piece stays in place" $ByColor
+  (ALT $AnchorSolidBlock
+    (INPUT one-anchor "exactly one piece fills its bounding box, and the box spans more than one cell on each axis; undefined where no piece or more than one does")
+    (OUTPUT anchor-stays "that piece and its `connector` cells keep their places"
+      (RULE &anchor_piece
+        (&body *O)
+        (&solid O)))))
+
+(ALTS $c "the color of the dots" $StoredConnector
+  (ALT $ConnectorDerived
+    (INPUT pieces "the `connector` color is the one color other than `background` whose cells touch every piece of every other color; undefined where no color, or more than one, does"
+      (RULE &touches
+        (&comps.component (:Id *O) *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (input (:P Q) *Col))
+
+      (RULE &misses
+        (&comps.component (:key *Col))
+        (&comps.component (:Id *O) (:key (:Col *Col2)))
+        (!= Col2 Col)
+        (NOT (&touches O Col)))
+
+      (RULE &touches_all
+        (&comps.component (:key *Col))
+        (NOT (&misses Col)))
+
+      (RULE &dot_color
+        (&touches_all *Col)
+        (ALL ((&touches_all (:Col *Col2)))
+             ((= Col2 Col)))))))
+
+(ALTS $o "whether placed pieces may share cells" $Disjoint
+  (ALT $OverlapAllowed
+    (INPUT pieces-fit "the cells of two pieces may share a place; undefined where a shared place would take two colors")
+    (RULE &broken
+      (OR ((OR ((&clash))
+               ((&dot (:P *D))
+                (NOT (&made D)))
+               ((&shared_dot))
+               ((&anchor_rival))
+               ((&body (:O *Ob))
+                (NOT (&placed (:O Ob))))))
+          ((&doubled))
+          ((&spot (:O *X_o) (:V *X_v) *P)
+           (NOT (&paired (:O X_o) (:V X_v) P)))
+          ((&spot (:O *X_o2) (:V *X_v2) (:P *P2))
+           (&spot (:O *Y_o) (:V *Y_v) (:P P2))
+           (&spot (:O *Z_o) (:V *Z_v) (:P P2))
+           (OR ((!= X_o2 Y_o))
+               ((!= X_v2 Y_v)))
+           (OR ((!= X_o2 Z_o))
+               ((!= X_v2 Z_v)))
+           (OR ((!= Y_o Z_o))
+               ((!= Y_v Z_v))))))))
+
+(ALTS $b "whether the assembly must lie inside the grid" $Inside
+  (ALT $ClipAssembly
+    (INPUT pieces-fit "the assembly may reach past the grid")
+    (OUTPUT assemble "the output draws the part of the assembly inside the grid"
+      (RULE &beyond
+        (input (:P *P2))
+        (axis_of *D *A)
+        (frame_extent (:P P2) A (:N *K))
+        (jump (:P P2) D K (:Q *P)))
+
+      (RULE &near
+        (OR ((input *P))
+            ((&beyond P))
+            ((&beyond (:P *Q) *A)
+             (perp A *A2)
+             (axis_of *D (:A A2))
+             (frame_extent (:P Q) (:A A2) (:N *K))
+             (jump (:P Q) D K (:Q P))))))
+    (RULE &place
+      (OR ((&shape *O *P)
+           (&near (:P *Q))
+           (relative (:Base P) (:X Q) (:X_rel *V))
+           (NOT (&anchor_piece O)))
+          ((&anchor_piece O)
+           (= V 0))))))
+
+(RULE &shared_dot
+  (&dot *O *P)
+  (&dot (:O *O2) P)
+  (!= O O2))
+
+(RULE &anchor_rival
+  (&anchor_piece *O)
+  (&anchor_piece (:O *O2))
+  (!= O O2))
+
+(RULE &shift
+  (&shape *O *P)
+  (input (:P *Q))
+  (relative (:Base P) (:X Q) (:X_rel *V)))
+
+(RULE &off_grid
+  (&shift *O *V)
+  (&shape O *P)
+  (compose (:A P) (:B V) (:C *Q))
+  (NOT (input (:P Q))))
+
+(RULE &place
+  (OR ((&shift *O *V)
+       (NOT (&off_grid O V))
+       (NOT (&anchor_piece O)))
+      ((&anchor_piece O)
+       (= V 0))))
+
+(RULE &made
+  (OR ((&matched *J)
+       (&matched_item *D J))
+      ((&paired_up J)
+       (&paired_up_item D J))))
+
+(RULE &clash
+  (OR ((&made *J *D)
+       (&made (:J *J2) D)
+       (!= J J2))
+      ((&made (:J *J3))
+       (&made (:J *J22))
+       (&rival (:J J3) (:J2 J22)))))
+
+;; The places the joins made lead to from the anchor piece.
+(INIT &lead Propagation
+  (source ((:n (:O Ob) V))
+    (&place (:O *Ob) *V)
+    (&anchor_piece (:O Ob)))
+  (edge ((:a (:O Oa) V) (:b (:O Ob) (:V W)))
+    (&place (:O *Oa) *V)
+    (&made *J)
+    (&join.class (:a (:A Oa) (:B *Ob) (:V *V2)) (:Id J))
+    (compose (:A V) (:B V2) (:C *W))
+    (&place (:O Ob) (:V W))))
+
+(RULE &doubled
+  (&lead.reached (:n (:O *Ob) *V))
+  (&lead.reached (:n (:O Ob) (:V *V2)))
+  (!= V V2))
+
+(RULE &placed
+  (&lead.reached (:n *O *V))
+  (NOT (&doubled)))
+
+(RULE &cell
+  (&placed *O *V)
+  (&shape O (:P *P2) *Col)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &spot
+  (&placed *O *V)
+  (&dot O (:P *P2))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &paired
+  (&spot *O *V *P)
+  (&spot (:O *Y_o) (:V *Y_v) P)
+  (OR ((!= O Y_o))
+      ((!= V Y_v))))
+
+(RULE &both_dots
+  (&spot (:O *X_o) (:V *X_v) *P)
+  (&spot (:O *Y_o) (:V *Y_v) P))
+
+(RULE &broken
+  (OR ((OR ((&clash))
+           ((&dot (:P *D))
+            (NOT (&made D)))
+           ((&shared_dot))
+           ((&anchor_rival))
+           ((&body (:O *Ob))
+            (NOT (&placed (:O Ob))))))
+      ((&doubled))
+      ((&spot (:O *X_o) (:V *X_v) *P)
+       (NOT (&paired (:O X_o) (:V X_v) P)))
+      ((&spot (:O *X_o2) (:V *X_v2) (:P *P2))
+       (&spot (:O *Y_o) (:V *Y_v) (:P P2))
+       (&spot (:O *Z_o) (:V *Z_v) (:P P2))
+       (OR ((!= X_o2 Y_o))
+           ((!= X_v2 Y_v)))
+       (OR ((!= X_o2 Z_o))
+           ((!= X_v2 Z_v)))
+       (OR ((!= Y_o Z_o))
+           ((!= Y_v Z_v))))
+      ((&cell (:O *X_o3) (:V *X_v3) (:P *P3))
+       (&cell (:O *Y_o2) (:V *Y_v2) (:P P3))
+       (OR ((!= X_o3 Y_o2))
+           ((!= X_v3 Y_v2)))
+       (NOT (&both_dots (:X_o X_o3) (:X_v X_v3) (:Y_o Y_o2) (:Y_v Y_v2) (:P P3))))))
+
+(RULE &drawn
+  (&cell *P *Col)
+  (input P)
+  (NOT (&broken)))
+
+(RULE &output
+  (OR ((&drawn *P *Col))
+      ((NOT (&broken))
+       (input P)
+       (NOT (&drawn P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,6 @@
+;; inputs be083e2589608efaec4eff26f14dfa6f580a5e43dfac1b84a94a115bf292d419 programs/solvers/22425bda.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22425bda
+
+(param &bg Color (7))
+(param &stack_dir Dir (DIR_L))

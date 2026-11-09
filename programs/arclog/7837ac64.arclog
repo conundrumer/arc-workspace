@@ -1,0 +1,145 @@
+;; inputs 38e544f7ba9d0a4f0f0ee2f1687e3e4a1377ed3cc211cd5bafcf7ef7bfccc2b9 programs/solvers/7837ac64.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7837ac64
+
+(DET &bg SharedColor)
+
+(RULE &gapped_line
+  (input *P *Col)
+  (&bg (:C Col))
+  (axis_of *D (:A *A2))
+  (OR ((neighbor P D *Q)
+       (input (:P Q) (:Col *Col2))
+       (NOT (&bg (:C Col2))))
+      ((margin (:B P) D (:K 0))))
+  (perp (:A A2) (:A2 *A))
+  (split P A (:Along *L)))
+
+(RULE &on_line
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&gapped_line L)))
+
+;; $All — every cutting line.
+(RULE &tiles_divider
+  (&on_line *P *A)
+  (split P A (:Along *L)))
+
+(RULE &node
+  (&on_line *P *A)
+  (perp A *A2)
+  (&on_line P (:A A2)))
+
+(RULE &line_color
+  (input *P *Col)
+  (&on_line P)
+  (NOT (&node P)))
+
+(RULE &mark
+  (&node *P)
+  (input P *Col)
+  (NOT (&line_color Col)))
+
+;; $Marks — the tiles the marks' bounding box reaches.
+(INIT &marks_box BoundingBox
+  (cell (P)
+    (&mark *P)))
+
+(ALTS $l "which lines frame the tiles" $All
+  (ALT $Marked
+    ;; $Marked — the cutting lines a mark sits on.
+    (RULE &tiles_divider
+      (&mark *P)
+      (split P *A (:Along *L)))))
+
+(ALTS $s "what the miniature is cropped to" $Marks
+  (ALT $Blocks
+    ;; The box the miniature is cropped to.
+    (INIT &span_box BoundingBox
+      (cell ((:P P_tile))
+        (&block *P_tile)))))
+
+(RULE &tiles_on_divider
+  (input *P)
+  (&tiles_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &tiles_rank Order
+  (key ((OR ((&tiles_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiles_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiles_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiles_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiles_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiles_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiles_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiles_part_idx *P D (:N *N1))
+  (&tiles_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiles_tile_of
+  (&tiles_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiles_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &corner_mark
+  (&mark *P *Col)
+  (diag_opposite *D (:Opp *D2))
+  (neighbor P (:D D2) *Q)
+  (&tiles_tile_of (:P Q) *P_tile))
+
+;; The one color of a tile's corner marks.
+(INIT &corner_color Singleton
+  (key ((&corner_mark ^P_tile *Col))
+    (member ((:v Col))
+      (&corner_mark P_tile *Col))))
+
+(RULE &bare_corner
+  (&corner_mark *P_tile)
+  (diag_dir_elem *D)
+  (NOT (&corner_mark P_tile D)))
+
+(RULE &block
+  (&corner_color.value (:key *P_tile) (:v *Col))
+  (NOT (&bare_corner P_tile)))
+
+;; The box the miniature is cropped to.
+(INIT &span_box BoundingBox
+  (cell ((:P P_tile))
+    (&marks_box.box *B)
+    (&tiles_tile_of *P *P_tile)
+    (inside (:A P) B)))
+
+(RULE &output
+  (&span_box.box *B)
+  (&tiles_tile_of *P_tile)
+  (inside (:A P_tile) B)
+  (relative (:Base B) (:X P_tile) (:X_rel *P))
+  (OR ((&block P_tile *Col))
+      ((NOT (&block P_tile))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

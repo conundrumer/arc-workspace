@@ -1,0 +1,170 @@
+;; inputs 9c384f538d818c75070f94f35f65918e9022f9bce4a4e0d8917cb99764be44d8 programs/solvers/e3f79277.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e3f79277
+
+(INPUT corner-angle "the input is a 6 by 6 field of the background color 7, and one corner holds a right angle of one other color: two legs of equal length k, one along each edge of that corner, that meet in the corner cell."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &angle2
+    (ex_output *E *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &angle
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (DET &corner2
+    (&angle2 *E *P)
+    (inside (:A P) (:B 0))
+    (same_corner (:D *C) (:P1 P) (:P2 0)))
+
+  (RULE &corner
+    (&angle *P)
+    (inside (:A P) (:B 0))
+    (same_corner (:D *C) (:P1 P) (:P2 0)))
+
+  (RULE &legs_domain
+    (&corner *C)
+    (diag_dirs (:D C) (:D2 *Key)))
+
+  ;; The leg along edge E of the corner: the angle's cells on that edge.
+  (INIT &legs Cardinality
+    (key ((&legs_domain (:Key ^E)))
+      (member ((:m P))
+        (&angle *P)
+        (margin (:B P) (:D E) (:K 0)))))
+
+  (DET &legs_domain2
+    (&corner2 (:E *K) *C)
+    (diag_dirs (:D C) (:D2 *E1)))
+
+  ;; The leg along edge E of the corner: the angle's cells on that edge.
+  (INIT &legs2 Cardinality
+    (key ((&legs_domain2 ^K (:E1 ^E)))
+      (member ((:m P))
+        (&angle2 (:E K) *P)
+        (margin (:B P) (:D E) (:K 0)))))
+
+  (INIT &equal Singleton
+    (member ((:v K))
+      (&legs.size (:N *K)))))
+
+(INPUT no-other-marks "every cell off the angle is the background color.")
+
+(OUTPUT canvas "the output is an out_size by out_size grid of the background color."
+
+  ;; the lines the output side has beyond the input side
+  (DET &size_gap DimDiff)
+
+  (INIT &gap_lines Frame
+    (key ((axis_elem ^A))
+      (extent (A N)
+        (&size_gap (:D *N)))))
+
+  ;; The output's lines on each axis: the input's lines and the gap's lines.
+  (INIT &lines Cardinality
+    (key ((OR ((input *P)
+               (axis_elem ^A)
+               (split P A (:Along *L)))
+              ((&gap_lines.cell (:key A) (:P L)))))
+      (member ((:m L))
+        (OR ((input *P)
+             (split P A (:Along *L)))
+            ((&gap_lines.cell (:key A) (:P L))))))))
+
+(OUTPUT same-corner "the triangle sits in the output corner that matches the input corner of the angle.")
+
+(OUTPUT scaled-legs "each leg of the triangle runs leg_scale times k cells from that corner along the matching edge, in the angle's color."
+
+  (INIT &extremes Order
+    (member ((:t K))
+      (&legs.size (:N *K)))
+    (score ((:t K) (:S K))
+      (&legs.size (:N *K)))))
+
+(OUTPUT hypotenuse "the diagonal from the far end of one leg to the far end of the other is drawn in the angle's color.")
+
+(ALTS $s "how the output side is set" $StoredSize
+  (ALT $SizeFromInput
+    (OUTPUT canvas "the output side is the input side plus a stored size_gap of lines; undefined on no input.")
+    ;; The output frame.
+    (INIT &canvas Frame
+      (extent (A N)
+        (&lines.size (:key *A) *N)))))
+
+(ALTS $l "which leg length the output legs scale" $EqualLegs
+  (ALT $LongerLeg
+    (INPUT corner-angle "the two legs may differ in length.")
+    (OUTPUT scaled-legs "k is the length of the longer leg, and both output legs take leg_scale times it; undefined on no input with an angle in a corner.")
+    (RULE &leg_length
+      (&extremes.maximal (:t *K))))
+  (ALT $ShorterLeg
+    (INPUT corner-angle "the two legs may differ in length.")
+    (OUTPUT scaled-legs "k is the length of the shorter leg, and both output legs take leg_scale times it; undefined on no input with an angle in a corner.")
+    (RULE &leg_length
+      (&extremes.minimal (:t *K)))))
+
+;; the side length of the square output grid
+(DET &out_size ConstOutDim)
+
+;; The output frame.
+(INIT &canvas Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&out_size *N)))
+
+(RULE &leg_length
+  (&equal.value (:v *K)))
+
+(DET &scale
+  (&legs.size *E (:key (:E *D)) (:N *N2))
+  (&legs2.size (:key (:K E) (:E D)) (:N *M))
+  (tile_size (:Ext M) (:N N2) (:G 0) (:K *N)))
+
+(DET &defect
+  (&scale *N)
+  (ex_output *E)
+  (NOT (&scale E N)))
+
+(DET &leg_scale
+  (&scale *N)
+  (NOT (&defect N)))
+
+(RULE &leg
+  (&canvas.cell *P)
+  (&corner *C)
+  (diag_dirs (:D C) (:D1 *D) (:D2 *E))
+  (margin (:B P) (:D E) (:K 0))
+  (margin (:B P) D (:K *T))
+  (&leg_scale (:N *K))
+  (divide T (:Side K) (:Gap 0) (:Part *I))
+  (&leg_length (:K *N))
+  (< I N))
+
+(RULE &far_end
+  (&leg *P)
+  (&corner *C)
+  (diag_dirs (:D C) (:D1 *D) (:D2 *E))
+  (margin (:B P) (:D E) (:K 0))
+  (opposite D (:Opp *D_out))
+  (neighbor P (:D D_out) *Q)
+  (NOT (&leg (:P Q)))
+  (corner_dist P (:Diag C) *K))
+
+(RULE &ink
+  (OR ((&leg *P))
+      ((&far_end (:K *J))
+       (&canvas.cell P)
+       (&corner *C)
+       (corner_dist P (:Diag C) (:K J)))))
+
+(RULE &output
+  (OR ((&ink *P)
+       (&angle *Col))
+      ((&leg_length)
+       (&canvas.cell P)
+       (NOT (&ink P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

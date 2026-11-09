@@ -1,0 +1,125 @@
+;; inputs f239c041bdc6192133130d3ac1704fd84d6afe4067eaaa490ec74cc30deb55b3 programs/solvers/e048c9ed.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e048c9ed
+
+(INPUT background "a field of the background color (0).")
+
+(INPUT one-marker "exactly one object is a single cell; it sits on the top row, in gray (5).")
+
+(INPUT bars "every other object is a straight one-color bar along the bar axis (H), of length 2 or more, each on its own line, with lines of background between bars.")
+
+(INPUT bar-lengths-known "each bar's length is a key of `length_color`.")
+
+(OUTPUT mark-per-bar "for each bar, the cell where the bar's line meets the marker's line across the bar axis takes the color `length_color` gives the bar's cell count; the bar's own color does not count."
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &objs Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&bg (:C Col)))))
+
+  (INIT &size Cardinality
+    (key ((&objs.component *P (:Id ^O)))
+      (member ((:m P))
+        (&objs.component *P (:Id O))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  (RULE &bent
+    (&objs.component *P (:Id *O))
+    (&objs.component (:P *Q) (:Id O))
+    (perp *A *A2)
+    (axis_of *D (:A A2))
+    (nearer D P Q))
+
+  (RULE &marker_cell
+    (&objs.component *P (:Id *O))
+    (NOT (&bent O)))
+
+  (RULE &bar
+    (&objs.component *P (:Id *O))
+    (NOT (&marker_cell P))))
+
+(ALTS $m "which object is the marker" $SingleCell
+  (ALT $MarkerOnEdge
+    (INPUT one-marker "the marker is the one object with a cell on the `marker_edge` row; undefined where no object or more than one meets that row, or where that object spans more than one column."
+      (DET &marker_edge DirDomain)
+
+      (RULE &marker_cell
+        (&objs.component (:P *Q) (:Id *O))
+        (&marker_edge (:D *E))
+        (margin (:B Q) (:D E) (:K 0))
+        (&objs.component *P (:Id O))))
+    (RULE &undefined
+      (OR ((&marker_edge (:D *E))
+           (axis_of (:D E) *A)
+           (perp A *A2)
+           (axis_of *D (:A A2))
+           (&marker_cell *P)
+           (&marker_cell (:P *Q))
+           (nearer D P Q))
+          ((NOT (&marker_cell)))
+          ((&bar *O)
+           (NOT (&bar_line O)))
+          ((&bar_line (:A *A3))
+           (axis_of (:D *D2) (:A A3))
+           (&marker_cell (:P *P2))
+           (&marker_cell (:P *Q2))
+           (nearer (:D D2) (:P P2) (:Q Q2)))))))
+
+(ALTS $l "which bars are marked" $AlongAxis
+  (ALT $EitherAxis
+    (INPUT bars "every other object is a straight bar along either axis; undefined on an object of two or more cells that is not straight.")
+    (OUTPUT mark-per-bar "the mark goes where the bar's line meets the marker's line across that bar's own axis.")
+    (RULE &bar_line
+      (&bar *O)
+      (axis_elem *A)
+      (NOT (&bent O A)))))
+
+(DET &bar_axis AxisDomain)
+
+(RULE &bar_line
+  (&bar *O)
+  (&bar_axis *A)
+  (NOT (&bent O A)))
+
+(RULE &target
+  (&bar_line *O *A)
+  (&objs.component (:P *Q) (:Id O))
+  (&marker_cell (:P *R))
+  (perp A *A2)
+  (input *P)
+  (same_line A P Q)
+  (same_line (:A A2) P (:Q R)))
+
+(RULE &undefined
+  (OR ((NOT (&marker_cell)))
+      ((&bar *O)
+       (NOT (&bar_line O)))
+      ((&bar_line *A)
+       (axis_of *D A)
+       (&marker_cell *P)
+       (&marker_cell (:P *Q))
+       (nearer D P Q))))
+
+(DET &length_color
+  (&objs.component *E (:P *Q) (:Id *O))
+  (&size.size E (:key O) *N)
+  (&bar_axis *A)
+  (ex_input E *P (:Col *Bg))
+  (same_line A P Q)
+  (&bg (:C Bg))
+  (ex_output E P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &output
+  (OR ((&target *O *P)
+       (NOT (&undefined))
+       (&size.size (:key O) *N)
+       (&length_color N *Col))
+      ((input P Col)
+       (NOT (&target P))
+       (NOT (&undefined)))))
+
+(OUT (&output ^P ^Col))

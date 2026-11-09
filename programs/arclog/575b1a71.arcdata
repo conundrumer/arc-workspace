@@ -1,0 +1,7 @@
+;; inputs 1a150236363ecc2bbdadaa4f1fb42e98fee97e7403fb8d42dd1ff4be93f4e650 programs/solvers/575b1a71.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 575b1a71
+
+(param &mark Color (0))
+(param &rank_dir Dir (DIR_L))
+(param &rank_color (number Color) (0 1) (1 2) (2 3) (3 4))

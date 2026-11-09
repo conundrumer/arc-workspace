@@ -1,0 +1,51 @@
+;; inputs 6c878d14021fec461f843ec1bac9a4ed271a3aba0a90d2c81936f635787de3da programs/solvers/dc1df850.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dc1df850
+
+(DET &marker SharedColor)
+
+(DET &halo AnyOutNewColor)
+
+(RULE &marker_at
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(RULE &halo2
+  (&marker_at (:P *M))
+  (&halo (:C *Col))
+  (neighbor (:P M) *D (:Q *P))
+  (input P))
+
+(ALTS $choice "how the halo footprint is computed (data-equivalent on this task)" $Grow
+  (ALT $Stamp
+    ;; A second marker in the pair leaves a repainted cell no unique source.
+    (INIT &pair_marker Singleton
+      (key ((ex_input ^E *P *Col)
+            (&marker (:C Col)))
+        (member ((:v P))
+          (ex_input E *P *Col)
+          (&marker (:C Col)))))
+
+    (DET &footprint
+      (&pair_marker.value (:key *E) (:v *M))
+      (ex_output E *P *Col)
+      (OR ((= P M))
+          ((ex_input E P (:Col *Col_in))
+           (!= Col_in Col))))
+
+    (DET &template
+      (&footprint *M *P *Col)
+      (relative (:Base M) (:X P) (:X_rel *Delta)))
+
+    (RULE &halo2
+      (&marker_at (:P *Q))
+      (&template (:Delta *Off) *Col)
+      (compose (:A Q) (:B Off) (:C *P))
+      (input P))))
+
+(RULE &output
+  (OR ((&halo2 *P *Col))
+      ((input P Col)
+       (NOT (&halo2 P)))))
+
+(OUT (&output ^P ^Col))

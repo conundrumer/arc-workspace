@@ -1,0 +1,62 @@
+;; inputs faad409f5f2fb6265a85c67ac51d2a6aee3be8768b5ef4f9079aca1b09714c06 programs/solvers/182e5d0f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 182e5d0f
+
+(DET &bg DominantColor)
+
+(DET &wire ColorDomain)
+
+(DET &cap UnchangedColor)
+
+(DET &bead RarestColor)
+
+(RULE &plug
+  (input *P (:Col *Col_w))
+  (&wire (:C Col_w))
+  (opposite *D (:Opp *D2))
+  (neighbor P D *Q)
+  (input (:P Q) (:Col *Col_c))
+  (&cap (:C Col_c))
+  (neighbor P (:D D2) (:Q *Q2))
+  (input (:P Q2) (:Col Col_c)))
+
+(RULE &cord
+  (input *P *Col)
+  (&wire (:C Col))
+  (NOT (&plug P)))
+
+(RULE &entry
+  (input (:P *P_seat) *Col)
+  (&bead (:C Col))
+  (dir_elem *D)
+  (neighbor (:P P_seat) D (:Q *P_cord))
+  (&cord (:P P_cord)))
+
+;; The cords a bead travels.
+(INIT &cord_run Flood
+  (node (P)
+    (&cord *P))
+  (source (P)
+    (&entry (:P_cord *P))))
+
+(RULE &consumed
+  (OR ((&cord_run.reached *P))
+      ((&entry (:P_seat P)))))
+
+(RULE &landing
+  (&plug (:P *P0))
+  (dir_elem *D)
+  (neighbor (:P P0) D (:Q *P))
+  (&cord_run.reached P))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&landing P)
+       (&bead (:C *Col)))
+      ((&consumed P)
+       (NOT (&landing P))
+       (&bg (:C Col)))
+      ((NOT (&consumed P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

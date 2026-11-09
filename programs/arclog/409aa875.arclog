@@ -1,0 +1,193 @@
+;; inputs 1c89dbc81de161a7b839e397d18a2aed2ab9dfe6462924f64d587b9d29783c3d programs/solvers/409aa875.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 409aa875
+
+(DET &bg DominantColor)
+
+;; The color a shot leaves, and the color where more than one lands.
+(DET &mark UnchangedColor)
+
+(DET &clash AnyOutNewColor)
+
+;; How far a shot travels.
+(DET &reach NumberDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &dir8_flank
+  (OR ((corner_dir (:C *D) (:D *E1)))
+      ((corner_dir (:C E1) D))))
+
+(INIT &exposed Boundary
+  (cell (P)
+    (&ink *P))
+  (dir (D)
+    (dir8_elem *D)))
+
+(RULE &no_arm
+  (&dir8_flank (:D *G) (:E1 *E))
+  (&exposed.exposed *P (:D E)))
+
+(RULE &apex2
+  (&ink *P)
+  (dir8_elem (:D *G))
+  (NOT (&no_arm P G)))
+
+(RULE &arrow
+  (&apex2 (:P *P_apex) *G)
+  (dir8_opposite (:D G) (:D2 *Aim)))
+
+(RULE &arrow_cell
+  (&apex2 (:P *P_apex) *G)
+  (OR ((&dir8_flank (:D G) (:E1 *E))
+       (neighbor (:P P_apex) (:D E) (:Q *P)))
+      ((= P P_apex))))
+
+(ALTS $choice "how an arrowhead is read" $Local
+  (ALT $Glyph
+    (DET &ink_in
+      (ex_input *E *P *Col)
+      (NOT (&bg (:C Col))))
+
+    (INIT &comps Connectivity
+      (key ((&ink_in ^E *P))
+        (node (P)
+          (&ink_in E *P)))
+      (step ((:Delta S))
+        (OR ((diag_dir_elem *D)
+             (step_offset D (:V *S)))
+            ((dir_elem (:D *D2))
+             (step_offset (:D D2) (:V S))))))
+
+    (DET &landed
+      (ex_output *E *P *Col)
+      (NOT (&bg (:C Col)))
+      (ex_input E P (:Col *Bg))
+      (&bg (:C Bg)))
+
+    (DET &unarmed
+      (&ink_in *E (:P *A))
+      (dir8_elem (:D *G))
+      (OR ((corner_dir (:C G) (:D *F)))
+          ((corner_dir (:C F) (:D G))))
+      (neighbor (:P A) (:D F) *Q)
+      (NOT (&ink_in E (:P Q))))
+
+    (DET &launch
+      (&landed *E *P)
+      (dir8_opposite *D (:D2 *D_back))
+      (&reach (:N *K))
+      (jump P (:D D_back) K (:Q *A))
+      (&ink_in E (:P A))
+      (NOT (&unarmed E A (:G D_back))))
+
+    (INIT &bbox BoundingBox
+      (key ((&launch ^E ^A))
+        (cell (P)
+          (&comps.component (:key E) (:P A) *Id)
+          (&comps.component (:key E) *P Id))))
+
+    (DET &mark_view
+      (&bbox.cell (:key *E *A) *P)
+      (&bbox.box (:key E A) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+    (INIT &same Agreement
+      (key ((OR ((&mark_view (:E ^K_e) (:A ^K_a) *P_inner)
+                 (&bbox.cell (:key (:E ^K2_e) (:A ^K2_a))))
+                ((&bbox.cell (:key (:E K_e) (:A K_a)))
+                 (&mark_view (:E K2_e) (:A K2_a) P_inner))))
+        (source ((:P P_inner))
+          (&mark_view (:E K_e) (:A K_a) *P_inner)
+          (&bbox.cell (:key (:E K2_e) (:A K2_a))))
+        (target ((:P P_inner))
+          (&bbox.cell (:key (:E K_e) (:A K_a)))
+          (&mark_view (:E K2_e) (:A K2_a) *P_inner))))
+
+    (DET &same_map
+      (&mark_view (:E *Key_k_e) (:A *Key_k_a))
+      (&bbox.cell (:key (:E *Key_k2_e) (:A *Key_k2_a)))
+      (d4_elem *D)
+      (NOT (&same.mismatch (:key (:K_e Key_k_e) (:K_a Key_k_a) (:K2_e Key_k2_e) (:K2_a Key_k2_a)) D)))
+
+    ;; Each launching mark is one copy of its class's chart, in its own pose;
+    ;; the classes are the marks that are D4 images of each other.
+    (INIT &cls Quotient
+      (equivalent ((:a (:E K_e) (:A K_a)) (:b (:E K2_e) (:A K2_a)))
+        (&same_map (:Key_k_e *K_e) (:Key_k_a *K_a) (:Key_k2_e *K2_e) (:Key_k2_a *K2_a))))
+
+    (DET &aim
+      (&cls.class (:a *E *A) *Id)
+      (&launch E A *D))
+
+    (DET &apex
+      (&cls.class (:a *E *A) *Id)
+      (&mark_view E A (:P A) (:P_inner *P)))
+
+    (DET &shape
+      (&cls.class (:a *E *A) *Id)
+      (&mark_view E A (:P_inner *P)))
+
+    ;; The arrowhead catalog: each footprint, the cell its shot leaves from,
+    ;; and where that shot heads.
+    (RIGID_DET &glyph
+      (key ((OR ((&shape ^Id)) ((&apex Id)) ((&aim Id))))
+        (instance ((OR ((&shape ^E ^A Id)) ((&apex E A Id)) ((&aim E A Id))))
+          (&shape E A Id *P)
+          (&apex E A Id *P)
+          (&aim E A Id *D))))
+
+    (INIT &occ Occurrences
+      (key ((OR ((&glyph.shape (:key ^Id) (:Pose ^D) (:P *S)))
+                ((&glyph.shape (:key Id) (:Pose D))
+                 (&ink *P))))
+        (cell (P)
+          (&glyph.shape (:key Id) (:Pose D))
+          (&ink *P))
+        (shape ((:P S))
+          (&glyph.shape (:key Id) (:Pose D) (:P *S)))))
+
+    (RULE &placed
+      (&occ.occurrence (:key *Id *D) (:P *B))
+      (&glyph.apex (:key Id) (:Pose D) (:P *P_a))
+      (compose (:A B) (:B P_a) (:C *P_apex)))
+
+    (RULE &arrow
+      (&placed *Id *D *P_apex)
+      (&glyph.aim (:key Id) (:Pose D) (:D *Aim)))
+
+    (RULE &arrow_cell
+      (&placed *Id *D *B *P_apex)
+      (&glyph.shape (:key Id) (:Pose D) (:P *S))
+      (compose (:A B) (:B S) (:C *P)))))
+
+(RULE &shot
+  (&arrow *P_apex *Aim)
+  (&reach (:N *K))
+  (jump (:P P_apex) (:D Aim) K (:Q *P))
+  (input P))
+
+(INIT &lander Singleton
+  (key ((&shot ^P (:P_apex *A)))
+    (member ((:v A))
+      (&shot P (:P_apex *A)))))
+
+(RULE &paint
+  (OR ((&lander.value (:key *P))
+       (&mark (:C *Col)))
+      ((&lander.plural (:key P))
+       (&clash (:C Col)))
+      ((&shot (:P *P_hit))
+       (&arrow_cell (:P_apex *A) (:P P_hit))
+       (&arrow_cell (:P_apex A) P)
+       (&mark (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

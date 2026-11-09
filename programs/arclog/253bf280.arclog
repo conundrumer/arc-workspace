@@ -1,0 +1,41 @@
+;; inputs 99e17612dcf5e2890f5bb6a5e1753a0c8c749804c66926ce3b813e855d97c86d programs/solvers/253bf280.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 253bf280
+
+(DET &bg DominantColor)
+
+(DET &fill AnyOutNewColor)
+
+(INIT &rays Ray
+  (source ((:P Q))
+    (input (:P *Q) *Col)
+    (NOT (&bg (:C Col))))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &rays_cell
+  (input *P (:Col *Bg))
+  (&bg (:C Bg)))
+
+(ALTS $choice "what a stroke does to a mark it crosses" $Spare
+  (ALT $Paint
+    (RULE &rays_cell
+      (input *P))))
+
+(RULE &between
+  (opposite *D (:Opp *O))
+  (&rays.ray *P D *K)
+  (&rays_cell P)
+  (!= K 0)
+  (&rays.ray P (:D O) (:K *K2))
+  (!= K2 0))
+
+(RULE &output
+  (OR ((&between *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&between P)))))
+
+(OUT (&output ^P ^Col))

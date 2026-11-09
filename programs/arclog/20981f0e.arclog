@@ -1,0 +1,212 @@
+;; inputs e3aaaf162d03e46b67c821426acfa6f552abf189497902719cb556cdc5c777ce programs/solvers/20981f0e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20981f0e
+
+(DET &dot RarestColor)
+
+(RULE &tiling_divider
+  (input *P *Col)
+  (&dot (:C Col))
+  (split P *A (:Along *L)))
+
+(RULE &tiling_on_divider
+  (input *P)
+  (&tiling_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &tiling_rank Order
+  (key ((OR ((&tiling_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&tiling_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&tiling_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &tiling_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&tiling_on_divider P A))
+  (margin (:B P) D *K)
+  (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &tiling_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&tiling_part_idx *P D (:N *N1))
+  (&tiling_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &tiling_tile_of
+  (&tiling_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&tiling_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &bg DominantColor)
+
+(RULE &piece
+  (&tiling_tile_of *P *P_tile)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The box of each tile.
+(INIT &tile_box BoundingBox
+  (key ((&tiling_tile_of *P ^P_tile))
+    (cell (P)
+      (&tiling_tile_of *P P_tile))))
+
+;; The piece's box, in the frame of its tile.
+(INIT &piece_box BoundingBox
+  (key ((&piece ^P_tile *P)
+        (&tile_box.box (:key P_tile) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_intile)))
+    (cell ((:P P_intile))
+      (&piece P_tile *P)
+      (&tile_box.box (:key P_tile) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+(RULE &landing
+  (&piece *P_tile *P)
+  (&tile_box.cell (:key P_tile) (:P *Q))
+  (relative (:Base P) (:X Q) (:X_rel *Delta))
+  (&piece_box.box (:key P_tile) (:B *B0))
+  (compose (:A B0) (:B Delta) (:C *B))
+  (inside (:A B) (:B 0)))
+
+(RULE &place
+  (&landing *P_tile *Delta *B)
+  (centered (:P B)))
+
+(ALTS $choice "where within its tile the piece lands" $Center
+  (ALT $Slot
+    (DET &ex_tiling_cell
+      (ex_input (:E *Key) *P)
+      (ex_output (:E Key)))
+
+    (DET &ex_tiling_divider
+      (ex_input (:E *Key) *P *Col)
+      (&dot (:C Col))
+      (ex_output (:E Key))
+      (split P *A (:Along *L)))
+
+    (DET &ex_tiling_on_divider
+      (&ex_tiling_cell *Key *P)
+      (&ex_tiling_divider Key *A *L)
+      (axis_of *D A)
+      (same_dist D (:P1 P) (:P2 L)))
+
+    (INIT &ex_tiling_rank Order
+      (key ((OR ((&ex_tiling_divider (:Key ^Ky) *A *L)
+                 (axis_of ^D A)
+                 (margin (:B L) D *K))
+                ((&ex_tiling_cell (:Key Ky) *P)
+                 (margin (:B P) D K))))
+        (member ((:t K))
+          (&ex_tiling_divider (:Key Ky) *A *L)
+          (axis_of D A)
+          (margin (:B L) D *K))
+        (score ((:t K) (:S K))
+          (OR ((&ex_tiling_divider (:Key Ky) *A *L)
+               (axis_of D A)
+               (margin (:B L) D *K))
+              ((&ex_tiling_cell (:Key Ky) *P)
+               (margin (:B P) D K))))
+        (probe ((:t K))
+          (&ex_tiling_cell (:Key Ky) *P)
+          (margin (:B P) D *K))))
+
+    (DET &ex_tiling_part_idx
+      (&ex_tiling_cell *Key *P)
+      (axis_of *D *A)
+      (NOT (&ex_tiling_on_divider Key P A))
+      (margin (:B P) D *K)
+      (&ex_tiling_rank.rank (:key (:Ky Key) D) (:t K) (:R *N)))
+
+    (DET &ex_tiling_part_of
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (&ex_tiling_part_idx *Key *P D (:N *N1))
+      (&ex_tiling_part_idx Key P (:D D2) (:N *N2))
+      (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+    (DET &ex_tiling_tile_of
+      (&ex_tiling_part_of *Key *P *A (:P_part *P1))
+      (perp A *A2)
+      (&ex_tiling_part_of Key P (:A A2) (:P_part *P2))
+      (compose (:A P1) (:B P2) (:C *P_tile)))
+
+    (INIT &ex_tile_box BoundingBox
+      (key ((&ex_tiling_tile_of (:Key ^E) *P ^P_tile))
+        (cell (P)
+          (&ex_tiling_tile_of (:Key E) *P P_tile))))
+
+    ;; The moved piece's box in each output tile, in the frame of its tile.
+    (INIT &landed_box BoundingBox
+      (key ((&ex_tiling_tile_of (:Key ^E) *P ^P_tile)
+            (ex_output E P *Col)
+            (NOT (&bg (:C Col)))
+            (&ex_tile_box.box (:key E P_tile) *B)
+            (inside (:A P) B)
+            (relative (:Base B) (:X P) (:X_rel *P_intile)))
+        (cell ((:P P_intile))
+          (&ex_tiling_tile_of (:Key E) *P P_tile)
+          (ex_output E P *Col)
+          (NOT (&bg (:C Col)))
+          (&ex_tile_box.box (:key E P_tile) *B)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_intile)))))
+
+    (DET &slot
+      (&landed_box.box *B))
+
+    (RULE &place
+      (&landing *P_tile *Delta *B)
+      (&slot B)))
+  (ALT $Clear
+    (RULE &clear_step
+      (&piece_box.box (:key *P_tile) *B)
+      (axis_of *D *A)
+      (opposite D (:Opp *D2))
+      (OR ((margin B D (:K 0))
+           (step_offset (:D D2) (:V *Delta)))
+          ((dist_pair (:P B) D *K *K2)
+           (!= K 0)
+           (!= K2 0)
+           (= Delta 0))))
+
+    (RULE &place
+      (&clear_step *P_tile *A (:Delta *Delta1))
+      (perp A *A2)
+      (&clear_step P_tile (:A A2) (:Delta *Delta2))
+      (compose (:A Delta1) (:B Delta2) (:C *Delta)))))
+
+(RULE &moved
+  (&piece *P_tile (:P *P2) *Col)
+  (&place P_tile *Delta)
+  (compose (:A P2) (:B Delta) (:C *P)))
+
+(RULE &output
+  (OR ((&moved *P *Col))
+      ((input P (:Col *Col_in))
+       (NOT (&moved P))
+       (OR ((NOT (&dot (:C Col_in)))
+            (&bg (:C Col)))
+           ((&dot (:C Col_in))
+            (= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

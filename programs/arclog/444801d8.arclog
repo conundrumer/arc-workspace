@@ -1,0 +1,60 @@
+;; inputs dea7cfee5443482cd08e8f3e9906362b1591401e36545cf3dc28ac788ff4c5be programs/solvers/444801d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 444801d8
+
+(DET &bg DominantColor)
+
+(DET &wall SharedColor)
+
+(DET &open_dir DirDomain)
+
+;; A box is a connected run of wall cells.
+(INIT &walls Connectivity
+  (node (P)
+    (input *P *Col)
+    (&wall (:C Col))))
+
+(INIT &bbox BoundingBox
+  (key ((&walls.component *P ^Id))
+    (cell (P)
+      (&walls.component *P Id))))
+
+(RULE &seed
+  (&bbox.box (:key *Id) *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (NOT (&wall (:C Col)))
+  (NOT (&bg (:C Col))))
+
+(RULE &open_side
+  (&bbox.box (:key *Id))
+  (&open_dir *D))
+
+(ALTS $choice "which side is open; every box here breaks on the top, so the two models agree" $Dir
+  (ALT $Gap
+    (RULE &open_side
+      (&bbox.box (:key *Id) *B)
+      (input *P *Col)
+      (inside (:A P) B)
+      (same_dist *D (:P1 P) (:P2 B))
+      (NOT (&wall (:C Col))))))
+
+(RULE &paint
+  (&open_side *Id *D)
+  (&seed Id *Col)
+  (&bbox.box (:key Id) *B)
+  (OR ((input *P)
+       (inside (:A P) B))
+      ((input (:P *Q))
+       (inside (:A Q) B)
+       (same_dist D (:P1 Q) (:P2 B))
+       (neighbor (:P Q) D (:Q P))))
+  (input P (:Col *C))
+  (NOT (&wall C)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

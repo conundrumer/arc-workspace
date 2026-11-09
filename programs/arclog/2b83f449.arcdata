@@ -1,0 +1,10 @@
+;; inputs 7b543b95f982dd4434a9f123a0adb44fd3f87f0674b246d118dcc46ef3e2946b programs/solvers/2b83f449.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2b83f449
+
+(param &bg Color (8))
+(param &wall Color (0))
+(param &bar Color (7))
+(param &post Color (6))
+(param &dot Color (3))
+(param &fall_dir Dir (DIR_B))

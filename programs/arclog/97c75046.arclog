@@ -1,0 +1,84 @@
+;; inputs 4555887ffaca5a2441be9edede7ad64678e9c645405be276c7d6c5c077c25b4f programs/solvers/97c75046.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97c75046
+
+(DET &marker ChangedColor)
+
+(RULE &marker_cell
+  (input *P *Col)
+  (&marker (:C Col)))
+
+(DET &shape UnchangedColor)
+
+(RULE &shape_cell
+  (input *P *Col)
+  (&shape (:C Col)))
+
+(INIT &travel Ray
+  (source (P)
+    (&marker_cell *P))
+  (node (P)
+    (input *P)
+    (NOT (&shape_cell P)))
+  (dir (D)
+    (dir_elem *D)))
+
+(INIT &travel_full Ray
+  (source (P)
+    (&marker_cell *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &travel_stop_full
+  (&travel.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&travel_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(DET &bg DominantColor)
+
+(RULE &contact
+  (input *P *Col)
+  (&bg (:C Col))
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&shape_cell (:P Q)))
+
+(RULE &landing
+  (&travel_stop_full (:V1 *Q) (:V2 *D))
+  (opposite D (:Opp *O))
+  (neighbor (:P Q) (:D O) (:Q *P)))
+
+(INIT &slide Ray
+  (source (P)
+    (&contact *P))
+  (node (P)
+    (&contact *P))
+  (dir ((:D Dg))
+    (&landing *D)
+    (corner_dir (:C *Dg) D)))
+
+(RULE &slide_halt_full
+  (&slide.end (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+  (!= N 0))
+
+(RULE &dest
+  (&landing (:P *P2))
+  (OR ((&slide_halt_full (:V1 P2) (:V3 *P)))
+      ((NOT (&slide_halt_full (:V1 P2)))
+       (= P P2))))
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&marker_cell P)))
+      ((&marker_cell P)
+       (&bg (:C Col)))))
+
+(RULE &output
+  (OR ((&dest *P)
+       (&marker (:C *Col)))
+      ((&cleared P Col)
+       (NOT (&dest P)))))
+
+(OUT (&output ^P ^Col))

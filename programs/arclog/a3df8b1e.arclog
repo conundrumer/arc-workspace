@@ -1,0 +1,66 @@
+;; inputs 356d2cff37cfcd08b729a4a0f4f1db76e9482b8e9774347e507f98c7cad755ea programs/solvers/a3df8b1e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a3df8b1e
+
+(DET &bg DominantColor)
+
+(DET &dir DirDomain)
+
+(RULE &seed
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The marker sits against both side walls, so a heading into a wall flips at
+;; the first step and the two headings draw one trace. The heading is not
+;; observable, and the program takes both.
+(RULE &launch
+  (&dir (:D *U))
+  (perp_dir (:D U) (:D2 *H)))
+
+(ALTS $dir "how the ray's advance direction and heading are set" $Stored
+  (ALT $Seat
+    (DET &axis AxisDomain)
+
+    (RULE &launch
+      (&seed *P)
+      (corner_dist P *Diag (:K 0))
+      (diag_opposite (:D Diag) *Opp)
+      (&axis *A)
+      (diag_dirs (:D Opp) A (:D1 *U) (:D2 *H)))))
+
+(ALTS $ink "what color the ray draws" $Prop
+  (ALT $Fixed
+    (DET &ink RarestColor)
+
+    (RULE &output
+      (OR ((&trace.reached (:n *P))
+           (&ink (:C *Col)))
+          ((input P)
+           (NOT (&trace.reached (:n P)))
+           (&bg (:C Col)))))))
+
+(INIT &trace Propagation
+  (source ((:n P H))
+    (&launch *H)
+    (&seed *P))
+  (edge ((:a P H) (:b (:P P2) (:H H2)))
+    (&launch *U)
+    (perp_dir (:D U) (:D2 *H))
+    (input *P)
+    (OR ((margin (:B P) (:D H) (:K 0))
+         (opposite (:D H) (:Opp *H2))
+         (= *P2 P))
+        ((NOT (margin (:B P) (:D H) (:K 0)))
+         (NOT (margin (:B P) (:D U) (:K 0)))
+         (diag_dirs (:D *Diag) (:D1 U) (:D2 H))
+         (neighbor P (:D Diag) (:Q P2))
+         (= H2 H)))))
+
+(RULE &output
+  (OR ((&trace.reached (:n *P))
+       (&seed *Col))
+      ((input P)
+       (NOT (&trace.reached (:n P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

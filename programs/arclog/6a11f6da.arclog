@@ -1,0 +1,120 @@
+;; inputs 7b6dd5d0ca54a5fa66c03addfe18b057145e34fef4bff0e60b06f65fe26f32f1 programs/solvers/6a11f6da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6a11f6da
+
+(DET &tile_axis AxisDomain)
+
+(DET &tile_count DivisorRatio)
+
+(INIT &decompose_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (&tile_axis *A)
+    (&tile_count (:K *N))))
+
+(INIT &cand_division Division
+  (cell ((:P P_grid))
+    (ex_input (:P *P_grid)))
+  (parts (A N)
+    (&tile_axis *A)
+    (&tile_count (:K *N))))
+
+(DET &bg DominantColor)
+
+(RULE &decompose
+  (&decompose_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_out)))
+
+(DET &cand
+  (ex_input *E (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&cand_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *O)))
+
+(DET &beats
+  (&cand *E *O *P_tile *Col)
+  (&cand E O (:P_tile *P_tile2) (:Col *Col2))
+  (!= Col Col2)
+  (ex_output E (:P O) Col))
+
+;; The slabs each slab beats, directly or through others: a slab pair
+;; need not overlap directly.
+(INIT &beaten Propagation
+  (key ((OR ((&beats (:P_tile ^T) (:P_tile2 *T2)))
+            ((&beats (:P_tile T))
+             (&beats (:P_tile T2) (:P_tile2 *T3)))))
+    (source ((:n T2))
+      (&beats (:P_tile T) (:P_tile2 *T2)))
+    (edge ((:a T2) (:b T3))
+      (&beats (:P_tile T))
+      (&beats (:P_tile *T2) (:P_tile2 *T3)))))
+
+(INIT &order Order
+  (member ((:t T))
+    (&cand (:P_tile *T)))
+  (before ((:a T) (:b T2))
+    (&beaten.reached (:key *T) (:n *T2))))
+
+(DET &slab_rank
+  (&order.rank (:t *P_tile) *R))
+
+(DET &ink_rank
+  (&cand (:P_tile *T) (:Col *C))
+  (&slab_rank (:P_tile T) *R))
+
+(ALTS $d "find the slabs" $Count
+  (ALT $Size
+    (DET &tile_size ConstOutDim)
+
+    (INIT &decompose_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (&tile_axis *A)
+        (&tile_size (:N *K))))
+
+    (RULE &decompose
+      (&decompose_division2.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_out)))))
+
+(ALTS $c "priority" $Palette
+  (ALT $Stack
+    ;; The top-priority slab competing at each output cell.
+    (INIT &front_slab Order
+      (key ((&cand2 ^O (:P_tile *T))
+            (&slab_rank (:P_tile T) *R))
+        (member ((:t (:V T) (:S R)))
+          (&cand2 O (:P_tile *T))
+          (&slab_rank (:P_tile T) *R))
+        (score ((:t (:V T) (:S R)) (:S R))
+          (&cand2 O (:P_tile *T))
+          (&slab_rank (:P_tile T) *R))))
+
+    (RULE &output
+      (OR ((&front_slab.minimal (:key (:O *P)) (:t (:V *T)))
+           (&cand2 (:O P) (:P_tile T) *Col))
+          ((&decompose (:P_out P))
+           (&bg (:C Col))
+           (NOT (&cand2 (:O P))))))))
+
+(RULE &cand2
+  (input (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&decompose P_grid *P_tile (:P_out *O)))
+
+;; The top-priority color competing at each output cell.
+(INIT &front_ink Order
+  (key ((&cand2 ^O *Col)
+        (&ink_rank (:C Col) *R))
+    (member ((:t (:V Col) (:S R)))
+      (&cand2 O *Col)
+      (&ink_rank (:C Col) *R))
+    (score ((:t (:V Col) (:S R)) (:S R))
+      (&cand2 O *Col)
+      (&ink_rank (:C Col) *R))))
+
+(RULE &output
+  (OR ((&decompose (:P_out *P))
+       (&bg (:C *Col))
+       (NOT (&cand2 (:O P))))
+      ((&front_ink.minimal (:key (:O P)) (:t (:V Col))))))
+
+(OUT (&output ^P ^Col))

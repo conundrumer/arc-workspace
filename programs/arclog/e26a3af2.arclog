@@ -1,0 +1,94 @@
+;; inputs 715b62f34b5f2e0b20d9c1b1912a57f317821c9349ffa520f40d2bd2185801a4 programs/solvers/e26a3af2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e26a3af2
+
+(INPUT stripes "the grid is cut, along one axis, into stripes that run the full length of the other axis, and each stripe has one color.")
+
+(INPUT sparse-noise "some cells carry a color other than their stripe's color, and in each line across a stripe's length, the stripe's color holds more than half of the cells.")
+
+(OUTPUT line-axis "the stripe axis is the axis on which each line has one color that holds more than half of its cells."
+
+  (RULE &line_of
+    (input *P)
+    (split P *A (:Across *P_line)))
+
+  (INIT &line_colors_count Cardinality
+    (key ((input *P ^Col)
+          (&line_of P (:A ^L_a) (:P_line ^L_p_line)))
+      (member ((:m P))
+        (input *P Col)
+        (&line_of P (:A L_a) (:P_line L_p_line)))))
+
+  ;; The commonest colors of each line.
+  (INIT &line_colors Order
+    (key ((&line_colors_count.size (:key (:L_a ^A) (:L_p_line ^P_line) *Col)))
+      (member ((:t Col))
+        (&line_colors_count.size (:key (:L_a A) (:L_p_line P_line) *Col)))
+      (score ((:t Col) (:S N))
+        (&line_colors_count.size (:key (:L_a A) (:L_p_line P_line) *Col) *N))))
+
+  ;; A color that holds more than half of its line's cells.
+  (INIT &majority Excess
+    (key ((OR ((input *P ^Col)
+               (&line_of P (:A ^L_a) (:P_line ^L_p_line)))
+              ((&line_colors_count.size (:key L_a L_p_line Col))
+               (&line_of P (:A L_a) (:P_line L_p_line))
+               (input P (:Col *Col2))
+               (!= Col2 Col))))
+      (plus ((:m P))
+        (input *P Col)
+        (&line_of P (:A L_a) (:P_line L_p_line)))
+      (minus ((:m P))
+        (&line_colors_count.size (:key L_a L_p_line Col))
+        (&line_of *P (:A L_a) (:P_line L_p_line))
+        (input P (:Col *Col2))
+        (!= Col2 Col))))
+
+  (RULE &tied
+    (&line_colors.maximal (:key *A (:P_line *L_p_line)) (:t *C1))
+    (&line_colors.maximal (:key A (:P_line L_p_line)) (:t *C2))
+    (!= C1 C2))
+
+  (RULE &changes_domain
+    (axis_elem *A)
+    (NOT (&tied A)))
+
+  ;; The cells that painting each line of an untied axis changes.
+  (INIT &changes Cardinality
+    (key ((&changes_domain ^A))
+      (member ((:m P))
+        (&line_of *P A (:P_line *L_p_line))
+        (input P *Col)
+        (NOT (&line_colors.maximal (:key A (:P_line L_p_line)) (:t Col))))))
+
+  (INIT &fewest Order
+    (member ((:t (:V A) (:S N)))
+      (&changes.size (:key *A) *N))
+    (score ((:t (:V A) (:S N)) (:S N))
+      (&changes.size (:key *A) *N))))
+
+(OUTPUT line-mode "each line on the stripe axis is painted whole with its commonest color.")
+
+(ALTS $choice "which axis the stripes run along" $AxisMajority
+  (ALT $AxisFewestChanges
+    (OUTPUT line-axis "among the axes on which every line has one commonest color with no tie, the axis whose per-line painting changes the fewest cells; undefined where no axis qualifies or two axes tie on the count.")
+    (RULE &stripe_axis
+      (&fewest.minimal (:t (:V *A)))
+      (perp A *A2)
+      (NOT (&fewest.minimal (:t (:V A2)))))))
+
+(RULE &no_majority
+  (&line_of *A (:P_line *L_p_line))
+  (NOT (&majority.excess (:key (:L_a A) L_p_line))))
+
+(RULE &stripe_axis
+  (perp *A *A2)
+  (NOT (&no_majority A))
+  (&no_majority (:A A2)))
+
+(RULE &output
+  (&stripe_axis *A)
+  (&line_of *P A (:P_line *L_p_line))
+  (&line_colors.maximal (:key A (:P_line L_p_line)) (:t *Col)))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,211 @@
+;; inputs b3c00743faea140de6c2a04864bdadca50d97f305fa4c3cb6e448ee952a33c73 programs/solvers/6e453dd6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6e453dd6
+
+(DET &sep RarestColor)
+
+(RULE &sep_cell
+  (input *P *Col)
+  (&sep (:C Col)))
+
+(DET &slide_dir DirDomain)
+
+(RULE &slide_axis
+  (&slide_dir *D)
+  (axis_of D *A))
+
+(RULE &cut_divider
+  (&sep_cell *P)
+  (&slide_axis *A)
+  (split P A (:Along *L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The two sides the separator cuts.
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &bg DominantColor)
+
+(DET &shape SharedColor)
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (&shape (:C Col))))
+
+(RULE &slide_dir2
+  (&comps.component)
+  (&slide_dir *D))
+
+;; Each shape slides on its own until it touches the separator.
+(INIT &slide Distance
+  (key ((OR ((&comps.component *P ^Id)
+             (&slide_dir2 *D)
+             (margin (:B P) D *K))
+            ((&comps.component P Id)
+             (&slide_dir2 D)
+             (&sep_cell (:P *P2))
+             (gap D P (:Q P2) K))))
+    (source_distance (K)
+      (OR ((&comps.component *P Id)
+           (&slide_dir2 *D)
+           (margin (:B P) D *K))
+          ((&comps.component (:P *P3) Id)
+           (&slide_dir2 (:D *D2))
+           (&sep_cell (:P *P2))
+           (gap (:D D2) (:P P3) (:Q P2) K))))))
+
+(RULE &slide_travel_full
+  (&slide.distance (:key (:Id *V0)) *K)
+  (&slide_dir2 *D)
+  (&comps.component (:Id V0))
+  (jump_offset D K (:V *V2)))
+
+(RULE &slid
+  (&comps.component (:P *P3) *Id)
+  (&slide_travel_full (:V0 Id) (:V2 *V))
+  (compose (:A P3) (:B V) (:C *P)))
+
+(RULE &canvas
+  (input *P)
+  (OR ((&sep_cell P)
+       (&sep (:C *Col)))
+      ((&slid P)
+       (&shape (:C Col)))
+      ((NOT (&sep_cell P))
+       (NOT (&slid P))
+       (&bg (:C Col)))))
+
+(RULE &canvas_bg
+  (&canvas *P *Col)
+  (&bg (:C Col)))
+
+(INIT &flank_frame Frame
+  (extent (A N)
+    (&slid *P)
+    (frame_extent P *A *N)))
+
+(INIT &flank Ray
+  (source (P)
+    (&slid *P))
+  (node (P)
+    (&flank_frame.cell *P))
+  (dir (D)
+    (&slide_axis *A)
+    (axis4_of *D A)))
+
+(RULE &flank_between
+  (&canvas_bg *P)
+  (&slide_axis *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&flank.ray P D)
+  (&flank.ray P (:D O)))
+
+(RULE &cast_blocked
+  (input *P)
+  (NOT (&slid P)))
+
+(RULE &gap
+  (&flank_between *P))
+
+(DET &mark AnyOutNewColor)
+
+(ALTS $choice "what a gap is" $Between
+  (ALT $Enclosed
+    ;; The regions the shapes close off from the grid edge.
+    (INIT &closed Enclosure
+      (cell (P)
+        (input *P)
+        (NOT (&slid P))))
+
+    (RULE &gap
+      (&closed.enclosed *P)
+      (&canvas_bg P))))
+
+(INIT &cast_frame Frame
+  (extent (A N)
+    (&gap *P)
+    (frame_extent P *A *N)))
+
+;; A gap casts toward the separator; the cast stops at the first cell that is
+;; not shape.
+(INIT &cast Ray
+  (source (P)
+    (&gap *P))
+  (node (P)
+    (&cast_frame.cell *P)
+    (NOT (&cast_blocked P)))
+  (dir (D)
+    (&slide_dir *D)))
+
+(INIT &cast_full Ray
+  (source (P)
+    (&gap *P))
+  (node (P)
+    (&cast_frame.cell *P))
+  (dir (D)
+    (&slide_dir *D)))
+
+(RULE &cast_stop_full
+  (&cast.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &fill
+  (&cast_stop_full (:V1 *S))
+  (&sep_cell (:P S))
+  (&slide_axis *A)
+  (&slide_dir *D)
+  (&cut_part_idx *P D (:N 0))
+  (same_line A P (:Q S)))
+
+(RULE &output
+  (OR ((&fill *P)
+       (&mark (:C *Col)))
+      ((&canvas P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

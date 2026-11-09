@@ -1,0 +1,43 @@
+;; inputs 78d4162fcf354e7bc1566721dad1778abd786dc5fa2be6fe115ac87e3909748a programs/solvers/bb43febb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bb43febb
+
+(DET &ink SharedColor)
+
+(DET &fill AnyOutNewColor)
+
+(RULE &ink2
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(INIT &comps Connectivity
+  (node (P)
+    (&ink2 *P)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &inner_cell
+  (&bbox.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(ALTS $choice "Two models pick the interior" $Box
+  (ALT $Erode
+    (INIT &exposed Boundary
+      (cell (P)
+        (&ink2 *P)))
+
+    (RULE &inner_cell
+      (&ink2 *P)
+      (NOT (&exposed.boundary P)))))
+
+(RULE &output
+  (OR ((&inner_cell *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&inner_cell P)))))
+
+(OUT (&output ^P ^Col))

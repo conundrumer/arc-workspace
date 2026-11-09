@@ -1,0 +1,259 @@
+;; inputs b4d7a85a8a1018dee87ab9ea7d942038f7b016d2d451e54a1b1cd7229c5ce65f programs/solvers/b99e7126.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b99e7126
+
+(INPUT tiling "divider lines of one color, one cell wide, cut the grid into a 7 by 7 tiling of 3 by 3 tiles, with a divider line along each edge of the grid")
+
+(INPUT base-tile "most tiles hold one same two-color pattern, the base tile"
+
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &tiling_on_divider
+    (input *P)
+    (&line_color.value (:key *A *L))
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiling_rank Order
+    (key ((OR ((&line_color.value (:key *A *L))
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&line_color.value (:key *A *L))
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&line_color.value (:key *A *L))
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiling_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&tiling_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiling_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiling_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiling_part_idx *P D (:N *N1))
+    (&tiling_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE_OR_DET &tiling_tile_of
+    (&tiling_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiling_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &block BoundingBox
+    (key ((&tiling_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&tiling_tile_of *P (:P_tile T)))))
+
+  (RULE &tile_at
+    (&block.cell (:key *T) *P)
+    (&block.box (:key T) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (RULE &tile_cell
+    (&tile_at *P *T *P_intile)
+    (input P *Col))
+
+  (RULE &differ
+    (&tile_cell *T (:P_intile *P) *Col)
+    (&tile_cell (:T *T2) (:P_intile P) (:Col *Col2))
+    (!= Col Col2))
+
+  (INIT &pattern Quotient
+    (equivalent ((:a T) (:b T2))
+      (&block.box (:key *T))
+      (&block.box (:key (:T *T2)))
+      (NOT (&differ T T2))))
+
+  (RULE &tile_toward
+    (&pattern.class (:a *T))
+    (dir_elem *D)
+    (neighbor (:P T) D (:Q *T2))
+    (&pattern.class (:a T2)))
+
+  (INIT &corner Singleton
+    (member ((:v Id))
+      (diag_dirs *D1 *D2)
+      (&pattern.class (:a *T) *Id)
+      (NOT (&tile_toward T (:D D1)))
+      (NOT (&tile_toward T (:D D2))))))
+
+(INPUT marked-tile "every other tile holds one same pattern, the marked tile, made of one color of the base tile and one color that the base tile does not have, the new color")
+
+(INPUT partial-shape "the marked tiles sit, at the tile scale, on cells of exactly one placement of the new color's shape in the tiling, and do not fill it"
+
+  (INIT &commoner_count Cardinality
+    (key ((&pattern.class (:a *T) ^Id))
+      (member ((:m T))
+        (&pattern.class (:a *T) Id))))
+
+  (INIT &commoner Order
+    (member ((:t Id))
+      (&commoner_count.size (:key *Id)))
+    (score ((:t Id) (:S N))
+      (&commoner_count.size (:key *Id) *N)))
+
+  (RULE &base_pattern
+    (&commoner.maximal (:t *Id)))
+
+  (RULE &marked
+    (&base_pattern)
+    (&pattern.class (:a *T) *Id)
+    (NOT (&base_pattern Id)))
+
+  (RULE &mark_cell
+    (&marked *T)
+    (&tile_cell T *P_intile *Col))
+
+  (RULE &base_color
+    (&base_pattern *Id)
+    (&pattern.class (:a *T) Id)
+    (&tile_cell T *Col))
+
+  (RULE &shape
+    (&mark_cell *P_intile *Col)
+    (NOT (&base_color Col)))
+
+  ;; The shape laid on the tiling at the tile scale.
+  (INIT &fit Occurrences
+    (cell ((:P T))
+      (&shape)
+      (&pattern.class (:a *T)))
+    (shape (P)
+      (&shape (:P_intile *P))))
+
+  (RULE &placement
+    (&fit.occurrence (:P *B)))
+
+  (RULE &covers
+    (&placement *B)
+    (&shape (:P_intile *P))
+    (compose (:A B) (:B P) (:C *T))
+    (&pattern.class (:a T)))
+
+  (INIT &most_count Cardinality
+    (key ((&covers ^B *T)
+          (&marked T))
+      (member ((:m T))
+        (&covers B *T)
+        (&marked T))))
+
+  (INIT &most Order
+    (member ((:t B))
+      (&most_count.size (:key *B)))
+    (score ((:t B) (:S N))
+      (&most_count.size (:key *B) *N))))
+
+(OUTPUT shape-of-new-color "the shape is the set of cells of the marked tile whose color the base tile does not have, read as a mask of the tile's size"
+
+  (INIT &majority_count Cardinality
+    (key ((&mark_cell (:P_intile *P) ^Col))
+      (member ((:m P))
+        (&mark_cell (:P_intile *P) Col))))
+
+  (INIT &majority Order
+    (member ((:t Col))
+      (&majority_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&majority_count.size (:key *Col) *N))))
+
+(OUTPUT complete-shape "the output keeps the input, and each tile at a cell of the one placement of the shape that holds the marked tiles becomes a marked tile"
+
+  (RULE &misses
+    (&placement *B)
+    (&marked *T)
+    (NOT (&covers B T)))
+
+  (RULE &qualifies
+    (&placement *B)
+    (NOT (&misses B))))
+
+(ALTS $base "which tile pattern is the base tile" $Commoner
+  (ALT $CornerBase
+    (INPUT base-tile "the base tile is the pattern of the tiling's four corner tiles; undefined where they hold different patterns"
+      (RULE &base_pattern
+        (&corner.value (:v *Id))))))
+
+(ALTS $src "which cells of the marked tile make the shape" $NewColor
+  (ALT $MajorityColor
+    (OUTPUT shape-of-new-color "the shape is the cells of the marked tile's commoner color; undefined where two colors tie for commonest"
+      (RULE &majority_tie
+        (&majority.maximal (:t *Col))
+        (&majority.maximal (:t *Col2))
+        (!= Col Col2))
+
+      (RULE &shape
+        (&mark_cell *P_intile *Col)
+        (&majority.maximal (:t Col))
+        (NOT (&majority_tie))))))
+
+(ALTS $bound "whether a placement of the shape lies wholly inside the tiling" $InTiling
+  (ALT $ClippedPlacement
+    (INPUT partial-shape "a placement may run past the tiling's edge, and only its part inside the tiling is drawn"
+      (RULE &placement
+        (&fit.candidate (:P *B))))))
+
+(ALTS $many "what the output is where more than one placement qualifies" $OnePlacement
+  (ALT $UnionOfPlacements
+    (OUTPUT complete-shape "where several placements qualify, one grid completes every one of them")
+    (RULE &drawn
+      (&qualifies *B)))
+  (ALT $EachPlacement
+    (OUTPUT complete-shape "where several placements qualify, each gives a grid of its own"
+      (RULE &placed
+        (&qualifies *B)
+        (ONE)))
+    (RULE &drawn
+      (&placed *B))))
+
+(ALTS $cover "which placements of the shape qualify" $AllMarked
+  (ALT $MostMarked
+    (INPUT partial-shape "marked tiles may lie outside every placement of the shape")
+    (OUTPUT complete-shape "the placements that hold the most marked tiles qualify, and marked tiles outside them stay"
+      (RULE &qualifies
+        (&most.maximal (:t *B))))))
+
+(RULE &rival
+  (&qualifies *B)
+  (&qualifies (:B *B2))
+  (!= B B2))
+
+(RULE &drawn
+  (&qualifies *B)
+  (NOT (&rival B)))
+
+(RULE &filled
+  (&drawn *B)
+  (&covers B *T)
+  (&tile_at *P T *P_intile)
+  (&mark_cell P_intile *Col))
+
+(RULE &output
+  (&drawn)
+  (input *P (:Col *Col_in))
+  (OR ((&filled P *Col))
+      ((NOT (&filled P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,221 @@
+;; inputs 7b8c8dd84d2b9a0bba407850131163c68e4e47bff13710e6614c131cfd015e9c programs/solvers/b27ca6d3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b27ca6d3
+
+(param &mark Color (2))
+(param &frame Color (3))
+(param &background Color (0))
+(param &pair_size number (2))
+(param &pair.footprint Position
+  (grid
+    (1)
+    (1)))
+
+(alts $select
+  (alt $SizeAtLeast
+    (witness three-bar variant concept
+      (relaxed marks)
+      (separates "a bar of three marks beside a pair: concept and $ShapeMatch frame the pair alone, $SizeAtLeast frames the bar too, $LargestSize frames the bar alone")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 2)
+        (0 0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))
+      (output $ShapeMatch ($SizeEquals &pair_size=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 3 2 2 3 0)
+        (0 0 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 2)
+        (0 0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))
+      (output $LargestSize (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0 2)
+        (0 3 2 2 2 3 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))
+      (output $SizeAtLeast &pair_size=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 3 2 2 3 0)
+        (0 0 0 0 0 3 3 3 3 0)
+        (0 3 3 3 3 3 0 0 0 2)
+        (0 3 2 2 2 3 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))))
+  (alt $LargestSize
+    (witness three-bar variant concept))
+  (alt $ShapeMatch
+    (witness bar-and-l variant concept
+      (separates "a bar and an L of three marks at pair_size 3 and a footprint of the three-cell bar: concept frames both, $ShapeMatch frames the bar alone, $BoxRing frames both by their box rings")
+      (assign &pair_size (3))
+      (assign &pair.footprint (D4_ID (0 0 0 2)) (D4_ID (0 0 1 1)) (D4_ID (0 0 2 0)) (D4_CW (0 2 0 0)) (D4_CW (2 0 0 0)) (D4_CW (1 1 0 0)) (D4_HT (0 0 0 2)) (D4_HT (0 0 1 1)) (D4_HT (0 0 2 0)) (D4_CC (0 2 0 0)) (D4_CC (2 0 0 0)) (D4_CC (1 1 0 0)) (D4_LR (0 0 0 2)) (D4_LR (0 0 1 1)) (D4_LR (0 0 2 0)) (D4_TB (0 0 0 2)) (D4_TB (0 0 1 1)) (D4_TB (0 0 2 0)) (D4_DG (0 2 0 0)) (D4_DG (2 0 0 0)) (D4_DG (1 1 0 0)) (D4_AD (0 2 0 0)) (D4_AD (2 0 0 0)) (D4_AD (1 1 0 0)))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 2 0 0 0)
+        (0 2 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $LargestSize $SizeAtLeast ($SizeEquals $Halo) (grid
+        (3 3 3 3 3 0 0 0 0)
+        (3 2 2 2 3 0 0 0 0)
+        (3 3 3 3 3 3 3 0 0)
+        (0 0 0 0 3 2 3 3 0)
+        (0 2 0 0 3 2 2 3 0)
+        (0 0 0 0 3 3 3 3 0)))
+      (output $ShapeMatch (grid
+        (3 3 3 3 3 0 0 0 0)
+        (3 2 2 2 3 0 0 0 0)
+        (3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 2 0 0 0)
+        (0 2 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $BoxRing (grid
+        (3 3 3 3 3 0 0 0 0)
+        (3 2 2 2 3 0 0 0 0)
+        (3 3 3 3 3 3 3 3 0)
+        (0 0 0 0 3 2 0 3 0)
+        (0 2 0 0 3 2 2 3 0)
+        (0 0 0 0 3 3 3 3 0))))))
+
+(alts $cells
+  (alt $BoxRing
+    (witness l-tromino variant concept
+      (separates "an L of three marks at pair_size 3: concept frames the cells touching the L, notch cell included; $BoxRing frames the ring around the L's box, notch cell left; $ShapeMatch at its stored domino footprint frames nothing")
+      (assign &pair_size (3))
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 0 0 0)
+        (0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2)))
+      (output $LargestSize $SizeAtLeast ($SizeEquals $Halo) (grid
+        (0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0)
+        (0 0 0 3 3 3 0 0)
+        (0 0 0 3 2 3 3 0)
+        (0 0 0 3 2 2 3 0)
+        (0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 0 0 2)))
+      (output $ShapeMatch (grid
+        (0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 2 0 0 0)
+        (0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2)))
+      (output $BoxRing (grid
+        (0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0)
+        (0 0 0 3 3 3 3 0)
+        (0 0 0 3 2 0 3 0)
+        (0 0 0 3 2 2 3 0)
+        (0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 0 0 2))))))
+
+(alts $target
+  (alt $FrameOverMarks
+    (witness mark-in-frame borderline concept
+      (separates "a lone mark touches a pair at a corner: concept keeps it red, $FrameOverMarks paints it green")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 2 2 0 0 0)
+        (0 0 0 0 2 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0)))
+      (output $OnBackground (grid
+        (0 0 0 0 0 0 0)
+        (0 3 3 3 3 0 0)
+        (0 3 2 2 3 0 0)
+        (0 3 3 3 2 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0)))
+      (output $FrameOverMarks (grid
+        (0 0 0 0 0 0 0)
+        (0 3 3 3 3 0 0)
+        (0 3 2 2 3 0 0)
+        (0 3 3 3 3 0 0)
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0))))))
+
+(alts &mark
+  (alt &mark=$Derived
+    (witness mark=RarestColor foreign concept
+      (separates "marks outnumber the background: concept frames each pair with the cell between them; mark derived as the rarest color (0) finds one lone 0 cell and frames nothing")
+      (input (grid
+        (2 2 0 2 2)))
+      (output (&mark=$Stored &background=$Stored) (grid
+        (2 2 3 2 2)))
+      (output &background=$Derived (grid
+        (3 3 0 3 3)))
+      (output &mark=$Derived (grid
+        (2 2 0 2 2))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor foreign concept
+      (separates "marks outnumber the background: concept frames each pair with the cell between them; background derived as the commonest color (2) paints the pairs themselves green and leaves the 0 cell")
+      (input (grid
+        (2 2 0 2 2)))
+      (output (&mark=$Stored &background=$Stored) (grid
+        (2 2 3 2 2)))
+      (output &background=$Derived (grid
+        (3 3 0 3 3)))
+      (output &mark=$Derived (grid
+        (2 2 0 2 2))))))
+
+(alts &pair_size
+  (alt &pair_size=$Derived
+    (witness pair_size=TileCount variant concept
+      (relaxed marks)
+      (separates "`pair_size=TileCount` from the stored value: the input of `three-bar`")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 2)
+        (0 0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))
+      (output $ShapeMatch ($SizeEquals &pair_size=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 3 2 2 3 0)
+        (0 0 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 0 0 0 0 2)
+        (0 0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))
+      (output $LargestSize (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0 2)
+        (0 3 2 2 2 3 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0)))
+      (output $SizeAtLeast &pair_size=$Derived (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 0 3 3 3 3 0)
+        (0 0 0 0 0 3 2 2 3 0)
+        (0 0 0 0 0 3 3 3 3 0)
+        (0 3 3 3 3 3 0 0 0 2)
+        (0 3 2 2 2 3 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 0))))))

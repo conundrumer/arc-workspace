@@ -1,0 +1,87 @@
+;; inputs 9961c1c00f33cb77efe0b955d3310b5a4e2e28fcbc3ad529b6c2f0a1a7bc17f5 programs/solvers/5751f35e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5751f35e
+
+;; The grid peels into concentric rings, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (input *P)))
+
+(INIT &peel_depth CellDistance
+  (node (P)
+    (input *P))
+  (source (P)
+    (&peel.boundary *P)))
+
+;; What the damage leaves behind.
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; A color's box is the ring its shallowest cell sits on.
+(INIT &reach Order
+  (key ((&ink *P ^Col)
+        (&peel_depth.distance P *K))
+    (member ((:t K))
+      (&ink *P Col)
+      (&peel_depth.distance P *K))
+    (score ((:t K) (:S K))
+      (&ink *P Col)
+      (&peel_depth.distance P *K))))
+
+(RULE &layer
+  (&reach.minimal (:key *Col) (:t *K))
+  (uniform_inset K *B))
+
+(RULE &covered
+  (input *P)
+  (&layer *Col *B)
+  (inside (:A P) B))
+
+(RULE &shadowed
+  (&layer *Col *B)
+  (&covered *P (:Col *Col2))
+  (&layer (:Col Col2) (:B *B2))
+  (interior (:A B2) B))
+
+(ALTS $choice "how a damaged cell recovers its color" $Layers
+  (ALT $Rings
+    (INIT &ring_color Singleton
+      (key ((&ink *P *Col)
+            (&peel_depth.distance P ^K))
+        (member ((:v Col))
+          (&ink *P *Col)
+          (&peel_depth.distance P K))))
+
+    (RULE &output
+      (OR ((&peel_depth.distance *P *K)
+           (&ring_color.value (:key K) (:v *Col)))
+          ((&peel_depth.distance P (:K *K2))
+           (NOT (&ring_color.member (:key (:K K2))))
+           (&bg (:C Col))))))
+  (ALT $Symmetry
+    ;; The nest's symmetry group.
+    (DET &sym SymDomain)
+
+    (RULE &orbit_color
+      (input *P)
+      (&sym *S)
+      (sym_member S *D)
+      (apply D P (:P_out *Q))
+      (&ink (:P Q) *Col))
+
+    (RULE &output
+      (OR ((&orbit_color *P *Col))
+          ((input P Col)
+           (NOT (&orbit_color P)))))))
+
+(RULE &output
+  (OR ((&covered *P *Col)
+       (NOT (&shadowed P Col)))
+      ((input P)
+       (NOT (&covered P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

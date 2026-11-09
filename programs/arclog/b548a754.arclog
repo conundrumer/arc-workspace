@@ -1,0 +1,258 @@
+;; inputs cc9d205204dffb1be7670b14328dba3831454a78fd84af6bfac7e6c57486645f programs/solvers/b548a754.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b548a754
+
+(INPUT background "every cell outside the box and the marker is &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT framed-box "one solid rectangle on &background, with a 1-wide border of one color around an interior of another color"
+
+  (DET &out_color
+    (ex_output *E *Col))
+
+  (DET_OR_RULE &marker_color RarestColor
+    (ex_input *E (:Col *C))
+    (&out_color E)
+    (NOT (&out_color E (:Col C))))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &marker
+    (input *P *Col)
+    (&marker_color (:C Col)))
+
+  (RULE &body
+    (&ink *P)
+    (NOT (&marker P)))
+
+  (RULE &box_cell
+    (&body *P))
+
+  (INIT &box BoundingBox
+    (cell (P)
+      (&box_cell *P)))
+
+  (INIT &core_color Singleton
+    (member ((:v Col))
+      (&box.box *B)
+      (&box_cell *P)
+      (interior (:A P) B)
+      (input P *Col)))
+
+  (INIT &rim_color Singleton
+    (member ((:v Col))
+      (&box.box *B)
+      (&box_cell *P)
+      (NOT (interior (:A P) B))
+      (input P *Col)))
+
+  (INIT &piece Connectivity
+    (node (P)
+      (&body *P)))
+
+  (RULE &multi
+    (&piece.component *P *Id)
+    (&piece.component (:P *Q) Id)
+    (!= P Q))
+
+  (INIT &the_piece Singleton
+    (member ((:v Id))
+      (&multi *Id))))
+
+(INPUT marker "one cell of &marker_color, outside the box, within the box's span on one axis, so that it lies straight out from one side of the box"
+
+  (INIT &one Singleton
+    (member ((:v P))
+      (&marker *P))))
+
+(OUTPUT stretch-to-marker "the side of the box that faces the marker moves out to the marker's row or column, and the opposite side stays; the stretched box is drawn with the same 1-wide border color and the interior color fills its inside, so the marker cell becomes border"
+
+  ;; The stretched box: the bounding box of the box and the markers.
+  (INIT &stretched BoundingBox
+    (cell (P)
+      (OR ((&box_cell *P))
+          ((&box.box)
+           (&marker P))))))
+
+(OUTPUT keep-rest "every other cell keeps its input color")
+
+(ALTS $b "which cells are the box" $AllInk
+  (ALT $MultiCellPiece
+    (INPUT framed-box "the box is the one 4-connected piece of more than one cell among the cells outside &background and the markers; undefined where there is no such piece or more than one"
+      (RULE &box_cell
+        (&the_piece.value (:v *Id))
+        (&piece.component *P Id)))
+    (INPUT background "every cell outside the box, the marker and the pieces of one cell is &background")))
+
+(ALTS $m "which cells are markers" $StoredMarker
+  (ALT $LoneMarker
+    (INPUT marker "the marker is a non-background cell with no non-background 4-neighbor, of any color; undefined where the dot touches the box, and where there is no such cell"
+      (RULE &touching
+        (&ink *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&ink (:P Q)))
+
+      (RULE &marker
+        (&ink *P)
+        (NOT (&touching P))))))
+
+(ALTS $c "how many markers an input holds" $OneMarker
+  (ALT $EachMarker
+    (INPUT marker "one or more marker cells, each straight out from a side of the box")
+    (OUTPUT stretch-to-marker "each side that faces a marker moves out to the line of the farthest marker on that side")
+    (RULE &output
+      (&box.box)
+      (NOT (&broken))
+      (NOT (&misplaced))
+      (NOT (&unfit))
+      (input *P (:Col *Col_in))
+      (OR ((&fill P *Col))
+          ((NOT (&fill P))
+           (= Col Col_in))))
+    (ALT $CoverDiagonal
+      (RULE &output
+        (&box.box)
+        (NOT (&broken))
+        (NOT (&unfit))
+        (input *P (:Col *Col_in))
+        (OR ((&fill P *Col))
+            ((NOT (&fill P))
+             (= Col Col_in)))))))
+
+(ALTS $pl "where a marker may lie" $StraightOut
+  (ALT $CoverDiagonal
+    (INPUT marker "the marker may lie outside the box's span on both axes")
+    (OUTPUT stretch-to-marker "the box stretches on both axes to the bounding box of the box and the marker")
+    (RULE &output
+      (&box.box)
+      (NOT (&broken))
+      (NOT (&miscount))
+      (NOT (&unfit))
+      (input *P (:Col *Col_in))
+      (OR ((&fill P *Col))
+          ((NOT (&fill P))
+           (= Col Col_in))))))
+
+(ALTS $t "what fills the stretched box" $Redraw
+  (ALT $RepeatInnerSlice
+    (INPUT framed-box "one solid rectangle on &background, of any colors")
+    (OUTPUT stretch-to-marker "the box's far line moves to the marker's line, and each line between takes a copy of the box's line next to the old far side; undefined where the box is narrower than 3 along the stretch"
+      (RULE &box_line
+        (&box_cell *P)
+        (split P *A (:Along *L)))
+
+      (RULE &grown
+        (&box.box *B)
+        (&stretched.box (:B *B2))
+        (margin B *D *K)
+        (margin (:B B2) D (:K *K2))
+        (< K2 K))
+
+      (RULE &far_line
+        (&grown *D)
+        (&box.box *B)
+        (margin B D *K)
+        (axis_of D *A)
+        (&box_line A *L)
+        (margin (:B L) D K))
+
+      (RULE &slice
+        (&far_line *D (:L *L_far))
+        (axis_of D *A)
+        (&box_line A *L)
+        (neighbor (:P L) D (:Q L_far)))
+
+      (RULE &wide
+        (&slice *D *L)
+        (&box.box *B)
+        (opposite D (:Opp *D2))
+        (margin B (:D D2) *K)
+        (margin (:B L) (:D D2) (:K *Kl))
+        (< K Kl))
+
+      (RULE &grid_line
+        (input *P)
+        (split P *A (:Along *L)))
+
+      (RULE &line_src
+        (OR ((&far_line *D (:L *L_far))
+             (axis_of D *A)
+             (&stretched.box *B)
+             (margin B D *K)
+             (&grid_line A *L)
+             (margin (:B L) D (:K *Kl))
+             (OR ((< K Kl)
+                  (NOT (nearer D (:P L_far) (:Q L)))
+                  (&slice D (:L *L_src)))
+                 ((= Kl K)
+                  (= L_src L_far))))
+            ((&box_line A L)
+             (NOT (&far_line L))
+             (= L_src L)))))
+    (RULE &unfit
+      (&grown *D)
+      (NOT (&wide D)))
+
+    (RULE &fill
+      (input *P)
+      (perp *A *A2)
+      (split P A (:Along *L1) (:Across *L2))
+      (&line_src A (:L L1) (:L_src *L1_src))
+      (&line_src (:A A2) (:L L2) (:L_src *L2_src))
+      (compose (:A L1_src) (:B L2_src) (:C *Q))
+      (input (:P Q) *Col))))
+
+(RULE &broken
+  (OR ((NOT (&marker)))
+      ((&box.box *B)
+       (input *P)
+       (inside (:A P) B)
+       (NOT (&box_cell P)))))
+
+(RULE &fill
+  (&stretched.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (IF ((interior (:A P) B))
+      ((&core_color.value (:v *Col)))
+      ((&rim_color.value (:v Col)))))
+
+(RULE &miscount
+  (&one.plural))
+
+(RULE &straight
+  (&marker *P)
+  (&box.box *B)
+  (split (:P B) *A (:Along *B_band))
+  (inside (:A P) (:B B_band)))
+
+(RULE &misplaced
+  (&box.box)
+  (&marker *P)
+  (NOT (&straight P)))
+
+(RULE &framed
+  (&rim_color.value (:v *Col1))
+  (&core_color.value (:v *Col2))
+  (!= Col1 Col2))
+
+(RULE &unfit
+  (&box.box)
+  (NOT (&framed)))
+
+(RULE &output
+  (&box.box)
+  (NOT (&broken))
+  (NOT (&miscount))
+  (NOT (&misplaced))
+  (NOT (&unfit))
+  (input *P (:Col *Col_in))
+  (OR ((&fill P *Col))
+      ((NOT (&fill P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

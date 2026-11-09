@@ -1,0 +1,254 @@
+;; inputs c61cc197545d4d48caa9a404b1d8ee478896e271c6cbedb8c92b05f78a0540f9 programs/solvers/b0722778.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0722778
+
+(INPUT bands "rows of &bg split the grid into bands; each band holds 3 square tiles of side 2, apart by columns of &bg, and the tiles of all bands stand in the same columns"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT change-kind "in each band, the second tile is the first tile moved with its colors kept, or the first tile recolored cell by cell with its pattern kept")
+
+(INPUT recolor-domain "where a band's change is a recoloring, the third tile uses only colors of the first tile")
+
+(OUTPUT change "a band's changes are each rule that carries the first tile onto the second: a move that the first tile's shape admits, a flip where the first tile is a dot, one cell of a color the other three cells lack, and a turn where it is two lines, two cells of each color with each color on one row or one column, a first tile of another shape admitting no move; or the recoloring that carries the first tile onto the second, cell by cell"
+
+  (RULE &broken
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (split P *A (:Along *L)))
+
+  (RULE &panels_divider
+    (input *P)
+    (split P *A (:Along *L))
+    (NOT (&broken A L)))
+
+  (RULE &panels_on_divider
+    (input *P)
+    (&panels_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  ;; The rows and columns of the background cut the grid into tiles.
+  (INIT &panels_rank Order
+    (key ((OR ((&panels_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&panels_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&panels_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *P D (:N *N1))
+    (&panels_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  ;; The edge the first tile of a band is nearest.
+  (DET &read_from DirDomain)
+
+  (RULE &tile_axis
+    (&read_from *D)
+    (axis_of D *A))
+
+  (RULE_OR_DET &tile_column "The line k cells from &read_from lies in the tile column pc."
+    (&panels_part_of *P *A (:P_part *Pc))
+    (&tile_axis A)
+    (&read_from *D)
+    (margin (:B P) D *K))
+
+  (RULE &in_column
+    (input *P)
+    (&read_from *D)
+    (margin (:B P) D *K)
+    (&tile_column K *Pc))
+
+  (RULE &placed
+    (&in_column *P *Pc)
+    (&tile_axis *A)
+    (perp A *A2)
+    (&panels_part_of P (:A A2) (:P_part *Bd)))
+
+  (RULE &order_elem
+    (&tile_column *Pc))
+
+  ;; The tile columns, in order away from &read_from.
+  (INIT &order Order
+    (member ((:t Pc))
+      (&order_elem *Pc))
+    (score ((:t Pc) (:S K))
+      (&order_elem *Pc)
+      (&read_from *D)
+      (margin (:B Pc) D *K)))
+
+  ;; Each tile, keyed by its band and its column glued.
+  (INIT &tile_box BoundingBox
+    (key ((&placed *P *Bd *Pc)
+          (compose (:A Pc) (:B Bd) (:C ^T)))
+      (cell (P)
+        (&placed *P *Bd *Pc)
+        (compose (:A Pc) (:B Bd) (:C T)))))
+
+  (RULE &tile_cell
+    (&placed *P *Bd *Pc)
+    (compose (:A Pc) (:B Bd) (:C *T))
+    (&tile_box.box (:key T) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *Q))
+    (input P *Col))
+
+  (RULE &flip_move
+    (OR ((axis_inversion (:A *A1) (:T *D)) (axis_elem (:A A1)))
+        ((reflection (:A *A3) (:T D)) (diag_axis_elem (:Da A3)))))
+
+  (RULE &first_cell
+    (&order.minimal (:t *Pc))
+    (&tile_cell *Bd Pc *Q *Col))
+
+  (RULE &twin
+    (&first_cell *Bd *Q *Col)
+    (&first_cell Bd (:Q *Q2) Col)
+    (!= Q Q2))
+
+  (RULE &aligned
+    (&twin *Bd *Q *Q2)
+    (axis_elem *A)
+    (same_line A (:P Q) (:Q Q2)))
+
+  (RULE &dot
+    (&first_cell *Bd *Q)
+    (NOT (&twin Bd Q)))
+
+  (RULE &not_lines
+    (OR ((&dot *Bd))
+        ((&twin Bd *Q *Q2)
+         (NOT (&aligned Bd Q Q2)))
+        ((&twin Bd (:Q *Q4) (:Q2 *Q22))
+         (&twin Bd (:Q Q4) (:Q2 *Q3))
+         (!= Q22 Q3))))
+
+  (RULE &catalog_demonstration
+    (&tile_cell *Bd (:Pc *Pc1))
+    (&order.minimal (:t Pc1))
+    (&order.successor (:a Pc1) (:b *Pc2)))
+
+  ;; The color each recoloring rule takes a first-tile color to; a color taken
+  ;; to two colors clashes.
+  (INIT &recolor Singleton
+    (key ((&catalog_demonstration ^Bd *Pc1 *Pc2)
+          (&tile_cell Bd (:Pc Pc1) *Q ^Col)
+          (&tile_cell Bd (:Pc Pc2) Q (:Col *Col2)))
+      (member ((:v Col2))
+        (&catalog_demonstration Bd *Pc1 *Pc2)
+        (&tile_cell Bd (:Pc Pc1) *Q Col)
+        (&tile_cell Bd (:Pc Pc2) Q (:Col *Col2)))))
+
+  ;; Each band is an inner task: the first tile and the second are a
+  ;; demonstrated pair, and the third tile is left to complete.
+  (DEMONSTRATED &catalog
+    (key ((OR ((&tile_cell ^Bd *Pc *Q *Col))
+              ((&catalog_demonstration Bd *Pc1 *Pc2))))
+      (value ((:o Pc) (:i Q) (:v Col))
+        (&tile_cell Bd *Pc *Q *Col))
+      (demonstration ((:o Pc1) (:o2 Pc2))
+        (&catalog_demonstration Bd *Pc1 *Pc2)))
+    (DEMO_RULE ($Move *D) "The tile moved by d, a move the shape of the band's first tile admits: a dot is flipped, and two lines are turned."
+      (RULE &prediction
+        (&tile_cell *Bd *Pc (:Q *Q3) *Col)
+        (apply D (:P Q3) (:P_out *Q))
+        (OR ((&dot Bd)
+             (&flip_move D))
+            ((NOT (&not_lines Bd))
+             (&first_cell Bd)
+             (c4_elem D)
+             (dir_elem (:D *X))
+             (apply_dir D (:Dir X) (:Dir_out *X2))
+             (!= X2 X)))))
+    (DEMO_RULE $Recolor "The tile recolored cell by cell."
+      (RULE &prediction
+        (&tile_cell *Bd *Pc *Q (:Col *Col3))
+        (&recolor.value (:key Bd (:Col Col3)) (:v *Col))))))
+
+(OUTPUT output "the output is the columns of the tile nearest the edge opposite &read_from, with each band's tile changed by that band's changes, one output per choice of one change in each band, and the &bg rows kept"
+
+  ;; The columns of the third tile, which the output takes.
+  (INIT &out_box BoundingBox
+    (cell (P)
+      (&in_column *P *Pc)
+      (&order.maximal (:t Pc)))))
+
+(ALTS $choice "what a recoloring does with a third-tile color the first tile lacks" $UnmappedUndefined
+  (ALT $KeepUnmapped
+    (INPUT recolor-domain "dropped")
+    (OUTPUT change "under a recoloring, a third-tile color that the first tile lacks keeps its color"
+      ;; Each band is an inner task: the first tile and the second are a
+      ;; demonstrated pair, and the third tile is left to complete.
+      (DEMONSTRATED &catalog
+        (key ((OR ((&tile_cell ^Bd *Pc *Q *Col))
+                  ((&catalog_demonstration Bd *Pc1 *Pc2))))
+          (value ((:o Pc) (:i Q) (:v Col))
+            (&tile_cell Bd *Pc *Q *Col))
+          (demonstration ((:o Pc1) (:o2 Pc2))
+            (&catalog_demonstration Bd *Pc1 *Pc2)))
+        (DEMO_RULE ($Move *D) "The tile moved by d, a move the shape of the band's first tile admits: a dot is flipped, and two lines are turned."
+          (RULE &prediction
+            (&tile_cell *Bd *Pc (:Q *Q3) *Col)
+            (apply D (:P Q3) (:P_out *Q))
+            (OR ((&dot Bd)
+                 (&flip_move D))
+                ((NOT (&not_lines Bd))
+                 (&first_cell Bd)
+                 (c4_elem D)
+                 (dir_elem (:D *X))
+                 (apply_dir D (:Dir X) (:Dir_out *X2))
+                 (!= X2 X)))))
+        (DEMO_RULE $Recolor "The tile recolored cell by cell."
+          (RULE &prediction
+            (OR ((&tile_cell *Bd *Pc *Q (:Col *Col3))
+                 (&recolor.value (:key Bd (:Col Col3)) (:v *Col)))
+                ((&tile_cell Bd Pc Q Col)
+                 (NOT (&recolor.member (:key Bd Col)))))))))))
+
+(RULE &panels_tile_of
+  (&panels_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panels_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(RULE &output
+  ;; Each band's third tile under each rule the band confirms.
+  (OR ((&out_box.box *B)
+       (&catalog (:key *Bd) (:o *Pc) (:i *Q) (:v *Col))
+       (&order.maximal (:t Pc))
+       (&tile_cell (:P *P2) Bd Pc Q)
+       (inside (:A P2) B)
+       (relative (:Base B) (:X P2) (:X_rel *P)))
+      ;; The background rows.
+      ((&out_box.box (:B *B2))
+       (&tile_axis *A)
+       (perp A *A2)
+       (&panels_on_divider (:P *P22) (:A A2))
+       (inside (:A P22) (:B B2))
+       (relative (:Base B2) (:X P22) (:X_rel P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

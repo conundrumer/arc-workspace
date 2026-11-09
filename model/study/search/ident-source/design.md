@@ -154,7 +154,7 @@ The value is the member digest alone, and the handle is keyed by the set, as tod
     - `67e490f4` `&r56` (first case; sampler-worker's `&r70`): `(OR ((&r14.component ... *Id) (&r21 (:Id Id))) ((&r27.component (:P P) (:Id Id)) ...))`. `&r56` is read by `OUT` on `XRel` and `Key` alone. If no case reads its `Id`, a different label in the second branch keeps the rows and exports no `Id`.
     - `e872b94a` `&r11` (first case; sampler-worker's `&r12`): `(OR ((&r3.component (:P *P) (:Id *Id))) ((&r7.component (:P P) (:Id Id))))`, which `&r12` counts as `Cardinality` members. This needs a rewrite or removal.
     - Dataset-worker must settle both before the flag turns on. A program that fails is refused. No explicit conversion exists, and I propose none.
-- **Solvers.** `programs/solvers/` holds only `.dl` files (1,147), which have no Ident type. `work/arclog/gen/` holds 962 `.arclog` solvers, which the checker reads. The same forms fail there; step T5 lists them.
+- **Solvers.** `programs/solvers/` holds only `.dl` files (1,147), which have no Ident type. `programs/arclog/` holds 962 `.arclog` solvers, which the checker reads. The same forms fail there; step T5 lists them.
 - **`scripts/materialize.py` and patches.** Patches correct task data under `data/`. Task data holds no Ident, so neither changes.
 - **Stored banks.** A bank holds form text and `x_rows`. A pool that reads a bank replays the text, so banks keep working. `x_rows` in old records hold session numbers, which were never comparable across sessions.
 - **Gold keys.** `gold_keys` (`work/lm/data-study/sampler/search-worker/poolsearch/superdag.py:347`) runs in each session, so nothing stored changes. The keys match as today, because the cell is by content.
@@ -213,7 +213,7 @@ Run once with `RAYON_NUM_THREADS=1` against the default, and once on macOS again
 ## Commands
 - `<checkout>/scripts/run_heavy.py --cpus 8 --need soon cargo build --release -p arclog-cli` from `engine/`. ETA 5 to 15 minutes, an estimate. It gives `check_one` and `verdicts`.
 - `ARCLOG_IDENT_SOURCE=type target/release/check_one <corpus> <stem>`. Under 1 s.
-- `ARCLOG_IDENT_SOURCE=type target/release/verdicts work/arclog/gen data/tasks`. See V3 for the ETA.
+- `ARCLOG_IDENT_SOURCE=type target/release/verdicts programs/arclog data/tasks`. See V3 for the ETA.
 - Wheel for a kit: `scripts/build_study_runtime.py` through `run_heavy.py`, into a new path, as for `kits/engine-c87cf482a/`. A job line sets the flag as it sets `STEER_COVER`.
 - `python3 junk_share.py --arm context_nocover`, `python3 junk_share.py --arm context_cover`, `python3 gold_share.py`, in this folder. 2 s each. `ident_sources.py` holds the tracer. It reads `CHOOSE`, `RIGID_DET` and `DEMONSTRATED` forms as giving no source, so it can undercount in gold: 39 such forms, 34 reads.
 

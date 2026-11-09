@@ -1,0 +1,71 @@
+;; inputs aa200d491fe03850198c54947bc84176589a09075a4d79d1b653392fbee43004 programs/solvers/8f2ea7aa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8f2ea7aa
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; $Crop — the ink's bounding box, tiled by itself.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &shape
+  (input (:P *P2) *Col)
+  (&bbox.box *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(ALTS $pa "the shape and the output decomposition" $Crop
+  (ALT $Divide
+    (DET &tile_dim TileCount)
+
+    (INIT &block_division Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_dim (:N *K))))
+
+    (RULE &cell
+      (&block_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+    (RULE &shape
+      (&block_division.tile (:P *P2) (:P_outer *P_tile) (:P_inner *P))
+      (input (:P P2) *Col)
+      (&block_division.tile (:P *P_ink) (:P_outer P_tile))
+      (&ink (:P P_ink)))))
+
+(ALTS $f "fill color" $Stamp
+  (ALT $Mask
+    ;; $Mask — the shape scaled up, masked by itself.
+    (RULE &output
+      (&cell (:P_grid *P) *P_tile *P_intile)
+      (IF ((&active (:P P_intile)))
+          ((&shape (:P P_tile) *Col))
+          ((&bg (:C Col)))))))
+
+(INIT &cell_tiling Tiling
+  (outer ((:P P_tile))
+    (&shape (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&shape (:P *P_intile))))
+
+(RULE &cell
+  (&cell_tiling.cell (:P_outer *P_tile) (:P_inner *P_intile) (:P *P_grid)))
+
+(RULE &active
+  (&shape *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; $Stamp — copies of the shape at its active cells.
+(RULE &output
+  (&cell (:P_grid *P) *P_tile *P_intile)
+  (IF ((&active (:P P_tile)))
+      ((&shape (:P P_intile) *Col))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

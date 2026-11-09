@@ -1,0 +1,165 @@
+;; inputs 34251add8f43249bc004dc60d1aac780b7b04bd8f6fbeeb9fe4698adbadf1f4e programs/solvers/8e5a5113.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8e5a5113
+
+(DET &flow_dir DirDomain)
+
+(DET &bg ChangedColor)
+
+(DET &axis AxisDomain)
+
+(DET &gap DivisorRatio)
+
+(DET &tile_n ConstInDim)
+
+(INIT &tile_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (&axis *A)
+    (&tile_n *N))
+  (gap (A G)
+    (&axis *A)
+    (&gap (:K *G))))
+
+(RULE &tile
+  (input (:P *P_grid))
+  (&tile_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+(RULE &tile_cell
+  (&tile *P_grid *P_tile *P_intile))
+
+(DET &out_cell
+  (ex_output *E (:P *P_grid) *Col)
+  (&tile E P_grid *P_tile *P_intile))
+
+(DET &flow_pair
+  (&out_cell *E (:P_tile *T1))
+  (&flow_dir *D)
+  (neighbor (:P T1) D (:Q *T2))
+  (&out_cell E (:P_tile T2)))
+
+;; Each tile's content must map onto its flow-neighbor's.
+(INIT &step Agreement
+  (key ((OR ((&flow_pair ^E ^T1)
+             (&out_cell E (:P_tile T1) (:P_intile *P) *Col))
+            ((&flow_pair E T1 *T2)
+             (&out_cell E (:P_tile T2) (:P_intile P) Col))))
+    (source (P (:v Col))
+      (&flow_pair E T1)
+      (&out_cell E (:P_tile T1) (:P_intile *P) *Col))
+    (target (P (:v Col))
+      (&flow_pair E T1 *T2)
+      (&out_cell E (:P_tile T2) (:P_intile *P) *Col))))
+
+(DET &step_broken
+  (&step.mismatch (:key *E (:T1 *T)) *D)
+  (&out_cell E (:P_tile T)))
+
+(DET &rot
+  (&out_cell)
+  (d4_elem *D)
+  (NOT (&step_broken D)))
+
+(ALTS $choice "data-equivalent on this task" $StepCount
+  (ALT $StepSize
+    (DET &tile_size
+      (&tile *P_intile)
+      (&axis *A)
+      (frame_extent (:P P_intile) A (:N *K)))
+
+    (INIT &size_tile_division Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A (:K Sz))
+        (&axis *A)
+        (&tile_size (:K *Sz)))
+      (gap (A G)
+        (&axis *A)
+        (&gap (:K *G))))
+
+    (RULE &size_tile
+      (input (:P *P_grid))
+      (&size_tile_division.tile (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile)))
+
+    (RULE &tile_cell
+      (&size_tile *P_grid *P_tile *P_intile)))
+  (ALT $Lookup
+    (DET &pattern_tile
+      (&tile *E *P_grid *P_tile)
+      (ex_input E (:P P_grid) *Col)
+      (NOT (&bg (:C Col)))
+      (ex_output E))
+
+    ;; Each tile of a train output, against that input's pattern.
+    (INIT &image Agreement
+      (key ((OR ((&out_cell ^E ^P_tile)
+                 (&pattern_tile E (:P_tile *P_src))
+                 (&tile E *P_grid (:P_tile P_src) *P_intile)
+                 (ex_input E (:P P_grid) *Col))
+                ((&out_cell E P_tile P_intile Col))))
+        (source ((:P P_intile) (:v Col))
+          (&out_cell E P_tile)
+          (&pattern_tile E (:P_tile *P_src))
+          (&tile E *P_grid (:P_tile P_src) *P_intile)
+          (ex_input E (:P P_grid) *Col))
+        (target ((:P P_intile) (:v Col))
+          (&out_cell E P_tile *P_intile *Col))))
+
+    (DET &tile_d4
+      (&out_cell (:P_tile *P))
+      (d4_elem *D)
+      (NOT (&image.mismatch (:key (:P_tile P)) D)))
+
+    (RULE &output
+      (OR ((&src (:P_intile *P_src) *Col)
+           (&tile_d4 (:P *P_tile) *D)
+           (apply D (:P P_src) (:P_out *P_intile))
+           (&tile_cell (:P_grid *P) P_tile P_intile))
+          ;; Separator passthrough — cells the divide leaves undecomposed.
+          ((input P Col)
+           (NOT (&tile_cell (:P_grid P))))))))
+
+(RULE &src
+  (&tile_cell *P_grid *P_tile *P_intile)
+  (input (:P P_grid) *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &flow_frame Frame
+  (extent (A N)
+    (&src (:P_tile *P))
+    (frame_extent P *A *N)))
+
+;; The tiles counted off from the pattern's toward flow_dir.
+(INIT &flow Ray
+  (source (P)
+    (&src (:P_tile *P)))
+  (node (P)
+    (&flow_frame.cell *P))
+  (dir (D)
+    (&flow_dir *D)))
+
+(RULE &flow_ray
+  (&flow.ray *P *D *K (:Origin *Src))
+  (&tile_cell (:P_tile P)))
+
+;; A cell of the pattern under k turns by &rot.
+(INIT &turns Walk
+  (successor ((:p P1) (:p_next P2))
+    (&tile_cell (:P_intile *P1))
+    (&rot (:D *R))
+    (apply (:D R) (:P P1) (:P_out *P2)))
+  (steps ((:N K))
+    (&flow_ray *K)))
+
+(RULE &output
+  ;; Separator passthrough — cells the divide leaves undecomposed.
+  (OR ((input *P *Col)
+       (NOT (&tile_cell (:P_grid P))))
+      ;; The k-th tile on carries the pattern turned k times.
+      ((&src (:P_tile *T0) (:P_intile *P0) Col)
+       (&flow.ray (:P *T) *K (:Origin T0))
+       (&turns.walk (:p0 P0) (:N K) (:p *P_intile))
+       (&tile_cell (:P_grid P) (:P_tile T) P_intile))))
+
+(OUT (&output ^P ^Col))

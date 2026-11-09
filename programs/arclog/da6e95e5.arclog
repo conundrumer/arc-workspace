@@ -1,0 +1,144 @@
+;; inputs 0ae7d9627cd55cb9898aaa6742d8f9fd00a2e64fe1a54fa9228bbe201d940ac5 programs/solvers/da6e95e5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; da6e95e5
+
+(INPUT background "one color fills every cell that no frame or shape covers.")
+
+(INPUT bracket-frames "each frame is four L-shaped corner brackets of one color, the corners of a rectangle, with gaps between them along each side.")
+
+(INPUT framed-shape "inside each frame's rectangle, clear of the brackets, sits one shape of one color, connected under 8-adjacency.")
+
+(INPUT one-match "exactly one frame has a shape of the frame's own color.")
+
+(OUTPUT crop-matching-shape "the output is the bounding box of the shape whose color equals its frame's color, with that shape's cells in its color and every other cell in the background color."
+
+  (INIT &bg_mode_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The background: the commonest color.
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  ;; The one-color pieces, under 8-adjacency, each keyed by its color.
+  (INIT &piece Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg_mode.maximal (:t Col))))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg_mode.maximal (:t Col)))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (RULE &bracket_corner
+    (input *P *Col)
+    (NOT (&bg_mode.maximal (:t Col)))
+    (diag_dirs *D *D1 *D2)
+    (opposite (:D D1) (:Opp *E1))
+    (neighbor P (:D E1) (:Q *Q1))
+    (input (:P Q1) Col)
+    (opposite (:D D2) (:Opp *E2))
+    (neighbor P (:D E2) (:Q *Q2))
+    (input (:P Q2) Col))
+
+  ;; The rectangle that two bracket corners of one color at opposite frame
+  ;; corners bound.
+  (INIT &span BoundingBox
+    (key ((&bracket_corner ^P *Col *D)
+          (diag_opposite D (:Opp *D2))
+          (&bracket_corner (:P ^Q) Col (:D D2)))
+      (cell ((:P P2))
+        (OR ((&bracket_corner P *Col *D)
+             (diag_opposite D (:Opp *D2))
+             (&bracket_corner (:P Q) Col (:D D2))
+             (= *P2 P))
+            ((&bracket_corner P (:Col *Col2) (:D *D3))
+             (diag_opposite (:D D3) (:Opp *D22))
+             (&bracket_corner (:P Q) (:Col Col2) (:D D22))
+             (= P2 Q))))))
+
+  (RULE &frame_cand
+    (&span.box (:key *P) *B)
+    (input P *Col))
+
+  (RULE &corner_held
+    (&frame_cand *B *Col)
+    (&bracket_corner *P Col *D)
+    (inside (:A P) B)
+    (same_corner D (:P1 P) (:P2 B)))
+
+  (RULE &frame
+    (&frame_cand *B *Col)
+    (ALL ((diag_dir_elem *D))
+         ((&corner_held B Col D))))
+
+  ;; The one piece inside a frame, clear of its sides.
+  (INIT &inner Singleton
+    (key ((&frame ^B))
+      (member ((:v Id))
+        (&piece.component *P *Id)
+        (interior (:A P) B))))
+
+  (RULE &spills
+    (&inner.value (:key *B) (:v *Id))
+    (&piece.component *P Id)
+    (NOT (interior (:A P) B)))
+
+  (RULE &matched
+    (&frame *B *Col)
+    (&inner.value (:key B) (:v *Id))
+    (NOT (&spills B Id))
+    (&piece.component (:key Col) Id))
+
+  (RULE &shape
+    (&matched *Id *Col)
+    (&piece.component (:key Col) *P Id))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (&shape *P))))
+
+(ALTS $choice "the window the output crops" $ShapeBox
+  (ALT $FrameInset
+    (OUTPUT crop-matching-shape "the output is the matching frame's rectangle inset by `inset` cells on every side, copied from the input; undefined where the inset leaves no cells."
+      (DET &margin
+        (&matched *E *B)
+        (&shape_box.box E (:B *S))
+        (relative (:Base B) (:X S) (:X_rel *R))
+        (margin (:B R) *D *K)
+        (uniform_inset K (:B R)))
+
+      (DET &contradicted
+        (&margin *K)
+        (ex_output *E)
+        (NOT (&margin E K)))
+
+      (DET_OR_RULE &inset TileDim
+        (&margin (:K *D))
+        (NOT (&contradicted (:K D)))))
+    (RULE &output
+      (&matched *B)
+      (&inset (:D *K))
+      (uniform_inset K (:B *V))
+      (compose (:A B) (:B V) (:C *W))
+      (input (:P *P2) *Col)
+      (inside (:A P2) (:B W))
+      (relative (:Base W) (:X P2) (:X_rel *P)))))
+
+(RULE &output
+  (&shape_box.box *B)
+  (input (:P *P2))
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P))
+  (OR ((&shape (:P P2) *Col))
+      ((NOT (&shape (:P P2)))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

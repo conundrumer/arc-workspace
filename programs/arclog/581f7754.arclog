@@ -1,0 +1,64 @@
+;; inputs 0efc45cc4e440dd9d6dd95dc7785ffd9b8874487b01b779eae8dd676ca438eb9 programs/solvers/581f7754.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 581f7754
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg_mode.maximal (:t Col))))
+
+(INIT &objs Connectivity
+  (node (P)
+    (&ink *P)))
+
+(RULE &obj_cell
+  (&objs.component *P *Id)
+  (&ink P *Col))
+
+;; The object's sole cell.
+(INIT &lone Singleton
+  (key ((&obj_cell ^Id *P))
+    (member ((:v P))
+      (&obj_cell Id *P))))
+
+(INIT &sole Singleton
+  (key ((&obj_cell ^Id *P ^Col))
+    (member ((:v P))
+      (&obj_cell Id *P Col))))
+
+(RULE &anchor
+  (&lone.value (:v *P))
+  (&ink P *Col)
+  (margin (:B P) *D (:K 0)))
+
+(RULE &shift
+  (&sole.value (:key *Id *Col) (:v *M))
+  (&anchor (:P *A) Col *D)
+  (axis_of D (:A *Ax))
+  (split (:P M) (:A Ax) *Along)
+  (split (:P A) (:A Ax) *Across)
+  (compose (:A Along) (:B Across) (:C *T))
+  (relative (:Base M) (:X T) (:X_rel *V)))
+
+(RULE &moved
+  (&obj_cell *Id (:P *P2) *Col)
+  (&shift Id *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (input *P)
+  (OR ((&moved P *Col))
+      ((NOT (&moved P))
+       (&bg_mode.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,80 @@
+;; inputs 39b16818ead946f7dd964dee9ab3092e4e3da1fac75e2763955da3346e6a7a4f programs/solvers/beb8660c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; beb8660c
+
+(param &bg Color (0))
+(param &fall_dir Dir (DIR_B))
+(param &align_side Dir (DIR_R))
+(param &base_color Color (8))
+
+(alts $item
+  (alt $RowUnit
+    (witness two-bars-one-row borderline concept
+      (relaxed bars)
+      (separates "Row 0 holds two bars, 2 2 and 3. The concept moves each bar to its own row by length. $RowUnit moves the row as one unit of 3 cells and packs it to the right.")
+      (input (grid
+        (2 2 0 3 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (4 4 4 4 0)
+        (8 8 8 8 8)))
+      (output ($Bar $Stack) (grid
+        (0 0 0 0 0)
+        (0 0 0 0 3)
+        (0 0 0 2 2)
+        (0 4 4 4 4)
+        (8 8 8 8 8)))
+      (output $RowByLength (grid
+        (0 0 0 0 3)
+        (0 0 0 2 2)
+        (0 0 0 0 0)
+        (0 4 4 4 4)
+        (8 8 8 8 8)))
+      (output $RowUnit (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 2 2 3)
+        (0 4 4 4 4)
+        (8 8 8 8 8))))))
+
+(alts $place
+  (alt $RowByLength
+    (witness missing-length variant concept
+      (relaxed lengths-one-to-width)
+      (separates "The bar lengths skip 2. The concept stacks the bars with no gap row. $RowByLength sets each bar at width minus length rows above the bottom, which leaves an empty row under the 1-cell bar.")
+      (input (grid
+        (0 0 0 0)
+        (2 0 0 0)
+        (0 0 0 0)
+        (0 3 3 3)
+        (8 8 8 8)))
+      (output $Stack (grid
+        (0 0 0 0)
+        (0 0 0 0)
+        (0 0 0 2)
+        (0 3 3 3)
+        (8 8 8 8)))
+      (output $RowByLength (grid
+        (0 0 0 0)
+        (0 0 0 2)
+        (0 0 0 0)
+        (0 3 3 3)
+        (8 8 8 8))))))
+
+(alts $base
+  (alt $BaseStays
+    (witness short-base borderline concept
+      (relaxed base-bar)
+      (separates "The 8 bar on the bottom row is shorter than the 2 bar. The concept puts the longest bar, 2, on the bottom row. $BaseStays keeps the 8 bar on the bottom row and stacks the other bars on it.")
+      (input (grid
+        (2 2 2)
+        (0 0 4)
+        (0 8 8)))
+      (output $Ranked (grid
+        (0 0 4)
+        (0 8 8)
+        (2 2 2)))
+      (output $BaseStays (grid
+        (0 0 4)
+        (2 2 2)
+        (0 8 8))))))

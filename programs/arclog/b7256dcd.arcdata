@@ -1,0 +1,153 @@
+;; inputs 3407eb04ad1096099f548a3de5a64183ba865f35689daf79376a2aa2490940b0 programs/solvers/b7256dcd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7256dcd
+
+(param &background Color (7))
+(param &shape_color Color (6))
+
+(alts $c
+  (alt $Shapes8
+    (witness diagonal-touch variant concept
+      (separates "two shapes touch at a corner, each with its own marker: 4-connected shapes take 3 and 4 apart; 8-connected shapes merge into one shape with two markers, and the reading is undefined")
+      (input (grid
+        (3 6 6 7 7)
+        (7 7 7 6 6)
+        (7 7 7 7 4)
+        (7 7 7 7 7)))
+      (output $Shapes4 (grid
+        (7 3 3 7 7)
+        (7 7 7 4 4)
+        (7 7 7 7 7)
+        (7 7 7 7 7)))
+      (output $Shapes8 undefined))
+    (witness corner-joined borderline $Shapes8
+      (relaxed one-marker-per-shape)
+      (separates "two pieces of the shape color touch at a corner, marker 3 touches one of them, and marker 4 lies two steps from the other: 8-connected shapes join the pieces into one shape that takes 3; 4-connected shapes leave the other piece with no marker, so the concept is undefined, the piece keeps 6, or it takes the nearest marker's 4")
+      (input (grid
+        (7 7 7 7 7 7)
+        (3 6 6 7 7 7)
+        (7 7 7 6 6 7)
+        (7 7 7 7 7 7)
+        (7 7 7 7 4 7)))
+      (output ($Shapes4 $MarkedOnly) undefined)
+      (output $NearestMarker $NearestMarker8 (grid
+        (7 7 7 7 7 7)
+        (7 3 3 7 7 7)
+        (7 7 7 4 4 7)
+        (7 7 7 7 7 7)
+        (7 7 7 7 7 7)))
+      (output $UnmarkedKeeps (grid
+        (7 7 7 7 7 7)
+        (7 3 3 7 7 7)
+        (7 7 7 6 6 7)
+        (7 7 7 7 7 7)
+        (7 7 7 7 7 7)))
+      (output $Shapes8 (grid
+        (7 7 7 7 7 7)
+        (7 3 3 7 7 7)
+        (7 7 7 3 3 7)
+        (7 7 7 7 7 7)
+        (7 7 7 7 7 7))))))
+
+(alts $u
+  (alt $UnmarkedKeeps
+    (witness unmarked-shape borderline $UnmarkedKeeps
+      (relaxed one-marker-per-shape)
+      (separates "a shape touches no marker, and the nearest marker is two steps off: the concept is undefined; the shape keeps its color under $UnmarkedKeeps, and takes the nearest marker's color 3 under $NearestMarker")
+      (input (grid
+        (7 7 7 7 7)
+        (7 6 6 7 3)
+        (7 7 6 7 7)
+        (7 7 7 7 7)
+        (2 6 6 7 7)))
+      (output $MarkedOnly $NearestMarker8 undefined)
+      (output $NearestMarker (grid
+        (7 7 7 7 7)
+        (7 3 3 7 7)
+        (7 7 3 7 7)
+        (7 7 7 7 7)
+        (7 2 2 7 7)))
+      (output $UnmarkedKeeps (grid
+        (7 7 7 7 7)
+        (7 6 6 7 7)
+        (7 7 6 7 7)
+        (7 7 7 7 7)
+        (7 2 2 7 7)))))
+  (alt $NearestMarker
+    (witness unmarked-shape borderline $UnmarkedKeeps))
+  (alt $NearestMarker8
+    (witness nearest-metric borderline $UnmarkedKeeps
+      (relaxed one-marker-per-shape)
+      (separates "a lone shape touches no marker; marker 3 is nearer by 4-steps and marker 4 by 8-steps: the shape keeps 6, takes 3, or takes 4")
+      (input (grid
+        (6 7 7 3)
+        (7 7 7 7)
+        (7 7 4 7)
+        (7 7 7 7)))
+      (output $MarkedOnly undefined)
+      (output $NearestMarker (grid
+        (3 7 7 7)
+        (7 7 7 7)
+        (7 7 7 7)
+        (7 7 7 7)))
+      (output $NearestMarker8 (grid
+        (4 7 7 7)
+        (7 7 7 7)
+        (7 7 7 7)
+        (7 7 7 7)))
+      (output $UnmarkedKeeps (grid
+        (6 7 7 7)
+        (7 7 7 7)
+        (7 7 7 7)
+        (7 7 7 7))))))
+
+(alts $n
+  (alt $MarkerUnanimous
+    (witness two-cell-marker borderline $MarkerUnanimous
+      (relaxed markers)
+      (relaxed one-marker-per-shape)
+      (separates "a shape touches two marker cells of one color: the concept is undefined; $MarkerUnanimous takes their one color")
+      (input (grid
+        (7 7 7 7 7)
+        (7 6 6 7 7)
+        (7 3 3 7 7)
+        (7 7 7 7 4)
+        (7 7 7 6 6)))
+      (output $OneMarkerCell undefined)
+      (output $MarkerUnanimous (grid
+        (7 7 7 7 7)
+        (7 3 3 7 7)
+        (7 7 7 7 7)
+        (7 7 7 7 7)
+        (7 7 7 4 4))))))
+
+(alts $s
+  (alt $ShapeColorCommonest
+    (witness single-cell-shape borderline concept
+      (separates "the shape is one cell and a marker color repeats: shape color 6 recolors that cell 3; a derived shape color 3 makes the 3 cells the shapes, which take 6 and 4")
+      (input (grid
+        (3 6 7)
+        (7 7 7)
+        (7 4 3)))
+      (output $StoredShapeColor (grid
+        (7 3 7)
+        (7 7 7)
+        (7 7 7)))
+      (output $ShapeColorCommonest (grid
+        (6 7 7)
+        (7 7 7)
+        (7 7 4))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (separates "the shape outnumbers the background: the stored background 7 recolors the shape 3; the derived background 6 makes the 7 cells markers, and the shape touches four of them")
+      (input (grid
+        (6 6 6)
+        (6 6 3)
+        (7 7 7)))
+      (output &background=$Stored (grid
+        (3 3 3)
+        (3 3 7)
+        (7 7 7)))
+      (output &background=$Derived undefined))))

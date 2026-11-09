@@ -1,0 +1,92 @@
+;; inputs 833143bc68d965f3387cd55d70543ef017df45821f16c3755815edb180f13c92 programs/solvers/88207623.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 88207623
+
+(DET &bg DominantColor)
+
+(DET &line SharedColor)
+
+(DET &shape SharedColor)
+
+;; The axis across the line, which the reflection inverts.
+(DET &across_axis AxisDomain)
+
+(INIT &lines Connectivity
+  (node (P)
+    (input *P *Col)
+    (&line (:C Col))))
+
+(RULE &in_band
+  (&lines.component (:P *L) *Id)
+  (input *P)
+  (&across_axis *A)
+  (same_line A (:P L) (:Q P)))
+
+(RULE &dot
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&line (:C Col)))
+  (NOT (&shape (:C Col))))
+
+;; $Attached — the shape cells reached from the line over 8-adjacency.
+(INIT &blob Flood
+  (key ((OR ((&lines.component ^Id)
+             (OR ((input *P *Col)
+                  (&shape (:C Col)))
+                 ((&lines.component P Id))))
+            ((&lines.component P Id))))
+    (node (P)
+      (&lines.component Id)
+      (OR ((input *P *Col)
+           (&shape (:C Col)))
+          ((&lines.component P Id))))
+    (source (P)
+      (&lines.component *P Id)))
+  (step ((:Delta S))
+    (OR ((step_offset *D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &source
+  (&blob.reached (:key *Id) *P)
+  (input P *Col)
+  (&shape (:C Col)))
+
+(ALTS $s "which shape cells a line reflects" $Attached
+  (ALT $Spanned
+    ;; $Spanned — the shape cells in the line's band.
+    (RULE &source
+      (&in_band *Id *P)
+      (input P *Col)
+      (&shape (:C Col)))))
+
+(ALTS $m "which dot colors a line's reflection" $Beside
+  (ALT $Sample
+    ;; $Sample — the dot on the line's reflection.
+    (RULE &paint
+      (&image *Id (:Q *P))
+      (&dot (:P *P2) *Col)
+      (&image Id (:Q P2)))))
+
+(RULE &image
+  (&source *Id *P)
+  (&lines.component (:P *L) Id)
+  (&across_axis *A)
+  (axis_inversion A (:T *F))
+  (relative (:Base L) (:X P) (:X_rel *V))
+  (apply (:D F) (:P V) (:P_out *V2))
+  (compose (:A L) (:B V2) (:C *Q))
+  (input (:P Q)))
+
+;; $Beside — the dot in the line's band.
+(RULE &paint
+  (&image *Id (:Q *P))
+  (&dot (:P *P2) *Col)
+  (&in_band Id (:P P2)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

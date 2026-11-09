@@ -1,0 +1,55 @@
+;; inputs 1068966bf03820b3b11c5538c4259cd4c1c9886c602523eba965b995c008ce41 programs/solvers/bdad9b1f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bdad9b1f
+
+(DET &cross AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &line
+  (&ink (:P *P1) *Col)
+  (&ink (:P *P2) Col)
+  (!= P1 P2)
+  (split (:P P1) *A (:Across *P_across))
+  (same_line A (:P P1) (:Q P2)))
+
+(ALTS $choice "how each segment's extension axis is found. In this task each segment points along its color's role axis and seats on an edge along it, so the three agree." $Shape
+  (ALT $Edge
+    (RULE &line
+      (&ink *P *Col)
+      (margin (:B P) *D (:K 0))
+      (axis_of D *A)
+      (split P A (:Across *P_across))))
+  (ALT $Role
+    (DET &role
+      (ex_input *E (:P *P1) *Col)
+      (NOT (&bg (:C Col)))
+      (ex_input E (:P *P2) Col)
+      (!= P1 P2)
+      (axis_elem *A)
+      (same_line A (:P P1) (:Q P2)))
+
+    (RULE &line
+      (input *P *Col)
+      (&role Col *A)
+      (split P A (:Across *P_across)))))
+
+;; A cell covered by two line colors is a crossing, and carries neither.
+(INIT &on_line Singleton
+  (key ((input ^P))
+    (member ((:v Col))
+      (&line *Col *A (:P_across *Ac))
+      (split P A (:Across Ac)))))
+
+(RULE &output
+  (OR ((&on_line.plural (:key *P))
+       (&cross (:C *Col)))
+      ((&on_line.value (:key P) (:v Col)))
+      ((input P Col)
+       (NOT (&on_line.member (:key P))))))
+
+(OUT (&output ^P ^Col))

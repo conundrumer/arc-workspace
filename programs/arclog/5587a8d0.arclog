@@ -1,0 +1,77 @@
+;; inputs 67a694f830942de5d027698d51b8d4971ded9f12a8ba8d7584d5e1b86f48bfae programs/solvers/5587a8d0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5587a8d0
+
+(DET &bg DominantColor)
+
+(RULE &patch_cell
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; One id per patch.
+(INIT &patch Quotient
+  (equivalent ((:a P) (:b Q))
+    (&patch_cell *P *Col)
+    (&patch_cell (:P *Q) Col)))
+
+(ALTS $choice "what a patch is, data-equivalent on this task since each color forms one blob in every pair; a color lying in two blobs would separate the cases" $ByColor
+  (ALT $ByObject
+    (INIT &blob Connectivity
+      (key ((&patch_cell *P ^Col))
+        (node (P)
+          (&patch_cell *P Col))))
+
+    ;; One id per patch.
+    (INIT &patch Quotient
+      (equivalent ((:a P) (:b Q))
+        (&blob.component (:key *Col) *P *Id)
+        (&blob.component (:key Col) (:P *Q) Id)))))
+
+(INIT &tally Cardinality
+  (key ((&patch.class (:a *P) ^Id))
+    (member ((:m P))
+      (&patch.class (:a *P) Id))))
+
+(RULE &patch_size
+  (&patch.class *Id)
+  (&tally.size (:key Id) *N))
+
+(INIT &nest Order
+  (member ((:t Id))
+    (&patch_size *Id))
+  (score ((:t Id) (:S N))
+    (&patch_size *Id *N)))
+
+(RULE &center
+  (&nest.minimal (:t *Id))
+  (&nest.dual_rank (:t Id) *R)
+  (uniform_inset (:K R) (:B *P)))
+
+;; The output square, the frame the center sits in.
+(INIT &square Frame
+  (extent (A N)
+    (&center (:P *C))
+    (frame_extent (:P C) *A *N)))
+
+;; The square's rings, from its edge inward.
+(INIT &ring Boundary
+  (cell (P)
+    (&square.cell *P)))
+
+(INIT &ring_depth CellDistance
+  (node (P)
+    (&square.cell *P))
+  (source (P)
+    (&ring.boundary *P)))
+
+(RULE &patch_color
+  (&patch.class (:a *P) *Id)
+  (&patch_cell P *Col))
+
+;; Each patch draws the ring as deep as the count of larger patches.
+(RULE &output
+  (&ring_depth.distance *P *K)
+  (&nest.dual_rank (:t *Id) (:R K))
+  (&patch_color Id *Col))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,67 @@
+;; inputs 45a88026d31881a5d54e803687d145e04ec05cb5eea5646b55f2814c9c0b4ece programs/solvers/6ca952ad.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ca952ad
+
+;; Least cell count of an object that falls.
+(DET &heavy TileCount)
+
+(DET &bg DominantColor)
+
+(INIT &obj Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &size Cardinality
+  (key ((&obj.component *P ^Id))
+    (member ((:m P))
+      (&obj.component *P Id))))
+
+(RULE &falls
+  (&size.size (:key *Id) *N)
+  (&heavy (:N *K))
+  (>= N K))
+
+(DET &grav DirDomain)
+
+(INIT &fall Distance
+  (weight ((:a Id2) (:b Id) (:W K))
+    (&obj.component *P *Id)
+    (&falls Id)
+    (&grav *D)
+    (&obj.component (:P *P2) (:Id *Id2))
+    (&falls (:Id Id2))
+    (!= Id Id2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n Id) K)
+    (OR ((&obj.component *P *Id)
+         (&falls Id)
+         (&grav *D)
+         (margin (:B P) D *K))
+        ((&obj.component (:P *P3) Id)
+         (&falls Id)
+         (&grav (:D *D2))
+         (&obj.component (:P *P2) (:Id *Id2))
+         (NOT (&falls (:Id Id2)))
+         (gap (:D D2) (:P P3) (:Q P2) K)))))
+
+(RULE &fall_travel_full
+  (&fall.distance (:n *V1) *K)
+  (&grav *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &fallen
+  (input (:P *P2) *Col)
+  (&obj.component (:P P2) *Id)
+  (OR ((&fall_travel_full (:V1 Id) (:V2 *Delta))
+       (compose (:A P2) (:B Delta) (:C *P)))
+      ((NOT (&falls Id))
+       (= P P2))))
+
+(RULE &output
+  (OR ((&fallen *P *Col))
+      ((input P)
+       (NOT (&fallen P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

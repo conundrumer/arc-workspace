@@ -1,0 +1,101 @@
+;; inputs 3ff8444f5fe2c561fb9da4968d7ea137482430dd128c4bc0c59eb90d23d45241 programs/solvers/320afe60.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 320afe60
+
+;; Where the closed shapes go; the open ones go to the opposite edge.
+(DET &closed_dir DirDomain)
+
+(DET &closed_paint AnyOutNewColor)
+
+(DET &bg DominantColor)
+
+(INIT &shapes Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; The grid with only this shape solid.
+(INIT &off_shape Enclosure
+  (key ((&shapes.component ^Id))
+    (cell (P)
+      (input *P)
+      (NOT (&shapes.component Id P)))))
+
+(RULE &encloses
+  (&off_shape.enclosed (:key *Id)))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component ^Id *P))
+    (cell (P)
+      (&shapes.component Id *P))))
+
+(RULE &gap
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B)
+  (NOT (&shapes.component Id P)))
+
+(DET &open_paint AnyOutNewColor)
+
+(ALTS $choice "Two hypotheses on what stands solid while a shape is judged" $Own
+  (ALT $Joint
+    ;; The grid with all the ink solid.
+    (INIT &off_ink Enclosure
+      (cell (P)
+        (input *P *Col)
+        (&bg (:C Col))))
+
+    (RULE &gap
+      (&bbox.box (:key *Id) *B)
+      (input *P *Col)
+      (inside (:A P) B)
+      (&bg (:C Col)))
+
+    (RULE &encloses
+      (&off_ink.enclosed *P)
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (&shapes.component *Id (:P Q)))))
+
+(RULE &open
+  (&gap *Id)
+  (NOT (&encloses Id)))
+
+(RULE &dest
+  (&shapes.component *Id)
+  (&closed_dir (:D *D_closed))
+  (OR ((&open Id)
+       (opposite (:D D_closed) (:Opp *D))
+       (&open_paint (:C *Col)))
+      ((NOT (&open Id))
+       (= D D_closed)
+       (&closed_paint (:C Col)))))
+
+;; Each shape slides until it touches the destination edge.
+(INIT &slide Distance
+  (key ((&shapes.component ^Id *P)
+        (&dest Id *D)
+        (margin (:B P) D *K))
+    (source_distance (K)
+      (&shapes.component Id *P)
+      (&dest Id *D)
+      (margin (:B P) D *K))))
+
+(RULE &slide_travel_full
+  (&slide.distance (:key (:Id *V0)) *K)
+  (&dest (:Id V0) *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &paint
+  (&shapes.component *Id (:P *P2))
+  (&dest Id *Col)
+  (&slide_travel_full (:V0 Id) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

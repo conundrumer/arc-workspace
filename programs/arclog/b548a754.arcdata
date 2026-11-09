@@ -1,0 +1,246 @@
+;; inputs cc9d205204dffb1be7670b14328dba3831454a78fd84af6bfac7e6c57486645f programs/solvers/b548a754.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b548a754
+
+(param &background Color (0))
+(param &marker_color Color (8))
+
+(exclude ($MultiCellPiece $LoneMarker))
+(exclude ($MultiCellPiece $OneMarker))
+(exclude ($MultiCellPiece $StraightOut))
+(exclude ($MultiCellPiece $Redraw))
+(exclude ($LoneMarker $OneMarker))
+(exclude ($LoneMarker $StraightOut))
+(exclude ($LoneMarker $Redraw))
+(exclude ($OneMarker $CoverDiagonal))
+(exclude ($EachMarker $StraightOut))
+(exclude ($OneMarker $RepeatInnerSlice))
+(exclude ($EachMarker $Redraw))
+(exclude ($StraightOut $RepeatInnerSlice))
+(exclude ($CoverDiagonal $Redraw))
+(exclude ($AllInk $StoredMarker $EachMarker))
+(exclude ($AllInk $StoredMarker $CoverDiagonal))
+(exclude ($AllInk $StoredMarker $RepeatInnerSlice))
+(exclude ($AllInk $OneMarker $Redraw $StoredMarker $StraightOut &background=$Derived) "Subsumption: the case of $MultiCellPiece & $EachMarker & $CoverDiagonal & $RepeatInnerSlice that takes the line's branch gives its output wherever it is defined")
+(exclude ($AllInk $OneMarker $Redraw $StoredMarker $StraightOut &marker_color=$Derived) "Subsumption: the case of $MultiCellPiece & $EachMarker & $CoverDiagonal & $RepeatInnerSlice that takes the line's branch gives its output wherever it is defined")
+
+(alts $b
+  (alt $MultiCellPiece
+    (witness stray-cell borderline $MultiCellPiece
+      (relaxed background)
+      (separates "A stray 5 cell sits apart from the box and the dot: every cell outside the background and the marker is no solid rectangle, so taking them all as the box is undefined; taking the one piece of more than one cell as the box stretches it down to row 8 and keeps the stray cell.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output ($MultiCellPiece &marker_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output &marker_color=$Derived $LoneMarker (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 1 1 1 1 1 1 1 2 0)
+        (0 2 2 2 2 2 2 2 2 2 0)
+        (0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $m
+  (alt $LoneMarker
+    (witness lone-marker variant $LoneMarker
+      (relaxed marker)
+      (separates "The box is 3x3, so its interior is one cell of 1, and the lone dot is 5: the stored marker color finds no marker; the rarest color ties the interior cell with the dot; the lone-cell reading takes the dot and stretches the box down to row 7.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0 0)
+        (0 2 1 2 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 5 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output $StoredMarker undefined)
+      (output $LoneMarker (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0 0)
+        (0 2 1 2 0 0 0 0 0)
+        (0 2 1 2 0 0 0 0 0)
+        (0 2 1 2 0 0 0 0 0)
+        (0 2 1 2 0 0 0 0 0)
+        (0 2 1 2 0 0 0 0 0)
+        (0 2 2 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0))))))
+
+(alts $c
+  (alt $EachMarker
+    (witness two-markers borderline $EachMarker
+      (relaxed marker)
+      (separates "Two 8 dots lie straight out from the left and the right sides: one marker is the concept's scene, so it is undefined; stretching toward each dot moves both sides out, to cols 0 and 12.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 3 3 3 3 0 0 0 0)
+        (8 0 0 0 3 2 2 2 3 0 0 0 0)
+        (0 0 0 0 3 2 2 2 3 0 0 0 8)
+        (0 0 0 0 3 3 3 3 3 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $CoverDiagonal (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (3 3 3 3 3 3 3 3 3 3 3 3 3)
+        (3 2 2 2 2 2 2 2 2 2 2 2 3)
+        (3 2 2 2 2 2 2 2 2 2 2 2 3)
+        (3 3 3 3 3 3 3 3 3 3 3 3 3)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $pl
+  (alt $CoverDiagonal
+    (witness diagonal-marker foreign $CoverDiagonal
+      (relaxed marker)
+      (separates "The 8 dot lies diagonally out from the box, in neither its rows nor its columns: the concept is undefined; covering the dot stretches the box down to row 8 and right to col 7.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 8 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $CoverDiagonal (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 0 0 0)
+        (0 2 1 1 1 1 1 2 0 0 0)
+        (0 2 1 1 1 1 1 2 0 0 0)
+        (0 2 1 1 1 1 1 2 0 0 0)
+        (0 2 1 1 1 1 1 2 0 0 0)
+        (0 2 1 1 1 1 1 2 0 0 0)
+        (0 2 1 1 1 1 1 2 0 0 0)
+        (0 2 2 2 2 2 2 2 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $t
+  (alt $RepeatInnerSlice
+    (witness striped-interior borderline $RepeatInnerSlice
+      (relaxed framed-box)
+      (separates "The interior holds a stripe of 4 down its middle column: the box is no frame around a one-color inside, so the concept is undefined; repeating the line next to the far side carries the stripe down to row 8.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 3 3 3 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 8 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $CoverDiagonal (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 2 4 2 3 0 0 0)
+        (0 3 3 3 3 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "The field is 5, not 0: with the stored background every cell but the marker reads as box, which is no framed box; the dominant color reads 5 as background and the box stretches down to row 8.")
+      (input (grid
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 2 2 2 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 2 2 2 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 8 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 2 2 2 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 1 1 2 5 5 5 5 5 5)
+        (5 2 2 2 2 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5)
+        (5 5 5 5 5 5 5 5 5 5 5))))))
+
+(alts &marker_color
+  (alt &marker_color=$Derived
+    (witness marker_color=RarestColor variant &marker_color=$Derived
+      (relaxed marker)
+      (separates "The lone dot is 5, not 8: the stored marker color finds no marker and the box has no target; the rarest color and the lone-cell reading take the 5 dot and stretch the box down to row 8.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 5 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($StoredMarker &marker_color=$Stored) undefined)
+      (output &marker_color=$Derived $LoneMarker (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 1 1 2 0 0 0 0 0 0)
+        (0 2 2 2 2 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0))))))

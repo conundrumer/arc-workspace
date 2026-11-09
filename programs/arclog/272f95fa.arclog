@@ -1,0 +1,129 @@
+;; inputs 828a179addbdb3e7f88b1d62afd8cdef2e84b67e81b44553cfc02d7c44ffe213 programs/solvers/272f95fa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 272f95fa
+
+(DET &line RarestColor)
+
+(INIT &line_color Singleton
+  (key ((input *P *Col)
+        (axis_elem ^A)
+        (split P A (:Along ^L)))
+    (member ((:v Col))
+      (input *P *Col)
+      (split P A (:Along L)))))
+
+(RULE &df_divider
+  (&line_color.value (:key *A *L) (:v *Col))
+  (&line (:C Col)))
+
+(RULE &df_on_divider
+  (input *P)
+  (&df_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; A line wholly of the line color spans the grid, so it cuts tiles apart.
+(INIT &df_rank Order
+  (key ((OR ((&df_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&df_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&df_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &df_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&df_on_divider P A))
+  (margin (:B P) D *K)
+  (&df_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &df_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&df_part_idx *P D (:N *N1))
+  (&df_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &df_tile_of
+  (&df_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&df_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &center_paint AnyOutNewColor)
+
+(RULE &center_tile
+  (&df_tile_of *P_tile)
+  (centered (:P P_tile)))
+
+(DET &painted
+  (&df_tile_of *E *P *P_tile)
+  (ex_output E P *Col)
+  (ex_input E P (:Col *Col_in))
+  (!= Col Col_in))
+
+(DET &arm_paint
+  (dir_elem *D)
+  (&center_tile *E *P_tile)
+  (neighbor (:P P_tile) D (:Q *P_arm))
+  (&painted E (:P_tile P_arm) *Col))
+
+(RULE &tile_ink
+  (OR ((&center_tile *P_tile)
+       (&center_paint (:C *Col)))
+      ((&center_tile (:P_tile *P_tile2))
+       (neighbor (:P P_tile2) *D (:Q P_tile))
+       (&arm_paint D Col))))
+
+(ALTS $choice "which tile takes which color. On a 3x3 arrangement, the one-step footprint and the cast to the edge cover the same tiles." $Plus
+  (ALT $Cast
+    (INIT &cast_frame Frame
+      (extent (A N)
+        (&center_tile *P_tile)
+        (frame_extent (:P P_tile) *A *N)))
+
+    (INIT &cast Ray
+      (source ((:P P_tile))
+        (&center_tile *P_tile))
+      (node (P)
+        (&cast_frame.cell *P))
+      (dir (D)
+        (dir_elem *D)))
+
+    (RULE &tile_ink
+      (OR ((&center_tile *P_tile)
+           (&center_paint (:C *Col)))
+          ((&cast.ray (:P P_tile) *D *K)
+           (&df_tile_of P_tile)
+           (!= K 0)
+           (&arm_paint D Col)))))
+  (ALT $Lookup
+    (DET &tile_paint
+      (&painted *P_tile *Col))
+
+    (RULE &tile_ink
+      (&tile_paint *P_tile *Col))))
+
+(RULE &paint
+  (&df_tile_of *P *P_tile)
+  (&tile_ink P_tile *Col))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

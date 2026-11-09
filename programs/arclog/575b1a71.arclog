@@ -1,0 +1,56 @@
+;; inputs 1a150236363ecc2bbdadaa4f1fb42e98fee97e7403fb8d42dd1ff4be93f4e650 programs/solvers/575b1a71.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 575b1a71
+
+(DET &mark ChangedColor)
+
+(DET &rank_dir DirDomain)
+
+(RULE &mark_line
+  (input *P (:Col *M))
+  (&mark (:C M))
+  (&rank_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(RULE &order_axis
+  (&mark_line)
+  (&rank_dir *D)
+  (axis_of D *A))
+
+;; The lines holding a mark, ordered along that axis.
+(INIT &order Order
+  (key ((&order_axis ^A)
+        (axis_of ^D A))
+    (before ((:a L) (:b L2))
+      (&mark_line *L)
+      (&mark_line (:L *L2))
+      (!= L L2)
+      (margin (:B L) D (:K *K1))
+      (margin (:B L2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t L))
+    (&mark_line *L)))
+
+(RULE &order_pos
+  (&order.rank (:key *A *D) (:t *M) (:R *R1))
+  (&order.dual_rank (:key A D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &rank
+  (&mark_line *P *L)
+  (&order_pos (:M L) *P_pos)
+  (&rank_dir *D)
+  (margin (:B P_pos) D (:K *R)))
+
+(DET &rank_color
+  (&rank *E *P *R)
+  (ex_output E P (:Col *C)))
+
+(RULE &output
+  (OR ((&rank *P *R)
+       (&rank_color R (:C *Col)))
+      ((input P Col)
+       (NOT (&mark (:C Col))))))
+
+(OUT (&output ^P ^Col))

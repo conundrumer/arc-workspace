@@ -1,0 +1,7 @@
+;; inputs ae17aa567c653d0b39ba2efca6913123277d535297cbecd5568f5afbc80411c3 programs/solvers/9caf5b84.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9caf5b84
+
+(param &mark Color (7))
+(param &keep_n number (2))
+(param &drop_n number (3))

@@ -1,0 +1,7 @@
+;; inputs dadd282734192a53ab42e000c5f6288091c47e1bc353e3d52e83dabf43db69f0 programs/solvers/3490cc26.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3490cc26
+
+(param &bg Color (0))
+(param &seed Color (2))
+(param &path Color (7))

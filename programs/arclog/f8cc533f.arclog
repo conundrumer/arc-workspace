@@ -1,0 +1,203 @@
+;; inputs 4381b163188d880b7bf224ffc79396d1be7be05fb5d2109036b584525afd305f programs/solvers/f8cc533f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8cc533f
+
+(INPUT background "one color fills every cell no figure holds.")
+
+(INPUT one-color-per-copy "each non-background color holds the cells of exactly one copy, and no two copies share a color.")
+
+(INPUT copies-of-one-pattern "each copy is the common pattern, placed somewhere in the grid, with some of its cells missing and no cell added.")
+
+(INPUT pattern-is-union "overlaying the copies, each aligned so that it lies inside the pattern, and closing that overlay under the symmetry group `pattern_sym` about the center of the pattern box, gives every cell of the pattern; undefined where an image of an overlay cell under the group lies outside the pattern box.")
+
+(OUTPUT restore-copy "each copy's color fills every cell of the pattern at that copy's placement. The pattern box takes the largest copy extents on each axis. Each copy sits where its cells lie inside that box, and each two copies sit at a relative placement at which they share the most cells; undefined where this leaves a copy no placement or more than one.")
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  (INIT &bg_mode_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  ;; The commonest color.
+  (INIT &bg_mode Order
+    (member ((:t Col))
+      (&bg_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count.size (:key *Col) *N)))
+
+  (RULE &copy_cell
+    (input *P (:Col *C))
+    (NOT (&bg_mode.maximal (:t C))))
+
+  (INIT &copy_box BoundingBox
+    (key ((&copy_cell ^C *P))
+      (cell (P)
+        (&copy_cell C *P))))
+
+  ;; The pattern box's extent on each axis: the largest copy extent.
+  (INIT &pattern_extent Order
+    (key ((&copy_box.box (:key *C) *B)
+          (&copy_cell C *P)
+          (box_extent B P ^A *N))
+      (member ((:t N))
+        (&copy_box.box (:key *C) *B)
+        (&copy_cell C *P)
+        (box_extent B P A *N))
+      (score ((:t N) (:S N))
+        (&copy_box.box (:key *C) *B)
+        (&copy_cell C *P)
+        (box_extent B P A *N))))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (&pattern_extent.maximal (:key *A) (:t *N))))
+
+  (RULE &cand_box
+    (&copy_cell *C *P)
+    (&frame.cell (:P *Q))
+    (relative (:Base Q) (:X P) (:X_rel *F))
+    (&copy_box.box (:key C) *B)
+    (inside (:A B) (:B F)))
+
+  (RULE &placed
+    (&cand_box *C *F)
+    (&copy_cell C *P)
+    (inside (:A P) (:B F))
+    (relative (:Base F) (:X P) (:X_rel *P_pat)))
+
+  ;; The cells that copy C1 at full box F1 and copy C2 at full box F2 both hold.
+  (INIT &shared Cardinality
+    (key ((OR ((&cand_box (:C ^C1) (:F ^F1))
+               (&cand_box (:C ^C2) (:F ^F2))
+               (!= C1 C2))
+              ((&placed (:C C1) (:F F1) (:P_pat *P))
+               (&placed (:C C2) (:F F2) (:P_pat P))
+               (!= C1 C2))))
+      (member ((:m P))
+        (&placed (:C C1) (:F F1) (:P_pat *P))
+        (&placed (:C C2) (:F F2) (:P_pat P))
+        (!= C1 C2))
+      (domain ()
+        (&cand_box (:C C1) (:F F1))
+        (&cand_box (:C C2) (:F F2))
+        (!= C1 C2))))
+
+  ;; The placements of each two copies that share the most cells.
+  (INIT &most_shared Order
+    (key ((&shared.size (:key ^C1 *F1 ^C2 *F2) *N))
+      (member ((:t (:V_A_C C1) (:V_A_F F1) (:V_B_C C2) (:V_B_F F2) (:S N)))
+        (&shared.size (:key C1 *F1 C2 *F2) *N))
+      (score ((:t (:V_A_C C1) (:V_A_F F1) (:V_B_C C2) (:V_B_F F2) (:S N)) (:S N))
+        (&shared.size (:key C1 *F1 C2 *F2) *N))))
+
+  ;; The placements that a joint placement of the copies can hold, where each
+  ;; two copies share the most cells.
+  (CHOOSE &joint
+    (for ((&cand_box ^C))
+      (from (&cand_box C *F)))
+    (never
+      (&cand_box (:C *C1) (:F *F1))
+      (&cand_box (:C *C2) (:F *F2))
+      (&shared.size (:key C1 F1 C2 F2))
+      (NOT (&most_shared.maximal (:key C1 C2) (:t (:V_A_C C1) (:V_A_F F1) (:V_B_C C2) (:V_B_F F2))))))
+
+  (RULE &unplaced
+    (OR ((&copy_cell *C)
+         (NOT (&joint C)))
+        ((&joint C (:F *F1))
+         (&joint C (:F *F2))
+         (!= F1 F2))))
+
+  (RULE &place
+    (&joint *C *F)
+    (NOT (&unplaced)))
+
+  (RULE &held
+    (&place *C *F)
+    (&placed C F (:P_pat *P))))
+
+(ALTS $choice "how the pattern comes from the aligned copies" $SymmetricClosure
+  (ALT $Union
+    (INPUT pattern-is-union "the pattern is the overlay of the aligned copies alone, closed under no symmetry.")
+    (RULE &pattern
+      (&held *P))))
+
+(INIT &bg_mode_count2 Cardinality
+  (key ((ex_output ^E *P ^Col))
+    (member ((:m P))
+      (ex_output E *P Col))))
+
+;; The commonest color of each output.
+(INIT &bg_mode2 Order
+  (key ((&bg_mode_count2.size (:key ^E *Col)))
+    (member ((:t Col))
+      (&bg_mode_count2.size (:key E *Col)))
+    (score ((:t Col) (:S N))
+      (&bg_mode_count2.size (:key E *Col) *N))))
+
+;; Each copy's pattern box: the box of its color in the output.
+(INIT &full_box BoundingBox
+  (key ((ex_output ^E *P (:Col ^C))
+        (NOT (&bg_mode2.maximal (:key E) (:t C))))
+    (cell (P)
+      (ex_output E *P (:Col C))
+      (NOT (&bg_mode2.maximal (:key E) (:t C))))))
+
+(DET &box_sym_src
+  (&full_box.box (:key *E *C) (:B *F))
+  (ex_output E (:P *P2) (:Col *V))
+  (inside (:A P2) (:B F))
+  (relative (:Base F) (:X P2) (:X_rel *P)))
+
+;; The transforms under which each output copy, in its pattern box, is
+;; invariant about the box's center.
+(INIT &box_sym Agreement
+  (key ((OR ((&full_box.box (:key ^E ^C) (:B *F))
+             (ex_output E *P *Col)
+             (inside (:A P) (:B F))
+             (relative (:Base F) (:X P) (:X_rel *P_pat)))
+            ((&box_sym_src E C P (:V Col)))))
+    (source ((:P P_pat) (:v Col))
+      (&full_box.box (:key E C) (:B *F))
+      (ex_output E *P *Col)
+      (inside (:A P) (:B F))
+      (relative (:Base F) (:X P) (:X_rel *P_pat)))
+    (target (P (:v Col))
+      (&box_sym_src E C *P (:V *Col)))))
+
+(DET &other_group
+  (OR ((sym_member *S *D)
+       (&box_sym.mismatch D))
+      ((sym_elem S)
+       (d4_elem (:D *D2))
+       (NOT (&box_sym.mismatch (:D D2)))
+       (NOT (sym_member S (:D D2))))))
+
+(DET &pattern_sym
+  (sym_elem *S)
+  (NOT (&other_group S)))
+
+(RULE &pattern
+  (&held (:P *P2))
+  (&pattern_sym *S)
+  (ALL ((&held (:P *Pm))
+        (&pattern_sym (:S *Sm))
+        (sym_member (:S Sm) (:D *Dm))
+        (apply (:D Dm) (:P Pm) (:P_out *Qm)))
+       ((&frame.cell (:P Qm))))
+  (sym_member S *D)
+  (apply D (:P P2) (:P_out *P)))
+
+(RULE &restored
+  (&pattern (:P *P_pat))
+  (&place *C *F)
+  (compose (:A F) (:B P_pat) (:C *P)))
+
+(RULE &output
+  (OR ((&restored *P (:C *Col)))
+      ((&pattern)
+       (input P Col)
+       (NOT (&restored P)))))
+
+(OUT (&output ^P ^Col))

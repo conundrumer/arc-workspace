@@ -1,0 +1,147 @@
+;; inputs efc533f307f02dc5514d5b7a12e336b86ebc0eb281e13ae3654388ba09e52508 programs/solvers/8618d23e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8618d23e
+
+(RULE &dp_nearer
+  (input *P)
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(DET &arr TileCount)
+
+(INIT &slab_cell_division Division
+  (key ((axis_elem ^A))
+    (parts (A N)
+      (&arr *N)))
+  (cell (P)
+    (ex_input *E *P)
+    (ex_output E)))
+
+(DET &filler AnyOutNewColor)
+
+(DET &sep DimDiff)
+
+(DET &slab_cell
+  (ex_input *E *P *Col)
+  (ex_output E)
+  (&slab_cell_division.tile (:key *A) P (:P_outer *P_tile)))
+
+;; Seat each slab among its output's cells, color for color.
+(INIT &occ Occurrences
+  (key ((OR ((&slab_cell ^E ^A ^P_tile *P *Col))
+            ((&slab_cell E A P_tile)
+             (ex_output E (:P *P_out) Col))))
+    (cell ((:P P_out) (:v Col))
+      (&slab_cell E A P_tile)
+      (ex_output E (:P *P_out) *Col))
+    (shape (P (:v Col))
+      (&slab_cell E A P_tile *P *Col))))
+
+(DET &broken
+  (&occ.occurrence (:key *A *P_tile) (:P *Delta))
+  (&slab_cell *E A P_tile)
+  (NOT (&occ.occurrence (:key E A P_tile) (:P Delta))))
+
+(DET &slab_disp
+  (&occ.occurrence (:key *A *P_tile) (:P *Delta))
+  (NOT (&broken A P_tile Delta)))
+
+(DET &axis_broken
+  (&slab_disp *A)
+  (&slab_cell A *P_tile)
+  (NOT (&slab_disp A P_tile)))
+
+(DET &axis
+  (&slab_disp *A)
+  (NOT (&axis_broken A)))
+
+(RULE &side
+  (&axis *A)
+  (axis_of *D A)
+  (&dp_nearer *P D))
+
+(DET &disp
+  (&axis *A)
+  (&slab_disp A *P_tile *Delta))
+
+(DET &seat
+  (&disp *P_tile *Delta)
+  (diag_dist (:P Delta) *Diag (:K1 0) (:K2 0)))
+
+(DET &diag
+  (&seat *Diag)
+  (diag_axis_of (:D Diag) *Da))
+
+(RULE &seat2
+  (&side *P *D)
+  (&diag (:Da *DA))
+  (diag_axis_of (:D *Diag) (:Da DA))
+  (corner_dir (:C Diag) D))
+
+(RULE &grow_delta
+  (&sep (:D *G))
+  (corner_inset *Diag (:K G) (:B *E1)))
+
+(ALTS $choice "how the reseat offset is computed — data-equivalent on this task" $Derive
+  (ALT $Derive
+    (ALTS $g "how wide the growth is" $Iso
+      (ALT $Aniso
+        (DET &sep_dim
+          (&disp *Delta)
+          (axis_of *D *A)
+          (margin (:B Delta) D (:K *N))
+          (!= N 0))
+        (RULE &grow_delta
+          (diag_dirs (:D *Diag) *A *D1 *D2)
+          (&sep_dim A (:N *K1))
+          (perp A *A2)
+          (&sep_dim (:A A2) (:N *K2))
+          (edge_inset (:D D1) (:K K1) (:B *E12))
+          (edge_inset (:D D2) (:K K2) (:B *E2))
+          (compose (:A E12) (:B E2) (:C *E1)))))
+    (ALTS $s "which corner each half seats at" $Derived
+      (ALT $Table
+        (DET &seat_of
+          (&seat *P_tile *Diag)
+          (&axis *A)
+          (axis_of *D A)
+          (margin (:B P_tile) D (:K 0)))
+        (RULE &seat2
+          (&side *P *D)
+          (&seat_of D *Diag)))))
+  (ALT $Disp
+    (INIT &seated_division Division
+      (cell (P)
+        (input *P))
+      (parts (A N)
+        (&axis *A)
+        (&arr *N)))
+
+    (RULE &seated
+      (input *P *Col)
+      (&seated_division.tile P (:P_outer *P_tile))
+      (&disp P_tile *Delta)
+      (compose (:A P) (:B Delta) (:C *P_out)))))
+
+;; Displaced by the growth extents at both edges of the opposite corner —
+;; the frame grows away from the seat.
+(RULE &seated
+  (input *P *Col)
+  (&seat2 P *Diag)
+  (diag_opposite (:D Diag) (:Opp *Diag2))
+  (&grow_delta (:Diag Diag2) (:E1 *E))
+  (compose (:A P) (:B E) (:C *P_out)))
+
+;; Output frame extents, read off the seated images.
+(INIT &frame Frame
+  (extent (A N)
+    (&seated (:P_out *P))
+    (frame_extent P *A *N)))
+
+(RULE &output
+  (OR ((&seated (:P_out *P) *Col))
+      ((&frame.cell P)
+       (NOT (&seated (:P_out P)))
+       (&filler (:C Col)))))
+
+(OUT (&output ^P ^Col))

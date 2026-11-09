@@ -1,0 +1,87 @@
+;; inputs dffdeeb40b76a92784dae451ae574457fe9cf248acba73c3e0808751fe910363 programs/solvers/6f473927.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6f473927
+
+(DET &axis AxisDomain)
+
+(DET &n_tiles ScaleRatio)
+
+;; The 2-tile arrangement along &axis.
+(INIT &arr Frame
+  (key ((&axis ^A))
+    (extent (A N)
+      (input)
+      (&n_tiles (:K *N)))))
+
+(DET &bg ChangedColor)
+
+;; The ink edge: the ink's box lies nearer it than its opposite.
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &ink_edge
+  (&bbox.box (:B *M))
+  (&axis *A)
+  (axis_of *D A)
+  (dist_pair (:P M) D (:K *K1) *K2)
+  (< K1 K2))
+
+(RULE &tiles
+  (&ink_edge *D)
+  (opposite D (:Opp *D_far))
+  (&arr.cell (:P *T_far))
+  (margin (:B T_far) (:D D_far) (:K 0))
+  (neighbor (:P T_far) D (:Q *T_near)))
+
+(INIT &place_tiling Tiling
+  (outer ((:P T_far))
+    (&tiles *T_far))
+  (inner (P)
+    (input *P)))
+
+(INIT &place_tiling2 Tiling
+  (outer ((:P T_near))
+    (&tiles *T_near))
+  (inner ((:P P_img))
+    (&place_tiling.cell (:P_inner *P))
+    (&axis *A)
+    (axis_inversion A (:T *F))
+    (apply (:D F) P (:P_out *P_img))))
+
+(RULE &place
+  (&place_tiling.cell (:P_outer *T_far) (:P_inner *P) (:P *P_grid))
+  (&tiles T_far *T_near)
+  (&axis *A)
+  (axis_inversion A (:T *F))
+  (apply (:D F) P (:P_out *P_img))
+  (&place_tiling2.cell (:P_outer T_near) (:P_inner P_img) (:P *P_grid_mirror)))
+
+(DET &mirror
+  (ex_input *E *P (:Col *C_in))
+  (&place E P (:P_grid_mirror *P_grid))
+  (ex_output E (:P P_grid) (:Col *C_out)))
+
+(RULE &recolor
+  (&mirror *C_in *C_out))
+
+(ALTS $choice "how the ink-edge tile is recolored — data-equivalent on this task" $Table
+  (ALT $Negative
+    (DET &shade AnyOutNewColor)
+
+    (RULE &recolor
+      (input (:Col *C_in))
+      (IF ((&bg (:C C_in)))
+          ((&shade (:C *C_out)))
+          ((&bg (:C C_out)))))))
+
+(RULE &output
+  (input (:P *P2) (:Col *Col2))
+  (&place (:P P2) (:P_grid *P_own) (:P_grid_mirror *P_mirror))
+  (OR ((= *P P_mirror)
+       (&recolor (:C_in Col2) (:C_out *Col)))
+      ((= P P_own)
+       (= Col Col2))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,51 @@
+;; inputs 183afe0fdcf7674a78dbe1f9952f37cf35b890c5640621cbf990d9c981370742 programs/solvers/d4469b4b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d4469b4b
+
+(DET &bg SharedColor)
+
+(DET &mark AnyOutNewColor)
+
+(DET &out_dim ConstOutDim)
+
+(INIT &out_pos_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&out_dim *N)))
+
+(DET &glyph
+  (ex_input *E (:Col *Key))
+  (NOT (&bg (:C Key)))
+  (ex_output E *P *Col))
+
+(DET &mismatch
+  (&glyph *Key *P)
+  (&glyph Key (:P *Q) *Col)
+  (NOT (&mark (:C Col)))
+  (axis_elem *A)
+  (same_line A P Q))
+
+(DET &center
+  (&glyph *Key *P)
+  (NOT (&mismatch Key P)))
+
+(RULE &cross_cell
+  (input (:Col *Key))
+  (&center Key (:P *Q))
+  (&out_pos_frame.cell *P)
+  (axis_elem *A)
+  (same_line A P Q))
+
+(ALTS $choice "table or rule render of the glyph; every glyph is a full row and column through one point, so both stand" $Cross
+  (ALT $Lookup
+    (RULE &output
+      (input (:Col *Key))
+      (&glyph Key *P *Col))))
+
+(RULE &output
+  (&out_pos_frame.cell *P)
+  (IF ((&cross_cell P))
+      ((&mark (:C *Col)))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

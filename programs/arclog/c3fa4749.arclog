@@ -1,0 +1,199 @@
+;; inputs 562b4a415bbfa60765628c602aae75a345675d792e26decc6d764fa8c1554525 programs/solvers/c3fa4749.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c3fa4749
+
+(INPUT blocks "several solid one-color blocks lie against the grid border in a field of random colors; a block is made of one-color 4-connected regions of at least &min_block_cells cells each, and a channel that crosses a block cuts it into more than one such region"
+
+  (INIT &patches Connectivity
+    (key ((ex_input ^E *P ^Col))
+      (node (P)
+        (ex_input E *P Col))))
+
+  (INIT &patch_size Cardinality
+    (key ((&patches.component (:key (:E ^S_e) (:Col ^S_col)) *P ^Id))
+      (member ((:m P))
+        (&patches.component (:key (:E S_e) (:Col S_col)) *P Id))))
+
+  ;; A count of cells that no one-color region of any input has.
+  (INIT &unused Order
+    (member ((:t K))
+      (ex_input *P)
+      (sub_extent P *A *K)
+      (NOT (&patch_size.size (:N K))))
+    (score ((:t K) (:S K))
+      (ex_input *P)
+      (sub_extent P *A *K)
+      (NOT (&patch_size.size (:N K)))))
+
+  (DET_OR_RULE &min_block_cells "The fewest cells a one-color region has to be a block region." ConstInDim
+    (&unused.minimal (:t *N)))
+
+  (INIT &regions8 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT channels "each block holds one or more pockets, each a 4-connected set of cells that lie in no block region")
+
+(OUTPUT dead-end-fills "a pocket whose every neighbor lies in one block region, and that meets the grid border at exactly one cell, takes that cell's color in every cell, the block-colored cells it walls in included"
+
+  (INIT &regions Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &region
+    (&regions.component *P (:Id *X)))
+
+  (INIT &region_size Cardinality
+    (key ((&region (:X ^Id) *P))
+      (member ((:m P))
+        (&region (:X Id) *P))))
+
+  (RULE &block
+    (&region (:X *R) *P)
+    (&region_size.size (:key (:Id R)) *N)
+    (&min_block_cells (:N *K))
+    (>= N K))
+
+  (INIT &pockets Connectivity
+    (node (P)
+      (input *P)
+      (NOT (&block P))))
+
+  (RULE &grid_pocket
+    (&pockets.component *P (:Id *X)))
+
+  (RULE &step_dir
+    (dir_elem *D))
+
+  ;; The block regions that each pocket's neighbors lie in.
+  (INIT &wall Singleton
+    (key ((&grid_pocket (:X ^Id) *P)
+          (&step_dir *D)
+          (neighbor P D *Q)
+          (&block *R (:P Q)))
+      (member ((:v R))
+        (&grid_pocket (:X Id) *P)
+        (&step_dir *D)
+        (neighbor P D *Q)
+        (&block *R (:P Q)))))
+
+  (RULE &pocket
+    (&wall.value (:key *Id) (:v *Region))
+    (&grid_pocket (:X Id) *P))
+
+  (RULE &mouth
+    (&pocket *Region *Id *P)
+    (margin (:B P) *D (:K 0)))
+
+  ;; The cells where each pocket opens, as one cell.
+  (INIT &one_mouth Singleton
+    (key ((&mouth ^Region ^Id *P))
+      (member ((:v P))
+        (&mouth Region Id *P))))
+
+  (INIT &block_box BoundingBox
+    (key ((&block ^R *P))
+      (cell (P)
+        (&block R *P))))
+
+  (INIT &box_pockets Connectivity
+    (key ((&block_box.box (:key ^R) *B)
+          (input *P)
+          (inside (:A P) B)
+          (NOT (&region (:X R) P)))
+      (node (P)
+        (&block_box.box (:key R) *B)
+        (input *P)
+        (inside (:A P) B)
+        (NOT (&region (:X R) P)))))
+
+  ;; The colors of the cells where each pocket opens, as one color.
+  (INIT &mouth_color Singleton
+    (key ((&mouth ^Region ^Id *P)
+          (input P *Col))
+      (member ((:v Col))
+        (&mouth Region Id *P)
+        (input P *Col)))))
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $place "where a dead end's mouth lies" $GridBorder
+  (ALT $MouthOnBlockSide
+    (OUTPUT dead-end-fills "the pockets of a block region are the 4-connected sets of cells inside the region's bounding box that lie outside the region, and a pocket with exactly one cell on that box's edge takes that cell's color in every cell; undefined where two such pockets share a cell and give it different colors"
+      (RULE &pocket
+        (&box_pockets.component (:key (:R *Region)) *P *Id))
+
+      (RULE &mouth
+        (&pocket *Region *Id *P)
+        (&block_box.box (:key (:R Region)) *B)
+        (inside (:A P) B)
+        (same_dist (:P1 P) (:P2 B))))
+    (ALT $Adjacency8
+      (OUTPUT dead-end-fills "a pocket's diagonal neighbors are neighbors too"
+        (RULE &pocket
+          (&box_pockets8.component (:key (:R *Region)) *P *Id))))))
+
+(ALTS $adj "the adjacency of block regions, pockets and their walls" $Orthogonal
+  (ALT $Adjacency8
+    (INPUT blocks "block regions are 8-connected")
+    (INPUT channels "pockets are 8-connected"
+      (INIT &pockets8 Connectivity
+        (node (P)
+          (input *P)
+          (NOT (&block P)))
+        (step ((:Delta S))
+          (OR ((diag_dir_elem *D)
+               (step_offset D (:V *S)))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) (:V S)))))))
+    (OUTPUT dead-end-fills "a pocket's diagonal neighbors are neighbors too"
+      (RULE &region
+        (&regions8.component *P (:Id *X)))
+
+      (RULE &step_dir
+        (dir8_elem *D))
+
+      (RULE &grid_pocket
+        (&pockets8.component *P (:Id *X)))
+
+      (INIT &box_pockets8 Connectivity
+        (key ((&block_box.box (:key ^R) *B)
+              (input *P)
+              (inside (:A P) B)
+              (NOT (&region (:X R) P)))
+          (node (P)
+            (&block_box.box (:key R) *B)
+            (input *P)
+            (inside (:A P) B)
+            (NOT (&region (:X R) P))))
+        (step ((:Delta S))
+          (OR ((diag_dir_elem *D)
+               (step_offset D (:V *S)))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) (:V S)))))))))
+
+(ALTS $mouths "how many border cells a dead end meets" $OneMouth
+  (ALT $WalledAnyMouth
+    (OUTPUT dead-end-fills "a walled pocket that meets the grid border at one or more cells, all of one color, takes that color, and a pocket whose border cells differ keeps its colors")
+    (RULE &fill
+      (&mouth_color.value (:key (:Region *R) *Id) (:v *Col))
+      (&pocket (:Region R) Id *P))))
+
+(RULE &fill
+  (&one_mouth.value (:key (:Region *R) *Id) (:v *Q))
+  (input (:P Q) *Col)
+  (&pocket (:Region R) Id *P))
+
+(RULE &output
+  (OR ((&fill *P *Col))
+      ((input P Col)
+       (NOT (&fill P)))))
+
+(OUT (&output ^P ^Col))

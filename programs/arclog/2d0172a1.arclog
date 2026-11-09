@@ -1,0 +1,231 @@
+;; inputs 74b725535eb544411e6f6f17ce152b738600f99bd074e3b638fe3eb85d63a648 programs/solvers/2d0172a1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2d0172a1
+
+(INPUT ink "the commoner color is the background and the other is the ink the curves are drawn in")
+
+(INPUT curve "each connected run of ink is one curve")
+
+(INPUT nesting "every curve that closes a cell off from the grid edge also closes another curve off from the grid edge")
+
+(OUTPUT colors "the redraw uses the same two colors")
+
+(OUTPUT outline "a curve that closes some cell off from the grid edge redraws as a rectangle outline")
+
+(OUTPUT collapse "any other curve redraws as a single cell")
+
+(OUTPUT mark "each curve marks, on each axis, the lines its redraw takes: the two sides of its box for an outline, and its whole footprint for a collapsed curve")
+
+(OUTPUT position "the redraw keeps each curve's position relative to the others"
+  (APPROXIMATED "marks that overlap along an axis take one output line, and a run of marks linked by overlap is one line")
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (RULE &fg
+    (input *Col)
+    (NOT (&palette.maximal (:t Col))))
+
+  (INIT &curves Connectivity
+    (node (P)
+      (input *P *Col)
+      (&fg Col)))
+
+  (RULE &mark_axis
+    (&curves.component (:Id *X))
+    (axis_of))
+
+  (RULE &off_curve
+    (&curves.component (:Id *X))
+    (input *P)
+    (NOT (&curves.component (:Id X) P)))
+
+  (INIT &escape Flood
+    (key ((&off_curve ^X *P))
+      (node (P)
+        (&off_curve X *P))
+      (source (P)
+        (&off_curve X *P)
+        (margin (:B P) *D (:K 0)))))
+
+  (RULE &encloses
+    (&off_curve *X *P)
+    (NOT (&escape.reached (:key X) P)))
+
+  (RULE &ring
+    (&encloses *X))
+
+  (INIT &bbox BoundingBox
+    (key ((&curves.component (:Id ^X) *P))
+      (cell (P)
+        (&curves.component (:Id X) *P))))
+
+  (RULE &side_line
+    (&bbox.box (:key *X) *B)
+    (&curves.component (:Id X) *P)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (axis_of D *A)
+    (split P A (:Along *L)))
+
+  (RULE &mark_end
+    (&mark_axis *X)
+    (axis_of (:D *M_d) *A)
+    (axis_of *D A)
+    (IF ((&ring X))
+        ((&side_line X (:D M_d) *L))
+        ((&side_line X D L))))
+
+  (RULE &mark_apart
+    (opposite *D (:Opp *O))
+    (&mark_end (:X *X1) (:M_d *D1) (:D O) (:L *L1))
+    (&mark_end (:X *X2) (:M_d *D2) D (:L *L2))
+    (nearer D (:P L1) (:Q L2)))
+
+  ;; A group is what a run of overlaps links: two marks on one axis that
+  ;; neither clears.
+  (INIT &grp Quotient
+    (edge ((:a (:X X1) (:D D1)) (:b (:X X2) (:D D2)))
+      (&mark_axis (:X *X1))
+      (axis_of (:D *D1) *A)
+      (&mark_axis (:X *X2))
+      (axis_of (:D *D2) A)
+      (NOT (&mark_apart X1 D1 X2 D2))))
+
+  (INIT &place Order
+    (key ((axis_elem ^A)
+          (axis_of (:D ^D2) A))
+      (member ((:t G))
+        (&grp.class (:a *X *D) (:Id *G))
+        (&mark_axis X)
+        (axis_of D A)
+        (&mark_end X (:M_d D) *L))
+      (before ((:a G) (:b G2))
+        (&grp.class (:a *X *D) (:Id *G))
+        (&mark_axis X)
+        (axis_of D A)
+        (&mark_end X (:M_d D) *L)
+        (&grp.class (:a (:X *X2) (:D *D22)) (:Id *G2))
+        (&mark_axis (:X X2))
+        (axis_of (:D D22) A)
+        (&mark_end (:X X2) (:M_d D22) (:L *L2))
+        (!= G G2)
+        (margin (:B L) (:D D2) (:K *K1))
+        (margin (:B L2) (:D D2) (:K *K2))
+        (< K1 K2)))))
+
+(OUTPUT spacing "neighboring output lines sit one blank line apart, and a blank line holds a collapsed curve off the frame edge")
+
+(ALTS $choice "what makes a curve a container" $Hollow
+  (ALT $Nest
+    (OUTPUT outline "a curve that closes another curve off from the grid edge redraws as a rectangle outline"
+      (RULE &ring
+        (&encloses *X *P)
+        (&curves.component P)))))
+
+(RULE &place_pos
+  (&place.rank (:key (:A *Key) (:D2 *D)) (:t *M) (:R *R1))
+  (&place.dual_rank (:key (:A Key) (:D2 D)) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(DET &gap TileDim)
+
+(INIT &group_line_tiling Tiling
+  (key ((&place_pos (:Key ^A)))
+    (outer ((:P P_outer))
+      (&place_pos (:Key A) (:P_pos *P_outer)))
+    (inner (P)
+      (&place_pos (:Key A))
+      (= *P 0))
+    (gap (A (:G Gap))
+      (&place_pos (:Key A))
+      (&gap (:D *Gap)))))
+
+(RULE &group_line
+  (&place_pos (:Key *A) (:M *G) (:P_pos *P_outer))
+  (&group_line_tiling.cell (:key A) P_outer (:P_inner 0) (:P *L)))
+
+(RULE &edge_group
+  (&group_line *G *A *L)
+  (axis_of *D A)
+  (margin (:B L) D (:K 0)))
+
+(RULE &edge_ring
+  (&edge_group *D *G)
+  (&grp.class (:a *X) (:Id G))
+  (&ring X))
+
+(RULE &pad_edge
+  (&edge_group *D)
+  (OR ((NOT (&edge_ring D))
+       (&gap (:D *K)))
+      ((&edge_ring D)
+       (= K 0))))
+
+(RULE &pad_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&pad_edge D (:K *K1))
+  (&pad_edge (:D D2) (:K *K2))
+  (axis_inset D K1 K2 *B))
+
+(RULE &pad
+  (&pad_axis *A (:B *B1))
+  (perp A *A2)
+  (&pad_axis (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &fig_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&grp.class (:a (:X *Key) D) (:Id *G))
+  (axis_of D (:A *A4))
+  (&group_line G (:A A4) *L)
+  (margin (:B L) D *K)
+  (&grp.class (:a (:X Key) (:D D2)) (:Id *G2))
+  (axis_of (:D D2) (:A *A2))
+  (&group_line (:G G2) (:A A2) (:L *L2))
+  (margin (:B L2) (:D D2) (:K *K2))
+  (axis_inset D (:K1 K) K2 *B))
+
+(RULE &fig
+  (&fig_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&fig_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+;; The frame holds every group's line, the gaps between them, and the pad.
+(INIT &frame Frame
+  (extent (A N)
+    (&group_line *A *L)
+    (&pad (:B *Pad))
+    (compose (:A L) (:B Pad) (:C *P))
+    (frame_extent P A *N)))
+
+(RULE &fig_box
+  (&fig (:Key *X) (:B *B_core))
+  (&pad (:B *Pad))
+  (compose (:A B_core) (:B Pad) (:C *B)))
+
+(RULE &ink
+  (&fig_box *B)
+  (&frame.cell *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(RULE &output
+  (OR ((&ink *P)
+       (&fg *Col))
+      ((&frame.cell P)
+       (NOT (&ink P))
+       (&palette.maximal (:t Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,80 @@
+;; inputs 8bae8223a8631a5f3440051376e2d7001d5bf3066cb889b76546990cb1636825 programs/solvers/025d127b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 025d127b
+
+(DET &dir DirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &shapes Connectivity
+  (node (P)
+    (&ink *P))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(INIT &shape_box BoundingBox
+  (key ((&shapes.component *P ^Id))
+    (cell (P)
+      (&shapes.component *P Id))))
+
+(INIT &pile_frame Frame
+  (extent (A N)
+    (&shapes.component *P *Id)
+    (&shape_box.box (:key Id) *B)
+    (&dir *D)
+    (inside (:A P) B)
+    (same_dist D (:P1 P) (:P2 B))
+    (frame_extent P *A *N)))
+
+(RULE &target
+  (&ink *P)
+  (&dir *D)
+  (neighbor P D (:Q *P2)))
+
+(RULE &pile_blocked
+  (input *P *Col)
+  (&bg (:C Col)))
+
+;; A cell is stuck when the unbroken run of ink ahead of it reaches its
+;; shape's leading edge: a cast back from each leading-edge cell through ink.
+;; A landing site adjacent to its source is in the source's own shape, so
+;; the pile-up needs no shape key.
+(INIT &pile Ray
+  (source (P)
+    (&shapes.component *P *Id)
+    (&shape_box.box (:key Id) *B)
+    (&dir *D)
+    (inside (:A P) B)
+    (same_dist D (:P1 P) (:P2 B)))
+  (node (P)
+    (&pile_frame.cell *P)
+    (NOT (&pile_blocked P)))
+  (dir ((:D D2))
+    (&dir *D)
+    (opposite D (:Opp *D2))))
+
+(RULE &stuck
+  (&pile.ray *P)
+  (&ink P))
+
+(RULE &slid
+  (OR ((&ink *P *Col)
+       (&stuck P))
+      ((&ink (:P *P3) Col)
+       (NOT (&stuck (:P P3)))
+       (&target (:P P3) (:P2 P)))))
+
+(RULE &output
+  (OR ((&slid *P *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&slid P)))))
+
+(OUT (&output ^P ^Col))

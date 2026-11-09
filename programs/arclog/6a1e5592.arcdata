@@ -1,0 +1,8 @@
+;; inputs 07f3b844aaaf328f33aeab5346c62dad676204a8e31c0562bc7b9972deb38d0c programs/solvers/6a1e5592.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6a1e5592
+
+(param &bg Color (0))
+(param &wall Color (2))
+(param &sprite Color (5))
+(param &fill Color (1))

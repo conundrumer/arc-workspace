@@ -1,0 +1,38 @@
+;; inputs 4e566eb2b32c0f6db992f51a83e6f35386ea60696acdfcc8f3ca8380535fb1eb programs/solvers/8403a5d5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8403a5d5
+
+(param &bg Color (0))
+(param &dot Color (5))
+(param &dir Dir (DIR_R))
+(param &step_lines number (2))
+(param &first_side Sense (SENSE_CC))
+(param &slot number (0) (1) (2) (3))
+(param &bar_slot number (0) (2))
+(param &dot_slot (Sense number) (SENSE_CC 1) (SENSE_CW 3))
+(param &stamp.bar Offset
+  (grid
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (1 _ 1 _ 1 _ 1 _ 1)
+    (@1 _ 1 _ 1 _ 1 _ 1)))
+(param &stamp.dots Offset
+  (grid
+    (_ 1 _ _ _ 1 _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (_ _ _ _ _ _ _ _ _)
+    (@_ _ _ 1 _ _ _ 1 _)))
+(param &stamp.aim Dir (DIR_R))
+(param &stamp.first_end Dir (DIR_T))

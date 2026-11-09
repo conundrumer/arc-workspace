@@ -1,0 +1,70 @@
+;; inputs fd656d59b5695fcb6f779d873800c500ddef70058d2d33c412eb3aeb248133e9 programs/solvers/19bb5feb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 19bb5feb
+
+(DET &bg SharedColor)
+
+;; The color the panel is filled with.
+(DET &panel VanishedColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&panel (:C Col))))
+
+(INIT &marks Connectivity
+  (node (P)
+    (&mark *P)))
+
+(INIT &mark_box BoundingBox
+  (key ((&marks.component *P ^Id))
+    (cell (P)
+      (&marks.component *P Id))))
+
+;; The markers' distances to each edge, ranked densely — markers level with
+;; each other share a rank.
+(INIT &rank Order
+  (key ((dir_elem ^D))
+    (member ((:t K))
+      (&mark_box.box *B)
+      (margin B D *K))
+    (score ((:t K) (:S K))
+      (&mark_box.box *B)
+      (margin B D *K))))
+
+(RULE &place_edge
+  (&mark_box.box (:key (:Id *Key)) *B)
+  (margin B *D (:K *K2))
+  (&rank.rank (:key D) (:t K2) (:R *K)))
+
+(RULE &place_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&place_edge *Key D (:K *K1))
+  (&place_edge Key (:D D2) (:K *K2))
+  (axis_inset D K1 K2 *B))
+
+(RULE &place
+  (&place_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&place_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &rank_mark
+  (&marks.component (:P *P_grid) *Id)
+  (&mark (:P P_grid) *Col)
+  (&place (:Key Id) (:B *P)))
+
+;; The frame the ranks span.
+(INIT &rank_frame Frame
+  (extent (A N)
+    (&place (:B *P))
+    (frame_extent P *A *N)))
+
+(RULE &output
+  (&rank_frame.cell *P)
+  (OR ((&rank_mark P *Col))
+      ((NOT (&rank_mark P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

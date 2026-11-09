@@ -1,0 +1,465 @@
+;; inputs fa8b3b10823db531d1baaeaf7546d2a7893e4cac97cc84b03635d0e64dc7b2e8 programs/solvers/d5c634a2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d5c634a2
+
+(INPUT t-shapes "the input holds T tetrominoes of color 2 on a field of &bg, each a bar of three cells with a stem cell at the middle of one long side, and no two of them share an edge"
+
+  (DET &in_color
+    (ex_input *E *Col))
+
+  (DET &input_lacks
+    (&in_color *Col)
+    (&in_color *E)
+    (NOT (&in_color E Col)))
+
+  (DET &out_color
+    (ex_output *E *Col))
+
+  (DET &output_lacks
+    (&out_color *Col)
+    (&out_color *E)
+    (NOT (&out_color E Col)))
+
+  (DET_OR_RULE &bg DominantColor
+    (&in_color (:Col *C))
+    (&out_color (:Col C))
+    (NOT (&input_lacks (:Col C)))
+    (NOT (&output_lacks (:Col C))))
+
+  ;; The distinct pictures of the inputs' components, each cropped to its
+  ;; bounding box.
+  (INIT &ex_comps Connectivity
+    (key ((ex_input ^E *P *Col)
+          (NOT (&bg (:C Col))))
+      (node (P)
+        (ex_input E *P *Col)
+        (NOT (&bg (:C Col))))))
+
+  (INIT &ex_box BoundingBox
+    (key ((&ex_comps.component (:key ^E) *P ^Id))
+      (cell (P)
+        (&ex_comps.component (:key E) *P Id))))
+
+  (DET &ex_picture
+    (&ex_comps.component (:key *E) (:P *P2) *Id)
+    (&ex_box.box (:key E Id) *B)
+    (inside (:A P2) B)
+    (relative (:Base B) (:X P2) (:X_rel *P)))
+
+  (INIT &same_picture Inclusion
+    (pattern ((:pattern (:E C_e) (:Id C_id)) (:m P))
+      (&ex_picture (:E *C_e) (:Id *C_id) *P))
+    (observed ((:observed (:E C_e) (:Id C_id)) (:m P))
+      (&ex_picture (:E *C_e) (:Id *C_id) *P)))
+
+  (INIT &picture_class Quotient
+    (equivalent ((:a (:E C_e) (:Id C_id)) (:b (:E C2_e) (:Id C2_id)))
+      (&same_picture.equal (:observed (:E *C_e) (:Id *C_id)) (:pattern (:E *C2_e) (:Id *C2_id)))))
+
+  (DET &shape_table
+    (&picture_class.class (:a (:E *C_e) (:Id *C_id)) *Id)
+    (&ex_picture (:E C_e) (:Id C_id) *P))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &occ Occurrences
+    (key ((OR ((&shape_table ^Id *P))
+              ((&shape_table Id)
+               (&ink P))))
+      (cell (P)
+        (&shape_table Id)
+        (&ink *P))
+      (shape (P)
+        (&shape_table Id *P)))))
+
+(INPUT stem-directions "each T's stem points up or down")
+
+(INPUT fits-the-panel "no more T shapes point toward one direction than a panel has corners")
+
+(OUTPUT panel-per-direction "the output is a grid of &bg made of panels of &panel_size laid out as &dir_panel, each panel owned by one stem direction"
+
+  (DET &bg_determined
+    (&in_color (:Col *C))
+    (&out_color (:Col C))
+    (NOT (&input_lacks (:Col C)))
+    (NOT (&output_lacks (:Col C))))
+
+  (DET &mark_color
+    (&out_color *Col)
+    (NOT (&bg_determined (:C Col))))
+
+  (DET &side_defect
+    (&shape_table *Id *P)
+    (inside (:A P) (:B 0))
+    (same_corner (:D *C) (:P1 P) (:P2 0))
+    (corner_dir C *D))
+
+  (DET &shape_key
+    (&shape_table *Id)
+    (dir_elem *D)
+    (NOT (&side_defect Id D)))
+
+  ;; The components of each train input that point toward each direction.
+  (INIT &dir_shapes Cardinality
+    (key ((OR ((ex_output ^E)
+               (&picture_class.class (:a E (:Id *C)) *Id)
+               (&shape_key Id ^D))
+              ((ex_output E)
+               (dir_elem D))))
+      (member ((:m E (:Id C)))
+        (ex_output E)
+        (&picture_class.class (:a E (:Id *C)) *Id)
+        (&shape_key Id D))
+      (domain ()
+        (ex_output E)
+        (dir_elem D))))
+
+  ;; The marks of each color in each train output.
+  (INIT &marks Cardinality
+    (key ((ex_output ^E)
+               (&mark_color ^Col))
+      (member ((:m P))
+        (ex_output E *P Col)
+        (&mark_color Col))
+      (domain ()
+        (ex_output E)
+        (&mark_color Col))))
+
+  (DET &count_match
+    (&dir_shapes.size (:key *E *D) *N)
+    (&marks.size (:key E *Col) N))
+
+  (DET &mark_defect
+    (dir_elem *D)
+    (&mark_color *Col)
+    (ex_output *E)
+    (NOT (&count_match E D Col)))
+
+  (DET &dir_mark
+    (dir_elem *D)
+    (&mark_color (:Col *C))
+    (NOT (&mark_defect D (:Col C))))
+
+  (INIT &mark_box BoundingBox
+    (key ((&mark_color ^Col))
+      (cell (P)
+        (ex_output *P Col))))
+
+  (DET &panel_size
+    (&mark_box.box *B)
+    (ex_output *P)
+    (box_extent B P *A *N))
+
+  (INIT &panels Division
+    (cell (P)
+      (ex_output *P))
+    (side (A K)
+      (&panel_size *A (:N *K))))
+
+  (DET &dir_panel
+    (ex_output *P *Col)
+    (&dir_mark *D (:C Col))
+    (&panels.tile P (:P_outer *P_tile))))
+
+(OUTPUT count-as-marks "in the panel of a direction, the first n corners of the panel, in the lexicographic order of &order_axis from &order_corner, take the mark color &dir_mark of that direction, where n is the count of T shapes whose stem points that way"
+
+  (INIT &panel_cell_frame Frame
+    (extent (A N)
+      (&panel_size *A *N)))
+
+  ;; The order the corners fill in: the primary axis, and the corner it runs from.
+  (DET &order_axis AxisDomain)
+
+  (DET &order_corner DiagDirDomain)
+
+  (RULE &order_of
+    (&dir_panel *D)
+    (&order_axis *A)
+    (&order_corner (:D *C)))
+
+  (RULE &slot
+    (&order_of (:D *K))
+    (&panel_cell_frame.cell *P)
+    (inside (:A P) (:B 0))
+    (same_corner (:P1 P) (:P2 0)))
+
+  (INIT &lex Order
+    (key ((&slot (:K ^D) *P))
+      (member ((:t P))
+        (&slot (:K D) *P))
+      (score ((:t P) (:S K1))
+        (&slot (:K D) *P)
+        (&order_of D *C)
+        (&order_of D *A)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&slot (:K D) *P)
+        (&order_of D *C)
+        (&order_of D *A)
+        (diag_dist P (:Diag C) A *K1 *K2))))
+
+  (RULE_OR_DET &lex.rank)
+
+  (INIT &comps Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &slots Cardinality
+    (key ((&lex.rank (:key ^D) (:t *P)))
+      (member ((:m P))
+        (&lex.rank (:key D) (:t *P)))))
+
+  (INIT &obox BoundingBox
+    (key ((&comps.component *P ^Id))
+      (cell (P)
+        (&comps.component *P Id))))
+
+  (INIT &picture Inclusion
+    (pattern ((:pattern Id) (:m P))
+      (&shape_table *Id *P))
+    (observed ((:observed C) (:m P_inner))
+      (&comps.component *P (:Id *C))
+      (&obox.box (:key (:Id C)) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))))
+
+  (RULE &table_hit
+    (&picture.equal (:observed *C) (:pattern *Id))
+    (&obox.box (:key (:Id C)) *B)))
+
+(OUTPUT same-slot-order "both panels fill their corners in one order, at the same places relative to the panel"
+
+  (RULE &arm
+    (dir_elem (:D *S))
+    (OR ((perp_dir (:D S) (:D2 *D)))
+        ((= D S))))
+
+  (RULE &missing_arm
+    (&ink *P)
+    (&arm *S *D)
+    (neighbor P D *Q)
+    (NOT (&ink (:P Q))))
+
+  (RULE &t_place
+    (&ink *P)
+    (dir_elem (:D *S))
+    (NOT (&missing_arm P S)))
+
+  (RULE &t_cell
+    (&t_place (:P *P_mid) *S)
+    (OR ((&arm S *D)
+         (neighbor (:P P_mid) D (:Q *P)))
+        ((= P P_mid))))
+
+  (RULE &t_extra
+    (&t_place (:P *P_mid) *S)
+    (&comps.component (:P P_mid) *Id)
+    (&comps.component *P Id)
+    (NOT (&t_cell P_mid S P)))
+
+  (RULE &t_found
+    (&t_place *P *S)
+    (NOT (&t_extra (:P_mid P) S)))
+
+  (INIT &geo_count Cardinality
+    (key ((OR ((&t_found *P ^S))
+              ((&dir_panel (:D S)))))
+      (member ((:m P))
+        (&t_found *P S))
+      (domain ()
+        (&dir_panel (:D S)))))
+
+  (RULE &shape_count
+    (&geo_count.size (:key (:S *K)) *N))
+
+  (DET &dir_count_table
+    (&dir_shapes.size (:key *E *D) *N)
+    (&dir_mark D (:C *Col))
+    (&dir_panel *P_tile D)
+    (ex_output E (:P *P2) Col)
+    (&panels.tile (:P P2) (:P_outer P_tile) (:P_inner *P)))
+
+  (DET &count_table
+    (&dir_count_table *N *P))
+
+  (RULE &table_entry
+    (&dir_panel *D)
+    (&count_table *N *P)))
+
+(ALTS $order "which cells of its panel a count marks, and in what order" $Corners
+  (ALT $PeriodSlots
+    (OUTPUT count-as-marks "the slots are the panel cells at an even distance from both edges of &order_corner, in the same order; undefined where a count exceeds the slots"
+      (INIT &axis_stride_divisions ExtentDivisions
+        (frame (P)
+          (&panels.tile (:P_inner *P))))
+
+      (DET &panel_mark
+        (ex_output (:P *P2) *Col)
+        (NOT (&bg_determined (:C Col)))
+        (&panels.tile (:P P2) (:P_inner *P)))
+
+      (DET &mark_line
+        (&panel_mark *P)
+        (diag_dist P (:Diag *C) *A (:K1 *K)))
+
+      (INIT &first_gap Order
+        (key ((&panels.tile (:P_inner *P))
+              (diag_dist P (:Diag ^C) ^A (:K1 *K))
+              (NOT (&mark_line C A K)))
+          (member ((:t K))
+            (&panels.tile (:P_inner *P))
+            (diag_dist P (:Diag C) A (:K1 *K))
+            (NOT (&mark_line C A K)))
+          (score ((:t K) (:S K))
+            (&panels.tile (:P_inner *P))
+            (diag_dist P (:Diag C) A (:K1 *K))
+            (NOT (&mark_line C A K)))))
+
+      (DET &slot_start
+        (&mark_line *C *A *K)
+        (&panels.tile (:P_inner *P))
+        (diag_dist P (:Diag C) A (:K1 K))
+        (corner_dir C A (:D *E))
+        (neighbor P (:D E) *Q)
+        (diag_dist (:P Q) (:Diag C) A (:K1 *K2))
+        (NOT (&mark_line C A (:K K2))))
+
+      (INIT &starts Cardinality
+        (key ((&slot_start ^C ^A *K))
+          (member ((:m K))
+            (&slot_start C A *K))))
+
+      (DET &axis_stride
+        (&first_gap.minimal (:key *C *A) (:t *W))
+        (&starts.size (:key C A) *N)
+        (&axis_stride_divisions.division A N (:K W) *G))
+
+      (DET &axis_disagree
+        (&axis_stride *C *W *G)
+        (axis_elem *A)
+        (NOT (&axis_stride C A W G)))
+
+      (DET &slot_stride
+        (&axis_stride *C *W *G)
+        (NOT (&axis_disagree C W G)))
+
+      (RULE &slot
+        (&order_of (:D *K) *C)
+        (&panel_cell_frame.cell *P)
+        (&slot_stride *W *G)
+        (diag_dist P (:Diag C) *K1 *K2)
+        (divide (:T K1) (:Side W) (:Gap G))
+        (divide (:T K2) (:Side W) (:Gap G)))))
+  (ALT $CountTable
+    (OUTPUT count-as-marks "the stored table &count_table gives the panel cells each count marks; undefined at a count with no entry")
+    (RULE &marked
+      (&shape_count (:K *D) *N)
+      (&table_entry D N *P))
+
+    ;; A count has no entry.
+    (RULE &unfit
+      (&dir_panel *D)
+      (&shape_count (:K D) *N)
+      (NOT (&table_entry D N)))))
+
+(ALTS $sharing "whether the two panels fill in one order" $SharedOrder
+  (ALT $SlotOrderPerDir
+    (OUTPUT same-slot-order "each direction stores its own order, &dir_order"
+      (DET &corner_mark
+        (ex_output *E (:P *P2) *Col)
+        (&dir_mark *D (:C Col))
+        (&dir_panel *P_tile D)
+        (&panels.tile (:P P2) (:P_outer P_tile) (:P_inner *P))
+        (inside (:A P) (:B 0))
+        (same_corner (:P1 P) (:P2 0)))
+
+      (INIT &corner_order Order
+        (key ((diag_dir_elem (:D ^C))
+              (axis_elem ^A))
+          (score ((:t P) (:S K1))
+            (&panels.tile (:P_inner *P))
+            (inside (:A P) (:B 0))
+            (same_corner (:P1 P) (:P2 0))
+            (diag_dist P (:Diag C) A *K1 *K2))
+          (secondary_score ((:t P) (:S K2))
+            (&panels.tile (:P_inner *P))
+            (inside (:A P) (:B 0))
+            (same_corner (:P1 P) (:P2 0))
+            (diag_dist P (:Diag C) A *K1 *K2)))
+        (member ((:t P))
+          (&panels.tile (:P_inner *P))
+          (inside (:A P) (:B 0))
+          (same_corner (:P1 P) (:P2 0))))
+
+      (DET &order_defect
+        (&corner_mark *E *D *P)
+        (&corner_order.rank (:key *C *A) (:t P) *R)
+        (&corner_order.rank (:key C A) (:t *Q) (:R *R2))
+        (< R2 R)
+        (NOT (&corner_mark E D (:P Q))))
+
+      (DET &dir_order
+        (&dir_panel *D)
+        (axis_elem *A)
+        (diag_dir_elem (:D *C))
+        (NOT (&order_defect D A C)))
+
+      (RULE &order_of
+        (&dir_order *D *A *C))
+
+      (RULE &table_entry
+        (&dir_count_table *D *N *P)))))
+
+(ALTS $parse "what one T shape is in the ink" $WholeComponent
+  (ALT $ShapeOccurrences
+    (INPUT t-shapes "each placement of a T whose cells all land on ink counts, whatever the component around it"
+      (RULE &t_found
+        (&t_place *P *S))
+
+      (RULE &table_hit
+        (&occ.occurrence (:key *Id) (:P *B))))))
+
+(ALTS $shape "how a T shape is assigned its direction" $StemGeometry
+  (ALT $ShapeTable
+    (INPUT stem-directions "the stored table &shape_table gives the direction of each picture, and a shape whose picture has no entry is not counted"
+      (INIT &table_count Cardinality
+        (key ((OR ((&table_hit *Id *B)
+                   (&shape_key Id ^D))
+                  ((&dir_panel D))))
+          (member ((:m Id B))
+            (&table_hit *Id *B)
+            (&shape_key Id D))
+          (domain ()
+            (&dir_panel D))))
+
+      (RULE &shape_count
+        (&table_count.size (:key (:D *K)) *N)))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&dir_panel *P_tile))
+  (inner ((:P P_inner))
+    (&panel_cell_frame.cell (:P *P_inner))))
+
+(RULE &marked
+  (&lex.rank (:key *D) (:t *P) *R)
+  (&shape_count (:K D) *N)
+  (< R N))
+
+;; A count exceeds the slots.
+(RULE &unfit
+  (&slots.size (:key *D) (:N *M))
+  (&shape_count (:K D) *N)
+  (> N M))
+
+(RULE &output
+  (NOT (&unfit))
+  (&dir_panel *P_tile *D)
+  (&output_tiling.cell (:P_outer P_tile) *P_inner *P)
+  (IF ((&marked D (:P P_inner)))
+      ((&dir_mark D (:C *Col)))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,269 @@
+;; inputs a157b2e900357bd8110d934d975a4d2737188b3ee9aca2a69176556f10cf9fc7 programs/solvers/b0c4d837.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0c4d837
+
+(INPUT cup "one cup drawn in &wall_color: two walls of equal height joined at their far ends from &open_dir by a floor, open toward &open_dir, with &background outside it"
+
+  (DET &wall_color VanishedColor)
+
+  ;; The side the cup opens toward.
+  (DET &open_dir DirDomain)
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT liquid "a solid block of &fluid_color fills the cup's inside from the floor up, across the full width between the walls, to some level below the top of the walls"
+
+  (DET_OR_RULE &fluid_color RarestColor))
+
+(OUTPUT count-empty-rows "the count is the number of rows inside the cup that hold no liquid: the rows from the row nearest &open_dir that holds &wall_color down to the nearest row that holds the liquid's color, that row left out"
+
+  (RULE &wall
+    (input *P *Col)
+    (&wall_color (:C Col)))
+
+  (INIT &cup BoundingBox
+    (cell (P)
+      (&wall *P)))
+
+  ;; The color of the cells directly above the floor between the walls.
+  (INIT &floor_top Singleton
+    (member ((:v Col))
+      (&cup.box *B)
+      (&open_dir (:D *U))
+      (input *P)
+      (inside (:A P) B)
+      (same_dist (:P1 P) (:P2 B))
+      (neighbor P (:D U) *Q)
+      (interior (:A Q) B)
+      (input (:P Q) *Col)))
+
+  (RULE &uneven
+    (&wall *P)
+    (&cup.box *B)
+    (&open_dir (:D *U))
+    (perp_dir (:D U) (:D2 *S))
+    (input (:P *Q) *Col)
+    (NOT (&wall_color (:C Col)))
+    (inside (:A Q) B)
+    (same_dist (:D S) (:P1 Q) (:P2 B))
+    (same_dist (:D U) (:P1 P) (:P2 Q)))
+
+  (INIT &level BoundingBox
+    (cell (P)
+      (&wall *P)
+      (NOT (&uneven P)))))
+
+(OUTPUT output-frame "the output is a &out_dim square frame, all &background"
+
+  ;; The side of the square output frame.
+  (DET &out_dim ConstOutDim))
+
+(OUTPUT lay-marks "the first count cells of the output, in &fill_order, take the liquid's color; every other cell stays &background; undefined where the count exceeds the cells &fill_order ranks"
+
+  ;; The corner the walk starts from.
+  (DET &order_corner DiagDirDomain)
+
+  ;; The axis of the walk's first line.
+  (DET &line_axis AxisDomain)
+
+  (RULE &liquid
+    (input)
+    (&fluid_color (:C *Col)))
+
+  (INIT &fluid BoundingBox
+    (cell (P)
+      (&liquid *Col)
+      (input *P Col)))
+
+  (RULE &rim
+    (&cup.box *B))
+
+  (RULE &empty_rows
+    (&rim *B)
+    (&fluid.box (:B *B2))
+    (relative (:Base B) (:X B2) (:X_rel *B_rel))
+    (&open_dir (:D *U))
+    (margin (:B B_rel) (:D U) *K))
+
+  (RULE &side
+    (&out_dim *N))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (&side *N)
+      (axis_elem *A)))
+
+  (RULE &heading
+    (&order_corner (:D *C))
+    (&line_axis *A)
+    (diag_dirs (:D C) A *D1 *D2)
+    (opposite (:D D1) (:Opp *H))
+    (opposite (:D D2) (:Opp *Adv)))
+
+  (INIT &ring Boundary
+    (cell (P)
+      (&frame.cell *P)))
+
+  (DET &marked
+    (ex_output *E *P *Col)
+    (NOT (&background (:C Col))))
+
+  ;; The outputs that leave each marked cell unmarked.
+  (INIT &unmarked Cardinality
+    (key ((&marked ^P))
+      (member ((:m E))
+        (ex_output *E P *Col)
+        (&background (:C Col)))))
+
+  ;; The marked cells in the order the outputs show: a cell that fewer
+  ;; outputs leave unmarked comes earlier.
+  (INIT &shown Order
+    (member ((:t P))
+      (&marked *P))
+    (score ((:t P) (:S N))
+      (&unmarked.size (:key *P) *N)))
+
+  (DET &fill_order
+    (&shown.rank (:t *P) *R))
+
+  (RULE &rank
+    (&fill_order *P *R))
+
+  (INIT &cells Cardinality
+    (member ((:m P))
+      (&rank *P))))
+
+(ALTS $render "how the count becomes the output grid" $Laid
+  (ALT $Laid
+    (ALTS $order "the order of the frame's cells" $FillOrder
+      (ALT $SnakeOrder
+        (OUTPUT lay-marks "the first count cells of a walk that starts at &order_corner, runs along a line on &line_axis, and at the frame's edge steps one line on and runs back, take the liquid's color; undefined where the count exceeds the frame's cells"
+          (INIT &walk Distance
+            (edge ((:a P (:D H)) (:b (:P Q) (:D H2)))
+              (&frame.cell *P)
+              (dir_elem (:D *H))
+              (OR ((margin (:B P) (:D H) (:K 0))
+                   (&heading *Adv)
+                   (neighbor P (:D Adv) *Q)
+                   (opposite (:D H) (:Opp *H2)))
+                  ((neighbor P (:D H) Q)
+                   (= H2 H)))
+              (&frame.cell (:P Q)))
+            (source ((:n P (:D H)))
+              (&order_corner (:D *C))
+              (&frame.cell *P)
+              (inside (:A P) (:B 0))
+              (same_corner (:D C) (:P1 P) (:P2 0))
+              (&heading *H)))
+          (RULE &rank
+            (&walk.distance (:n *P) (:K *R)))))
+      (ALT $SpiralOrder
+        (OUTPUT lay-marks "the first count cells of a walk that starts at &order_corner, runs along a line on &line_axis, and turns inward where the frame's edge or a cell it has passed stops it, take the liquid's color; undefined where the count exceeds the frame's cells"
+          (INIT &ring_depth CellDistance
+            (node (P)
+              (&frame.cell *P))
+            (source (P)
+              (&ring.boundary *P)))
+          (RULE &ring_start
+            (&ring_depth.distance *P *K)
+            (&order_corner (:D *C))
+            (diag_dist P (:Diag C) (:K1 K) (:K2 K)))
+          (RULE &spiral_open
+            (&ring_depth.distance *P *K)
+            (dir_elem *D)
+            (neighbor P D *Q)
+            (&ring_depth.distance (:P Q) (:K *K2))
+            (OR ((> K2 K))
+                ((= K2 K)
+                 (NOT (&ring_start (:P Q))))))
+          (INIT &walk Distance
+            (edge ((:a P (:D H)) (:b (:P Q) (:D H2)))
+              (dir_elem (:D *H))
+              (OR ((perp_dir (:D H) (:D2 *H2))
+                   (&spiral_open *P (:D H2) *Q)
+                   (NOT (&spiral_open P (:D H))))
+                  ((&spiral_open P (:D H) Q)
+                   (= H2 H))))
+            (source ((:n P (:D H)))
+              (&order_corner (:D *C))
+              (&frame.cell *P)
+              (inside (:A P) (:B 0))
+              (same_corner (:D C) (:P1 P) (:P2 0))
+              (&heading *H)))
+          (RULE &rank
+            (&walk.distance (:n *P) (:K *R))))))
+    (ALTS $mark "the color of the marks" $LiquidMark
+      (ALT $MarkColor
+        (OUTPUT lay-marks "the marks take &mark_color"
+          (DET_OR_RULE &mark_color RarestColor))
+        (RULE &mark
+          (&liquid)
+          (&mark_color (:C *Col))))))
+  (ALT $CountTable
+    (OUTPUT output-frame "the output is the grid &count_table stores for the count; undefined on a count with no entry"
+      (RULE &liquid2
+        (input)
+        (&fluid_color (:C *Col)))
+
+      (INIT &fluid2 BoundingBox
+        (cell (P)
+          (&liquid2 *Col)
+          (input *P Col)))
+
+      (RULE &empty_rows2
+        (&cup.box *B)
+        (&fluid2.box (:B *B2))
+        (relative (:Base B) (:X B2) (:X_rel *B_rel))
+        (&open_dir (:D *U))
+        (margin (:B B_rel) (:D U) *K))
+
+      (DET &count_table
+        (ex_output *E *P *Col)
+        (&empty_rows2 E (:K *N))))
+    (OUTPUT lay-marks "the stored grid gives every cell's color")
+    (RULE &output
+      (&empty_rows *K)
+      (&count_table (:N K) *P *Col))
+    (ALT $LowerRim
+      (OUTPUT count-empty-rows "the count starts from the row nearest &open_dir that holds &wall_color in both outer wall columns, the top of the shorter wall"
+        (DET &count_table
+          (ex_output *E *P *Col)
+          (&empty_rows E (:K *N)))))
+    (ALT $LiquidAnyColor
+      (OUTPUT liquid-color "the liquid's color is the color of the cells directly above the floor between the walls; undefined where those cells differ in color"
+        (DET &count_table
+          (ex_output *E *P *Col)
+          (&empty_rows E (:K *N)))))))
+
+(ALTS $rim "the row the count starts from" $TopRim
+  (ALT $LowerRim
+    (OUTPUT count-empty-rows "the count starts from the row nearest &open_dir that holds &wall_color in both outer wall columns, the top of the shorter wall"
+      (RULE &rim
+        (&level.box *B)))))
+
+(ALTS $liquid "how the liquid is found" $StoredLiquid
+  (ALT $LiquidAnyColor
+    (INPUT liquid "a solid block of one color fills the cup's inside from the floor up, across the full width between the walls, to some level below the top of the walls")
+    (OUTPUT liquid-color "the liquid's color is the color of the cells directly above the floor between the walls; undefined where those cells differ in color"
+      (RULE &liquid
+        (&floor_top.value (:v *Col))))))
+
+(RULE &mark
+  (&liquid *Col))
+
+(RULE &output
+  (&empty_rows *K)
+  (&cells.size *N)
+  (<= K N)
+  (&frame.cell *P)
+  (&mark (:Col *C))
+  (OR ((&rank P *R)
+       (>= R K)
+       (&background (:C *Col)))
+      ((&rank P R)
+       (< R K)
+       (= Col C))
+      ((NOT (&rank P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

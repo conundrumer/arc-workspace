@@ -1,0 +1,63 @@
+;; inputs 6f7ee02028234c528241bd05efd2baa7e1e491b0fe55a3b1467fae1f90c5ecf0 programs/solvers/281123b4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 281123b4
+
+(param &panel_axis Axis (AXIS_H))
+(param &gap number (1))
+(param &panels number (4))
+(param &panel_size number (4))
+(param &bg Color (0))
+(param &prio (Position number)
+  (grid
+    (2 3 0 1)))
+(param &ink_rank (Color number) (9 0) (4 1) (8 2) (5 3))
+(param &combine_member (Ident Position Color)
+  (0 (grid
+    (0 0 0 0)))
+  (1 (grid
+    (0 0 0 4)))
+  (2 (grid
+    (0 0 9 0)))
+  (3 (grid
+    (0 0 9 4)))
+  (4 (grid
+    (0 5 0 0)))
+  (5 (grid
+    (0 5 0 4)))
+  (6 (grid
+    (0 5 9 0)))
+  (7 (grid
+    (0 5 9 4)))
+  (8 (grid
+    (8 0 0 0)))
+  (9 (grid
+    (8 0 0 4)))
+  (10 (grid
+    (8 0 9 0)))
+  (11 (grid
+    (8 0 9 4)))
+  (12 (grid
+    (8 5 0 0)))
+  (13 (grid
+    (8 5 0 4)))
+  (14 (grid
+    (8 5 9 0)))
+  (15 (grid
+    (8 5 9 4))))
+(param &combine_out (Ident Color)
+  (0 0)
+  (1 4)
+  (2 9)
+  (3 9)
+  (4 5)
+  (5 4)
+  (6 9)
+  (7 9)
+  (8 8)
+  (9 4)
+  (10 9)
+  (11 9)
+  (12 8)
+  (13 4)
+  (14 9)
+  (15 9))

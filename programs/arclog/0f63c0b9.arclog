@@ -1,0 +1,87 @@
+;; inputs a8969c34518075ef11796d90bd7e2c7b78e7eadc54af4b6bd7e8f2e0954564ce programs/solvers/0f63c0b9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0f63c0b9
+
+;; The marks spread along this Dir's axis and their lines run across it. A tie-winning reach travels toward tie_dir.
+(DET &tie_dir DirDomain)
+
+(RULE &line_of
+  (input *P)
+  (&tie_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &reach_mark
+  (&mark (:P *Key))
+  (&line_of (:P Key) (:L *P)))
+
+(INIT &reach_frame Frame
+  (key ((&reach_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&reach_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+(RULE &mark_line
+  (&mark (:P *P_mark))
+  (&line_of (:P P_mark) *L)
+  (&line_of *P L))
+
+;; Each line reaches across the marks' axis, one line per step.
+(INIT &reach Ray
+  (key ((OR ((&reach_mark (:Key ^Ky) *P))
+            ((&mark (:P Ky))
+             (&tie_dir (:D *D_tie))
+             (axis_of (:D D_tie) *A)
+             (axis_of *D A))
+            ((&reach_frame.cell (:key Ky) P))))
+    (source (P)
+      (&reach_mark (:Key Ky) *P))
+    (node (P)
+      (&reach_frame.cell (:key Ky) *P))
+    (dir (D)
+      (&mark (:P Ky))
+      (&tie_dir (:D *D_tie))
+      (axis_of (:D D_tie) *A)
+      (axis_of *D A))))
+
+(RULE &reach_cell
+  (&mark (:P *Key))
+  (&line_of))
+
+(RULE &beaten
+  (&reach.ray (:key (:Ky *P_mark)) (:P *L) *K)
+  (&reach_cell (:Key P_mark))
+  (&line_of L)
+  (&reach.ray (:key (:Ky *M2)) (:P L) (:D *D2) (:K *K2))
+  (&reach_cell (:Key M2))
+  (!= M2 P_mark)
+  (OR ((< K2 K))
+      ((= K2 K)
+       (&tie_dir (:D D2)))))
+
+(RULE &territory
+  (&line_of *P *L)
+  (&reach.ray (:key (:Ky *M)) (:P L))
+  (&reach_cell (:Key M))
+  (NOT (&beaten L (:P_mark M)))
+  (&mark (:P M) *Col))
+
+(RULE &paint
+  (&territory *P *Col)
+  (OR ((margin (:B P) *D (:K 0)))
+      ((&mark_line P))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P)
+       (NOT (&paint P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

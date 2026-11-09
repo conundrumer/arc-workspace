@@ -1,0 +1,11 @@
+;; inputs 449212c7ab62f9f570ce2a3c1475334e5eaea71af06951e3174dc9bf542be8ce programs/solvers/41ace6b5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 41ace6b5
+
+(param &bg Color (7))
+(param &cap Color (8))
+(param &stem Color (1))
+(param &rest Color (9))
+(param &cap_line Color (2))
+(param &stem_line Color (5))
+(param &grow Dir (DIR_T))

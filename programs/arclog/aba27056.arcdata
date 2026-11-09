@@ -1,0 +1,117 @@
+;; inputs edd1592368dfa2dd0355482287a0492895163330ff2b9cd4a4a2e847848ce1c2 programs/solvers/aba27056.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aba27056
+
+(param &background Color (0))
+(param &fill_color Color (4))
+
+(exclude ($OneOpening $PaintBackground) "OneOpening & PaintBackground is left out: wherever it is defined, EachOpening & PaintBackground gives the same grid.")
+(exclude ($OneOpening $PaintAll &background=$Derived) "wherever it is defined, it gives the output of the EachOpening copy")
+
+(alts $openings
+  (alt $EachOpening
+    (witness two-openings variant $EachOpening
+      (relaxed container)
+      (separates "The top wall of the box has two openings, one cell each, split by two wall cells. $EachOpening casts a band and two diagonal rays from each opening, so the inner rays cross above the wall. $SideSpan reads the side from the first to the last opening cell as one opening, casts one band four cells wide over it, and sends rays only from its two outer ends. The concept reads exactly one opening and is undefined here.")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 6 0 6 6 0 6 6 0)
+        (0 6 0 0 0 0 0 6 0)
+        (0 6 0 0 0 0 0 6 0)
+        (0 6 0 0 0 0 0 6 0)
+        (0 6 6 6 6 6 6 6 0)))
+      (output concept undefined)
+      (output $EachOpening (grid
+        (0 4 4 0 0 4 4 0 0)
+        (0 0 4 0 0 4 0 0 4)
+        (4 0 4 4 4 4 0 4 0)
+        (0 4 4 4 4 4 4 0 0)
+        (0 6 4 6 6 4 6 6 0)
+        (0 6 4 4 4 4 4 6 0)
+        (0 6 4 4 4 4 4 6 0)
+        (0 6 4 4 4 4 4 6 0)
+        (0 6 6 6 6 6 6 6 0)))
+      (output $SideSpan (grid
+        (0 0 4 4 4 4 0 0 0)
+        (0 0 4 4 4 4 0 0 4)
+        (4 0 4 4 4 4 0 4 0)
+        (0 4 4 4 4 4 4 0 0)
+        (0 6 4 6 6 4 6 6 0)
+        (0 6 4 4 4 4 4 6 0)
+        (0 6 4 4 4 4 4 6 0)
+        (0 6 4 4 4 4 4 6 0)
+        (0 6 6 6 6 6 6 6 0)))))
+  (alt $SideSpan
+    (witness two-openings variant $EachOpening)))
+
+(alts $paint
+  (alt $PaintBackground
+    (witness stray-inside foreign any
+      (relaxed interior)
+      (separates "A cell of color 5 sits inside the box, which has one opening on its top side. $PaintAll paints that cell with the rest of the interior; $PaintBackground paints only background cells and keeps the 5.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 6 6 0 6 6 0)
+        (0 6 0 0 0 6 0)
+        (0 6 0 5 0 6 0)
+        (0 6 6 6 6 6 0)))
+      (output $PaintAll (grid
+        (4 0 0 4 0 0 4)
+        (0 4 0 4 0 4 0)
+        (0 0 4 4 4 0 0)
+        (0 6 6 4 6 6 0)
+        (0 6 4 4 4 6 0)
+        (0 6 4 4 4 6 0)
+        (0 6 6 6 6 6 0)))
+      (output $PaintBackground (grid
+        (4 0 0 4 0 0 4)
+        (0 4 0 4 0 4 0)
+        (0 0 4 4 4 0 0)
+        (0 6 6 4 6 6 0)
+        (0 6 4 4 4 6 0)
+        (0 6 4 5 4 6 0)
+        (0 6 6 6 6 6 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "The background derived as the dominant color from the stored background: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 6 6 1 6 6 1)
+        (1 6 1 1 1 6 1)
+        (1 6 6 6 6 6 1)))
+      (output concept undefined)
+      (output ($EachOpening $PaintAll &background=$Stored) ($SideSpan $PaintAll &background=$Stored) (grid
+        (1 1 1 1 1 1 1)
+        (1 4 4 4 4 4 1)
+        (1 4 4 4 4 4 1)
+        (1 4 4 4 4 4 1)
+        (1 4 4 4 4 4 1)
+        (1 4 4 4 4 4 1)
+        (1 6 6 6 6 6 1)))
+      (output &background=$Derived (grid
+        (1 1 1 4 1 1 1)
+        (4 1 1 4 1 1 4)
+        (1 4 1 4 1 4 1)
+        (1 1 4 4 4 1 1)
+        (1 6 6 4 6 6 1)
+        (1 6 4 4 4 6 1)
+        (1 6 6 6 6 6 1)))
+      (output ($PaintBackground &background=$Stored) (grid
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1)
+        (1 6 6 1 6 6 1)
+        (1 6 1 1 1 6 1)
+        (1 6 6 6 6 6 1))))))

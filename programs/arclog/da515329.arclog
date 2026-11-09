@@ -1,0 +1,227 @@
+;; inputs 64e510591766ada2386bc3de83bda771bd7251901c5290fb537d40529a9db315 programs/solvers/da515329.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; da515329
+
+(INPUT one-plus "on a field of 0, one plus of one color: four straight arms of one length, which leave the center cell 0 and point toward the four cardinal directions.")
+
+(OUTPUT arms-grow "all four arms grow at once, one cell per step, from their tips, on an unbounded plane."
+
+  (INIT &field_count Cardinality
+    (key ((ex_input *E *P ^Col))
+      (member ((:m E P))
+        (ex_input *E *P Col))))
+
+  ;; The color with the most cells over the inputs: the field.
+  (INIT &field Order
+    (member ((:t Col))
+      (&field_count.size (:key *Col)))
+    (score ((:t Col) (:S Count))
+      (&field_count.size (:key *Col) (:N *Count))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&field.maximal (:t *C)))
+
+  ;; the sense in which each arm curls
+  (DET &sense SenseDomain)
+
+  (DET &plus_color
+    (ex_input (:Col *C))
+    (NOT (&field.maximal (:t C))))
+
+  (RULE &plus
+    (input *P *Col)
+    (&plus_color (:C Col)))
+
+  (RULE &off_center
+    (input *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (NOT (&plus (:P Q))))
+
+  (RULE &center
+    (input *P *Col)
+    (&bg (:C Col))
+    (NOT (&off_center P)))
+
+  ;; The distance from the center to the farthest grid edge: every grid cell
+  ;; lies within it of the center on both axes.
+  (INIT &reach Order
+    (member ((:t K))
+      (&center (:P *C))
+      (margin (:B C) *D *K))
+    (score ((:t K) (:S K))
+      (&center (:P *C))
+      (margin (:B C) *D *K)))
+
+  (RULE &within
+    (&reach.maximal (:t *R))
+    (input *P)
+    (margin (:B P) *D *K)
+    (<= K R))
+
+  (RULE &tip
+    (&center (:P *C))
+    (dir_elem *D)
+    (&within *K)
+    (jump (:P C) D K (:Q *P))
+    (&plus P)
+    (neighbor P D *Q)
+    (NOT (&plus (:P Q))))
+
+  (RULE &square
+    (&center (:P *C))
+    (diag_dirs *D1 *D2)
+    (&within (:K *K1))
+    (jump (:P C) (:D D1) (:K K1) (:Q *Q1))
+    (&within (:K *K2))
+    (jump (:P Q1) (:D D2) (:K K2) (:Q *P)))
+
+  (RULE &domain
+    (&square (:P *P2))
+    (neighbor (:P P2) (:D *D1) (:Q *Q1))
+    (neighbor (:P Q1) (:D *D2) (:Q *P)))
+
+  (RULE &lane
+    (&domain *P)
+    (perp_dir (:D *G) (:D2 *E1))
+    (neighbor P (:D G) (:Q *N))
+    (neighbor (:P N) (:D G) (:Q *Q2))
+    (opposite (:D E1) (:Opp *E2))
+    (neighbor (:P N) (:D E1) (:Q *Q3))
+    (neighbor (:P N) (:D E2) (:Q *Q4))
+    (neighbor (:P Q2) (:D E1) (:Q *Q5))
+    (neighbor (:P Q2) (:D E2) (:Q *Q6)))
+
+  (RULE &lane_cell
+    (&lane *N *G *Q2 *Q3 *Q4 *Q5 *Q6)
+    (OR ((= *Q N))
+        ((= Q Q2))
+        ((= Q Q3))
+        ((= Q Q4))
+        ((= Q Q5))
+        ((= Q Q6))))
+
+  ;; Each arm grows in its own walk, keyed by the heading it points toward.
+  ;; The plus turns onto itself under each quarter turn about its center, and
+  ;; so does the rule, so the four spirals do too: each cell an arm takes takes
+  ;; its images under those turns, the cells the other arms take in the same
+  ;; step, as walls for that arm.
+  (INIT &walk Unfold
+    (key ((OR ((&tip ^D *P))
+              ((&tip D)
+               (&plus P))
+              ((&tip D)
+               (&lane_cell *Q)
+               (&domain (:P Q))
+               (NOT (&plus (:P Q))))
+              ((&tip D)
+               (&lane_cell (:Q *Q7))
+               (&center (:P *C))
+               (relative (:Base C) (:X Q7) (:X_rel *V))
+               (c4_elem (:D *M))
+               (apply (:D M) (:P V) (:P_out *V2))
+               (compose (:A C) (:B V2) (:C *Q2)))))
+      (start ((:t P (:H D)))
+        (&tip D *P))
+      (initial_taken ((:item P))
+        (&tip D)
+        (&plus *P))
+      (initial_untaken ((:item Q))
+        (&tip D)
+        (&lane_cell *Q)
+        (&domain (:P Q))
+        (NOT (&plus (:P Q))))
+      (conflict ((:item Q) (:item2 Q2))
+        (&tip D)
+        (&lane_cell *Q)
+        (&center (:P *C))
+        (relative (:Base C) (:X Q) (:X_rel *V))
+        (c4_elem (:D *M))
+        (apply (:D M) (:P V) (:P_out *V2))
+        (compose (:A C) (:B V2) (:C *Q2)))
+      (step ((:t (:P P2) (:H H2)) (:t2 (:P N4) (:H G)))
+        (dir_elem D)
+        (&domain (:P *P2))
+        (&sense (:S *Sn))
+        (turn (:S Sn) (:D *H2) (:D2 *G1))
+        (&walk.taken (:t (:P P2) (:H H2)) (:item P2))
+        (turn (:S *Sn2) (:D H2) (:D2 *G3))
+        (NOT (&sense (:S Sn2)))
+        (neighbor (:P P2) (:D G1) (:Q *N1))
+        (neighbor (:P P2) (:D H2) (:Q *N2))
+        (neighbor (:P P2) (:D G3) (:Q *N3))
+        (OR ((= *N4 N1)
+             (= *G2 G1))
+            ((= N4 N2)
+             (= G2 H2)
+             (&lane_cell (:N N1) (:G G1) (:Q *B1))
+             (OR ((&walk.taken (:t (:P P2) (:H H2)) (:item B1)))
+                 ((&walk.excluded (:t (:P P2) (:H H2)) (:item B1)))))
+            ((= N4 N3)
+             (= G2 G3)
+             (&lane_cell (:N N1) (:G G1) (:Q *B12))
+             (OR ((&walk.taken (:t (:P P2) (:H H2)) (:item B12)))
+                 ((&walk.excluded (:t (:P P2) (:H H2)) (:item B12))))
+             (&lane_cell (:N N2) (:G H2) (:Q *B2))
+             (OR ((&walk.taken (:t (:P P2) (:H H2)) (:item B2)))
+                 ((&walk.excluded (:t (:P P2) (:H H2)) (:item B2))))))
+        (&lane (:N N4) (:G G2) *Q2 *Q3 *Q4 *Q5 *Q6)
+        (&walk.untaken (:t (:P P2) (:H H2)) (:item N4))
+        (&walk.untaken (:t (:P P2) (:H H2)) (:item Q2))
+        (&walk.untaken (:t (:P P2) (:H H2)) (:item Q3))
+        (&walk.untaken (:t (:P P2) (:H H2)) (:item Q4))
+        (&walk.untaken (:t (:P P2) (:H H2)) (:item Q5))
+        (&walk.untaken (:t (:P P2) (:H H2)) (:item Q6))
+        (dir_elem (:D *G))
+        (neighbor (:P P2) (:D G) (:Q N4)))
+      (take ((:t P H) (:item N))
+        (dir_elem D)
+        (&domain *P)
+        (&sense (:S *Sn))
+        (turn (:S Sn) (:D *H) (:D2 *G1))
+        (&walk.taken (:t P H) (:item P))
+        (turn (:S *Sn2) (:D H) (:D2 *G3))
+        (NOT (&sense (:S Sn2)))
+        (neighbor P (:D G1) (:Q *N1))
+        (neighbor P (:D H) (:Q *N2))
+        (neighbor P (:D G3) (:Q *N3))
+        (OR ((= *N N1)
+             (= *G G1))
+            ((= N N2)
+             (= G H)
+             (&lane_cell (:N N1) (:G G1) (:Q *B1))
+             (OR ((&walk.taken (:t P H) (:item B1)))
+                 ((&walk.excluded (:t P H) (:item B1)))))
+            ((= N N3)
+             (= G G3)
+             (&lane_cell (:N N1) (:G G1) (:Q *B12))
+             (OR ((&walk.taken (:t P H) (:item B12)))
+                 ((&walk.excluded (:t P H) (:item B12))))
+             (&lane_cell (:N N2) (:G H) (:Q *B2))
+             (OR ((&walk.taken (:t P H) (:item B2)))
+                 ((&walk.excluded (:t P H) (:item B2))))))
+        (&lane N G *Q2 *Q3 *Q4 *Q5 *Q6)
+        (&walk.untaken (:t P H) (:item N))
+        (&walk.untaken (:t P H) (:item Q2))
+        (&walk.untaken (:t P H) (:item Q3))
+        (&walk.untaken (:t P H) (:item Q4))
+        (&walk.untaken (:t P H) (:item Q5))
+        (&walk.untaken (:t P H) (:item Q6))))))
+
+(OUTPUT hug-the-spiral "a growing arm keeps a lane of one background cell between its new cell and every wall cell it does not grow from, by the 8-neighborhood: it turns toward `sense` where it can, goes straight where it cannot, and turns the other way where straight is blocked.")
+
+(OUTPUT clip "the output has the input's size; a cell is the plus's color where a spiral passes through it, and background elsewhere, the center cell included.")
+
+(RULE &wall
+  (input *P)
+  (&walk.taken (:item P)))
+
+(RULE &output
+  (OR ((&wall *P)
+       (&plus *Col))
+      ((input P)
+       (NOT (&wall P))
+       (&bg (:C Col))
+       (&center))))
+
+(OUT (&output ^P ^Col))

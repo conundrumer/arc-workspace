@@ -1,0 +1,129 @@
+;; inputs 11b451ca0532193025e74cc2de83178256f36162d50f5b929fdc2900b241b9fc programs/solvers/7d18a6fb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7d18a6fb
+
+(DET &gap TileDim)
+
+;; The legend's color.
+(DET &frame VanishedColor)
+
+(INIT &legend BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&frame (:C Col))))
+
+(RULE &legend_cell
+  (&legend.box *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &marker
+  (&legend_cell *P *P_inner)
+  (input P *Col)
+  (NOT (&frame (:C Col))))
+
+;; Quadrants per axis, and the gap between them.
+(DET &tiles TileDim)
+
+(INIT &quadrant_color_division Division
+  (cell ((:P P_inner))
+    (&marker *P_inner))
+  (parts (A N)
+    (axis_elem *A)
+    (&tiles (:D *N)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:D *G))))
+
+(RULE &canvas
+  (&legend_cell (:P_inner *P)))
+
+(DET &bg DominantColor)
+
+;; Each color's shape outside the legend, with its bounding box.
+(INIT &shape BoundingBox
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&legend_cell P)))
+    (cell (P)
+      (input *P Col)
+      (NOT (&bg (:C Col)))
+      (NOT (&legend_cell P)))))
+
+(RULE &quadrant_color
+  (&marker *P_inner *Col)
+  (&quadrant_color_division.tile (:P P_inner) (:P_outer *P_tile)))
+
+(RULE &quadrant_ink
+  (&quadrant_color *P_tile *Col)
+  (&shape.cell (:key Col) *P)
+  (&shape.box (:key Col) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+(ALTS $choice "where the extracted shapes go in the output" $Legend
+  (ALT $Concat
+    (INIT &abutted_tiling Tiling
+      (key ((OR ((&quadrant_ink *P_tile ^Col))
+                ((&quadrant_ink *P_intile Col))
+                ((axis_elem *A)
+                 (&quadrant_ink Col)
+                 (&gap (:D *G)))))
+        (outer ((:P P_tile))
+          (&quadrant_ink *P_tile Col))
+        (inner ((:P P_intile))
+          (&quadrant_ink *P_intile Col))
+        (gap (A G)
+          (axis_elem *A)
+          (&quadrant_ink Col)
+          (&gap (:D *G)))))
+
+    (RULE &abutted
+      (&quadrant_ink *P_tile *P_intile *Col)
+      (&abutted_tiling.cell (:key Col) (:P_outer P_tile) (:P_inner P_intile) (:P *P_grid_out)))
+
+    (RULE &ink
+      (&abutted (:P_grid_out *P) *Col))
+
+    ;; The assembled frame, gap cells included.
+    (INIT &assembled Frame
+      (extent (A N)
+        (&abutted (:P_grid_out *P))
+        (frame_extent P *A *N)))
+
+    (RULE &canvas
+      (&assembled.cell *P)))
+  (ALT $Stamp
+    (RULE &ink
+      (&canvas *P)
+      (&marker (:P_inner *M) *Col)
+      (&shape.cell (:key Col) (:P *P2))
+      (&shape.box (:key Col) *B)
+      (inside (:A P2) B)
+      (relative (:Base B) (:X P2) (:X_rel *P_intile))
+      (relative (:Base P_intile) (:X P) (:X_rel *B_stamp))
+      (relative (:Base B_stamp) (:X M) (:X_rel *P_rel))
+      (centered (:P P_rel)))))
+
+(INIT &ink_division Division
+  (cell ((:P P_grid_out))
+    (&canvas (:P *P_grid_out)))
+  (parts (A N)
+    (axis_elem *A)
+    (&tiles (:D *N)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:D *G))))
+
+(RULE &ink
+  (&ink_division.tile *P (:P_outer *P_tile) (:P_inner *P_intile))
+  (&quadrant_ink P_tile P_intile *Col))
+
+(RULE &output
+  (&canvas *P)
+  (OR ((&ink P *Col))
+      ((NOT (&ink P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

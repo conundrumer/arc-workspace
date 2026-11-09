@@ -1,0 +1,85 @@
+;; inputs 61f0ac33b2886f7c442ca1f2629f8a2f3a18f2a4d009162a2507885bc937f9e3 programs/solvers/256b0a75.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 256b0a75
+
+(DET &bg DominantColor)
+
+(DET &frame UnchangedColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&frame (:C Col))))
+
+(RULE &box_cell
+  (&bbox.box *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &fill
+  (&bbox.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B))
+  (NOT (&bg (:C Col)))
+  (NOT (&frame (:C Col))))
+
+(INIT &sweep Ray
+  (source (P)
+    (&bbox.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist (:P1 P) (:P2 B)))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (dir_elem *D)))
+
+(RULE &arm
+  (&bbox.box *B)
+  (input (:P *Src))
+  (inside (:A Src) B)
+  (same_dist *D (:P1 Src) (:P2 B))
+  (&sweep.ray *P D *K (:Origin Src))
+  (!= K 0))
+
+(RULE &mark
+  (&arm *P *D)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Each mark colors its arm outward from itself, as far as the next mark.
+(INIT &cast Ray
+  (key ((OR ((&mark *P ^D))
+            ((dir_elem D))))
+    (source (P)
+      (&mark *P D))
+    (node (P)
+      (dir_elem D)
+      (input *P)
+      (NOT (&mark D P)))
+    (dir (D)
+      (dir_elem D))))
+
+(RULE &painted
+  (&cast.ray (:key *D) *P (:Origin *Src))
+  (&arm P D)
+  (&mark (:P Src) *Col D))
+
+(RULE &output
+  (OR ((&bbox.box *B)
+       (input *P)
+       (OR ((inside (:A P) B)
+            (same_dist (:P1 P) (:P2 B))
+            (&frame (:C *Col)))
+           ((interior (:A P) B)
+            (&fill Col))))
+      ((&arm P)
+       (OR ((&painted P Col))
+           ((NOT (&painted P))
+            (&fill Col))))
+      ((input P Col)
+       (NOT (&box_cell P))
+       (NOT (&arm P)))))
+
+(OUT (&output ^P ^Col))

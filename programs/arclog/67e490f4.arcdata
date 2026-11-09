@@ -1,0 +1,5 @@
+;; inputs bec382a4fc395bb69a64f15987451e5af8a886c5e99d6c86c64405954bb5970a programs/solvers/67e490f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67e490f4
+
+(param &shape_sym Sym (SYM_D4))

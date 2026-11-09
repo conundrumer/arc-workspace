@@ -1,0 +1,87 @@
+;; inputs e4fda86b951da8c6d3fd202dab0d5b57f1c34d7e0c2c32542406d9a47a63d68c programs/solvers/20270e3b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 20270e3b
+
+(DET &bg ColorDomain)
+
+(DET &socket_color VanishedColor)
+
+(INIT &pieces Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+(RULE &wall
+  (&pieces.component *Id *P)
+  (input P *Col)
+  (NOT (&socket_color (:C Col))))
+
+(RULE &socket
+  (&pieces.component *Id *P)
+  (input P *Col)
+  (&socket_color (:C Col)))
+
+(INIT &socket_box BoundingBox
+  (key ((&socket ^Id *P))
+    (cell (P)
+      (&socket Id *P))))
+
+(RULE &seat
+  (&pieces.component (:Id *M) *P)
+  (&socket_box.box (:key (:Id M)) (:B *B_m))
+  (relative (:Base B_m) (:X P) (:X_rel *P_rel))
+  (&socket_box.box (:key (:Id *H)) (:B *B_h))
+  (!= H M)
+  (compose (:A B_h) (:B P_rel) (:C *P_reg))
+  (dir_elem *D)
+  (neighbor (:P P_reg) D (:Q *P_seat)))
+
+(RULE &laid_wall
+  (OR ((&seat *H *M *D)
+       (&wall (:Id H) *P *Col))
+      ((&seat H M D (:P *P2) (:P_seat P))
+       (&wall (:Id M) (:P P2) Col))))
+
+(RULE &laid_socket
+  (OR ((&seat *H *M *D)
+       (&socket (:Id H) *P))
+      ((&seat H M D (:P *P2) (:P_seat P))
+       (&socket (:Id M) (:P P2)))))
+
+(RULE &open
+  (&laid_socket *H *M *D *P)
+  (NOT (&laid_wall H M D P)))
+
+(RULE &figure
+  (&laid_wall *H *M *D *P *Col)
+  (NOT (&open H M D)))
+
+(INIT &figure_box BoundingBox
+  (key ((&figure ^H ^M *P))
+    (cell (P)
+      (&figure H M *P))))
+
+(RULE &painted
+  (&figure *H *M (:P *P2) *Col)
+  (&figure_box.box (:key H M) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(INIT &sheet Frame
+  (extent (A N)
+    (&figure_box.box (:key (:H *J_h) (:M *J_m)) *B)
+    (&figure_box.cell (:key (:H J_h) (:M J_m)) *P)
+    (box_extent B P *A *N)))
+
+(RULE &output
+  (&sheet.cell *P)
+  (OR ((&painted P *Col))
+      ((NOT (&painted P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -358,7 +358,7 @@ def worker(args):
                 try:
                     lo,hi=offsets[ci:ci+2]
                     gold=evaluator.from_stream(ids[lo:hi],list(map(int,flags[lo:hi])))
-                    relation_source_names=json.loads(gold.relation_source_names_json(str(MAIN_ROOT / 'work/arclog/gen'),task,case))
+                    relation_source_names=json.loads(gold.relation_source_names_json(str(MAIN_ROOT / 'programs/arclog'),task,case))
                     sexp=gold.sexp();dep=graph(sexp)
                     gold_relations=GoldRelations(evaluator,gold,temp,ci,dep,native_store)
                     points=gold.points()[:args.point_limit]

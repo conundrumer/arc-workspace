@@ -1,0 +1,58 @@
+;; inputs f0a8a3f25cb5b42247347746f50383aa446327b2b5232d081d56c3460828dff5 programs/solvers/7e4d4f7c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7e4d4f7c
+
+(INIT &bg_count Cardinality
+  (key ((input *P (:Col ^C)))
+    (member ((:m P))
+      (input *P (:Col C)))))
+
+(DET &header_dir DirDomain)
+
+(DET &out_h ConstOutDim)
+
+(DET &marker ChangedColor)
+
+;; Along-axis frame for the output: out_h cells on header_dir's axis.
+(INIT &out_along Frame
+  (key ((&header_dir *D)
+        (axis_of D ^A)
+        (&out_h *N))
+    (extent (A N)
+      (&header_dir *D)
+      (axis_of D A)
+      (&out_h *N))))
+
+(INIT &bg Order
+  (member ((:t C))
+    (&bg_count.size (:key *C)))
+  (score ((:t C) (:S N))
+    (&bg_count.size (:key *C) *N)))
+
+(RULE &out_cell
+  (&header_dir (:D *H_dir))
+  (axis_of (:D H_dir) *A)
+  (&out_along.cell (:key A) (:P *P_along))
+  (input (:P *P_in))
+  (split (:P P_in) A (:Across *P_across))
+  (compose (:A P_along) (:B P_across) (:C *P)))
+
+;; The tail row matches its input cells on the across line alone: it does
+;; not share depth-from-header with input row 0.
+(RULE &output
+  (&out_cell *P)
+  (&header_dir (:D *H_dir))
+  (opposite (:D H_dir) (:Opp *H_opp))
+  (OR ((NOT (margin (:B P) (:D H_opp) (:K 0)))
+       (input (:P *P_in) *Col)
+       (same_slab (:D H_dir) (:P1 P_in) (:P2 P)))
+      ((margin (:B P) (:D H_opp) (:K 0))
+       (axis_of (:D H_dir) *A)
+       (input (:P P_in) (:Col *Col_in))
+       (margin (:B P_in) (:D H_dir) (:K 0))
+       (same_line A (:P P_in) (:Q P))
+       (IF ((&bg.maximal (:t Col_in)))
+           ((= Col Col_in))
+           ((&marker (:C Col)))))))
+
+(OUT (&output ^P ^Col))

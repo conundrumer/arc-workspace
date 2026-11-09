@@ -1,0 +1,77 @@
+;; inputs 64aeb97ebc0e9f857f2826de13eb0d0c8ff66b7b36252aee087816d175bcf195 programs/solvers/896d5239.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 896d5239
+
+(DET &mark RarestColor)
+
+(DET &fill AnyOutNewColor)
+
+;; The most diagonal steps between consecutive arm marks.
+(DET &reach TileCount)
+
+(RULE &mark2
+  (input *P *Col)
+  (&mark (:C Col)))
+
+;; Marks sight each other along the diagonals, through whatever lies between.
+(INIT &sight Ray
+  (source (P)
+    (&mark2 *P))
+  (node (P)
+    (input *P))
+  (dir ((:D Diag))
+    (diag_dir_elem (:D *Diag))))
+
+(RULE &hop
+  (diag_dir_elem (:D *Diag))
+  (&sight.ray (:P *G) (:D Diag) *K (:Origin *G2))
+  (&mark2 (:P G))
+  (!= K 0)
+  (&reach (:N *R))
+  (<= K R))
+
+;; The arm marks: a chain of hops from the mark, the first hop starting it.
+(INIT &chain Propagation
+  (key ((OR ((&hop ^Diag (:G2 ^A) *G))
+            ((&mark2 (:P A))
+             (&hop Diag *G2 G))))
+    (source ((:n G))
+      (&hop Diag (:G2 A) *G))
+    (edge ((:a G2) (:b G))
+      (&mark2 (:P A))
+      (&hop Diag *G2 *G))))
+
+(RULE &one_armed
+  (&mark2 (:P *A))
+  (corner_dir (:C *Diag) *D)
+  (NOT (&chain.reached (:key A Diag))))
+
+(RULE &apex
+  (&mark2 (:P *A))
+  (dir_elem *D)
+  (NOT (&one_armed A D)))
+
+(RULE &outside
+  (&apex *A *D)
+  (input (:P *Q))
+  (corner_dir (:C *Diag) D)
+  (nearer (:D Diag) (:P A) Q))
+
+(RULE &filled
+  (&apex *A *D)
+  (input *P)
+  (NOT (&mark2 P))
+  (NOT (&outside A D (:Q P)))
+  (corner_dir (:C *Diag) D)
+  (&chain.reached (:key A Diag) (:n *G))
+  (margin (:B P) D (:K *Kq))
+  (margin (:B G) D (:K *Kg))
+  (>= Kq Kg))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

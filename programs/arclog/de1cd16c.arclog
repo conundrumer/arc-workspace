@@ -1,0 +1,129 @@
+;; inputs 0c0f671a2826e56aaaef058e9d46ab632d17b503bb65113f9f903995d0b34b05 programs/solvers/de1cd16c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; de1cd16c
+
+(INPUT rectangular-regions "the grid is tiled by axis-aligned rectangles, each filled with its own background color, and no two regions share a color."
+
+  (INIT &part Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col)))))
+
+(INPUT scattered-specks "cells of one speck color, which no region has as its fill, sit isolated inside the regions; no speck touches another speck or a region border."
+
+  (INIT &color_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &rarest Order
+    (member ((:t (:V Col) (:S N)))
+      (&color_count.size (:key *Col) *N))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&color_count.size (:key *Col) *N))))
+
+(INPUT unique-most "one region holds strictly more specks than every other region.")
+
+(OUTPUT count-specks "each region's speck count is the number of speck cells inside the bounding box of that region's fill cells.")
+
+(OUTPUT output-most "the output is an out_dim×out_dim grid filled with the fill color of the region with the most specks."
+
+  (INIT &color_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (input *Col)))
+
+  (RULE &same_neighbor
+    (input *P *Col)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (input (:P Q) Col))
+
+  (INIT &speck Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (NOT (&same_neighbor P))))
+
+  (RULE &region
+    (&speck.value)
+    (input *P *Col)
+    (NOT (&speck.value (:v Col)))
+    (&color_id.class (:a Col) (:Id *G)))
+
+  (INIT &box BoundingBox
+    (key ((&region (:G ^Id) *P))
+      (cell (P)
+        (&region (:G Id) *P))))
+
+  (RULE &speck_cell
+    (&speck.value (:v *Col))
+    (input *P Col))
+
+  (RULE &owned
+    (&box.box (:key *Id) *B)
+    (&speck_cell *P)
+    (inside (:A P) B))
+
+  (INIT &most_count Cardinality
+    (key ((&owned ^Id *P))
+      (member ((:m P))
+        (&owned Id *P))))
+
+  (DET &out_dim ConstOutDim)
+
+  (INIT &out_pos_frame Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&out_dim *N)))
+
+  (INIT &most Order
+    (member ((:t Id))
+      (&most_count.size (:key *Id)))
+    (score ((:t Id) (:S N))
+      (&most_count.size (:key *Id) *N)))
+
+  (RULE &winner
+    (&most.maximal (:t *Id))
+    (&region (:G Id) *P)
+    (input P *Col)))
+
+(ALTS $s "how the speck color is found" $IsolatedSpeck
+  (ALT $RarestSpeck
+    (INPUT scattered-specks "the speck color is the input's rarest color; undefined where two colors tie for rarest."
+      (INIT &speck Singleton
+        (member ((:v Col))
+          (&rarest.minimal (:t (:V *Col))))))))
+
+(ALTS $r "what one region is" $ColorRegion
+  (ALT $ComponentRegion
+    (INPUT rectangular-regions "each 4-connected component of one fill color is a region.")
+    (OUTPUT count-specks "a region's specks are the speck cells in its component's bounding box.")
+    (OUTPUT output-most "the output is the color of the component with the most specks; undefined where components of two colors tie at the most."
+      (RULE &region
+        (&speck.value)
+        (&part.component (:key *Col) *P (:Id *G))
+        (NOT (&speck.value (:v Col)))))))
+
+(ALTS $o "which region a speck counts toward" $BoxOwner
+  (ALT $NeighborOwner
+    (OUTPUT count-specks "a speck counts toward each fill color among its 4-neighbors."
+      (RULE &owned
+        (&speck_cell *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&region (:G *Id) (:P Q))))))
+
+(ALTS $t "the output where regions tie at the most specks" $UniqueMost
+  (ALT $TieAll
+    (INPUT unique-most "several regions may tie at the most specks.")
+    (OUTPUT output-most "the output holds one grid for each region tied at the most specks."
+
+      (RULE &tied
+        (&winner *Id)
+        (ONE)))
+    (RULE &output
+      (&tied *Id)
+      (&winner Id *Col)
+      (&out_pos_frame.cell *P))
+    (OUT (&output ^P ^Col))))
+
+(OUT (&out_pos_frame.cell ^P) (&winner ^Col))

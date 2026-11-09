@@ -1,0 +1,153 @@
+;; inputs 30c4e850afe9825a66c2a6748c8404fffa2948e1fbf88f364283880cd8045add programs/solvers/ce8d95cc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ce8d95cc
+
+(INPUT full-lines "on a field of background 0, straight lines of one color each run the full width (rows) or the full height (columns) of the grid; where two lines cross, the cell takes one of the two colors")
+
+(INPUT lines-apart "no two lines of one axis are adjacent; at least one row or column of background lies between them, and between each outermost line and the grid edge")
+
+(OUTPUT dedupe-rows "the output keeps the input's rows in order, with each run of identical adjacent rows kept once"
+
+  (RULE &cell_line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  (INIT &counts_count Cardinality
+    (key ((ex_input ^E *P ^Col)
+          (ex_output E))
+      (member ((:m P))
+        (ex_input E *P Col)
+        (ex_output E))))
+
+  ;; The field: the commonest color of each train input.
+  (INIT &counts Order
+    (key ((&counts_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&counts_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&counts_count.size (:key E *Col) *N))))
+
+  (DET &clash
+    (&counts.maximal (:t *Col))
+    (&counts.maximal (:key *E))
+    (NOT (&counts.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&counts.maximal (:t *C))
+    (NOT (&clash (:Col C))))
+
+  (RULE &bg_line
+    (&cell_line *P *A *L)
+    (input P *Col)
+    (&bg (:C Col))))
+
+(OUTPUT dedupe-columns "in the result of dedupe-rows, each run of identical adjacent columns is kept once"
+
+  ;; Line l differs from its neighbor toward d.
+  (RULE &boundary
+    (&cell_line *P *A *L)
+    (axis_of *D A)
+    (input P (:Col *C1))
+    (neighbor P D (:Q *P2))
+    (input (:P P2) (:Col *C2))
+    (!= C1 C2))
+
+  ;; A line's output distance from edge d: the flanks the case counts between
+  ;; the line and that edge.
+  (INIT &bands Cardinality
+    (key ((&cell_line *A ^L)
+          (axis_of ^D A))
+      (member ((:m (:L L2) D))
+        (&boundary D (:L *L2))
+        (axis_of D *A)
+        (&cell_line A L)
+        (OR ((= L2 L))
+            ((nearer D (:P L2) (:Q L)))))
+      (domain ()
+        (&cell_line *A L)
+        (axis_of D A))))
+
+  (RULE &place_axis
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&bands.size (:key D *L) *N)
+    (axis_of D (:A *Key_a))
+    (&bands.size (:key (:D D2) L) (:N *N2))
+    (axis_of (:D D2) (:A Key_a))
+    (axis_inset D (:K1 N) (:K2 N2) *B)))
+
+(ALTS $choice "which rows and columns the output keeps" $Dedupe
+  (ALT $GapCollapse
+    (OUTPUT dedupe-rows "each run of adjacent rows that hold a background cell is kept once, and every other row is kept; undefined where the rows of such a run differ")
+    (OUTPUT dedupe-columns "the same for columns, in the result of dedupe-rows"
+      ;; Line l and its neighbor toward d do not both hold a background cell.
+      (RULE &boundary
+        (&cell_line *A *L)
+        (axis_of *D A)
+        (neighbor (:P L) D (:Q *L2))
+        (&cell_line A (:L L2))
+        (OR ((NOT (&bg_line A L)))
+            ((NOT (&bg_line A (:L L2))))))))
+  (ALT $Rebuild
+    (OUTPUT dedupe-rows "each row that holds no background cell is a line, and the output draws each line once, in order, with one background row before the first, between each two and after the last; a background row is the input's rows that hold a background cell, undefined where they differ or where there is none"
+      (RULE &drawn
+        (&cell_line *A *L)
+        (NOT (&bg_line A L)))
+
+      ;; A line's output distance from edge d: the flanks the case counts between
+      ;; the line and that edge.
+      (INIT &bands Cardinality
+        (key ((OR ((&cell_line *A ^L)
+                   (axis_of ^D A))
+                  ((&drawn A L)
+                   (axis_of D A))))
+          (member ((:m (:L L2) (:D S)))
+            (OR ((&cell_line *A L)
+                 (axis_of D A)
+                 (&drawn A (:L *L2))
+                 (nearer D (:P L2) (:Q L))
+                 (axis_of (:D *S) A))
+                ((&drawn (:A *A2) L)
+                 (axis_of D (:A A2))
+                 (= L2 L)
+                 (= S D))))
+          (domain ()
+            (&cell_line *A L)
+            (axis_of D A))))
+
+      (RULE &placed
+        (&place_axis (:Key_a *A) A (:B *O)))
+
+      (INIT &frame Frame
+        (key ((&placed ^A *O)
+              (frame_extent (:P O) A *N))
+          (extent (A N)
+            (&placed A *O)
+            (frame_extent (:P O) A *N)))))
+    (OUTPUT dedupe-columns "the same for columns, each output cell taken from the crossing of its row's and its column's input lines")
+    (RULE &source
+      ;; An output background line no input line falls on takes the input's
+      ;; background lines.
+      (OR ((&frame.cell (:key *A) (:P *O))
+           (NOT (&placed A O))
+           (&bg_line A *L))
+          ((&place_axis (:Key_a A) L A (:B O)))))))
+
+(RULE &place
+  (&place_axis (:Key_a *A) *L (:A *A3) (:B *B1))
+  (perp (:A A3) *A2)
+  (&place_axis (:Key_a A) L (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &source
+  (&place_axis (:Key_a *A) *L A (:B *O)))
+
+(RULE &output
+  (&source (:A *A1) (:O *O1) (:L *L1))
+  (perp (:A A1) *A2)
+  (&source (:A A2) (:O *O2) (:L *L2))
+  (compose (:A L1) (:B L2) (:C *P2))
+  (input (:P P2) *Col)
+  (compose (:A O1) (:B O2) (:C *P)))
+
+(OUT (&output ^P ^Col))

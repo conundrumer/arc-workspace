@@ -1,0 +1,136 @@
+;; inputs 9e036d37dcb2178d465f15c638dc83b2695845c2d3dd8766f4629d0491cbc23d programs/solvers/f931b4a8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f931b4a8
+
+(param &bg Color (0))
+(param &quads number (2))
+(param &pattern_quad DiagDir (DIAG_BR))
+(param &fill_quad DiagDir (DIAG_BL))
+(param &count_quad (Axis DiagDir) (AXIS_V DIAG_TL) (AXIS_H DIAG_TR))
+(param &anchor DiagDir (DIAG_TL))
+(param &fill_anchor DiagDir (DIAG_TL) (DIAG_TR))
+
+(alts $t
+  (alt $TileByBbox
+    (witness hole-row-at-pattern-edge ordinary concept
+      (separates "pattern quadrant rows 1 and 3 are all bg, and the TL count (8) runs the output past the 3-row bbox of the pattern: tiling the whole quadrant gives rows alternating 1,6; tiling the bbox gives 1,6,1 repeated")
+      (input (grid
+        (8 0 8 0 4 0 4 0)
+        (8 0 8 0 0 0 0 0)
+        (8 0 8 0 4 0 0 4)
+        (8 0 8 0 0 0 0 0)
+        (6 6 6 6 1 1 1 1)
+        (6 6 6 6 0 0 0 0)
+        (6 6 6 6 1 1 1 1)
+        (6 6 6 6 0 0 0 0)))
+      (output $Quadrant (grid
+        (1 1 1 1)
+        (6 6 6 6)
+        (1 1 1 1)
+        (6 6 6 6)
+        (1 1 1 1)
+        (6 6 6 6)
+        (1 1 1 1)
+        (6 6 6 6)))
+      (output $TileByBbox (grid
+        (1 1 1 1)
+        (6 6 6 6)
+        (1 1 1 1)
+        (1 1 1 1)
+        (6 6 6 6)
+        (1 1 1 1)
+        (1 1 1 1)
+        (6 6 6 6))))))
+
+(alts $f
+  (alt $FillIndexWrap
+    (witness fill-index-past-fill-grid foreign $FillIndexWrap
+      (relaxed four-quadrants)
+      (separates "a 4x8 input with 2x4 quadrants whose TL count (8) needs 4 tile rows against a 2-row fill grid: the concept has no fill cell for tile rows 2 and 3 and is undefined; the wrapping model reads fill rows 0,1,0,1")
+      (input (grid
+        (8 8 8 8 6 6 0 0)
+        (8 8 8 8 6 6 0 0)
+        (1 1 1 1 4 0 0 4)
+        (5 5 5 5 4 4 4 4)))
+      (output $Direct undefined)
+      (output $FillIndexWrap (grid
+        (4 1 1 4)
+        (4 4 4 4)
+        (4 5 5 4)
+        (4 4 4 4)
+        (4 1 1 4)
+        (4 4 4 4)
+        (4 5 5 4)
+        (4 4 4 4))))))
+
+(alts $c
+  (alt $SeparateFillAnchor
+    (witness fill-read-from-other-corner borderline $SeparateFillAnchor
+      (separates "at fill_anchor = DIAG_BL the fill grid (rows 1,5,1,5) is read from its bottom-left corner while tiles count from the top-left: the concept gives tile rows filled 1,5,1,5; the separate-corner model gives 5,1,5,1")
+      (assign &fill_anchor (DIAG_BL))
+      (input (grid
+        (8 8 8 8 6 6 6 6)
+        (8 8 8 8 6 6 6 6)
+        (8 8 8 8 6 6 6 6)
+        (8 8 8 8 6 6 6 6)
+        (1 1 1 1 4 4 4 4)
+        (5 5 5 5 4 0 0 4)
+        (1 1 1 1 4 0 0 4)
+        (5 5 5 5 4 4 4 4)))
+      (output $SharedAnchor (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)))
+      (output $SeparateFillAnchor (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 5 5 4 4 5 5 4 4 5 5 4 4 5 5 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 1 1 4 4 1 1 4 4 1 1 4 4 1 1 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4))))
+    (witness fill-columns-differ ordinary concept
+      (separates "the fill grid's columns differ (1 and 5): the concept fills the tile columns 1,5 from the left, and the separate-corner model gives that grid and the grid that fills them 5,1")
+      (input (grid
+        (8 8 6 6)
+        (8 8 6 6)
+        (1 5 4 0)
+        (1 5 0 4)))
+      (output $SharedAnchor (grid
+        (4 1 4 5)
+        (1 4 5 4)
+        (4 1 4 5)
+        (1 4 5 4)))
+      (output $SeparateFillAnchor
+        (grid
+          (4 1 4 5)
+          (1 4 5 4)
+          (4 1 4 5)
+          (1 4 5 4))
+        (grid
+          (4 5 4 1)
+          (5 4 1 4)
+          (4 5 4 1)
+          (5 4 1 4))))))

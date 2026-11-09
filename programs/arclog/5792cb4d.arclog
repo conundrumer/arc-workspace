@@ -1,0 +1,38 @@
+;; inputs 042759e8ccb90b485351b25203432b816df0f160685a4d9e0c139254e5bfb8ce programs/solvers/5792cb4d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5792cb4d
+
+(DET &bg DominantColor)
+
+(RULE &node
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &link
+  (&node *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&node (:P Q)))
+
+;; A chain end is a cell whose links agree on one neighbor.
+(INIT &lone Singleton
+  (key ((&link ^P *Q))
+    (member ((:v Q))
+      (&link P *Q))))
+
+;; Each cell's distance along the chain from each end.
+(INIT &along Distance
+  (key ((&lone.value (:key (:P ^E))))
+    (source ((:n E))))
+  (edge ((:a P) (:b Q))
+    (&link *P *Q)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&along.distance (:key *E) (:n P) (:K *R))
+       (&along.distance (:key (:E *E2)) (:n *Q) (:K R))
+       (!= E2 E)
+       (input (:P Q) Col))))
+
+(OUT (&output ^P ^Col))

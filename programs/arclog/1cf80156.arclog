@@ -1,0 +1,18 @@
+;; inputs 47058a99b8f1bd12cee1d34bff5aec51328188184fdd5682eed399cf1cc857dc programs/solvers/1cf80156.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1cf80156
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &output
+  (input (:P *P_grid) *Col)
+  (&bbox.box *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P)))
+
+(OUT (&output ^P ^Col))

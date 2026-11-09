@@ -1,0 +1,201 @@
+;; inputs e459e2372b31c4d38b9caa39875acb7c2ca3a55330e2fb0c750e4b1c1b9ee13b programs/solvers/e73095fd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e73095fd
+
+(INPUT wire-network "on a field of `background`, cells of `wire` form 1-wide straight lines and hollow rectangular box outlines; each line runs from a box side or the grid edge to a box side or the grid edge, and lines cross or join one another at junctions.")
+
+(INPUT box-outline "a box is a rectangular outline of `wire`, 1 cell thick, whose inside holds only `background`; each side ends at the box's corners, where no line continues the side, and a line meets a box only part way along a side."
+
+  (DET &changed
+    (ex_input *E *P (:Col *C1))
+    (ex_output E P (:Col *C2))
+    (!= C1 C2))
+
+  (DET_OR_RULE &background DominantColor
+    (&changed *E *P)
+    (ex_input E P (:Col *C)))
+
+  (RULE &bg_cell
+    (input *P *Col)
+    (&background (:C Col)))
+
+  (INIT &region Connectivity
+    (node (P)
+      (&bg_cell *P)))
+
+  (INIT &region_box BoundingBox
+    (key ((&region.component *P ^Id))
+      (cell (P)
+        (&region.component *P Id))))
+
+  (RULE &region_gap
+    (&region_box.box (:key *Id) *B)
+    (input *P)
+    (inside (:A P) B)
+    (NOT (&region.component P Id)))
+
+  (RULE &rect_region
+    (&region_box.box (:key *Id) *B)
+    (NOT (&region_gap Id)))
+
+  ;; The rectangle that two rectangular regions span, from one's top-left
+  ;; cell to the other's bottom-right cell.
+  (INIT &span BoundingBox
+    (key ((OR ((&rect_region (:Id ^Id1) *B)
+               (&rect_region (:Id ^Id2)))
+              ((&rect_region (:Id Id1))
+               (&rect_region (:Id Id2) B))))
+      (cell ((:P B))
+        (OR ((&rect_region (:Id Id1) *B)
+             (&rect_region (:Id Id2)))
+            ((&rect_region (:Id Id1))
+             (&rect_region (:Id Id2) B)))))))
+
+(INPUT clipped-box "a box may run past the grid edge, and then the grid edge stands in for the sides and corners that lie off the grid.")
+
+(OUTPUT fill-box-inside "each `background` cell inside a box becomes `fill`; every other cell keeps its color. A box is a `background` region that is a rectangle, whose ring of cells is `wire` where it lies on the grid, and whose ring corners on the grid are true corners, with no `wire` past the corner on either axis."
+
+  (DET_OR_RULE &wire "the color of the lines and the box outlines" RarestColor
+    (&changed *E *P)
+    (neighbor P *Q)
+    (ex_input E (:P Q) (:Col *C))
+    (NOT (&changed E (:P Q))))
+
+  (RULE &wire_cell
+    (input *P *Col)
+    (&wire (:C Col)))
+
+  (RULE &box
+    (&rect_region *B))
+
+  (RULE &open_side
+    (&box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (neighbor P D *Q)
+    (input (:P Q))
+    (NOT (&wire_cell (:P Q))))
+
+  (RULE &ring_corner
+    (&box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_corner *D (:P1 P) (:P2 B))
+    (neighbor P D *Q)
+    (input (:P Q)))
+
+  (RULE &ring_corner_open
+    (&ring_corner *B *Q)
+    (NOT (&wire_cell (:P Q))))
+
+  (RULE &walled
+    (&box *B)
+    (NOT (&open_side B))
+    (NOT (&ring_corner_open B)))
+
+  (RULE &junction
+    (&ring_corner *B *D *Q)
+    (corner_dir (:C D) (:D *D1))
+    (neighbor (:P Q) (:D D1) (:Q *X))
+    (&wire_cell (:P X))))
+
+(ALTS $clip "how much of a box that the grid edge cuts must lie on the grid" $AnyPart
+  (ALT $CornerShown
+    (INPUT clipped-box "a box shows at least one ring corner on the grid")
+    (RULE &clip_ok
+      (&walled *B)
+      (&ring_corner B)))
+  (ALT $SideShown
+    (INPUT clipped-box "a box shows at least two ring corners on the grid, and so one whole side")
+    (RULE &clip_ok
+      (&walled *B)
+      (&ring_corner B (:D *D1))
+      (&ring_corner B (:D *D2))
+      (!= D1 D2))))
+
+(ALTS $corner "what a box's ring corners on the grid must be" $EveryTrueCorner
+  (ALT $SomeTrueCorner
+    (INPUT box-outline "where ring corners show on the grid, at least one is a true corner, so a line may continue a side past a corner")
+    (RULE &corner_ok
+      (&walled *B)
+      (OR ((NOT (&ring_corner B)))
+          ((&ring_corner B *D)
+           (NOT (&junction B D)))))))
+
+(ALTS $inside "what a box's inside may hold" $BackgroundOnly
+  (ALT $OutlineBox
+    (INPUT box-outline "a box is the rectangle its `wire` ring bounds, and its inside may be crossed by `wire` lines that run straight from side to side"
+      (RULE &span_cell
+        (&span.box *B)
+        (input *P)
+        (inside (:A P) B))
+
+      (RULE &broken_line
+        (&span_cell *B *P)
+        (NOT (&wire_cell P))
+        (split P *A *Across))
+
+      (RULE &stray
+        (&span_cell *B *P)
+        (NOT (&bg_cell P))
+        (split P *A (:Across *X))
+        (&broken_line B A (:Across X))
+        (perp A *A2)
+        (split P (:A A2) (:Across *X2))
+        (&broken_line B (:A A2) (:Across X2)))
+
+      (RULE &box
+        (&span.box *B)
+        (NOT (&stray B))))))
+
+(ALTS $linked "which boxes fill" $EveryBox
+  (ALT $LinkedBox
+    (OUTPUT fill-box-inside "only a box that some line meets fills"
+      (RULE &ring
+        (&box *B)
+        (input *P)
+        (inside (:A P) B)
+        (neighbor P *Q)
+        (input (:P Q))
+        (NOT (inside (:A Q) B)))
+
+      (RULE &met
+        (&ring *B *Q)
+        (dir_elem *D)
+        (neighbor (:P Q) D (:Q *W))
+        (&wire_cell (:P W))
+        (NOT (inside (:A W) B))
+        (NOT (&ring B (:Q W)))))
+    (RULE &linked_ok
+      (&walled *B)
+      (&met B))))
+
+(RULE &clip_ok
+  (&walled *B))
+
+(RULE &corner_ok
+  (&walled *B)
+  (NOT (&junction B)))
+
+(RULE &linked_ok
+  (&walled *B))
+
+(RULE &filled
+  (&clip_ok *B)
+  (&corner_ok B)
+  (&linked_ok B)
+  (&bg_cell *P)
+  (inside (:A P) B))
+
+(DET &fill
+  (&changed *E *P)
+  (ex_output E P (:Col *C)))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&fill (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

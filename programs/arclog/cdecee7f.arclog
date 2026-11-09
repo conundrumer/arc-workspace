@@ -1,0 +1,248 @@
+;; inputs 9533eacad41660295331b4f01d0964be37831700108ebe67aebdc30944b07ba0 programs/solvers/cdecee7f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cdecee7f
+
+(INPUT scattered-dots "on a 10×10 field of &bg, a set of single colored cells, no two touching, even at a corner, no two in the same line across &scan_dir, and no more of them than the cells of a &out_size grid"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &not_field
+    (ex_input *Col)
+    (ex_output *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &bg DominantColor
+    (ex_input (:Col *C))
+    (NOT (&not_field (:Col C))))
+
+  ;; The edge the dots are ranked from.
+  (DET &scan_dir DirDomain)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (DET &out_size
+    (ex_output *P)
+    (frame_extent P *A *N))
+
+  (INIT &group4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (INIT &group8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT scan-order "the dots are ranked by their distance from the &scan_dir edge of the input")
+
+(OUTPUT snake-fill "the output is a &out_size grid whose cells, in a snake path, take the dots' colors in rank order: the path starts at the &fill_corner corner, runs along &fill_axis to the far edge, steps one line across, and runs back, each line in the opposite direction from the one before"
+
+  ;; The output corner the snake path starts at.
+  (DET &fill_corner DiagDirDomain)
+
+  ;; The axis of the path's lines.
+  (DET &fill_axis AxisDomain)
+
+  (INIT &cell_id Quotient
+    (equivalent ((:a P) (:b P))
+      (&ink *P)))
+
+  (RULE &dot_cell
+    (&cell_id.class (:a *P) *Id))
+
+  (INIT &frame Frame
+    (extent (A N)
+      (&out_size *A *N)))
+
+  (RULE &canvas
+    (&frame.cell *P))
+
+  (RULE &course
+    (&fill_corner (:D *C))
+    (&fill_axis *A)
+    (diag_dirs (:D C) A (:D1 *E) (:D2 *E_step))
+    (opposite (:D E) (:Opp *D))
+    (opposite (:D E_step) (:Opp *D_step)))
+
+  ;; The path's place of each cell: its steps from the start corner.
+  (INIT &walk Distance
+    (edge ((:a P D) (:b (:P Q) (:D D2)))
+      (&canvas *P)
+      (&fill_axis *A)
+      (axis_of *D A)
+      (&course *D_step)
+      (OR ((margin (:B P) D (:K 0))
+           (NOT (margin (:B P) (:D D_step) (:K 0)))
+           (neighbor P (:D D_step) *Q)
+           (opposite D (:Opp *D2)))
+          ((NOT (margin (:B P) D (:K 0)))
+           (neighbor P D Q)
+           (= D2 D))))
+    (source ((:n P D))
+      (&canvas *P)
+      (&fill_corner (:D *C))
+      (corner_dist P (:Diag C) (:K 0))
+      (&course *D)))
+
+  (RULE &side
+    (input *P)
+    (axis_elem *A)
+    (OR ((sub_extent P A *K))
+        ((frame_extent P A (:N K)))))
+
+  (INIT &square Frame
+    (key ((&side ^K)
+          (perp *A *A2))
+      (extent (A (:N K))
+        (&side K)
+        (axis_elem *A))))
+
+  (INIT &square_size Cardinality
+    (key ((&square.cell (:key ^K) *P))
+      (member ((:m P))
+        (&square.cell (:key K) *P))))
+
+  (INIT &dot_count Cardinality
+    (member ((:m Id))
+      (&dot_cell *Id)))
+
+  (INIT &least Order
+    (member ((:t K))
+      (&square_size.size (:key *K) *N)
+      (&dot_count.size (:N *M))
+      (<= M N))
+    (score ((:t K) (:S K))
+      (&square_size.size (:key *K) *N)
+      (&dot_count.size (:N *M))
+      (<= M N))))
+
+(OUTPUT empty-rest "the output cells past the last dot on the path are &bg"
+
+  (INIT &dot_box BoundingBox
+    (key ((&dot_cell ^Id *P))
+      (cell (P)
+        (&dot_cell Id *P))))
+
+  (RULE &reach
+    (&dot_box.box (:key *Id) *B)
+    (&scan_dir *D)
+    (margin B D *K))
+
+  (RULE &tied
+    (&reach (:Id *Id1) *K)
+    (&reach (:Id *Id2) K)
+    (!= Id1 Id2))
+
+  (INIT &scan Order
+    (member ((:t Id))
+      (&dot_cell *Id))
+    (before ((:a A) (:b B))
+      (&reach (:Id *A) (:K *K1))
+      (&reach (:Id *B) (:K *K2))
+      (< K1 K2)))
+
+  (RULE &dot_rank
+    (&scan.rank (:t *Id) *R)
+    (NOT (&tied)))
+
+  (INIT &last Order
+    (member ((:t R))
+      (&dot_rank *R))
+    (score ((:t R) (:S R))
+      (&dot_rank *R))))
+
+(ALTS $unit "what one dot is" $Cell
+  (ALT $Objects
+    (INPUT scattered-dots "each connected group of cells of one color is a dot, which takes its color and is ranked by its line nearest the &scan_dir edge; undefined where two groups share that line"
+      (RULE &dot_cell
+        (&group4.component *P *Id)))
+    (ALTS $adj "which cells of a group touch" $Adj4
+      (ALT $Diag8
+        (INPUT scattered-dots "cells that meet at a corner join one group"
+          (RULE &dot_cell
+            (&group8.component *P *Id)))))))
+
+(ALTS $path "which output cell each rank takes" $Snake
+  (ALT $Snake
+    (ALTS $size "the output's size" $StoredSize
+      (ALT $FitSquare
+        (OUTPUT snake-fill "the output is the least square with at least as many cells as there are dots"
+          (RULE &canvas
+            (&least.minimal (:t *K))
+            (&square.cell (:key K) *P))))))
+  (ALT $StoredPath
+    (OUTPUT snake-fill "a stored table &fill_order gives the output cell of each rank, and the output's frame is the frame of those cells"
+      (DET &dot_order_elem
+        (ex_input *E *P *Col)
+        (ex_output E)
+        (NOT (&bg (:C Col))))
+
+      ;; The dots of each train input, ranked by their distance from the scan
+      ;; edge.
+      (INIT &dot_order Order
+        (key ((&dot_order_elem ^E *P))
+          (member ((:t P))
+            (&dot_order_elem E *P))
+          (score ((:t P) (:S K))
+            (&dot_order_elem E *P)
+            (&scan_dir *D)
+            (margin (:B P) D *K))))
+
+      (INIT &last_dot Order
+        (key ((&dot_order.rank (:key ^E) *R))
+          (member ((:t R))
+            (&dot_order.rank (:key E) *R))
+          (score ((:t R) (:S R))
+            (&dot_order.rank (:key E) *R))))
+
+      (DET &order_cand
+        (ex_output *P)
+        (&dot_order.rank *R))
+
+      (DET &order_clash
+        (&order_cand *P *R)
+        (ex_output *E P *Col)
+        (OR ((&dot_order.rank (:key E) (:t *Q) R)
+             (ex_input E (:P Q) (:Col *Col2))
+             (!= Col Col2))
+            ((&last_dot.maximal (:key E) (:t *R2))
+             (> R R2)
+             (NOT (&bg (:C Col))))))
+
+      (DET &fill_order
+        (&order_cand *P *R)
+        (NOT (&order_clash P R))))
+    (RULE &slot
+      (&fill_order *P *R))))
+
+(RULE &slot
+  (&walk.distance (:n *P) (:K *R)))
+
+(RULE &output
+  (&slot *P *R)
+  (OR ((&dot_rank *Id R)
+       (&dot_cell Id (:P *Q))
+       (input (:P Q) *Col))
+      ((&last.maximal (:t *R2))
+       (> R R2)
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

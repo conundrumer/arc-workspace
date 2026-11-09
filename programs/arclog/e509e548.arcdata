@@ -1,0 +1,181 @@
+;; inputs a6a43d70a62ff9add77b948fe30508323238565b5e3634030590d5d7d2f36473 programs/solvers/e509e548.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e509e548
+
+(param &bg Color (0))
+(param &l_color Color (1))
+(param &u_color Color (6))
+(param &other_color Color (2))
+(param &corner_color (number Color) (1 1) (2 6) (3 2))
+
+(alts $c
+  (alt $CornerCount
+    (witness t-no-bend variant concept
+      (separates "a T drawing whose three arms meet at one junction and that has no bend: as a branched drawing it is red; it has two corners, so the corner table colors it magenta")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $AnyTwoBends $Kind $PathNotL (grid
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $CornerCount (grid
+        (0 0 0 0 0 0 0)
+        (0 6 6 6 6 6 0)
+        (0 0 0 6 0 0 0)
+        (0 0 0 6 0 0 0)
+        (0 0 0 6 0 0 0)
+        (0 0 0 0 0 0 0)))))
+  (alt $AnyTwoBends
+    (witness z-path variant concept
+      (relaxed three-kinds)
+      (separates "a path with two bends that turn opposite ways: it is not a U, so the concept colors it red; the readings that count bends or corners, and the reading that makes every unbranched non-L magenta, color it magenta")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 3 3 3 0 0 0)
+        (0 0 0 3 0 0 0)
+        (0 0 0 3 3 3 0)
+        (0 0 0 0 0 0 0)))
+      (output $Kind (grid
+        (0 0 0 0 0 0 0)
+        (0 2 2 2 0 0 0)
+        (0 0 0 2 0 0 0)
+        (0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0)))
+      (output $AnyTwoBends $CornerCount $PathNotL (grid
+        (0 0 0 0 0 0 0)
+        (0 6 6 6 0 0 0)
+        (0 0 0 6 0 0 0)
+        (0 0 0 6 6 6 0)
+        (0 0 0 0 0 0 0)))))
+  (alt $PathNotL
+    (witness three-bend-path variant concept
+      (relaxed three-kinds)
+      (separates "a path with three bends that turn the same way: the concept, the bend-count reading and the corner table (three corners) color it red; the reading that makes every unbranched non-L magenta colors it magenta; the reading defined on the three seen kinds alone is undefined")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 3 3 3 3 0)
+        (0 0 0 0 3 0)
+        (0 3 0 0 3 0)
+        (0 3 3 3 3 0)
+        (0 0 0 0 0 0)))
+      (output $AnyTwoBends $CornerCount $Kind (grid
+        (0 0 0 0 0 0)
+        (0 2 2 2 2 0)
+        (0 0 0 0 2 0)
+        (0 2 0 0 2 0)
+        (0 2 2 2 2 0)
+        (0 0 0 0 0 0)))
+      (output $PathNotL (grid
+        (0 0 0 0 0 0)
+        (0 6 6 6 6 0)
+        (0 0 0 0 6 0)
+        (0 6 0 0 6 0)
+        (0 6 6 6 6 0)
+        (0 0 0 0 0 0))))))
+
+(alts $j
+  (alt $Corner8
+    (witness corner-contact borderline concept
+      (relaxed thin-drawings)
+      (separates "an L and a U that touch at one corner: under 4-adjacency they are two drawings, blue and magenta; under 8-adjacency they are one drawing of no seen kind, red")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 0)
+        (0 3 3 0 0 0 0)
+        (0 0 0 3 0 3 0)
+        (0 0 0 3 0 3 0)
+        (0 0 0 3 3 3 0)
+        (0 0 0 0 0 0 0)))
+      (output $Edge4 (grid
+        (0 0 0 0 0 0 0)
+        (0 1 0 0 0 0 0)
+        (0 1 0 0 0 0 0)
+        (0 1 1 0 0 0 0)
+        (0 0 0 6 0 6 0)
+        (0 0 0 6 0 6 0)
+        (0 0 0 6 6 6 0)
+        (0 0 0 0 0 0 0)))
+      (output $Corner8 (grid
+        (0 0 0 0 0 0 0)
+        (0 2 0 0 0 0 0)
+        (0 2 0 0 0 0 0)
+        (0 2 2 0 0 0 0)
+        (0 0 0 2 0 2 0)
+        (0 0 0 2 0 2 0)
+        (0 0 0 2 2 2 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (separates "`bg=DominantColor` from the stored value: train 0 with 0 and 4 swapped")
+      (input (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 3 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 4 4)
+        (4 4 4 3 4 4 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 3 3 3 3 4 4 4 4 4 3 3 3 4 4 4 4 4 4)
+        (4 4 4 3 4 4 4 4 4 4 4 4 3 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 3 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 3 3 3 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 3 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 3 4 4 4)
+        (4 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 4 4 4)
+        (4 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 3 4 4 4)
+        (3 3 3 3 4 4 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 3 4 4 4 4 4 4 4 4 3 3 3 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 4 3 4 4 4)
+        (4 4 3 4 4 4 4 4 4 4 4 4 4 4 4 3 4 3 4 4 4)
+        (4 3 3 4 4 4 4 4 4 4 4 4 4 4 4 4 4 3 4 4 4)))
+      (output $AnyTwoBends ($Kind &bg=$Stored) $PathNotL (grid
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2 2)))
+      (output $CornerCount undefined)
+      (output &bg=$Derived (grid
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 1 1 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 1 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 1 4 4)
+        (4 4 4 2 4 4 2 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 2 2 2 2 4 4 4 4 4 6 6 6 4 4 4 4 4 4)
+        (4 4 4 2 4 4 4 4 4 4 4 4 6 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 6 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 6 6 6 4 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 2 2 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 2 4 4 4 4 4 4 4 4 4 4 4 4 4 4 6 6 4 4 4)
+        (4 2 4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 6 4 4 4)
+        (4 2 4 4 4 4 4 4 4 4 4 4 4 4 4 4 6 6 4 4 4)
+        (2 2 2 2 4 4 1 1 1 1 1 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 1 4 4 4 4 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 4 4 1 4 4 4 4 4 4 4 4 6 6 6 4 4 4)
+        (4 4 4 4 4 4 4 4 4 4 4 4 4 4 4 6 4 6 4 4 4)
+        (4 4 1 4 4 4 4 4 4 4 4 4 4 4 4 6 4 6 4 4 4)
+        (4 1 1 4 4 4 4 4 4 4 4 4 4 4 4 4 4 6 4 4 4))))))

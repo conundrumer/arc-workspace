@@ -1,0 +1,159 @@
+;; inputs 067fb34ef68f732e002e9c868dde4931f80f35624fa80aff4d961a969a40db7a programs/solvers/9b2a60aa.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9b2a60aa
+
+(INPUT shape "the ink holds one shape of one color, connected with its diagonals, and every other ink cell is a marker: a cell no ink touches")
+
+(INPUT line "the markers lie on one row or one column")
+
+(INPUT own "exactly one marker has the shape's color")
+
+(OUTPUT slots "walked from the shape's marker, the marker line unrolls into a line of slots: a marker takes the shape's extent along the line, a gap cell takes one cell, and the shape's marker's slot is the shape's own box")
+
+(OUTPUT copies "each marker's slot holds a copy of the shape in the marker's color, at the shape's place across the line")
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (DET &bg DominantColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &shape
+    (&ink *P)
+    (neighbor P *D *Q)
+    (&ink (:P Q)))
+
+  (RULE &marker
+    (&ink *P)
+    (NOT (&shape P)))
+
+  (INIT &shape_box BoundingBox
+    (cell (P)
+      (&shape *P)))
+
+  (RULE &own_marker
+    (&marker *P)
+    (input P *Col)
+    (&shape (:P *Q))
+    (input (:P Q) Col))
+
+  (RULE &inner_step
+    (&shape_box.box *B)
+    (input (:P *C))
+    (inside (:A C) B)
+    (relative (:Base B) (:X C) (:X_rel *C_rel))
+    (neighbor (:P C) *D (:Q *C2))
+    (inside (:A C2) B)
+    (relative (:Base B) (:X C2) (:X_rel *C2_rel))
+    (opposite D (:Opp *O))
+    (margin (:B C_rel) (:D O) (:K *I))
+    (margin (:B C2_rel) (:D O) (:K *I2)))
+
+  (RULE &inner_end
+    (&shape_box.box *B)
+    (input (:P *C))
+    (inside (:A C) B)
+    (relative (:Base B) (:X C) (:X_rel *C_rel))
+    (opposite *D (:Opp *O))
+    (margin (:B C_rel) (:D O) (:K *I))
+    (NOT (&inner_step D I)))
+
+  (RULE &aligned
+    (&marker *P)
+    (&marker (:P *Q))
+    (axis_elem *A)
+    (same_line A P Q))
+
+  (RULE &bent
+    (&marker *P)
+    (&marker (:P *Q))
+    (axis_elem *A)
+    (NOT (&aligned A P Q)))
+
+  (RULE &line_axis
+    (axis_elem *A)
+    (NOT (&bent A)))
+
+  (RULE &walk_start
+    (&own_marker *P)
+    (&line_axis *A)
+    (axis_of *D A))
+
+  ;; The walk unrolls the marker line: a marker spans the shape's extent along
+  ;; the line, and a gap cell spans one cell.
+  (INIT &unroll Distance
+    (key ((OR ((&walk_start ^D *P))
+              ((&walk_start D)
+               (&marker P)
+               (&inner_step D *I *I2))
+              ((&walk_start D)
+               (OR ((&marker P)
+                    (&inner_end D (:I *I3)))
+                   ((input P)
+                    (NOT (&marker P))
+                    (= I3 0)))
+               (neighbor P D *Q)
+               (input (:P Q)))))
+      (edge ((:a P I) (:b (:P P2) (:I I2)))
+        (OR ((&walk_start D)
+             (OR ((&marker *P)
+                  (&inner_end D *I))
+                 ((input P)
+                  (NOT (&marker P))
+                  (= I 0)))
+             (neighbor P D (:Q *P2))
+             (input (:P P2))
+             (= *I2 0))
+            ((&walk_start D)
+             (&marker P)
+             (&inner_step D I I2)
+             (= P2 P))))
+      (source ((:n P I))
+        (&walk_start D *P)
+        (= *I 0))))
+
+  (RULE &slot
+    (&unroll.distance (:key *D) (:n *P (:I 0)) (:K *N))
+    (&shape_box.box (:B *B3))
+    (jump (:P B3) D (:K N) (:Q *B)))
+
+  (RULE &copy
+    (&marker (:P *Q))
+    (input (:P Q) *Col)
+    (&slot (:P Q) *B)
+    (&shape (:P *P_in))
+    (&shape_box.box (:B *B_s))
+    (inside (:A P_in) (:B B_s))
+    (relative (:Base B_s) (:X P_in) (:X_rel *P_rel))
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel P_rel))))
+
+(ALTS $w "the walk's reach from the shape's marker: the marker line, or all four directions" $Line
+  (ALT $FourDir
+    (OUTPUT slots "walked from the shape's marker toward each of the four edges, the markers along each walk unroll into slots the same way"
+      (RULE &walk_start
+        (&own_marker *P)
+        (dir_elem *D)))))
+
+(ALTS $o "which color a cell takes where a copy lands on input ink" $Stamp
+  (ALT $Fill
+    (OUTPUT keep "input ink keeps its color, and a copy paints only background cells")
+    (RULE &output
+      ;; Input ink keeps its color; a copy paints only background.
+      (OR ((&copy *P *Col)
+           (input P (:Col *C0))
+           (&bg (:C C0)))
+          ((input P Col)
+           (OR ((NOT (&bg (:C Col))))
+               ((NOT (&copy P)))))))))
+
+(RULE &output
+  ;; A copy paints over the input.
+  (OR ((&copy *P *Col))
+      ((input P Col)
+       (NOT (&copy P)))))
+
+(OUT (&output ^P ^Col))

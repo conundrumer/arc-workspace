@@ -1,0 +1,187 @@
+;; inputs d647d456bed14cb7270e65f960e3f104bb87edea8f34960856a73f74327b6b4d programs/solvers/9b5080bb.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9b5080bb
+
+(INPUT panels "two panels of distinct colors, each one region of one color, hold figures of a third color; a figure lies inside one panel, touching no other region")
+
+(INPUT figure "a figure is a rectangle with single-cell defects on its sides: a bump, a figure cell just outside a side, or a dent, a side cell the figure lacks; each side lies where most of the figure's lines end"
+
+  ;; The regions of one color.
+  (INIT &regions Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &touches
+    (&regions.component *P *Id)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (&regions.component (:P Q) (:Id *Id2))
+    (!= Id Id2))
+
+  ;; The one region beside a figure: its panel.
+  (INIT &panel_of Singleton
+    (key ((&touches ^Id *Id2))
+      (member ((:v Id2))
+        (&touches Id *Id2))))
+
+  (RULE &figure
+    (&panel_of.value (:key *Id))
+    (&regions.component *P Id))
+
+  ;; The figure's extent on each of its lines.
+  (INIT &line_box BoundingBox
+    (key ((&figure ^Id *P)
+          (axis_elem ^A)
+          (split P A (:Across ^L)))
+      (cell (P)
+        (&figure Id *P)
+        (split P A (:Across L)))))
+
+  (INIT &side_end_count Cardinality
+    (key ((&line_box.box (:key ^Id *A *L) *B)
+          (axis_of ^D A)
+          (margin B D ^K))
+      (member ((:m L))
+        (&line_box.box (:key Id *A *L) *B)
+        (axis_of D A)
+        (margin B D K))))
+
+  ;; Where most of the figure's lines end toward each side.
+  (INIT &side_end Order
+    (key ((&side_end_count.size (:key ^Id ^D *K)))
+      (member ((:t K))
+        (&side_end_count.size (:key Id D *K)))
+      (score ((:t K) (:S N))
+        (&side_end_count.size (:key Id D *K) *N))))
+
+  ;; The side of the square a body cell lies in.
+  (DET &square_side TileDim)
+
+  (INIT &square_frame Frame
+    (extent (A N)
+      (axis_elem *A)
+      (&square_side (:D *N))))
+
+  ;; The square blocks of each figure.
+  (INIT &block Occurrences
+    (key ((OR ((&figure ^Id *P))
+              ((&figure Id)
+               (&square_frame.cell (:P *S)))))
+      (cell (P)
+        (&figure Id *P))
+      (shape ((:P S))
+        (&figure Id)
+        (&square_frame.cell (:P *S)))))
+
+  (RULE &body
+    (&block.occurrence (:key *Id) (:P *M))
+    (&square_frame.cell (:P *S))
+    (compose (:A M) (:B S) (:C *P)))
+
+  (INIT &body_box BoundingBox
+    (key ((&body ^Id *P))
+      (cell (P)
+        (&body Id *P))))
+
+  (INIT &figure_box BoundingBox
+    (key ((&figure ^Id *P))
+      (cell (P)
+        (&figure Id *P))))
+
+  ;; The figure's cells on the line of its box toward each side; a bump is the
+  ;; one such cell.
+  (INIT &edge_cell Singleton
+    (key ((&figure_box.box (:key ^Id) *B)
+          (&figure Id *P)
+          (inside (:A P) B)
+          (same_dist ^D (:P1 P) (:P2 B)))
+      (member ((:v P))
+        (&figure_box.box (:key Id) *B)
+        (&figure Id *P)
+        (inside (:A P) B)
+        (same_dist D (:P1 P) (:P2 B))))))
+
+(OUTPUT mark "each defect is marked with the other panel's color across the side: the side cell at the defect and the cell just outside it")
+
+(OUTPUT keep "every other cell keeps its color")
+
+(ALTS $choice "how a figure's rectangle is read from its cells" $Majority
+  (ALT $Body
+    (INPUT figure "a figure's body is its cells that lie in a square block of the figure of side &square_side; the rectangle is the body's box, and the figure has single-cell defects on its sides: a bump, a figure cell just outside a side, or a dent, a side cell the figure lacks")
+    (RULE &rect
+      (&body_box.box (:key *Id) *B)))
+  (ALT $Lone
+    (INPUT figure "a figure is a rectangle with single-cell defects on its sides: a bump, a figure cell just outside a side, or a dent, a side cell the figure lacks; a bump is the one figure cell on a line of the figure's box, and the rectangle is the box with those lines pulled in"
+      (RULE &lone_rect_edge
+        (&figure_box.box (:key (:Id *Key)) *B)
+        (dir_elem *D)
+        (OR ((NOT (&edge_cell.value (:key (:Id Key) D)))
+             (margin B D *K))
+            ((&edge_cell.value (:key (:Id Key) D) (:v *P))
+             (opposite D (:Opp *O))
+             (neighbor P (:D O) *Q)
+             (margin (:B Q) D K))))
+
+      (RULE &lone_rect_axis
+        (axis_of *D *A)
+        (opposite D (:Opp *D2))
+        (&lone_rect_edge *Key D (:K *K1))
+        (&lone_rect_edge Key (:D D2) (:K *K2))
+        (axis_inset D K1 K2 *B))
+
+      (RULE &lone_rect
+        (&lone_rect_axis *Key *A (:B *B1))
+        (perp A *A2)
+        (&lone_rect_axis Key (:A A2) (:B *B2))
+        (compose (:A B1) (:B B2) (:C *B))))
+    (RULE &rect
+      (&lone_rect (:Key *Id) *B))))
+
+(RULE &majority_rect_axis
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&side_end.maximal (:key (:Id *Key) D) (:t *K))
+  (&side_end.maximal (:key (:Id Key) (:D D2)) (:t *K2))
+  (axis_inset D (:K1 K) K2 *B))
+
+(RULE &majority_rect
+  (&majority_rect_axis *Key *A (:B *B1))
+  (perp A *A2)
+  (&majority_rect_axis Key (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &panel
+  (&panel_of.value (:v *Id))
+  (&regions.component (:key *Col) Id))
+
+(RULE &mark_color
+  (&panel_of.value (:key *Id) (:v *H))
+  (&panel (:Id H) (:Col *Col3))
+  (&panel *Col)
+  (!= Col Col3))
+
+(RULE &rect
+  (&majority_rect (:Key *Id) *B))
+
+(RULE &defect
+  (&rect *Id *B)
+  (input *P)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B))
+  (OR ((NOT (&figure Id P)))
+      ((neighbor P D *Q)
+       (&figure Id (:P Q)))))
+
+(RULE &mark
+  (&defect *Id *D (:P *P2))
+  (&mark_color Id *Col)
+  (OR ((neighbor (:P P2) D (:Q *P)))
+      ((= P P2))))
+
+(RULE &output
+  (OR ((&mark *P *Col))
+      ((input P Col)
+       (NOT (&mark P)))))
+
+(OUT (&output ^P ^Col))

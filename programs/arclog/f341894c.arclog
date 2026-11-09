@@ -1,0 +1,180 @@
+;; inputs 1aa232210b9df1b12e87f4849047e8efbf34e8c2094c1b80277deaf8ff393c7d programs/solvers/f341894c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f341894c
+
+(INPUT edge-markers "marker_color (7) cells stand on the outer border of the grid; a marker in a corner stands on two edges."
+
+  (DET &on_border
+    (ex_input *E *P)
+    (margin (:B P) *D (:K 0)))
+
+  (DET &off_border
+    (ex_input *E *P (:Col *C))
+    (ex_output E)
+    (NOT (&on_border E P)))
+
+  (DET &marker_color
+    (ex_input (:Col *C))
+    (NOT (&off_border C)))
+
+  (RULE &marker
+    (input *P *Col)
+    (&marker_color (:C Col)))
+
+  ;; Each marker looks along its row and column, each way.
+  (INIT &sight Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P)
+      (NOT (&marker P)))
+    (dir (D)
+      (dir_elem *D))))
+
+(INPUT arrows "an arrow is two orthogonally adjacent cells, one head_color (6) and one tail_color (1); arrows may touch other arrows, so their cells can form larger clumps of the two colors.")
+
+(INPUT one-marker-per-arrow "each arrow lies along the row or column of exactly one marker, on the arrow's own axis, the marker standing at that line's end on the edge; that line holds no other arrow, and every marker has one arrow on one of its lines."
+
+  (INIT &sight_full Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (DET &changed
+    (ex_input *E *P (:Col *C0))
+    (ex_output E P (:Col *C))
+    (!= C C0))
+
+  (DET &turned
+    (&changed *E *P)
+    (&changed E (:P *Q))
+    (opposite *D (:Opp *D2))
+    (neighbor P (:D D2) Q)
+    (ex_output E P (:Col *C_head))
+    (ex_output E (:P Q) (:Col *C_tail))
+    (ex_input E (:P *M) (:Col *C_m))
+    (&marker_color (:C C_m))
+    (margin (:B M) D (:K 0))
+    (axis_of D *A)
+    (same_line A (:P M) (:Q P)))
+
+  (DET &head_color
+    (&turned (:C_head *C)))
+
+  (DET &tail_color
+    (&turned (:C_tail *C)))
+
+  ;; a marker on edge d looks inward, across the grid
+  (RULE &reach
+    (&sight_full.ray *P (:D *E1) *K (:Origin *Src))
+    (opposite *D (:Opp E1))
+    (margin (:B Src) D (:K 0)))
+
+  (RULE &aim
+    (&reach (:P *N) (:E1 *E) *K)
+    (neighbor (:P N) (:D E) (:Q *F))
+    (&head_color (:C *C_head))
+    (&tail_color (:C *C_tail))
+    (OR ((input (:P N) (:Col C_head))
+         (input (:P F) (:Col C_tail)))
+        ((input (:P N) (:Col C_tail))
+         (input (:P F) (:Col C_head)))))
+
+  ;; Of the markers at the two ends of an arrow's line, the nearer one aims it:
+  ;; each aim is a candidate under both orders of the arrow's cells, scored by
+  ;; the marker's distance, and the head is the near cell of the least score.
+  (INIT &nearest Order
+    (key ((OR ((&aim ^N ^F *K))
+              ((&aim (:N F) (:F N) K))))
+      (member ((:t V (:S K)))
+        (OR ((&aim N F *K)
+             (= *V N))
+            ((&aim (:N F) (:F N) K)
+             (= V F))))
+      (score ((:t V (:S K)) (:S K))
+        (OR ((&aim N F *K)
+             (= *V N))
+            ((&aim (:N F) (:F N) K)
+             (= V F)))))))
+
+(OUTPUT head-toward-marker "each arrow is rewritten so that its cell nearer its marker is head_color and its other cell is tail_color."
+
+  (RULE &arrow_color
+    (input *P (:Col *C))
+    (OR ((&head_color C))
+        ((&tail_color C))))
+
+  ;; the head_color and tail_color cells of each marker line, ranked from the
+  ;; marker
+  (INIT &along Order
+    (key ((&reach *P (:E1 ^E) ^Src)
+          (&arrow_color P))
+      (member ((:t P))
+        (&reach *P (:E1 E) Src)
+        (&arrow_color P))
+      (score ((:t P) (:S K))
+        (&reach *P (:E1 E) *K Src)
+        (&arrow_color P))))
+
+  ;; the two colors as a cycle, walked one step per rank
+  (INIT &alternation Walk
+    (successor ((:p C_head) (:p_next C_tail))
+      (OR ((&head_color (:C *C_head))
+           (&tail_color (:C *C_tail)))
+          ((&head_color (:C C_tail))
+           (&tail_color (:C C_head)))))
+    (steps ((:N R))
+      (&along.rank *R))))
+
+(OUTPUT rest-unchanged "every other cell keeps its input color.")
+
+(ALTS $m "where the marker an arrow turns toward stands" $OnEdge
+  (ALT $MarkerInLine
+    (INPUT edge-markers "the marker is the first marker_color cell the arrow's line reaches on either side, anywhere in the grid."
+      ;; a marker anywhere looks each way, up to the next marker
+      (RULE &reach
+        (&sight.ray *P (:D *E1) *K (:Origin *Src))
+        (dir_elem (:D E1)))
+
+      ;; the two colors as a cycle, walked one step per rank
+      (INIT &alternation Walk
+        (successor ((:p C_head) (:p_next C_tail))
+          (OR ((&head_color (:C *C_head))
+               (&tail_color (:C *C_tail)))
+              ((&head_color (:C C_tail))
+               (&tail_color (:C C_head)))))))))
+
+(ALTS $t "what an arrow does with a marker at each end of its line" $BothUndefined
+  (ALT $NearerMarker
+    (INPUT one-marker-per-arrow "with a marker at each end, the head turns toward the nearer one; undefined at equal distance.")
+    (RULE &turned2
+      (&nearest.minimal (:key *N *F) (:t (:V N))))))
+
+(ALTS $a "which cells of a marker's line the marker recolors" $Pair
+  (ALT $Alternate
+    (INPUT arrows "no arrows are found; the head_color and tail_color cells on a marker's line are recolored, adjacent or not.")
+    (OUTPUT head-toward-marker "those cells alternate from the marker, head_color first; undefined at a cell that the lines of two markers give different colors.")
+    (RULE &paint
+      (&along.rank (:t *P) *R)
+      (&head_color (:C *C_head))
+      (&alternation.walk (:p0 C_head) (:N R) (:p *Col)))))
+
+;; every marker's arrow turns, so a marker at each end gives a cell two colors
+(RULE &turned2
+  (&aim *N *F))
+
+(RULE &paint
+  (OR ((&turned2 (:N *P))
+       (&head_color (:C *Col)))
+      ((&turned2 (:F P))
+       (&tail_color (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

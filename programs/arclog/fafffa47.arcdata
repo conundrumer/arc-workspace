@@ -1,0 +1,23 @@
+;; inputs 53ceb3f8df7b1facdc758d19880b92f8ab483843ec32cd51689f0bc4103c75c4 programs/solvers/fafffa47.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fafffa47
+
+(param &frame_dim number (3))
+(param &arr_dim (Axis number) (AXIS_V 2) (AXIS_H 1))
+(param &divisor number (2))
+(param &divide_axis Axis (AXIS_V))
+(param &combine (Ident Color Position Color)
+  (0 2 (grid
+    (0)
+    (0)))
+  (1 0 (grid
+    (9)
+    (0)))
+  (2 0 (grid
+    (0)
+    (1)))
+  (3 0 (grid
+    (9)
+    (1))))
+(param &bg Color (0))
+(param &out_fill Color (2))

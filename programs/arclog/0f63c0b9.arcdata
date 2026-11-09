@@ -1,0 +1,6 @@
+;; inputs a8969c34518075ef11796d90bd7e2c7b78e7eadc54af4b6bd7e8f2e0954564ce programs/solvers/0f63c0b9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0f63c0b9
+
+(param &bg Color (0))
+(param &tie_dir Dir (DIR_B))

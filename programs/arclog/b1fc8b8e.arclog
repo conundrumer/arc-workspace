@@ -1,0 +1,177 @@
+;; inputs d85414a5b5f28382997db32e1aa09b6a6493d30773c027ae94fcd91b6611ca1a programs/solvers/b1fc8b8e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b1fc8b8e
+
+(DET &ink RarestColor)
+
+(DET &canvas_dim ConstOutDim)
+
+(INIT &canvas_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&canvas_dim *N)))
+
+(DET &bg DominantColor)
+
+(DET &arr_dim TileCount)
+
+(DET &tile_dim TileCount)
+
+(DET &gap DimDiff)
+
+(INIT &arrange_outer Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&arr_dim *N)))
+
+(INIT &arrange_inner Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&tile_dim *N)))
+
+(INIT &arrange_tiling Tiling
+  (outer (P)
+    (&arrange_outer.cell *P))
+  (inner (P)
+    (&arrange_inner.cell *P))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:D *G))))
+
+(RULE &ink_at
+  (input *P *Col)
+  (&ink (:C Col)))
+
+(INIT &out_cmp Inclusion
+  (pattern ((:pattern E) (:m (:P M_p) (:Col M_col)))
+    (ex_output *E (:P *M_p) (:Col *M_col)))
+  (observed ((:observed E) (:m (:P M_p) (:Col M_col)))
+    (ex_output *E (:P *M_p) (:Col *M_col))))
+
+;; One class per set of alike pairs; the label carries identity only.
+(INIT &class Quotient
+  (equivalent ((:a E) (:b E2))
+    (&out_cmp.equal (:observed *E) (:pattern *E2))))
+
+(DET &class_tile
+  (&class.class (:a *E) *Id)
+  (ex_output E (:P *P_grid) *Col)
+  (&arrange_tiling.cell (:P P_grid) (:P_inner *P_intile)))
+
+(DET &unit
+  (&class_tile (:P_intile *P) *Col)
+  (&ink (:C Col)))
+
+;; Placements where the unit lands fully on ink, named by their margins,
+;; with the cells each one covers.
+(INIT &occ Occurrences
+  (cell (P)
+    (&ink_at *P))
+  (shape ((:P S))
+    (&ink_at)
+    (&unit (:P *S))))
+
+(RULE &covers
+  (&occ.occurrence (:P *B))
+  (&unit (:P *S))
+  (compose (:A B) (:B S) (:C *P)))
+
+(RULE &uncovered
+  (&ink_at *P)
+  (NOT (&covers P)))
+
+(DET &broken_class
+  (&class.class (:a *E) *Id)
+  (&uncovered E))
+
+(DET &covered_class
+  (&class.class (:a *E) *Id)
+  (&ink_at E)
+  (NOT (&uncovered E)))
+
+(RULE &class2
+  (OR ((&uncovered)
+       (&broken_class *Id))
+      ((&ink_at)
+       (NOT (&uncovered))
+       (&covered_class Id))))
+
+(DET &class_grid
+  (&class.class (:a *E) *Id)
+  (ex_output E *P *Col))
+
+(ALTS $detect "how the ink is classified" $Shape
+  (ALT $Partition
+
+    ;; The placements are the rival pieces of an exact cover of the ink. With one
+    ;; footprint the forced pieces are the reading-order peel, and the peel reaches
+    ;; a partition whenever the ink has one.
+    (CHOOSE &forcing
+      (for ((&covers ^P))
+        (from (&covers P *B)))
+      (never
+        (&covers *B)
+        (&covers (:P *P2) (:B *B2))
+        (&covers (:P P2) B)
+        (!= B B2)))
+
+    (RULE &packed
+      (&forcing *B)
+      (&covers B *P))
+
+    (RULE &unpacked
+      (&ink_at *P)
+      (NOT (&packed P)))
+
+    (RULE &class2
+      (OR ((&unpacked)
+           (&broken_class *Id))
+          ((&ink_at)
+           (NOT (&unpacked))
+           (&covered_class Id)))))
+  (ALT $Count
+    (INIT &ink_tally Cardinality
+      (member ((:m P))
+        (&ink_at *P)))
+
+    (DET &class_count
+      (&class.class (:a *E) *Id)
+      (&ink_tally.size E *N))
+
+    (RULE &class2
+      (&ink_tally.size *N)
+      (&class_count *Id N))))
+
+(ALTS $render "how a class renders" $Grid
+  (ALT $Arrange
+    (RULE &arrange_grid
+      (&arrange_tiling.cell (:P *P_grid) (:P_inner *P_intile))
+      (&class_tile *Id P_intile *Col))
+
+    (RULE &output
+      (OR ((&class2 *Id)
+           (&arrange_grid Id (:P_grid *P) *Col))
+          ((&class2)
+           (&canvas_frame.cell P)
+           (NOT (&arrange_tiling.cell P))
+           (&bg (:C Col))))))
+  (ALT $Corner
+    (RULE &corner_map
+      (&class_tile *P_intile)
+      (&canvas_frame.cell (:P *P_grid))
+      (same_corner (:D *Diag) (:P1 P_intile) (:P2 P_grid)))
+
+    (RULE &output
+      (OR ((&class2 *Id)
+           (&corner_map *P_intile (:P_grid *P))
+           (&class_tile Id P_intile *Col))
+          ((&class2)
+           (&canvas_frame.cell P)
+           (NOT (&corner_map (:P_grid P)))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (&class2 *Id)
+  (&class_grid Id *P *Col))
+
+(OUT (&output ^P ^Col))

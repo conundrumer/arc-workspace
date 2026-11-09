@@ -1,0 +1,25 @@
+;; inputs ac38060113ccf1dd0fffbc3677ccd16e523f749d9bfb58b71904effbe45c6c06 programs/solvers/a416b8f3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a416b8f3
+
+(DET &copies TileCount)
+
+(DET &tile_axis AxisDomain)
+
+(INIT &tile_frame Frame
+  (extent (A N)
+    (&tile_axis *A)
+    (&copies *N)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&tile_frame.cell (:P *P_tile)))
+  (inner ((:P P_in))
+    (input (:P *P_in))))
+
+(RULE &output
+  (input (:P *P_in) *Col)
+  (&output_tiling.cell (:P_inner P_in) *P)
+  (&tile_axis))
+
+(OUT (&output ^P ^Col))

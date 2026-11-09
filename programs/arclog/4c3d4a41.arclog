@@ -1,0 +1,182 @@
+;; inputs 759900d3694e4648a0241656ff94835cc0643267ecf203d27888cf899b0d7791 programs/solvers/4c3d4a41.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 4c3d4a41
+
+(DET &bg DominantColor)
+
+;; The direction the comb's teeth point.
+(DET &rise DirDomain)
+
+;; After the move the scene's ink is the container with its contents, so
+;; the ink's box is the container's outline.
+(INIT &ink_box BoundingBox
+  (key ((ex_output ^E *P *Col)
+        (NOT (&bg (:C Col))))
+    (cell (P)
+      (ex_output E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+;; The interior: the box of the cells strictly inside the outline.
+(INIT &interior_box BoundingBox
+  (key ((ex_input ^E *P)
+        (&ink_box.box (:key E) *B)
+        (interior (:A P) B))
+    (cell (P)
+      (ex_input E *P)
+      (&ink_box.box (:key E) *B)
+      (interior (:A P) B))))
+
+(DET &box
+  (&interior_box.box *B))
+
+(RULE &within
+  (input *P)
+  (&box *B)
+  (inside (:A P) B))
+
+(DET &vanished
+  (ex_input *E *P *Col)
+  (NOT (&bg (:C Col)))
+  (&bg (:C *Bg))
+  (ex_output E P (:Col Bg)))
+
+;; Where the emptied cells recur in the output.
+(INIT &occ Occurrences
+  (key ((OR ((ex_output ^E *P *Col))
+            ((&vanished E P Col))))
+    (cell (P (:v Col))
+      (ex_output E *P *Col))
+    (shape (P (:v Col))
+      (&vanished E *P *Col))))
+
+(DET &refuted_shift
+  (&occ.candidate (:P *V))
+  (&vanished *E)
+  (NOT (&occ.occurrence (:key E) (:P V))))
+
+(DET &shift
+  (&occ.candidate (:P *V))
+  (NOT (&refuted_shift V)))
+
+(RULE &stage
+  (input *P)
+  (&shift *V)
+  (compose (:A P) (:B V) (:C *Q))
+  (&within (:P Q)))
+
+(RULE &rewritten
+  (OR ((&within *P))
+      ((&stage P))))
+
+(RULE &comb
+  (input (:P *P2) *Col)
+  (&stage (:P P2))
+  (NOT (&bg (:C Col)))
+  (&shift *V)
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &content
+  (input *P *Col)
+  (&within P)
+  (NOT (&bg (:C Col))))
+
+(RULE &line_cell
+  (input *P)
+  (&rise *D)
+  (axis_of D *A)
+  (split P A (:Across *L))
+  (margin (:B P) D *K))
+
+;; The comb's high end, per line: `low` is the least depth.
+(INIT &comb_end Order
+  (key ((&comb *P)
+        (&line_cell P ^L *K))
+    (member ((:t (:V P) (:S K)))
+      (&comb *P)
+      (&line_cell P L *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&comb *P)
+      (&line_cell P L *K))))
+
+(RULE &seat
+  (&comb_end.minimal (:key *L) (:t (:V *P_top)))
+  (&rise *D)
+  (neighbor (:P P_top) D (:Q *P)))
+
+;; The contents' low end, per line: `high` is the greatest depth.
+(INIT &content_end Order
+  (key ((&content *P)
+        (&line_cell P ^L *K))
+    (member ((:t (:V P) (:S K)))
+      (&content *P)
+      (&line_cell P L *K))
+    (score ((:t (:V P) (:S K)) (:S K))
+      (&content *P)
+      (&line_cell P L *K))))
+
+(RULE &placed
+  (&content (:P *P2) *Col)
+  (&line_cell (:P P2) *L)
+  (&content_end.maximal (:key L) (:t (:V *P_bot)))
+  (&seat L (:P *P_seat))
+  (relative (:Base P_bot) (:X P_seat) (:X_rel *V))
+  (compose (:A P2) (:B V) (:C *P))
+  (&within P))
+
+(ALTS $choice "how a line's contents come to rest" $Rigid
+  (ALT $Stack
+    (INIT &rise_ray_frame Frame
+      (key ((&seat ^L (:P *P_seat))
+            (frame_extent (:P P_seat) *A *N))
+        (extent (A N)
+          (&seat L (:P *P_seat))
+          (frame_extent (:P P_seat) *A *N))))
+
+    ;; The run of cells rising from the seat, indexed by the step that reaches it.
+    ;; Its domain stops at the interior, so what rises past that is lost.
+    (INIT &rise_ray Ray
+      (key ((OR ((&seat ^L (:P *P_seat)))
+                ((&seat L)
+                 (&rise *D))
+                ((&rise_ray_frame.cell (:key L) *P))))
+        (source ((:P P_seat))
+          (&seat L (:P *P_seat)))
+        (node (P)
+          (&rise_ray_frame.cell (:key L) *P))
+        (dir (D)
+          (&seat L)
+          (&rise *D))))
+
+    (RULE &rise_ray_cell
+      (&within *P)
+      (&line_cell P (:L *Key)))
+
+    ;; The contents ranked from their low end, per line.
+    (INIT &content_rank Order
+      (key ((&content *P)
+            (&line_cell P ^L *K))
+        (member ((:t K))
+          (&content *P)
+          (&line_cell P L *K))
+        (score ((:t K) (:S K))
+          (&content *P)
+          (&line_cell P L *K))))
+
+    (RULE &placed
+      (&content (:P *P2) *Col)
+      (&line_cell (:P P2) *L *K)
+      (&content_rank.dual_rank (:key L) (:t K) *R)
+      (&rise_ray.ray (:key L) *P (:K R))
+      (&rise_ray_cell (:Key L) P))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&rewritten P)))
+      ((&comb P Col))
+      ((&placed P Col))
+      ((&rewritten P)
+       (NOT (&comb P))
+       (NOT (&placed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

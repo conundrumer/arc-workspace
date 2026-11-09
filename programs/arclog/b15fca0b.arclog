@@ -1,0 +1,334 @@
+;; inputs 736867a4072a7c05d79883ed467720b866400bd5c4285d7579ff05ed99cc5737 programs/solvers/b15fca0b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b15fca0b
+
+(INPUT two-endpoints "the input holds exactly two cells of endpoint_color")
+
+(INPUT walls "every other cell that is not background is a wall cell of color 1")
+
+(INPUT connected "the two endpoints are joined by a 4-adjacent walk whose inner cells are all background")
+
+(INPUT unique-shortest "exactly one such walk has the fewest steps")
+
+(OUTPUT copy "every cell keeps its input color unless a rule below paints it")
+
+(OUTPUT shortest-path "each inner cell of the shortest 4-adjacent walk from one endpoint to the other, through background cells only, takes path_color"
+
+  (DET_OR_RULE &endpoint_color RarestColor)
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &way)
+
+  (RULE &end
+    (input *P *Col)
+    (&endpoint_color (:C Col)))
+
+  (RULE &pair
+    (&end (:P *A))
+    (&end (:P *B))
+    (!= A B))
+
+  (RULE &crowded
+    (&pair *A *B)
+    (&end (:P *C))
+    (!= C A)
+    (!= C B))
+
+  (RULE &open
+    (input *P *Col)
+    (&background (:C Col)))
+
+  ;; A step to a neighbor, from a, or from a cell the walk may cross entered
+  ;; from a or from another such cell, onto a cell the walk may cross or onto b.
+  (RULE &link
+    (&way)
+    (&pair *A *B)
+    (dir_elem (:D *V_d))
+    (OR ((&open (:P *V_x))
+         (opposite (:D V_d) (:Opp *D_back))
+         (neighbor (:P V_x) (:D D_back) (:Q *P))
+         (OR ((&open P))
+             ((= P A))))
+        ((= V_x A)))
+    (dir_elem (:D *V2_d))
+    (neighbor (:P V_x) (:D V2_d) (:Q *V2_x))
+    (OR ((&open (:P V2_x)))
+        ((= V2_x B))))
+
+  ;; The fewest steps from a to each visit.
+  (INIT &steps Distance
+    (key ((OR ((&link ^A ^B *V_x *V_d *V2_x *V2_d))
+              ((&way)
+               (&pair A B)
+               (dir_elem *D))))
+      (edge ((:a (:X V_x) (:D V_d)) (:b (:X V2_x) (:D V2_d)))
+        (&link A B *V_x *V_d *V2_x *V2_d))
+      (source ((:n (:X A) D))
+        (&way)
+        (&pair A B)
+        (dir_elem *D))))
+
+  ;; The fewest steps from a to b.
+  (INIT &arrival Order
+    (key ((&steps.distance (:key ^A ^B) (:n (:X B)) (:K *N)))
+      (member ((:t N))
+        (&steps.distance (:key A B) (:n (:X B)) (:K *N)))
+      (score ((:t N) (:S N))
+        (&steps.distance (:key A B) (:n (:X B)) (:K *N)))))
+
+  ;; The visits of every fewest-step walk from a to b, traced back from b.
+  (INIT &back Propagation
+    (key ((OR ((&arrival.minimal (:key ^A ^B) (:t *N))
+               (&steps.distance (:key A B) (:n (:X B) *D) (:K N)))
+              ((&steps.predecessor (:key A B) (:b (:X *V2_x) (:D *V2_d)) (:a (:X *V_x) (:D *V_d))))))
+      (source ((:n (:X B) D))
+        (&arrival.minimal (:key A B) (:t *N))
+        (&steps.distance (:key A B) (:n (:X B) *D) (:K N)))
+      (edge ((:a (:X V2_x) (:D V2_d)) (:b (:X V_x) (:D V_d)))
+        (&steps.predecessor (:key A B) (:b (:X *V2_x) (:D *V2_d)) (:a (:X *V_x) (:D *V_d))))))
+
+  (RULE &stop
+    (&back.reached (:key *A *B) (:n *X *D))
+    (NOT (&end (:P X)))
+    (&steps.distance (:key A B) (:n X D) (:K *N)))
+
+  (RULE &tie
+    (&stop *A *B (:X *X1) *N)
+    (&stop A B (:X *X2) N)
+    (!= X1 X2))
+
+  (RULE &undefined
+    (OR ((NOT (&pair)))
+        ((&tie))
+        ((&pair *A *B)
+         (NOT (&arrival.minimal (:key A B))))
+        ((&crowded))))
+
+  ;; One output, painting every fewest-step walk.
+  (RULE &resolved
+    (NOT (&undefined))))
+
+(ALTS $cost "what the route minimizes" $Steps
+  (ALT $FewestTurns
+    (OUTPUT shortest-path "each inner cell of the walk with the fewest straight runs, and of those the fewest steps, takes path_color"
+      (RULE &run_mark
+        (&way)
+        (OR ((&open *P))
+            ((&end P))))
+
+      (INIT &run_frame Frame
+        (extent (A N)
+          (&run_mark *P)
+          (frame_extent P *A *N)))
+
+      (RULE &run_blocked
+        (&way)
+        (input *P)
+        (NOT (&open P)))
+
+      (RULE &run_dir
+        (&way)
+        (dir_elem *D))
+
+      ;; The straight runs a walk may take.
+      (INIT &run Ray
+        (source (P)
+          (&run_mark *P))
+        (node (P)
+          (&run_frame.cell *P)
+          (NOT (&run_blocked P)))
+        (dir (D)
+          (&run_dir *D)))
+
+      (INIT &run_full Ray
+        (source (P)
+          (&run_mark *P))
+        (node (P)
+          (&run_frame.cell *P))
+        (dir (D)
+          (&run_dir *D)))
+
+      (RULE &run_stop_full
+        (&run.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&run_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &leg
+        (OR ((&run.ray (:P *Q) *D (:Origin *P))
+             (dir_elem D)
+             (!= Q P))
+            ((&run_stop_full (:V1 Q) (:V2 D) (:V4 P))
+             (dir_elem D)
+             (&end (:P Q)))))
+
+      ;; The fewest straight runs from a to each cell.
+      (INIT &runs Distance
+        (key ((&pair ^A))
+          (edge ((:a P) (:b Q))
+            (&leg *P *Q)
+            (OR ((&open P))
+                ((= P A))))
+          (source ((:n A))
+            (&way))))
+
+      ;; The cells of every fewest-run walk from a to b, traced back from b.
+      (INIT &run_back Propagation
+        (key ((OR ((&runs.source (:key ^A) (:n A))
+                   (&pair A ^B))
+                  ((&runs.predecessor (:key A) (:b *Q) (:a *P))
+                   (&pair A B))))
+          (source ((:n B))
+            (&runs.source (:key A) (:n A))
+            (&pair A B))
+          (edge ((:a Q) (:b P))
+            (&runs.predecessor (:key A) (:b *Q) (:a *P))
+            (&pair A B))))
+
+      (RULE &route_leg
+        (&run_back.reached (:key *A *B) (:n *Q))
+        (&runs.predecessor (:key A) (:b Q) (:a *P))
+        (&leg P *D Q))
+
+      (RULE &leg_step
+        (&route_leg *A *B *P *D *Q)
+        (OR ((&leg P D (:Q *X)))
+            ((= X P)))
+        (neighbor (:P X) D (:Q *Y))
+        (OR ((= Y Q))
+            ((&leg (:P Y) D Q))))
+
+      ;; A step goes on along its run, or starts the next run where one ends. The
+      ;; walk's first run starts from the seed visit of its own direction.
+      (RULE &link
+        (&leg_step *A *B *P (:X *V_x) (:D *V2_d) (:Y *V2_x))
+        (OR ((= P V_x)
+             (&route_leg A B (:D *V_d) (:Q V_x)))
+            ((= V_d V2_d)))))
+    (INPUT unique-shortest "exactly one walk has the fewest straight runs and, of those, the fewest steps")))
+
+(ALTS $pass "the cells the route can cross" $Background
+  (ALT $PassNonWall
+    (INPUT walls "the walls are the cells of wall_color")
+    (OUTPUT shortest-path "the walk crosses every cell that is neither a wall nor an endpoint, and its inner cells take path_color"
+      (DET &wall_color UnchangedColor)
+
+      (RULE &open
+        (input *P *Col)
+        (NOT (&wall_color (:C Col)))
+        (NOT (&endpoint_color (:C Col)))))))
+
+(ALTS $tie "what is painted when fewest-step walks tie" $Unique
+  (ALT $TieAny
+    (INPUT unique-shortest "several walks may have the fewest steps, and each of them gives one output"
+      (RULE &undefined
+        (OR ((NOT (&pair)))
+            ((&pair *A *B)
+             (NOT (&arrival.minimal (:key A B))))
+            ((&crowded))))
+
+      (RULE &next
+        (&stop *A *B (:X *V_x) (:D *V_d) *N)
+        (&stop A B (:X *V2_x) (:D *V2_d) (:N *N2))
+        (&steps.predecessor (:key A B) (:b (:X V2_x) (:D V2_d)) (:a (:X V_x) (:D V_d))))
+
+      ;; One fewest-step walk per pair of endpoints, a step's visit to each slot.
+      (CHOOSE &ties
+        (for ((&stop ^A ^B ^N))
+          (from (&stop A B N *X *D)))
+        (never
+          (&stop *A *B *N *X *D)
+          (&stop A B (:N *N2) X D)
+          (!= N N2))
+        (never
+          (&stop *A *B *N *X *D)
+          (&stop A B (:N *N2) (:X *X2) (:D *D2))
+          (&next A B N N2)
+          (NOT (&steps.predecessor (:key A B) (:b (:X X2) (:D D2)) (:a X D)))))
+
+      (RULE &split_pair
+        (&ties *A *B *X)
+        (NOT (&ties (:A B) (:B A) X)))
+
+      (RULE &resolved
+        (NOT (&undefined))
+        (OR ((&ties)
+             (NOT (&split_pair)))
+            ((NOT (&stop))))))
+    (RULE &paint
+      (&resolved)
+      (&ties (:X *P)))
+    (ALT $NoRouteKeep
+      (INPUT connected "the endpoints may have no walk joining them, and then nothing is painted"
+        (RULE &undefined
+          (OR ((NOT (&pair)))
+              ((&crowded)))))
+      (ALT $AllPairs
+        (INPUT two-endpoints "the input holds two or more cells of endpoint_color, and the walk between each two of them is painted"
+          (RULE &undefined
+            (NOT (&pair))))))
+    (ALT $AllPairs
+      (INPUT two-endpoints "the input holds two or more cells of endpoint_color, and the walk between each two of them is painted"
+        (RULE &undefined
+          (OR ((NOT (&pair)))
+              ((&pair *A *B)
+               (NOT (&arrival.minimal (:key A B)))))))))
+  (ALT $TieUnion
+    (INPUT unique-shortest "several walks may have the fewest steps, and the inner cells of all of them take path_color"
+      (RULE &undefined
+        (OR ((NOT (&pair)))
+            ((&pair *A *B)
+             (NOT (&arrival.minimal (:key A B))))
+            ((&crowded)))))
+    (ALT $NoRouteKeep
+      (INPUT connected "the endpoints may have no walk joining them, and then nothing is painted"
+        (RULE &undefined
+          (OR ((NOT (&pair)))
+              ((&crowded)))))
+      (ALT $AllPairs
+        (INPUT two-endpoints "the input holds two or more cells of endpoint_color, and the walk between each two of them is painted"
+          (RULE &undefined
+            (NOT (&pair))))))
+    (ALT $AllPairs
+      (INPUT two-endpoints "the input holds two or more cells of endpoint_color, and the walk between each two of them is painted"
+        (RULE &undefined
+          (OR ((NOT (&pair)))
+              ((&pair *A *B)
+               (NOT (&arrival.minimal (:key A B))))))))))
+
+(ALTS $gap "what is given when no walk joins the endpoints" $Joined
+  (ALT $NoRouteKeep
+    (INPUT connected "the endpoints may have no walk joining them, and then nothing is painted"
+      (RULE &undefined
+        (OR ((NOT (&pair)))
+            ((&tie))
+            ((&crowded)))))
+    (ALT $AllPairs
+      (INPUT two-endpoints "the input holds two or more cells of endpoint_color, and the walk between each two of them is painted"
+        (RULE &undefined
+          (OR ((NOT (&pair)))
+              ((&tie))))))))
+
+(ALTS $ends "how many endpoints the scene holds" $TwoEnds
+  (ALT $AllPairs
+    (INPUT two-endpoints "the input holds two or more cells of endpoint_color, and the walk between each two of them is painted"
+      (RULE &undefined
+        (OR ((NOT (&pair)))
+            ((&tie))
+            ((&pair *A *B)
+             (NOT (&arrival.minimal (:key A B)))))))))
+
+(DET &path_color AnyOutNewColor)
+
+(RULE &paint
+  (&resolved)
+  (&stop (:X *P)))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&path_color (:C *Col)))
+      ((&resolved)
+       (input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

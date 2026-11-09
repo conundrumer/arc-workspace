@@ -1,0 +1,316 @@
+;; inputs 18246a10e78dd66e7bb958f691308eeeaee0f0d5dce19737b8736b3964b6ac9d programs/solvers/d4c90558.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d4c90558
+
+(param &background_color Color (0))
+(param &short_end Dir (DIR_T))
+(param &bar_sense Sense (SENSE_CC))
+(param &mark_color Color (5))
+
+(exclude ($CountAnyColor $CountInBbox))
+
+(alts $cells
+  (alt $CountAnyColor
+    (witness stray-other-color borderline concept
+      (relaxed marks-inside)
+      (separates "a color-3 cell sits inside the 6-frame: counting color 5 gives 4 there, counting every non-background cell gives 5")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 5 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 5 0 5 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 3 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 5 0 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 5 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)))
+      (output ($CountMarks &mark_color=$Stored) (grid
+        (2 2 2 0)
+        (6 6 6 6)))
+      (output &mark_color=$Derived (grid
+        (0)
+        (6)))
+      (output $CountAnyColor (grid
+        (2 2 2 0 0)
+        (6 6 6 6 6))))))
+
+(alts $area
+  (alt $CountInBbox
+    (witness broken-outline foreign $CountInBbox
+      (relaxed frames)
+      (separates "the 6-frame's top side has a gap, so it encloses nothing: the enclosed-region count gives no 6 bar, the bounding-box count gives a 6 bar of 4")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 6 6 0 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 5 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 5 0 5 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 5 0 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 5 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)))
+      (output $CountEnclosed (grid
+        (2 2 2)))
+      (output $CountInBbox (grid
+        (2 2 2 0)
+        (6 6 6 6))))))
+
+(alts $nested
+  (alt $ExcludeNested
+    (witness nested-frame borderline concept
+      (relaxed marks-inside)
+      (separates "the 4-frame lies inside the 3-frame's region, with 2 of its 5 marks: counting the whole region gives the 3 bar 5 and puts it last, leaving out the nested frame's region gives it 3 and puts it between the 4 and 2 bars")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0 0)
+        (0 3 0 5 0 0 4 4 4 4 4 4 4 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 4 0 0 0 0 0 4 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 4 0 5 0 0 0 4 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 4 0 0 0 5 0 4 0 3 0 0 0 0 0)
+        (0 3 0 5 0 0 4 0 0 0 0 0 4 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 4 4 4 4 4 4 4 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 5 0 0 0 0 3 0 0 0 0 0)
+        (0 3 0 0 0 0 0 0 0 0 0 0 0 0 3 0 0 0 0 0)
+        (0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 5 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 0 0 0 5 0 0 2 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 0 5 0 0 0 0 2 0 0 0 0 0 0 0 0 0)
+        (0 0 2 0 0 0 0 0 5 0 2 0 0 0 0 0 0 0 0 0)
+        (0 0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0)))
+      (output ($CountMarks $IncludeNested) (grid
+        (4 4 0 0 0)
+        (2 2 2 2 0)
+        (3 3 3 3 3)))
+      (output $ExcludeNested (grid
+        (4 4 0 0)
+        (3 3 3 0)
+        (2 2 2 2)))
+      (output $CountAnyColor (grid
+        (4 4 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (2 2 2 2 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3))))))
+
+(alts $unit
+  (alt $FramePerColor
+    (witness two-frames-one-color borderline concept
+      (relaxed frames)
+      (separates "two frames share color 2: one bar per frame gives two 2 bars of 2 and 5, one bar per color gives one 2 bar of 7")
+      (input (grid
+        (0 0 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 0 3 0 0 2 2 2 2 2 0 0)
+        (0 0 3 0 0 5 0 0 0 0 3 0 0 2 0 0 0 2 0 0)
+        (0 0 3 5 0 5 0 0 0 0 3 0 0 2 5 0 0 2 0 0)
+        (0 0 3 0 0 0 0 0 5 0 3 0 0 2 0 5 0 2 0 0)
+        (0 0 3 0 0 0 0 0 0 0 3 0 0 2 0 0 0 2 0 0)
+        (0 0 3 3 3 3 3 3 3 3 3 0 0 2 2 2 2 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 4 4 4 4 4 4 4 4 4)
+        (0 2 2 2 2 2 2 2 2 0 0 4 4 4 4 4 4 4 4 4)
+        (0 2 0 0 0 0 5 0 2 0 0 4 0 0 0 0 0 0 0 4)
+        (0 2 0 5 0 0 0 0 2 0 0 4 0 5 0 5 0 0 0 4)
+        (0 2 0 5 0 5 0 0 2 0 0 4 0 0 0 0 5 0 5 4)
+        (0 2 0 0 0 0 0 5 2 0 0 4 0 0 0 0 0 0 0 4)
+        (0 2 0 0 0 0 0 0 2 0 0 4 0 0 5 0 5 0 0 4)
+        (0 2 2 2 2 2 2 2 2 0 0 4 0 0 0 0 0 0 0 4)
+        (0 2 2 2 2 2 2 2 2 0 0 4 4 4 4 4 4 4 4 4)
+        (0 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $BarPerFrame (grid
+        (2 2 0 0 0 0)
+        (3 3 3 3 0 0)
+        (2 2 2 2 2 0)
+        (4 4 4 4 4 4)))
+      (output $FramePerColor (grid
+        (3 3 3 3 0 0 0)
+        (4 4 4 4 4 4 0)
+        (2 2 2 2 2 2 2))))))
+
+(alts $order
+  (alt $OrderBySize
+    (witness larger-frame-fewer-marks ordinary concept
+      (separates "the 2-frame holds 5 marks and the 6-frame 4, while the 2-frame's box is the smaller: by count the 6 bar comes first, by box area the 2 bar")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 5 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 5 0 5 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 5 0 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 5 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 5 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 5 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)))
+      (output $OrderByCount (grid
+        (6 6 6 6 0)
+        (2 2 2 2 2)))
+      (output $OrderBySize (grid
+        (2 2 2 2 2)
+        (6 6 6 6 0))))))
+
+(alts $tie
+  (alt $TiesEitherOrder
+    (witness tied-counts variant $TiesEitherOrder
+      (relaxed distinct-counts)
+      (separates "both frames hold 4 marks: the count order is undefined, either order fits a tie, and box area puts the 2 bar first")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 5 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 5 0 5 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 5 0 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 5 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 5 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)))
+      (output ($OrderByCount $TiesUndefined) undefined)
+      (output $TiesEitherOrder
+        (grid
+          (2 2 2 2)
+          (6 6 6 6))
+        (grid
+          (6 6 6 6)
+          (2 2 2 2)))
+      (output $OrderBySize (grid
+        (2 2 2 2)
+        (6 6 6 6))))))
+
+(alts $empty
+  (alt $DropEmpty
+    (witness empty-frame variant concept
+      (relaxed marks-inside)
+      (separates "the 2-frame holds no mark: it keeps a background line, or it gives no line")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 5 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 5 0 5 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 5 0 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)))
+      (output $KeepEmpty (grid
+        (0 0 0 0)
+        (6 6 6 6)))
+      (output $DropEmpty (grid
+        (6 6 6 6))))))
+
+(alts &background_color
+  (alt &background_color=$Derived
+    (witness background_color=DominantColor borderline concept
+      (separates "the 6-frame covers more cells than the background: the stored background 0 gives bars 2:1 and 6:2, the derived background 6 gives one 2 bar of 1")
+      (input (grid
+        (6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6)
+        (6 6 5 0 0 6 6 6 6 6)
+        (6 6 0 0 5 6 6 6 6 6)
+        (6 6 0 0 0 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6)
+        (6 6 6 6 6 6 6 6 6 6)
+        (2 2 2 0 0 0 0 0 0 0)
+        (2 5 2 0 0 0 0 0 0 0)
+        (2 2 2 0 0 0 0 0 0 0)))
+      (output &background_color=$Stored (grid
+        (2 0)
+        (6 6)))
+      (output ($CountEnclosed &background_color=$Derived) (grid
+        (2)))
+      (output ($CountInBbox &background_color=$Derived) (grid
+        (6 6)
+        (2 6)
+        (0 0))))))
+
+(alts &mark_color
+  (alt &mark_color=$Derived
+    (witness mark_color=RarestColor borderline concept
+      (relaxed marks-inside)
+      (separates "a color-3 cell inside the 6-frame is the rarest color: the stored mark color counts the 5 cells, the derived one counts the single 3 cell")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 5 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 5 0 5 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 3 0 0 0 0 0 0 0 6 6 0 0 0)
+        (0 0 0 0 0 6 0 0 0 0 0 0 0 5 0 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 6 6 6 6 6 6 6 6 6 6 6 6 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 5 0 5 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 0 0 0 0 0 0 2 0 0 0 0 0 0 0 0 0 0)
+        (0 2 2 2 2 2 2 2 2 2 0 0 0 0 0 0 0 0 0 0)))
+      (output ($CountMarks &mark_color=$Stored) (grid
+        (2 2 2 0)
+        (6 6 6 6)))
+      (output &mark_color=$Derived (grid
+        (0)
+        (6)))
+      (output $CountAnyColor (grid
+        (2 2 2 0 0)
+        (6 6 6 6 6))))))

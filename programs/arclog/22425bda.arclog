@@ -1,0 +1,77 @@
+;; inputs be083e2589608efaec4eff26f14dfa6f580a5e43dfac1b84a94a115bf292d419 programs/solvers/22425bda.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 22425bda
+
+(DET &bg DominantColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &collinear
+  (&ink *P)
+  (&ink (:P *Q))
+  (same_line *A P Q))
+
+(RULE &off_family
+  (&ink *Col *P)
+  (&ink Col (:P *Q))
+  (axis4_elem *A)
+  (NOT (&collinear A P Q)))
+
+(RULE &family
+  (&ink *Col)
+  (axis4_elem *A)
+  (NOT (&off_family Col A)))
+
+(RULE &line
+  (&family *Col *A)
+  (&ink Col (:P *Q))
+  (input *P)
+  (same_line A P Q))
+
+(RULE &hides
+  (&line (:Col *Hi) *P)
+  (&line (:Col *Lo) P)
+  (!= Hi Lo)
+  (input P (:Col Hi)))
+
+;; Above through any run of crossings, from each color.
+(INIT &above Propagation
+  (key ((&ink ^Col))
+    (source ((:n Col))))
+  (edge ((:a Lo) (:b Hi))
+    (&hides *Hi *Lo)))
+
+;; Stack order: below through any run of crossings.
+(INIT &stack Order
+  (member ((:t Col))
+    (&ink *Col))
+  (before ((:a Lo) (:b Hi))
+    (&above.reached (:key (:Col *Lo)) (:n *Hi))
+    (!= Lo Hi)))
+
+(INIT &row_size Cardinality
+  (member ((:m R))
+    (&stack.rank *R)))
+
+;; The edge the bottom of the stack sits at.
+(DET &stack_dir DirDomain)
+
+(INIT &row_frame Frame
+  (extent (A N)
+    (&stack_dir *D)
+    (axis_of D *A)
+    (&row_size.size *N)))
+
+(RULE &row_pos
+  (&row_frame.cell *P)
+  (&stack_dir *D)
+  (margin (:B P) D *K)
+  (&stack.rank (:R K)))
+
+(RULE &output
+  (&stack.rank (:t *Col) *R)
+  (&row_pos (:K R) *P))
+
+(OUT (&output ^P ^Col))

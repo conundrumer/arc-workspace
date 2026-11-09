@@ -1,0 +1,210 @@
+;; inputs e220c29a837d0585218d86343e1c403eb7af9ce3fd8b9424de2b6fd5741e161e programs/solvers/b7f8a4d8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7f8a4d8
+
+(INPUT tiling "on a field of &bg, a tiling of equal square tiles at one period on both axes, each a frame 1 cell thick of one frame color around a solid interior of one color; the tiles at the right and bottom edges may be cut off"
+
+  (DET &bg SharedColor))
+
+(INPUT common-interior "one interior color, the commonest, fills most tiles")
+
+(INPUT odd-rectangle "the tiles of each other interior color sit at the four corners of a rectangle of tiles: two tile rows by two tile columns")
+
+(OUTPUT bridge-odd-tiles "for each interior color other than the common one, between two tiles of that color in one tile row or one tile column, each &bg cell in line with their interiors becomes that color; the tiles between them stay as they are"
+
+  (RULE &ground
+    (input *P *Col)
+    (&bg (:C Col)))
+
+  (RULE &frame_color
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (neighbor P *Q)
+    (&ground (:P Q)))
+
+  ;; Each tile's interior, under its own id.
+  (INIT &core Connectivity
+    (key ((input *P ^Col)
+          (NOT (&bg (:C Col)))
+          (NOT (&frame_color Col)))
+      (node (P)
+        (input *P Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&frame_color Col)))))
+
+  (INIT &tile_count_count Cardinality
+    (key ((&core.component (:key ^Col) (:Id *I)))
+      (member ((:m I))
+        (&core.component (:key Col) (:Id *I)))))
+
+  ;; The common interior color fills the most tiles; every other one is odd.
+  (INIT &tile_count Order
+    (member ((:t Col))
+      (&tile_count_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&tile_count_count.size (:key *Col) *N)))
+
+  (RULE &odd
+    (&core.component (:key *Col))
+    (NOT (&tile_count.maximal (:t Col))))
+
+  (INIT &color_box BoundingBox
+    (key ((&odd ^Col))
+      (cell (P)
+        (input *P Col)))))
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &odd_tile
+    (&core.component (:key *Col) (:Id *I))
+    (&odd Col))
+
+  (RULE &bridge_dir
+    (dir_elem *D))
+
+  (INIT &tile_box BoundingBox
+    (key ((&core.component (:key *Col) *P (:Id ^I))
+          (&odd Col))
+      (cell (P)
+        (&core.component (:key *Col) *P (:Id I))
+        (&odd Col))))
+
+  (RULE &line_pair
+    (&bridge_dir *D)
+    (perp_dir D (:D2 *X))
+    (&odd_tile *I *Col)
+    (&odd_tile (:I *I2) Col)
+    (!= I I2)
+    (&tile_box.box (:key I) (:B *B1))
+    (&tile_box.box (:key (:I I2)) (:B *B2))
+    (dist_pair (:P B1) (:D X) (:K *K1) *K2)
+    (dist_pair (:P B2) (:D X) (:K K1) K2))
+
+  (RULE &span_tile
+    (&line_pair *I *I2 *D)
+    (axis4_of D *A)
+    (&core.component (:key *Col) (:P *Q1) (:Id I))
+    (input *P)
+    (same_line A P (:Q Q1))
+    (nearer D P (:Q Q1))
+    (&core.component (:key Col) (:P *Q2) (:Id I2))
+    (same_line A P (:Q Q2))
+    (nearer D (:P Q2) (:Q P))))
+
+(ALTS $join "which tiles of one odd color its bridges join" $Bridges
+  (ALT $Bridges
+    (ALTS $pairs "which two tiles in one tile line a bridge joins" $AnyPair
+      (ALT $BlockedByOdd
+        (OUTPUT bridge-odd-tiles "a bridge is drawn only where no tile of another odd color lies between its two tiles; defined also where that leaves no cell to two colors"
+          ;; A tile of another odd color lies between the two.
+          (RULE &blocked_tile
+            (&span_tile *Col *I *I2 *P)
+            (input P (:Col *Col2))
+            (&odd (:Col Col2))
+            (!= Col2 Col)))
+        (RULE &paint
+          (&span_tile *Col (:I *I1) *I2 *P)
+          (&ground P)
+          (NOT (&blocked_tile (:I I1) I2)))
+        (ALT $CellBetween
+          (OUTPUT bridge-odd-tiles "a &bg cell with a cell of one odd color on each side along its row or column becomes that color"
+            (RULE &cell_ray_blocked
+              (&odd (:Col *Key))
+              (input *P (:Col *Col2))
+              (&odd (:Col Col2))
+              (!= Col2 Key))
+
+            (INIT &cell_ray Ray
+              (key ((&odd ^Col))
+                (source (P)
+                  (input *P Col))
+                (node (P)
+                  (&bridge_dir *D)
+                  (input *P)
+                  (NOT (&cell_ray_blocked (:Key Col) P))))
+              (dir (D)
+                (&bridge_dir *D))))
+          ;; A background cell with a cell of the color on each side along one line.
+          (RULE &paint
+            (&cell_ray.ray (:key *Col) *P *D)
+            (&cell_ray_cell (:Key Col))
+            (&ground P)
+            (dir8_opposite D *D2)
+            (&cell_ray.ray (:key Col) P (:D D2))))))
+    (ALTS $dirs "the lines along which tiles join" $Cardinal
+      (ALT $Dir8Bridges
+        (OUTPUT bridge-odd-tiles "two tiles of the color on one tile diagonal are joined too, on the &bg cells of the diagonals through their interiors"
+          (RULE &bridge_dir
+            (OR ((diag_dir_elem *D))
+                ((dir_elem D))))
+          (RULE &line_pair
+            (OR ((diag_axis_of *D (:Da *DA))
+                 (diag_perp (:Da DA) (:Da2 *DA2))
+                 (diag_axis_of (:D *X) (:Da DA2))
+                 (diag_opposite (:D X) (:Opp *X2))
+                 (&odd_tile *I *Col)
+                 (&odd_tile (:I *I2) Col)
+                 (!= I I2)
+                 (&tile_box.box (:key I) (:B *B1))
+                 (&tile_box.box (:key (:I I2)) (:B *B2))
+                 (corner_dist (:P B1) (:Diag X) (:K *K1))
+                 (corner_dist (:P B2) (:Diag X) (:K K1))
+                 (corner_dist (:P B1) (:Diag X2) (:K *K2))
+                 (corner_dist (:P B2) (:Diag X2) (:K K2)))
+                ((&bridge_dir D)
+                 (perp_dir D (:D2 *X3))
+                 (&odd_tile I (:Col *Col2))
+                 (&odd_tile (:I I2) (:Col Col2))
+                 (!= I I2)
+                 (&tile_box.box (:key I) (:B *B12))
+                 (&tile_box.box (:key (:I I2)) (:B *B22))
+                 (dist_pair (:P B12) (:D X3) (:K *K12) (:K2 *K22))
+                 (dist_pair (:P B22) (:D X3) (:K K12) (:K2 K22)))))))))
+  (ALT $BboxOutline
+    (OUTPUT bridge-odd-tiles "for each interior color other than the common one, each &bg cell on the outline of the rectangle that the color's outermost tile rows and tile columns bound, in line with the interiors of the tiles on its side, becomes that color")
+    ;; A background cell in the rectangle, in line with a tile on its d side.
+    (RULE &paint
+      (&color_box.box (:key *Col) (:B *B_all))
+      (&tile_box.box (:key *I) *B)
+      (same_dist *D (:P1 B) (:P2 B_all))
+      (axis_of D (:A *A_d))
+      (perp (:A A_d) (:A2 *A))
+      (&core.component (:key Col) (:P *Q) (:Id I))
+      (&ground *P)
+      (same_line A P Q)
+      (inside (:A P) (:B B_all)))))
+
+(ALTS $test "when two tiles of one odd color are in line" $TileLevel
+  (ALT $CellBetween
+    (OUTPUT bridge-odd-tiles "a &bg cell with a cell of one odd color on each side along its row or column becomes that color"
+
+      (INIT &cell_ray Ray
+        (key ((&odd ^Col))
+          (source (P)
+            (input *P Col)))
+        (node (P)
+          (input *P))
+        (dir (D)
+          (&bridge_dir *D)))
+
+      (RULE &cell_ray_cell
+        (&odd (:Col *Key))
+        (&ground)))
+    ;; A background cell with a cell of the color on each side along one line.
+    (RULE &paint
+      (&cell_ray.ray (:key *Col) *P *D)
+      (&cell_ray_cell (:Key Col))
+      (&ground P)
+      (dir8_opposite D *D2)
+      (&cell_ray.ray (:key Col) P (:D D2)))))
+
+(RULE &paint
+  (&span_tile *Col (:I *I1) *I2 *P)
+  (&ground P))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&paint P)))
+      ((&paint P Col))))
+
+(OUT (&output ^P ^Col))

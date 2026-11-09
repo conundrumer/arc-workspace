@@ -1,0 +1,136 @@
+;; inputs 7b2695f5e3ec2e252ae7756fef6d7ede1dc1adc10cf4f9fa39bd8415be5d5a1d programs/solvers/412b6263.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 412b6263
+
+(DET &xform D4Domain)
+
+(RULE &content
+  (input (:P *P_grid_in) *Col)
+  (&xform *D)
+  (apply D (:P P_grid_in) (:P_out *P_intile)))
+
+;; Where the copies seat on the output. A copy is the input under
+;; &xform.
+(INIT &seat Occurrences
+  (key ((OR ((ex_input ^E (:P *P_grid_in) *Col)
+             (&xform *D)
+             (apply D (:P P_grid_in) (:P_out *P_intile)))
+            ((ex_output E (:P *P_grid) Col))))
+    (cell ((:P P_grid) (:v Col))
+      (ex_output E (:P *P_grid) *Col))
+    (shape ((:P P_intile) (:v Col))
+      (ex_input E (:P *P_grid_in) *Col)
+      (&xform *D)
+      (apply D (:P P_grid_in) (:P_out *P_intile)))))
+
+;; The tile count on each axis: how many distinct offsets the seats take
+;; along it.
+(INIT &tile_n Cardinality
+  (key ((&seat.occurrence (:key ^E) (:P *V))
+        (axis_elem ^A)
+        (split (:P V) A (:Along *P_along)))
+    (member ((:m P_along))
+      (&seat.occurrence (:key E) (:P *V))
+      (split (:P V) A (:Along *P_along)))))
+
+(INIT &tile_dim Singleton
+  (key ((&tile_n.size (:key ^A) *N))
+    (member ((:v N))
+      (&tile_n.size (:key A) *N))))
+
+(DET &tiles
+  (&tile_dim.value (:key *A) (:v *N)))
+
+(INIT &layout Frame
+  (extent (A N)
+    (&tiles *A *N)))
+
+(DET &line_width TileDim)
+
+(INIT &placed_tiling Tiling
+  (outer ((:P P_tile))
+    (&layout.cell (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&content *P_intile))
+  (gap (A (:G W))
+    (axis_elem *A)
+    (&line_width (:D *W))))
+
+(DET &bg ChangedColor)
+
+(DET &line_col AnyOutNewColor)
+
+(RULE &ring
+  (&line_width (:D *K))
+  (uniform_inset K (:B *P)))
+
+(RULE &placed
+  (&placed_tiling.cell (:P_inner *P_intile) (:P *P_inner)))
+
+(ALTS $choice "Two hypotheses about the copy count" $Layout
+  (ALT $Count
+    (INIT &blocks Connectivity
+      (node (P)
+        (input *P *Col)
+        (NOT (&bg (:C Col)))))
+
+    (INIT &block_n Cardinality
+      (member ((:m Id))
+        (&blocks.component *Id)))
+
+    (DET &stack_axis AxisDomain)
+
+    (INIT &stack Frame
+      (key ((&stack_axis ^A))
+        (extent (A N)
+          (&block_n.size *N))))
+
+    (INIT &placed_tiling2 Tiling
+      (key ((OR ((&stack.cell (:key ^A) (:P *P_tile)))
+                ((&stack.cell (:key A))
+                 (&content *P_intile))
+                ((&stack.cell (:key A))
+                 (&line_width (:D *W)))))
+        (outer ((:P P_tile))
+          (&stack.cell (:key A) (:P *P_tile)))
+        (inner ((:P P_intile))
+          (&stack.cell (:key A))
+          (&content *P_intile))
+        (gap (A (:G W))
+          (&stack.cell (:key A))
+          (&line_width (:D *W)))))
+
+    (RULE &placed
+      (&stack.cell (:key *A) (:P *P_tile))
+      (&placed_tiling2.cell (:key A) (:P_outer P_tile) (:P_inner *P_intile) (:P *P_inner)))))
+
+(RULE &copy_cell
+  (&placed *P_inner *P_intile)
+  (&ring (:P *R))
+  (compose (:A P_inner) (:B R) (:C *P_grid)))
+
+;; The output frame — the copies' frame, which the ring has grown.
+(INIT &frame Frame
+  (extent (A N)
+    (&copy_cell *P_grid)
+    (frame_extent (:P P_grid) *A *N)))
+
+(RULE &copy_axis_line
+  (&copy_cell (:P_grid *Q))
+  (split (:P Q) *A (:Across *L)))
+
+(RULE &copy_line
+  (&frame.cell (:P *P_grid))
+  (split (:P P_grid) *A (:Across *L))
+  (&copy_axis_line A L))
+
+(RULE &output
+  (OR ((&copy_cell (:P_grid *P) *P_intile)
+       (&content P_intile *Col))
+      ((&frame.cell P)
+       (NOT (&copy_cell (:P_grid P)))
+       (IF ((&copy_line (:P_grid P)))
+           ((&line_col (:C Col)))
+           ((&bg (:C Col)))))))
+
+(OUT (&output ^P ^Col))

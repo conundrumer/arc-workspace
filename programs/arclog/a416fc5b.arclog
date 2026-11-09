@@ -1,0 +1,395 @@
+;; inputs c7b5db6716aa3e30f9bb7ee2f6b4605f92ee467cecec1c0a353916608bddfea2 programs/solvers/a416fc5b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a416fc5b
+
+(INPUT panels "full lines of &separator cut the grid into a 3×3 array of 3×3 panels of &bg"
+
+  ;; The color of a line all of one color.
+  (INIT &line_color Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (DET &separator UnchangedColor)
+
+  (DET_OR_RULE &bg DominantColor)
+
+  (INIT &sep_color Singleton
+    (member ((:v Col))
+      (&line_color.value (:v *Col)))))
+
+(INPUT two-shapes "two panels hold the same shape in &shape_color; one of them is the center panel, and the other is one of the eight panels around it"
+
+  (RULE &geometry_choice)
+
+  (RULE &cut_divider
+    (&line_color.value (:key *A *L) (:v *Col))
+    (&separator (:C Col)))
+
+  (RULE &cut_on_divider
+    (input *P)
+    (&geometry_choice)
+    (&cut_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &cut_rank Order
+    (key ((OR ((&cut_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (&geometry_choice)
+               (margin (:B P) D (:K *K2)))))
+      (member ((:t K))
+        (&cut_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&cut_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (&geometry_choice)
+             (margin (:B P) D K))))
+      (probe ((:t K2))
+        (input *P)
+        (&geometry_choice)
+        (margin (:B P) D (:K *K2)))))
+
+  (RULE &cut_part_idx
+    (input *P)
+    (&geometry_choice)
+    (axis_of *D *A)
+    (NOT (&cut_on_divider P A))
+    (margin (:B P) D (:K *K2))
+    (&cut_rank.rank (:key D) (:t K2) (:R *N)))
+
+  (RULE &cut_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&cut_part_idx *P D (:N *N1))
+    (&cut_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &cut_tile_of
+    (&cut_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&cut_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (DET_OR_RULE &shape_color RarestColor)
+
+  (INIT &tile_box BoundingBox
+    (key ((&cut_tile_of *P ^P_tile))
+      (cell (P)
+        (&cut_tile_of *P P_tile))))
+
+  (RULE &panel
+    (&cut_tile_of *P *P_tile)
+    (&tile_box.box (:key P_tile) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (RULE &center
+    (&panel (:P_tile *C))
+    (centered (:P C)))
+
+  (INIT &center_color Singleton
+    (member ((:v Col))
+      (&center *C)
+      (&panel *P (:P_tile C))
+      (input P *Col)
+      (NOT (&bg (:C Col))))))
+
+(INPUT rest-empty "every other panel holds no shape")
+
+(OUTPUT direction "d is the step from the center panel to the other shape panel, one of the eight places on the ring of panels around the center")
+
+(OUTPUT turn "two target panels sit on that ring, &turn steps from d in each sense"
+
+  (DET_OR_RULE &turn "The ring steps from d to each target." SepTileCount SepTileDim))
+
+(OUTPUT stamp "each target panel receives a copy of the center panel's shape, in the color &turn_color gives the sense of its turn"
+
+  (DET &cut_divider2
+    (&line_color.value (:E *Key) (:key *A *L) (:v *Col))
+    (&separator (:C Col)))
+
+  (DET &cut_on_divider2
+    (ex_input (:E *Key) *P)
+    (&geometry_choice)
+    (&cut_divider2 Key *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &cut_rank2 Order
+    (key ((OR ((&cut_divider2 (:Key ^Ky) *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((ex_input (:E Ky) *P)
+               (&geometry_choice)
+               (margin (:B P) D (:K *K2)))))
+      (member ((:t K))
+        (&cut_divider2 (:Key Ky) *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&cut_divider2 (:Key Ky) *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((ex_input (:E Ky) *P)
+             (&geometry_choice)
+             (margin (:B P) D K))))
+      (probe ((:t K2))
+        (ex_input (:E Ky) *P)
+        (&geometry_choice)
+        (margin (:B P) D (:K *K2)))))
+
+  (DET &cut_part_idx2
+    (ex_input (:E *Key) *P)
+    (&geometry_choice)
+    (axis_of *D *A)
+    (NOT (&cut_on_divider2 Key P A))
+    (margin (:B P) D (:K *K2))
+    (&cut_rank2.rank (:key (:Ky Key) D) (:t K2) (:R *N)))
+
+  (DET &cut_part_of2
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&cut_part_idx2 *Key *P D (:N *N1))
+    (&cut_part_idx2 Key P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (DET &cut_tile_of2
+    (&cut_part_of2 *Key *P *A (:P_part *P1))
+    (perp A *A2)
+    (&cut_part_of2 Key P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box2 BoundingBox
+    (key ((&cut_tile_of2 (:Key ^K) *P ^P_tile))
+      (cell (P)
+        (&cut_tile_of2 (:Key K) *P P_tile))))
+
+  (DET &panel2
+    (&cut_tile_of2 (:Key *E) *P *P_tile)
+    (&tile_box2.box (:key (:K E) P_tile) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_intile)))
+
+  (DET &center2
+    (&panel2 *E (:P_tile *C))
+    (centered (:P C)))
+
+  (DET &ring2
+    (&center2 *E *C)
+    (neighbor (:P C) *D *Q)
+    (&panel2 E (:P_tile Q)))
+
+  (DET &panel3
+    (ex_output *E)
+    (&panel2 E *P *P_tile *P_intile))
+
+  (DET &changed
+    (&panel3 *E *P (:P_tile *T) *P_intile)
+    (ex_input E P (:Col *Col_in))
+    (ex_output E P *Col)
+    (!= Col Col_in))
+
+  (DET &shape_cell
+    (&panel3 *E *P (:P_tile *Q) *P_intile)
+    (ex_input E P *Col)
+    (&shape_color (:C Col)))
+
+  (DET &other
+    (&ring2 *E *Q *D)
+    (&shape_cell E Q))
+
+  (DET &turn_color
+    (&changed *E *T (:Col *C))
+    (&other E *D)
+    (&center2 E (:C *C2))
+    (c4_turn *S (:T *R))
+    (apply_dir8 (:D R) (:Dir D) (:Dir_out *D_side))
+    (nearer (:D D_side) (:P T) (:Q C2))))
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (RULE &ring
+    (&center *C)
+    (neighbor (:P C) *D *Q)
+    (&panel (:P_tile Q)))
+
+  (RULE &shape_color2
+    (&geometry_choice)
+    (&shape_color (:C *Col)))
+
+  (RULE &shape_cell2
+    (&shape_color2 *Col)
+    (&panel *P (:P_tile *Q) *P_intile)
+    (input P Col))
+
+  (INIT &shape_panel Singleton
+    (member ((:v Q))
+      (&shape_cell2 *Q)
+      (NOT (&center (:C Q)))))
+
+  (RULE &other2
+    (&shape_panel.value (:v *Q))
+    (&ring Q)
+    (&center *C)
+    (&shape_cell2 (:Q C)))
+
+  (RULE &ready
+    (&other2 *Q))
+
+  (RULE &copy
+    (&other2 *Q)
+    (&center *C)
+    (&shape_cell2 (:Q C) *P_intile))
+
+  ;; The ring's step in each sense: to the ring panel beside it on that sense's
+  ;; side of the line from the center through it.
+  (INIT &ring_walk Walk
+    (key ((OR ((&ring *Q *D)
+               (&center *C)
+               (dir_elem (:D *D2))
+               (neighbor (:P Q) (:D D2) (:Q *Q2))
+               (&ring (:Q Q2))
+               (c4_turn ^S (:T *R))
+               (apply_dir8 (:D R) (:Dir D) (:Dir_out *D_side))
+               (nearer (:D D_side) (:P Q2) (:Q C)))
+              ((sense_elem S)
+               (&turn *N))))
+      (successor ((:p Q) (:p_next Q2))
+        (&ring *Q *D)
+        (&center *C)
+        (dir_elem (:D *D2))
+        (neighbor (:P Q) (:D D2) (:Q *Q2))
+        (&ring (:Q Q2))
+        (c4_turn S (:T *R))
+        (apply_dir8 (:D R) (:Dir D) (:Dir_out *D_side))
+        (nearer (:D D_side) (:P Q2) (:Q C)))
+      (steps (N)
+        (sense_elem S)
+        (&turn *N))))
+
+  (RULE &turn_geometry)
+
+  (RULE &target
+    (&turn_geometry)
+    (&other2 *Q)
+    (&turn *N)
+    (&ring_walk.walk (:key *S) (:p0 Q) N (:p *T))
+    (&turn_color S (:C *Col)))
+
+  (RULE &stamped
+    (&copy *Q *P_intile)
+    (&target Q *T *Col)
+    (&panel *P (:P_tile T) P_intile)))
+
+(ALTS $geometry "how the panels are found" $Lines
+  (ALT $Lines
+    (ALTS $sep "where the separator color comes from" $StoredSeparator
+      (ALT $DeriveSeparator
+        (INPUT panels "full lines of the one color that fills whole lines cut the grid into a 3×3 array of 3×3 panels; undefined when no single color does"
+          (RULE &cut_divider
+            (&line_color.value (:key *A *L) (:v *Col))
+            (&sep_color.value (:v Col))))))
+    (ALTS $targets "which panels receive the copies" $Turn
+      (ALT $ManhattanTargets
+        (OUTPUT turn "the targets are the panels at taxicab distance &turn from the other shape panel, each colored by its side of the line through the center along d; undefined when a target lies on that line"
+          (RULE &manhattan
+            (&other2 *Q)
+            (&panel (:P_tile *T))
+            (relative (:Base Q) (:X T) (:X_rel *V))
+            (diag_dist (:P V) *Diag *K1 *K2)
+            (>= K1 0)
+            (>= K2 0)
+            (corner_dist (:P V) Diag (:K *N))
+            (&turn N))
+          (RULE &target
+            (&manhattan *Q *T)
+            (&ring Q *D)
+            (&center *C)
+            (c4_turn *S (:T *R))
+            (apply_dir8 (:D R) (:Dir D) (:Dir_out *D_side))
+            (nearer (:D D_side) (:P T) (:Q C))
+            (&turn_color S (:C *Col)))
+          (RULE &unsided
+            (&manhattan *Q *T)
+            (NOT (&target Q T)))
+          (RULE &ready
+            (&other2 *Q)
+            (NOT (&unsided Q)))))))
+  (ALT $FixedPanels
+    (INPUT panels "the lines &fixed_divider cut the grid into a 3×3 array of 3×3 panels of &bg, whatever their color"
+      (RULE &cut_cell
+        (input *P)
+        (&geometry_choice))
+
+      (DET &broken_line
+        (ex_output *E)
+        (&line_color.plural E (:key *A *L)))
+
+      (DET &fixed_divider
+        (ex_output *E)
+        (&line_color.value E (:key *A *L))
+        (NOT (&broken_line A L)))
+
+      (RULE &cut_divider
+        (&cut_cell)
+        (&fixed_divider *A *L)))))
+
+(ALTS $shape_color "where the shape color comes from" $StoredShapeColor
+  (ALT $DeriveShapeColor
+    (INPUT two-shapes "two panels hold the same shape in the one color of the center panel other than &bg; undefined when the center panel has no such color or several"
+      (RULE &shape_color2
+        (&center_color.value (:v *Col))))))
+
+(ALTS $stamp "what each copy holds" $CenterShape
+  (ALT $CopyOther
+    (OUTPUT stamp "each copy holds the shape of the other shape panel"
+      (RULE &copy
+        (&other2 *Q)
+        (&shape_cell2 Q *P_intile))))
+  (ALT $StoredShape
+    (OUTPUT stamp "each copy is the stored shape &stored_shape"
+      (DET &stored_shape
+        (&changed (:P_intile *P)))
+
+      (RULE &copy
+        (&other2 *Q)
+        (&stored_shape (:P *P_intile))))))
+
+(ALTS $combine "how a copy meets its target panel" $ShapeOnly
+  (ALT $ClearTarget
+    (OUTPUT stamp "each target panel is first reset to &bg"
+      (RULE &in_target
+        (&target *Q *T)
+        (&panel *P (:P_tile T))))
+    (RULE &drawn
+      (OR ((&stamped *Q *P *Col)
+           (&ready Q))
+          ((&ready Q)
+           (input P (:Col *Col_in))
+           (NOT (&stamped Q P))
+           (IF ((&in_target Q P))
+               ((&bg (:C Col)))
+               ((= Col Col_in))))))))
+
+(RULE &drawn
+  (OR ((&stamped *Q *P *Col)
+       (&ready Q))
+      ((&ready Q)
+       (input P Col)
+       (NOT (&stamped Q P)))))
+
+(RULE &output
+  (&other2 *Q)
+  (&drawn Q *P *Col))
+
+(OUT (&output ^P ^Col))

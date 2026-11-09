@@ -1,0 +1,109 @@
+;; inputs 86528a81587a839a07d1b05bc3bef767b40df59c7e2ec4b1ee211dbad2b98199 programs/solvers/bd5af378.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; bd5af378
+
+(INPUT field "the grid is filled with one field color, except for the L."
+
+  (RULE &corner_color
+    (input *P *Col)
+    (corner_dist P (:Diag *C) (:K 0)))
+
+  (RULE &edge_defect
+    (&corner_color *C (:Col *L))
+    (corner_dir C *D)
+    (input *P *Col)
+    (margin (:B P) D (:K 0))
+    (!= Col L))
+
+  (RULE &l_line
+    (&corner_color *C *Col)
+    (NOT (&edge_defect C)))
+
+  ;; The field color: the one color of every cell off the L.
+  (INIT &field Singleton
+    (key ((&l_line ^C (:Col *L))
+          (input *Col)
+          (!= Col L))
+      (member ((:v Col))
+        (&l_line C (:Col *L))
+        (input *Col)
+        (!= Col L)))))
+
+(INPUT l-line "the L is one full row and one full column of a second color, `l_width` = 1 cell thick, along the two edges that meet at one corner of the grid.")
+
+(OUTPUT edge-to-field "the cells at distance less than `shift` from either edge of the L's corner take the field color.")
+
+(OUTPUT l-steps-in "the cells at distance `shift` from one edge of the corner, and at least `shift` from the other, take the L's color.")
+
+(OUTPUT field-to-fill "the cells at distance more than `shift` from both edges of the corner take `fill_color`.")
+
+(OUTPUT corner-diagonal "on the corner's diagonal, the cells at distance at most `shift` from the corner take `fill_color`, and the cells farther out take the field color."
+
+  (DET &fill_color
+    (&l_line *E *C)
+    (ex_output E *P *Col)
+    (corner_dist P (:Diag C) (:K 0)))
+
+  (DET &shift
+    (&l_line *E *C (:Col *L))
+    (ex_output E (:P *Q) (:Col L))
+    (diag_dist (:P Q) (:Diag C) (:K1 *K) *K2)
+    (< K K2)))
+
+(ALTS $choice "what the L keeps when it steps in" $OneLayer
+  (ALT $MoveWholeL
+    (OUTPUT l-steps-in "the L's input cells translate `shift` cells along the diagonal inward, clipped to the grid")
+    (OUTPUT corner-diagonal "on the corner's diagonal, the cells at distance less than `shift` from the corner and the moved L's corner cells take `fill_color`, and the cells farther out take the field color")
+    (RULE &output
+      (&l_line *C (:Col *L))
+      (&field.value (:key C) (:v *F))
+      (&shift (:K *S))
+      (&fill_color (:Col *Fill))
+      (input *P)
+      (diag_dist P (:Diag C) *K1 *K2)
+      (jump P (:D C) (:K S) *Q)
+      (OR ((NOT (input (:P Q)))
+           (= K1 K2)
+           (= *Col Fill))
+          ((NOT (input (:P Q)))
+           (!= K1 K2)
+           (= Col F))
+          ((input (:P Q) (:Col L))
+           (= K1 K2)
+           (= Col Fill))
+          ((input (:P Q) (:Col L))
+           (!= K1 K2)
+           (= Col L))
+          ((input (:P Q) (:Col F))
+           (= K1 K2)
+           (= Col F))
+          ((input (:P Q) (:Col F))
+           (!= K1 K2)
+           (= Col Fill))))))
+
+(RULE &output
+  (&l_line *C (:Col *L))
+  (&field.value (:key C) (:v *F))
+  (&shift (:K *S))
+  (&fill_color (:Col *Fill))
+  (input *P)
+  (diag_dist P (:Diag C) *K1 *K2)
+  (OR ((= K1 K2)
+       (<= K1 S)
+       (= *Col Fill))
+      ((= K1 K2)
+       (> K1 S)
+       (= Col F))
+      ((!= K1 K2)
+       (< K1 S)
+       (= Col F))
+      ((!= K1 K2)
+       (= K1 S)
+       (> K2 S)
+       (= Col L))
+      ((!= K1 K2)
+       (> K1 S)
+       (> K2 S)
+       (= Col Fill))))
+
+(OUT (&output ^P ^Col))

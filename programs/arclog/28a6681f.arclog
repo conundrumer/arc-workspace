@@ -1,0 +1,282 @@
+;; inputs 2604d79dfe46d9319965eaaaf1550f637aa05995dc120b6f23ea8bdb083b8a8a programs/solvers/28a6681f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 28a6681f
+
+(INPUT vessel "Walls of every other color hold a body of water.")
+
+(OUTPUT settle "The water settles under gravity as the first open cells of one fill order, as many as there are water cells. The water falls and slides to the cup it reaches, a cup fills by level from its bottom, and water that rises over a rim pours into the next cup. Undefined where the sense the water pours in first changes the output."
+
+  (DET &gravity DirDomain)
+
+  (RULE &lateral
+    (&gravity (:D *D2))
+    (perp_dir (:D D2) (:D2 *D)))
+
+  (DET &bg DominantColor)
+
+  (DET &water SharedColor)
+
+  (RULE &wall
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&water (:C Col))))
+
+  (RULE &open
+    (input *P)
+    (NOT (&wall P)))
+
+  (INIT &run Ray
+    (source (P)
+      (&open *P))
+    (node (P)
+      (&open *P))
+    (dir ((:D L))
+      (&open)
+      (&lateral (:D *L))))
+
+  (RULE &run_run_full
+    (&run.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &up
+    (&gravity (:D *D2))
+    (opposite (:D D2) (:Opp *D)))
+
+  (RULE &pour
+    (&gravity (:D *D2))
+    (turn *S (:D D2) (:D2 *D)))
+
+  (RULE &parcel
+    (input *P *Col)
+    (&water (:C Col)))
+
+  (RULE &row
+    (input *P)
+    (&gravity *D)
+    (axis_of D *A)
+    (split P A (:Along *Y)))
+
+  (RULE &hangs
+    (&open *P)
+    (&gravity *D)
+    (neighbor P D *Q)
+    (&open (:P Q)))
+
+  (RULE &drains
+    (&lateral *D)
+    (&run_run_full (:V1 *P) (:V2 D) (:V3 *Q))
+    (&hangs (:P Q)))
+
+  (RULE &step
+    (sense_elem *S)
+    (&open *P)
+    (OR ((&hangs P)
+         (&gravity *D)
+         (neighbor P D *Q))
+        ((NOT (&hangs P))
+         (&pour S (:D *L))
+         (&drains P (:D L))
+         (neighbor P (:D L) Q))
+        ((NOT (&hangs P))
+         (&pour S (:D *L3))
+         (NOT (&drains P (:D L3)))
+         (opposite (:D L3) (:Opp *L2))
+         (&drains P (:D L2))
+         (neighbor P (:D L2) Q))))
+
+  (RULE &rest
+    (&open *P)
+    (NOT (&hangs P))
+    (NOT (&drains P)))
+
+  ;; The cells whose water comes to rest at r, by the steps back from r.
+  (INIT &sink Distance
+    (key ((OR ((sense_elem ^S)
+               (&rest (:P ^R)))
+              ((&rest (:P R))
+               (&step S *P *Q))))
+      (edge ((:a Q) (:b P))
+        (&rest (:P R))
+        (&step S *P *Q))
+      (source ((:n R))
+        (sense_elem S)
+        (&rest (:P R)))))
+
+  (RULE &lex_axis
+    (input)
+    (&gravity *D)
+    (axis_of D *A))
+
+  (RULE &lex_cell
+    (&parcel (:P *P2))
+    (&sink.distance (:key (:S *Key) (:R *P)) (:n P2)))
+
+  (RULE &lex_corner
+    (input)
+    (&pour (:S *Key) (:D *L))
+    (&gravity (:D *D2))
+    (diag_dirs *D (:D1 D2) (:D2 L)))
+
+  ;; The cell the water reaches first: the first place it rests, from
+  ;; gravity's far edge, in the pour direction.
+  (INIT &lex Order
+    (key ((&lex_cell (:Key ^Ky) *P))
+      (member ((:t P))
+        (&lex_cell (:Key Ky) *P))
+      (score ((:t P) (:S K1))
+        (&lex_cell (:Key Ky) *P)
+        (&lex_corner (:Key Ky) (:D *Diag))
+        (&lex_axis *A)
+        (sense_elem (:S Ky))
+        (diag_dist P Diag A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&lex_cell (:Key Ky) *P)
+        (&lex_corner (:Key Ky) (:D *Diag))
+        (&lex_axis *A)
+        (sense_elem (:S Ky))
+        (diag_dist P Diag A *K1 *K2))))
+
+  ;; The cups of each row: the components of the open cells at or below it.
+  (INIT &cup Connectivity
+    (key ((&row ^Y))
+      (node (P)
+        (&open *P)
+        (&gravity *D)
+        (NOT (nearer D (:P Y) (:Q P))))))
+
+  (RULE &inner
+    (&cup.component (:key (:Y *Yc)) *P (:Id *C))
+    (&up (:D *U))
+    (neighbor (:P Yc) (:D U) (:Q *Yp))
+    (&cup.component (:key (:Y Yp)) P (:Id *Cp)))
+
+  (RULE &mouth
+    (&cup.component (:key *Y) (:P *M) (:Id *C))
+    (&row (:P M) Y)
+    (&up (:D *U))
+    (neighbor (:P M) (:D U) (:Q *M2))
+    (&open (:P M2)))
+
+  (RULE &shadowed
+    (&mouth *Y *C *M)
+    (&mouth Y C (:M *M2))
+    (&lateral *D)
+    (nearer D (:P M2) (:Q M)))
+
+  (RULE &away
+    (&inner *Yc *C *Yp *Cp)
+    (&rest (:P *R))
+    (&cup.component (:key (:Y Yp)) (:P R) (:Id Cp))
+    (NOT (&cup.component (:key (:Y Yc)) (:P R) (:Id C)))
+    (&mouth (:Y Yc) C *M)
+    (&lateral *D)
+    (nearer D (:P M) (:Q R)))
+
+  ;; Each cup the water fills, with the cell its water lands on: the inner
+  ;; cup that holds the landing keeps it, and another inner cup takes the
+  ;; water that pours in over its first mouth on the side of the landing.
+  (INIT &descent Distance
+    (key ((OR ((&lex.minimal (:key (:Ky ^S)) (:t *R))
+               (&cup.component (:key *Y) (:P R) (:Id *C))
+               (&up (:D *U))
+               (margin (:B Y) (:D U) (:K 0)))
+              ((sense_elem S)
+               (&rest (:P R))
+               (&inner *Yc C *Yp *Cp)
+               (&cup.component (:key (:Y Yc)) (:P R) (:Id C)))
+              ((&away (:Yp *Yp3) (:Cp *Cp3) R (:Yc *Yc2) C (:D *L))
+               (opposite (:D L) (:Opp *L2))
+               (&mouth (:Y Yc2) C *M)
+               (NOT (&shadowed (:Y Yc2) C (:D L2) M))
+               (&sink.distance (:key S (:R *R2)) (:n M)))))
+      (edge ((:a (:Y Yp) (:C Cp) R) (:b (:Y Yc) C (:R R3)))
+        (OR ((&away *Yp *Cp *R *Yc *C (:D *L))
+             (opposite (:D L) (:Opp *L2))
+             (&mouth (:Y Yc) C *M)
+             (NOT (&shadowed (:Y Yc) C (:D L2) M))
+             (&sink.distance (:key S (:R *R3)) (:n M)))
+            ((sense_elem S)
+             (&rest (:P R))
+             (&inner Yc C Yp Cp)
+             (&cup.component (:key (:Y Yc)) (:P R) (:Id C))
+             (= R3 R))))
+      (source ((:n Y C R))
+        (&lex.minimal (:key (:Ky S)) (:t *R))
+        (&cup.component (:key *Y) (:P R) (:Id *C))
+        (&up (:D *U))
+        (margin (:B Y) (:D U) (:K 0)))))
+
+  (RULE &first_cup
+    (OR ((&descent.distance (:key *S) (:n (:Y *Yp) (:C *Cp) *R))
+         (&inner (:Yc *Y) (:C *C1) Yp Cp)
+         (&cup.component (:key Y) (:P R) (:Id C1))
+         (&inner (:Yc Y) (:C *C2) Yp Cp)
+         (!= C1 C2))
+        ((&descent.distance (:key S) (:n (:Y *Yp2) (:C *Cp2) (:R *R2)))
+         (&away (:Yp Yp2) (:Cp Cp2) (:R R2) (:Yc Y) (:C C1) (:D *L1))
+         (&away (:Yp Yp2) (:Cp Cp2) (:R R2) (:Yc Y) (:C C2) (:D *L2))
+         (OR ((&pour S (:D L1))
+              (NOT (&pour S (:D L2))))
+             ((= L1 L2)
+              (!= C1 C2)
+              (&mouth Y (:C C1) (:M *M1))
+              (&mouth Y (:C C2) (:M *M2))
+              (nearer (:D L1) (:P M2) (:Q M1)))))))
+
+  (RULE &level
+    (&row *P *Y)
+    (&cup.component (:key Y) P (:Id *C)))
+
+  (RULE &upto
+    (OR ((&descent.distance (:key *S) (:n *Y *C))
+         (&level Y C)
+         (&cup.component (:key Y) (:P *Q) (:Id C)))
+        ((&first_cup S (:Y *Yc) *C1 *C2)
+         (&cup.component (:key (:Y Yc)) (:P Q) (:Id C1))
+         (&cup.component (:key (:Y Yc)) *P (:Id C2))
+         (&level P Y C))))
+
+  (INIT &filled Cardinality
+    (key ((&upto ^S ^Y ^C *Q))
+      (member ((:m Q))
+        (&upto S Y C *Q))))
+
+  (INIT &amount Cardinality
+    (member ((:m P))
+      (&parcel *P))
+    (domain ()
+      (input))))
+
+(RULE &settled
+  (input *P (:Col *C0))
+  (sense_elem *S)
+  (OR ((&level P *Y *C)
+       (&filled.size (:key S Y C) (:N *N1))
+       (&amount.size *N)
+       (<= N1 N)
+       (&water (:C *Col)))
+      ((&wall P)
+       (= Col C0))
+      ((&level P Y C)
+       (&upto S Y C *Q)
+       (&level (:P Q) (:Y *Yq) (:C *Cq))
+       (NOT (&upto S (:Y Yq) (:C Cq) (:Q P)))
+       (&filled.size (:key S (:Y Yq) (:C Cq)) (:N N1))
+       (&amount.size N)
+       (>= N1 N)
+       (&bg (:C Col)))
+      ((&level P Y C)
+       (NOT (&upto S Y C (:Q P)))
+       (&bg (:C Col)))))
+
+(RULE &disputed
+  (&settled (:S *S1) *P (:Col *Col1))
+  (&settled (:S *S2) P (:Col *Col2))
+  (!= S1 S2)
+  (!= Col1 Col2))
+
+(RULE &output
+  (&settled *P *Col)
+  (NOT (&disputed)))
+
+(OUT (&output ^P ^Col))

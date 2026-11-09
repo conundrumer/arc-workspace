@@ -1,0 +1,206 @@
+;; inputs 9dc1791663d941d82164ea323f7ff0a8731a98a93eb9b2adabec1cfa32718ace programs/solvers/e5790162.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e5790162
+
+(param &turn_sense (Color Sense) (6 SENSE_CW) (8 SENSE_CC))
+(param &start_dir Dir (DIR_R))
+(param &path_color Color (3))
+(param &background Color (0))
+
+(alts $h
+  (alt $HeadAwayFromEdge
+    (witness start-on-top-edge variant $HeadAwayFromEdge
+      (relaxed start-cell)
+      (separates "the start cell sits on the top edge: the concept heads right along row 0; $HeadAwayFromEdge and $HeadTowardMarker head down to the 6 and turn west")
+      (input (grid
+        (0 0 3 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 6 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $StoredDir (grid
+        (0 0 3 3 3 3)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 6 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $HeadAwayFromEdge $HeadTowardMarker (grid
+        (0 0 3 0 0 0)
+        (0 0 3 0 0 0)
+        (3 3 3 0 0 0)
+        (0 0 6 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))))
+  (alt $HeadTowardMarker
+    (witness no-marker-in-start-row borderline concept
+      (relaxed every-marker-met)
+      (separates "no marker is in the start row, and a 6 is in the start column: the concept heads right to the edge; $HeadTowardMarker heads up to the 6 and turns east")
+      (input (grid
+        (6 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (3 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $HeadAwayFromEdge $StoredDir (grid
+        (6 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (3 3 3 3 3 3)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $HeadTowardMarker (grid
+        (6 0 0 0 0 0)
+        (3 3 3 3 3 3)
+        (3 0 0 0 0 0)
+        (3 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0))))))
+
+(alts $c
+  (alt $StartIsNonMarker
+    (witness start-of-another-color variant $StartIsNonMarker
+      (relaxed start-cell)
+      (separates "the start cell is 2: the concept finds no start cell and keeps the input; $StartIsNonMarker draws the line in 2; $SingleStart is undefined")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (2 0 0 6 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $StoredColor (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (2 0 0 6 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $StartIsNonMarker (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (2 2 2 6 0 0)
+        (0 0 2 0 0 0)
+        (0 0 2 0 0 0)
+        (0 0 2 0 0 0))))))
+
+(alts $b
+  (alt $StopWhenBlocked
+    (witness marker-ahead-after-turn borderline concept
+      (relaxed line-exits)
+      (separates "after the turn at the 6 above the line, another 6 is directly ahead: the concept turns again and runs down over its own trail to the bottom edge; $StopWhenBlocked and $StopAtTrail stop at (2,2)")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 6 0 0 0)
+        (0 0 0 6 0 0)
+        (0 0 0 0 0 0)
+        (3 0 0 8 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output ($TurnAgain $CrossTrail) (grid
+        (0 0 0 0 0 0)
+        (0 0 6 0 0 0)
+        (0 0 3 6 0 0)
+        (0 0 3 0 0 0)
+        (3 3 3 8 0 0)
+        (0 0 3 0 0 0)
+        (0 0 3 0 0 0)
+        (0 0 3 0 0 0)))
+      (output $StopWhenBlocked $StopAtTrail (grid
+        (0 0 0 0 0 0)
+        (0 0 6 0 0 0)
+        (0 0 3 6 0 0)
+        (0 0 3 0 0 0)
+        (3 3 3 8 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0))))))
+
+(alts $t
+  (alt $StopAtTrail
+    (witness line-crosses-trail borderline concept
+      (relaxed line-exits)
+      (separates "the line turns back across its first segment: the concept runs through (4,2) to the bottom edge; $StopAtTrail stops at (3,2)")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0)
+        (0 8 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (3 0 0 0 0 8 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $CrossTrail (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0)
+        (0 8 3 3 3 0 0)
+        (0 0 3 0 3 0 0)
+        (3 3 3 3 3 8 0)
+        (0 0 3 0 0 0 0)
+        (0 0 3 0 0 0 0)))
+      (output $StopAtTrail (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0)
+        (0 8 3 3 3 0 0)
+        (0 0 3 0 3 0 0)
+        (3 3 3 3 3 8 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $x
+  (alt $OnlyBackgroundPassable
+    (witness other-color-on-line foreign any
+      (relaxed start-cell)
+      (separates "a 2 cell is on the line: the concept paints it and turns at the 6; $OnlyBackgroundPassable stops before it; $StartIsNonMarker is undefined")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (3 0 2 0 6 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output ($StoredColor $PassNonMarker) (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (3 3 3 3 6 0)
+        (0 0 0 3 0 0)
+        (0 0 0 3 0 0)
+        (0 0 0 3 0 0)))
+      (output $StartIsNonMarker undefined)
+      (output $OnlyBackgroundPassable (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (3 3 2 0 6 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed start-cell)
+      (separates "`background=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1)
+        (3 1 1 6 1 1)
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1)))
+      (output ($StoredColor $PassNonMarker) &background=$Derived (grid
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1)
+        (3 3 3 6 1 1)
+        (1 1 3 1 1 1)
+        (1 1 3 1 1 1)
+        (1 1 3 1 1 1)))
+      (output $StartIsNonMarker undefined)
+      (output ($OnlyBackgroundPassable &background=$Stored) (grid
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1)
+        (3 1 1 6 1 1)
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1)
+        (1 1 1 1 1 1))))))

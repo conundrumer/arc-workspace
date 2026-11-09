@@ -1,0 +1,54 @@
+;; inputs 59020dd57b2a8cbf9f0b6f2144612328b5c06024852eb639322d10f04e805a3b programs/solvers/b91ae062.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b91ae062
+
+(param &background Color (0))
+(param &scale_by_count (number number) (2 2) (3 3) (4 4))
+
+(alts $choice
+  (alt $ScaleTable
+    (witness table-entry-off-count ordinary concept
+      (separates "an input with 2 non-background colors under a stored table that maps 2 to 3: the concept scales by the count, 2, to 6x6; $ScaleTable scales by the table's entry, 3, to 9x9")
+      (assign &scale_by_count (2 3) (3 3) (4 4))
+      (input (grid
+        (5 0 0)
+        (0 8 5)
+        (0 0 0)))
+      (output concept (grid
+        (5 5 0 0 0 0)
+        (5 5 0 0 0 0)
+        (0 0 8 8 5 5)
+        (0 0 8 8 5 5)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output $ScaleTable (grid
+        (5 5 5 0 0 0 0 0 0)
+        (5 5 5 0 0 0 0 0 0)
+        (5 5 5 0 0 0 0 0 0)
+        (0 0 0 8 8 8 5 5 5)
+        (0 0 0 8 8 8 5 5 5)
+        (0 0 0 8 8 8 5 5 5)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline concept
+      (relaxed colored-cells-on-background)
+      (separates "an input with no cell of the stored background 0: the concept counts both colors and scales by 2 to 6x6; a background derived from the input is one of its colors, so the count drops to 1 and the output is the input")
+      (input (grid
+        (1 2 1)
+        (2 1 2)
+        (1 2 1)))
+      (output &background=$Stored (grid
+        (1 1 2 2 1 1)
+        (1 1 2 2 1 1)
+        (2 2 1 1 2 2)
+        (2 2 1 1 2 2)
+        (1 1 2 2 1 1)
+        (1 1 2 2 1 1)))
+      (output &background=$Derived (grid
+        (1 2 1)
+        (2 1 2)
+        (1 2 1))))))

@@ -1,0 +1,68 @@
+;; inputs 4aea562f83c8a38866be4385e063b4d6d690a1ae3ae8563f81cee11d13535b14 programs/solvers/45a5af55.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 45a5af55
+
+;; The input edge the innermost stripe sits on.
+(DET &inner_dir DirDomain)
+
+(RULE &line_col
+  (input *P *Col)
+  (&inner_dir (:D *D_in))
+  (axis_of (:D D_in) *A)
+  (split P A (:Along *P_line)))
+
+(RULE &inner_col
+  (&line_col *P_line *Col)
+  (&inner_dir (:D *D_in))
+  (margin (:B P_line) (:D D_in) (:K 0)))
+
+;; The innermost stripe: the run of inner-colored lines reaching the inner edge.
+(INIT &core Flood
+  (node ((:P P_line))
+    (&line_col *P_line *Col)
+    (&inner_col Col))
+  (source ((:P P_line))
+    (&line_col *P_line)
+    (&inner_dir (:D *D_in))
+    (margin (:B P_line) (:D D_in) (:K 0))))
+
+;; Every other line paints one ring.
+(INIT &ring_tally Cardinality
+  (member ((:m P_line))
+    (&line_col *P_line)
+    (NOT (&core.reached (:P P_line))))
+  (domain ()))
+
+(RULE &side
+  (input *P)
+  (&inner_dir (:D *D_in))
+  (axis_of (:D D_in) *A)
+  (&ring_tally.size (:N *M))
+  (edge_inset (:D D_in) (:K M) (:B *Ins))
+  (compose (:A P) (:B Ins) (:C *P_wide))
+  (frame_extent (:P P_wide) A *N))
+
+(INIT &frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&side *N)))
+
+;; The frame peels into rings, one per depth.
+(INIT &peel Boundary
+  (cell (P)
+    (&frame.cell *P)))
+
+(INIT &peel_depth CellDistance
+  (node (P)
+    (&frame.cell *P))
+  (source (P)
+    (&peel.boundary *P)))
+
+(RULE &output
+  (&peel_depth.distance *P *K)
+  (&inner_dir (:D *D_in))
+  (opposite (:D D_in) (:Opp *D_out))
+  (&line_col *P_line *Col)
+  (margin (:B P_line) (:D D_out) K))
+
+(OUT (&output ^P ^Col))

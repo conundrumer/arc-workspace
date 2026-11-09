@@ -1,0 +1,91 @@
+;; inputs d687e43c5097d0ef757f34d18484badcbc4873983b78c7147c36cc896d52cec6 programs/solvers/71e489b6.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 71e489b6
+
+(DET &ground SharedColor)
+
+(DET &halo AnyOutNewColor)
+
+;; The side of the square a solid cell lies in.
+(DET &square_side TileCount)
+
+(INIT &square_frame Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&square_side *N)))
+
+(RULE &figure
+  (input *P (:Col *C))
+  (NOT (&ground C)))
+
+(INIT &rim Boundary
+  (cell (P)
+    (&figure *P)))
+
+(RULE &figure_nbr
+  (&figure *P)
+  (dir_elem *D)
+  (NOT (&rim.exposed P D)))
+
+(RULE &continued
+  (&figure_nbr *P (:D *D1))
+  (&figure_nbr P (:D *D2))
+  (!= D1 D2))
+
+(RULE &ground2
+  (input *P)
+  (NOT (&continued P)))
+
+;; The square blocks of ground.
+(INIT &block Occurrences
+  (cell (P)
+    (&ground2 *P))
+  (shape ((:P S))
+    (&square_frame.cell (:P *S))))
+
+(RULE &solid
+  (&block.occurrence (:P *M))
+  (&square_frame.cell (:P *S))
+  (compose (:A M) (:B S) (:C *P)))
+
+;; The clusters of thin ground.
+(INIT &cluster Connectivity
+  (node (P)
+    (&ground2 *P)
+    (NOT (&solid P))))
+
+(RULE &anchor
+  (&cluster.component *P *Id)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (&solid (:P Q)))
+
+(RULE &passage
+  (&anchor *Id (:Q *Q1))
+  (&anchor Id (:Q *Q2))
+  (!= Q1 Q2))
+
+(RULE &hole
+  (input *P (:Col *C))
+  (&ground C)
+  (&cluster.component P *Id)
+  (NOT (&passage Id)))
+
+(RULE &halo2
+  (&hole (:P *Q))
+  (neighbor (:P Q) *D (:Q *P))
+  (input P)
+  (NOT (&hole P)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (OR ((&halo2 P)
+       (&halo (:C *Col)))
+      ((NOT (&halo2 P))
+       (&ground2 P)
+       (&ground (:C Col)))
+      ((NOT (&halo2 P))
+       (NOT (&ground2 P))
+       (= Col C_in))))
+
+(OUT (&output ^P ^Col))

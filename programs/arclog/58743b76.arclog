@@ -1,0 +1,77 @@
+;; inputs 16fa3befb0d964fa0c7dfa72b13466a16033198777fb45fe5f640a85a342c694 programs/solvers/58743b76.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58743b76
+
+(DET &bg DominantColor)
+
+;; The color of the cells that are neither canvas nor key.
+(DET &filler SharedColor)
+
+(INIT &canvas BoundingBox
+  (cell ((:P P_grid))
+    (input (:P *P_grid) *Col)
+    (&bg (:C Col))))
+
+(RULE &on_canvas
+  (input (:P *P_grid))
+  (&canvas.box *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_inner)))
+
+(RULE &mark
+  (&on_canvas (:P_grid *P))
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &key BoundingBox
+  (cell ((:P P_grid))
+    (input (:P *P_grid) *Col)
+    (NOT (&filler (:C Col)))
+    (NOT (&on_canvas P_grid))))
+
+;; The canvas split into one part per key cell.
+(INIT &part Division
+  (cell ((:P P_inner))
+    (&on_canvas *P_inner))
+  (parts (A N)
+    (&key.cell *P)
+    (&key.box *B)
+    (box_extent B P *A *N)))
+
+(ALTS $choice "how a mark's place in the canvas picks a key cell; the key is 2x2 in every pair, so the two ways agree there and part only on a larger key" $Shrunk
+  (ALT $Corner
+    (RULE &place_nearer
+      (&on_canvas (:P_inner *P))
+      (dist_pair P *D *K *K2)
+      (< K K2))
+
+    (RULE &place_quadrant
+      (diag_dirs (:D *Diag) *D1 *D2)
+      (&place_nearer *P (:D D1))
+      (&place_nearer P (:D D2)))
+
+    (RULE &output
+      (OR ((&mark *P)
+           (&on_canvas (:P_grid P) *P_inner)
+           (&place_quadrant (:P P_inner) (:Diag *D))
+           (&key.cell (:P *P_key))
+           (&key.box *B)
+           (inside (:A P_key) B)
+           (same_corner D (:P1 P_key) (:P2 B))
+           (input (:P P_key) *Col))
+          ((input P Col)
+           (NOT (&mark P)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&mark P)))
+      ((&mark P)
+       (&on_canvas (:P_grid P) *P_inner)
+       (&part.tile (:P P_inner) (:P_outer *P_tile))
+       (&key.cell (:P *P_key))
+       (&key.box *B)
+       (inside (:A P_key) B)
+       (relative (:Base B) (:X P_key) (:X_rel P_tile))
+       (input (:P P_key) Col))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,34 @@
+;; inputs 33e63284e5634fce69bf193f4a94a14ae87ac3333cb0fb93353fc83325f778f1 programs/solvers/27f8ce4f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 27f8ce4f
+
+(INIT &tally_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (input (:P *P_intile))))
+
+(DET &bg AnyOutNewColor)
+
+;; The commonest input color.
+(INIT &tally Order
+  (member ((:t Col))
+    (&tally_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&tally_count.size (:key *Col) *N)))
+
+(RULE &output
+  (input (:P *P_tile) (:Col *C_tile))
+  (input (:P *P_intile) (:Col *C_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P)
+  (OR ((NOT (&tally.maximal (:t C_tile)))
+       (&bg (:C *Col)))
+      ((&tally.maximal (:t C_tile))
+       (= Col C_intile))))
+
+(OUT (&output ^P ^Col))

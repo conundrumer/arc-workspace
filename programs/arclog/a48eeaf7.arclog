@@ -1,0 +1,400 @@
+;; inputs b508d692e18405b86a61f191af5dfcca7c1d3cf0e8cf207b97c031d43282cc99 programs/solvers/a48eeaf7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a48eeaf7
+
+(INPUT block "one solid 2×2 block of &block_color on a &background field"
+
+  (DET &block_color UnchangedColor)
+
+  (RULE &block_color2
+    (&block_color (:C *Col)))
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &cell2
+    (ex_input *E *P *Col)
+    (&block_color (:C Col)))
+
+  (RULE &order2
+    (diag_dir_elem (:D *C))
+    (axis_elem *A))
+
+  (DET &square_cell2
+    (&cell2 *E *P)
+    (&order2 *C)
+    (diag_opposite (:D C) (:Opp *D))
+    (diag_dirs D (:D1 *E1) (:D2 *E2))
+    (OR ((neighbor P (:D E1) *Q))
+        ((= Q P))
+        ((neighbor P (:D E2) Q))
+        ((neighbor P D Q))))
+
+  (RULE &cell
+    (&block_color2 *Col)
+    (input *P Col))
+
+  (DET &patchy2
+    (&square_cell2 *E *C *P *Q)
+    (NOT (&cell2 E (:P Q))))
+
+  (DET &scan_cell2
+    (&cell2 (:E *K) *P)
+    (&order2 *C *A)
+    (NOT (&patchy2 (:E K) C P)))
+
+  (INIT &scan2 Order
+    (key ((&cell2 (:E ^Ky) *P)
+          (&order2 ^C ^A)
+          (NOT (&patchy2 (:E Ky) C P)))
+      (member ((:t P))
+        (&cell2 (:E Ky) *P)
+        (&order2 C A)
+        (NOT (&patchy2 (:E Ky) C P)))
+      (score ((:t P) (:S K1))
+        (&cell2 (:E Ky) *P)
+        (&order2 C A)
+        (NOT (&patchy2 (:E Ky) C P))
+        (&scan_cell2 (:K Ky) C A)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&cell2 (:E Ky) *P)
+        (&order2 C A)
+        (NOT (&patchy2 (:E Ky) C P))
+        (&scan_cell2 (:K Ky) C A)
+        (diag_dist P (:Diag C) A *K1 *K2))))
+
+  ;; The box of the last square in each scan order.
+  (INIT &last_square2 BoundingBox
+    (key ((&scan2.maximal (:key ^Ky ^C ^A) (:t *P))
+          (&square_cell2 (:E Ky) C P *Q))
+      (cell ((:P Q))
+        (&scan2.maximal (:key Ky C A) (:t *P))
+        (&square_cell2 (:E Ky) C P *Q))))
+
+  (DET &unpicked
+    (&order2 *C *A)
+    (ex_output *E)
+    (NOT (&last_square2.box (:key (:Ky E) C A))))
+
+  (DET &scan_order
+    (&order2 *C *A)
+    (NOT (&unpicked C A)))
+
+  (RULE &square_cell
+    (&cell *P)
+    (&scan_order *C)
+    (diag_opposite (:D C) (:Opp *D))
+    (diag_dirs D (:D1 *E1) (:D2 *E2))
+    (OR ((neighbor P (:D E1) *Q))
+        ((= Q P))
+        ((neighbor P (:D E2) Q))
+        ((neighbor P D Q))))
+
+  (RULE &patchy
+    (&square_cell *C *P *Q)
+    (NOT (&cell (:P Q))))
+
+  (RULE &scan_cell
+    (&cell *P)
+    (&scan_order *C *A)
+    (NOT (&patchy C P)))
+
+  (INIT &scan Order
+    (key ((&cell *P)
+          (&scan_order ^C ^A)
+          (NOT (&patchy C P)))
+      (member ((:t P))
+        (&cell *P)
+        (&scan_order C A)
+        (NOT (&patchy C P)))
+      (score ((:t P) (:S K1))
+        (&cell *P)
+        (&scan_order C A)
+        (NOT (&patchy C P))
+        (&scan_cell C A)
+        (diag_dist P (:Diag C) A *K1 *K2))
+      (secondary_score ((:t P) (:S K2))
+        (&cell *P)
+        (&scan_order C A)
+        (NOT (&patchy C P))
+        (&scan_cell C A)
+        (diag_dist P (:Diag C) A *K1 *K2))))
+
+  ;; The box of the last square in each scan order.
+  (INIT &last_square BoundingBox
+    (key ((&scan.maximal (:key ^C ^A) (:t *P))
+          (&square_cell C P *Q))
+      (cell ((:P Q))
+        (&scan.maximal (:key C A) (:t *P))
+        (&square_cell C P *Q))))
+
+  ;; The colors whose cells have a same-colored neighbor by side.
+  (INIT &clumped Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (NOT (&background (:C Col)))
+      (dir_elem *D)
+      (neighbor P D *Q)
+      (input (:P Q) Col)))
+
+  ;; The square every scan order picks.
+  (INIT &picked Singleton
+    (member ((:v B))
+      (&last_square.box *B))))
+
+(INPUT markers "single cells of &marker_color, each apart from the block. Each marker lies in the block's rows, in its columns, or on a diagonal line through a corner of the block."
+
+  (DET &marker_color ChangedColor))
+
+(OUTPUT slide "each marker moves straight toward the block, in the one of the eight directions that points at the block from the marker, and stops at the first cell that touches the block by side or by corner. Undefined when that line never reaches such a cell."
+
+  (RULE &marker
+    (input *P *Col)
+    (&marker_color (:C Col)))
+
+  (RULE &block
+    (&block_color2 *Col)
+    (input *P Col))
+
+  (INIT &bbox BoundingBox
+    (cell (P)
+      (&block *P)))
+
+  (RULE &beyond
+    (&bbox.box *B)
+    (input *P)
+    (margin (:B P) *D *K)
+    (margin B D (:K *K_box))
+    (< K K_box))
+
+  (RULE &beyond_axis
+    (&beyond *P *D)
+    (axis_of D *A))
+
+  (RULE &toward
+    (&beyond *P (:D *D3))
+    (opposite (:D D3) (:Opp *E))
+    (axis_of (:D D3) *A)
+    (perp A *A2)
+    (OR ((&beyond P (:D *D2))
+         (opposite (:D D2) (:Opp *E2))
+         (diag_dirs *D A (:D1 E) (:D2 E2)))
+        ((NOT (&beyond_axis P (:A A2)))
+         (= D E))))
+
+  (RULE &aim
+    (&marker (:P *M))
+    (&toward (:P M) *D))
+
+  (RULE &touch
+    (&block (:P *Q))
+    (neighbor (:P Q) (:Q *P))
+    (input P)
+    (NOT (&block P)))
+
+  ;; The line goes on through the first cell that touches the block, and no
+  ;; further.
+  (RULE &lines_blocked
+    (&touch *P))
+
+  ;; Each marker's line toward the block, cut short at the first cell the stop
+  ;; rule bars.
+  (INIT &lines Ray
+    (source ((:P M))
+      (&aim *M))
+    (node (P)
+      (input *P)
+      (NOT (&lines_blocked P)))
+    (dir (D)
+      (&aim *D)))
+
+  (INIT &lines_full Ray
+    (source ((:P M))
+      (&aim *M))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (&aim *D)))
+
+  (RULE &lines_stop_full
+    (&lines.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&lines_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &lines_cell
+    (&bbox.box)
+    (input *P))
+
+  (RULE &walk_cell
+    (OR ((&aim *M *D)
+         (NOT (&touch (:P M)))
+         (OR ((&lines.ray *P D *K (:Origin M))
+              (&lines_cell P))
+             ((&lines_stop_full (:V1 P) (:V2 D) (:V3 K) (:V4 M)))))
+        ;; A walk starts at its marker on the marker's line. A marker with no line
+        ;; stays where it is.
+        ((&bbox.box)
+         (&marker (:P M))
+         (NOT (&aim M))
+         (= P M)
+         (= K 0))
+        ;; A marker that touches the block at the start stays where it is.
+        ((&aim M)
+         (&touch (:P M))
+         (= P M)
+         (= K 0))))
+
+  ;; The walk's step counts.
+  (INIT &walk_length Order
+    (key ((&walk_cell ^M *K))
+      (member ((:t K))
+        (&walk_cell M *K))
+      (score ((:t K) (:S K))
+        (&walk_cell M *K))))
+
+  (RULE &end
+    (&walk_cell *M *P *K)
+    (&walk_length.maximal (:key M) (:t K)))
+
+  (RULE &arrive
+    (&end *M *P)
+    (&touch P))
+
+  ;; Each walk's cells in walking order.
+  (INIT &trail Order
+    (key ((&walk_cell ^M *P))
+      (member ((:t P))
+        (&walk_cell M *P))
+      (score ((:t P) (:S K))
+        (&walk_cell M *P *K))))
+
+  ;; The markers that stop at one cell, by path length.
+  (INIT &pile Order
+    (key ((&arrive *M (:P ^Q)))
+      (member ((:t M))
+        (&arrive *M (:P Q)))
+      (score ((:t M) (:S N))
+        (&arrive *M (:P Q))
+        (&walk_cell M (:P Q) (:K *N)))))
+
+  ;; The ring of cells that touch the block, as a box.
+  (INIT &ring BoundingBox
+    (cell (P)
+      (&touch *P))))
+
+(OUTPUT keep-block "the block stays in place, and the marker's original cell becomes &background")
+
+(ALTS $approach "how a marker reaches its final cell" $Walk
+  (ALT $Walk
+    (ALTS $path "the line the marker walks" $Line
+      (ALT $Line
+        (ALTS $stop "where the line stops" $Touch
+          (ALT $PassBy
+            (OUTPUT slide "the marker stops only when its next step would enter the block or leave the grid, so a marker off the block's lines passes the block. Defined on every input."
+              (RULE &walk_cell
+                (OR ((&aim *M *D)
+                     (&lines.ray *P D *K (:Origin M))
+                     (&lines_cell P))
+                    ;; A walk starts at its marker on the marker's line. A marker with no line
+                    ;; stays where it is.
+                    ((&bbox.box)
+                     (&marker (:P M))
+                     (NOT (&aim M))
+                     (= P M)
+                     (= K 0))))
+              ;; The line goes on up to the block or the grid edge.
+              (RULE &lines_blocked
+                (&block *P))
+              (RULE &arrive
+                (&end *M *P))))))
+      (ALT $KingPath
+        (OUTPUT slide "the marker steps diagonally toward the block until it is level with the block's rows or columns, then goes straight. It stops at the first cell that touches the block, and is defined on every input."
+          (RULE &king_seed
+            (&bbox.box)
+            (&marker (:P *M)))
+          ;; Each marker's walk, each step in the direction that points at the block
+          ;; from where it stands, up to the first cell that touches the block.
+          (INIT &king Distance
+            (key ((&king_seed (:M ^P)))
+              (source ((:n P))))
+            (edge ((:a P2) (:b Q))
+              (input (:P *P2))
+              (&toward (:P P2) *D)
+              (NOT (&touch (:P P2)))
+              (neighbor (:P P2) D *Q)))
+          (RULE &walk_cell
+            (&king.distance (:key (:P *M)) (:n *P) *K))
+          (RULE &arrive
+            (&end *M *P)))))
+    (ALTS $collide "what two markers that reach one cell do" $Merge
+      (ALT $Stack
+        (OUTPUT slide "the markers that reach one cell settle in order of path length. Each stops as many cells back along its own path as there are markers there with shorter paths.")
+        ;; The marker with K shorter paths before it stops K cells back on its path.
+        (RULE &landed
+          (&pile.rank (:t *M) (:R *K))
+          (&trail.dual_rank (:key M) (:t *P) (:R K))))))
+  (ALT $Clamp
+    (OUTPUT slide "each marker moves to the nearest cell of the ring around the block: each coordinate is clamped to the block's bounding box grown by one cell"
+      (RULE &clamped
+        (&ring.box *B)
+        (&marker (:P *M))
+        (input (:P *Q))
+        (axis_of *D *A)
+        (OR ((&beyond (:P M) D)
+             (margin B D *K)
+             (margin (:B Q) D K))
+            ((NOT (&beyond_axis (:P M) A))
+             (same_dist D (:P1 Q) (:P2 M))))))
+    (RULE &landed
+      (&clamped *M (:Q *P) *A)
+      (perp A *A2)
+      (&clamped M (:Q P) (:A A2)))))
+
+(ALTS $block "which cells are the block" $ColorCells
+  (ALT $Last2x2
+    (INPUT block "the block is the last 2×2 square of &block_color in each scan order of &scan_order, from its corner along its axis. Undefined when there is no such square, or when the open scan orders pick different squares."
+      (RULE &block
+        (&picked.value (:v *B))
+        (input *P)
+        (inside (:A P) B)))))
+
+(ALTS $roles "how the block color and the markers are found" $StoredRoles
+  (ALT $DeriveRoles
+    (INPUT block "the block color is the one color whose cells have a same-colored neighbor by side. Undefined when there is not exactly one such color."
+      (RULE &block_color2
+        (&clumped.value (:v *Col)))
+
+      (RULE &marker
+        (input *P *Col)
+        (NOT (&background (:C Col)))
+        (&clumped.value (:v *Col2))
+        (!= Col Col2)))
+    (INPUT markers "every other cell that is not &background is a marker, and keeps its own color")))
+
+(RULE &path_shape_choice)
+
+(RULE &cleared
+  (OR ((input *P *Col)
+       (NOT (&marker P)))
+      ((&marker P)
+       (&background (:C Col)))))
+
+(RULE &landed
+  (&arrive *M *P))
+
+(RULE &unlanded
+  (&marker (:P *M))
+  (NOT (&landed M)))
+
+(RULE &settled
+  (&bbox.box)
+  (NOT (&unlanded)))
+
+(RULE &output
+  (&settled)
+  (OR ((&landed *M *P)
+       (&marker (:P M) *Col))
+      ((&cleared P Col)
+       (NOT (&landed P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,6 @@
+;; inputs 0970398694e5c5ec319624d9592914bbde1469f4b45071b8dac7944ce0e7fb8d programs/solvers/5ad8a7c0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5ad8a7c0
+
+(param &mark Color (2))
+(param &axis Axis (AXIS_H))

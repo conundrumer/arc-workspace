@@ -1,0 +1,73 @@
+;; inputs bccf1eb83157f139bd537ad83f96939704135f6b235c6109f37b99f9736e21c2 programs/solvers/9720b24f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9720b24f
+
+(INPUT container "a container is every cell of one color"
+
+  (DET &bg SharedColor)
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (INIT &color_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col)))
+
+  (INIT &shapes Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(INPUT outline-shape "each container is drawn as one 8-connected shape.")
+
+(OUTPUT inside "a non-bg cell is erased to bg when it lies inside a container it does not belong to, the container closing about two-thirds of the circle around the cell"
+  (APPROXIMATED "a cell lies inside a container when the container's cells are on both sides of it along one axis, and one is to a side of the other axis"))
+
+(OUTPUT pass "every other cell passes through unchanged")
+
+(ALTS $choice "what a container is" $ColorClass
+  (ALT $Shape
+    (INPUT container "a container is one 8-connected shape of non-bg cells")
+    (RULE &container
+      (&shapes.component *P (:Id *K)))))
+
+(RULE &container
+  (&ink *P *Col)
+  (&color_id.class (:a Col) (:Id *K)))
+
+(RULE &sees
+  (&ink *P)
+  (&container (:P *Q) *K)
+  (axis_of *D *A)
+  (same_line A P Q)
+  (nearer D (:P Q) (:Q P)))
+
+(RULE &between
+  (&sees *P *K *D)
+  (&sees P K (:D *D2))
+  (opposite D (:Opp D2))
+  (axis_of D *A))
+
+(RULE &surrounded
+  (&between *P *K *A)
+  (perp A *A2)
+  (axis_of *D (:A A2))
+  (&sees P K D))
+
+(RULE &erased
+  (&surrounded *P *K)
+  (NOT (&container P K)))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&erased P)))
+      ((&erased P)
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

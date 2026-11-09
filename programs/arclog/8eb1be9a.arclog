@@ -1,0 +1,35 @@
+;; inputs efa9958f2758bd98b8abd0fffacc550b982d0359a59430dc845982f843a24808 programs/solvers/8eb1be9a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8eb1be9a
+
+(DET &bg DominantColor)
+
+(DET &axis AxisDomain)
+
+(RULE &band_row
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&axis *A)
+  (split P A (:Along *Al)))
+
+(INIT &period Cardinality
+  (member ((:m Al))
+    (&band_row *Al)))
+
+;; Each cell takes the color of the band cell on its line at its place
+;; within the band's extent.
+(RULE &output
+  (input (:P *P2) *Col)
+  (&axis *A)
+  (split (:P P2) A (:Along *Al))
+  (&band_row Al)
+  (input *P)
+  (same_line A (:P P2) (:Q P))
+  (&period.size *N)
+  (axis_of *D A)
+  (margin (:B P2) D (:K *T))
+  (divide T (:Side N) (:Gap 0) (:Remainder *R))
+  (margin (:B P) D (:K *T2))
+  (divide (:T T2) (:Side N) (:Gap 0) (:Remainder R)))
+
+(OUT (&output ^P ^Col))

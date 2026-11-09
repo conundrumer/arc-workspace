@@ -1,0 +1,20 @@
+;; inputs 061425db5666676173661e15880064f2dcff5ebb832cc702ef9ccf4cc217a2b7 programs/solvers/0962bcdd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0962bcdd
+
+(param &bg Color (0))
+(param &radius number (2))
+(param &template_arm Offset
+  (grid
+    (_ _ 1 _ _)
+    (_ _ 1 _ _)
+    (1 1 @_ 1 1)
+    (_ _ 1 _ _)
+    (_ _ 1 _ _)))
+(param &template_center Offset
+  (grid
+    (1 _ _ _ 1)
+    (_ 1 _ 1 _)
+    (_ _ @1 _ _)
+    (_ 1 _ 1 _)
+    (1 _ _ _ 1)))

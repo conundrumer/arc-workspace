@@ -1,0 +1,7 @@
+;; inputs 6a1a9b612fa275168dbaa77595b7e4fb1a85646d0f0a7160c32d685b8ab5017b programs/solvers/f15e1fac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f15e1fac
+
+(param &seed_color Color (8))
+(param &marker_color Color (2))
+(param &step number (1))

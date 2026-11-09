@@ -1,0 +1,15 @@
+;; inputs efc533f307f02dc5514d5b7a12e336b86ebc0eb281e13ae3654388ba09e52508 programs/solvers/8618d23e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8618d23e
+
+(param &axis Axis (AXIS_V))
+(param &filler Color (9))
+(param &sep number (1))
+(param &sep_dim (Axis number) (AXIS_V 1) (AXIS_H 1))
+(param &diag DiagAxis (DAXIS_DG))
+(param &seat_of (DiagDir Dir) (DIAG_TL DIR_T) (DIAG_BR DIR_B))
+(param &arr number (2))
+(param &disp (Position Position)
+  (grid
+    ((0 1 0 1))
+    ((1 0 1 0))))

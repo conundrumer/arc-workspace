@@ -1,0 +1,205 @@
+;; inputs e0bd4cb7213828530edad4eca99d46ce8f5bba8eaf83899f487faf76e394056c programs/solvers/fbf15a0b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fbf15a0b
+
+(INPUT background "every cell not otherwise named holds the background color, 8")
+
+(INPUT marker-pair "exactly two cells hold the marker color, 5; they lie on one edge line of the grid, on one row or one column, with 1 background cell between them, both in one half of the grid along that line")
+
+(INPUT even-extent "the grid's extent along the line the pair runs along is a multiple of the part count, 2")
+
+(OUTPUT halve-along-pair "the input is cut into the part count of equal parts along the axis the pair runs along (rows when the pair shares a column, columns when it shares a row), each part with the full extent across"
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The rarest color of each input.
+  (INIT &rare Order
+    (key ((&common_count.size (:key ^E *Col) *N))
+      (member ((:t (:V Col) (:S N)))
+        (&common_count.size (:key E *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &not_rare
+    (&rare.minimal (:t (:V *C)))
+    (ex_input *E)
+    (NOT (&rare.minimal (:key E) (:t (:V C)))))
+
+  (DET_OR_RULE &marker_color RarestColor
+    (&rare.minimal (:t (:V *C)))
+    (NOT (&not_rare C)))
+
+  (RULE &marker
+    (input *P (:Col *C))
+    (&marker_color C))
+
+  (RULE &pair_axis
+    (&marker (:P *P1))
+    (&marker (:P *P2))
+    (!= P1 P2)
+    (split (:P P1) *A (:Across *X))
+    (split (:P P2) A (:Across X)))
+
+  (INIT &marker_tally Cardinality
+    (member ((:m P))
+      (&marker *P))
+    (domain ()))
+
+  (INIT &marker_ray Ray
+    (source (P)
+      (&marker *P))
+    (node (P)
+      (input *P)
+      (NOT (&marker P)))
+    (dir (D)
+      (&pair_axis *A)
+      (axis_of *D A))))
+
+(OUTPUT keep-marker-half "the output is the part holding the markers, copied cell for cell")
+
+(OUTPUT erase-markers "each marker cell becomes background in the output"
+
+  (DET &cut
+    (ex_input *E *P)
+    (ex_output E (:P *Q))
+    (frame_extent P *A (:N *Ext))
+    (frame_extent (:P Q) A (:N *K))
+    (< K Ext)
+    (sub_extent P A (:K *N))
+    (divide (:T Ext) (:Side K) (:Gap 0) (:Part N) (:Remainder 0))
+    (> N 0))
+
+  (DET &uncut
+    (&cut *N)
+    (ex_output *E)
+    (NOT (&cut E N)))
+
+  (DET &part_count
+    (&cut *N)
+    (NOT (&uncut N)))
+
+  (RULE &part_count2
+    (&part_count *N)))
+
+(ALTS $pc "where the part count comes from" $Stored
+  (ALT $CountMarkers
+    (OUTPUT halve-along-pair "the part count is the number of marker cells; undefined where the kept part does not hold every marker"
+      (RULE &part_count2
+        (&marker_tally.size *N))))
+  (ALT $MarkerSpacing
+    (OUTPUT halve-along-pair "the part count is the step between consecutive marker cells along their line; undefined where the steps differ"
+      (INIT &marker_ray_full Ray
+        (source (P)
+          (&marker *P))
+        (node (P)
+          (input *P))
+        (dir (D)
+          (&pair_axis *A)
+          (axis_of *D A)))
+
+      (RULE &marker_ray_stop_full
+        (&marker_ray.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&marker_ray_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &part_count2
+        (&marker_ray_stop_full (:V3 *N))))))
+
+(ALTS $uc "what the cut does with an extent the part count does not divide" $Exact
+  (ALT $FloorPart
+    (INPUT even-extent "any extent; the kept part runs the extent divided by the part count, rounded down, lines from the marker end; undefined where the markers fall outside that part"
+      (RULE &end_part
+        (input *P)
+        (&pair_axis *A)
+        (axis_of (:D *E1) A)
+        (&part_count2 *N)
+        (frame_extent P A (:N *Ext))
+        (divide (:T Ext) (:Side N) (:Gap 0) (:Part *K))
+        (margin (:B P) (:D E1) (:K *T))
+        (< T K))
+
+      (RULE &kept
+        (&end_part *P *E1)
+        (&end_part (:P *M) E1)
+        (&marker (:P M)))
+
+      (INIT &kept_box BoundingBox
+        (key ((&kept *P (:E1 ^D)))
+          (cell (P)
+            (&kept *P (:E1 D))))))
+    (RULE &copy
+      (&kept (:P *P_in) (:E1 *D))
+      (&kept_box.box (:key D) *B)
+      (inside (:A P_in) B)
+      (relative (:Base B) (:X P_in) (:X_rel *P_out))))
+  (ALT $CeilPart
+    (INPUT even-extent "any extent; the kept part runs the extent divided by the part count, rounded up, lines from the marker end; undefined where the markers fall outside that part"
+      (RULE &end_part
+        (input *P)
+        (&pair_axis *A)
+        (axis_of (:D *E1) A)
+        (&part_count2 *N)
+        (input (:P *Q))
+        (opposite (:D E1) (:Opp *D_far))
+        (margin (:B Q) (:D D_far) (:K 0))
+        (margin (:B Q) (:D E1) (:K *Far))
+        (divide (:T Far) (:Side N) (:Gap 0) (:Part *K))
+        (margin (:B P) (:D E1) (:K *T))
+        (<= T K))
+
+      (RULE &kept
+        (&end_part *P *E1)
+        (&end_part (:P *M) E1)
+        (&marker (:P M)))
+
+      (INIT &kept_box BoundingBox
+        (key ((&kept *P (:E1 ^D)))
+          (cell (P)
+            (&kept *P (:E1 D))))))
+    (RULE &copy
+      (&kept (:P *P_in) (:E1 *D))
+      (&kept_box.box (:key D) *B)
+      (inside (:A P_in) B)
+      (relative (:Base B) (:X P_in) (:X_rel *P_out)))))
+
+(INIT &part_cell_division Division
+  (key ((&pair_axis ^A))
+    (parts (A N)
+      (&part_count2 *N)))
+  (cell (P)
+    (input *P)
+    (&part_count2)))
+
+;; The commonest color of each input.
+(INIT &common Order
+  (key ((&common_count.size (:key ^E *Col)))
+    (member ((:t Col))
+      (&common_count.size (:key E *Col)))
+    (score ((:t Col) (:S N))
+      (&common_count.size (:key E *Col) *N))))
+
+(DET &not_common
+  (&common.maximal (:t *C))
+  (ex_input *E)
+  (NOT (&common.maximal (:key E) (:t C))))
+
+(DET_OR_RULE &background DominantColor
+  (&common.maximal (:t *C))
+  (NOT (&not_common C)))
+
+(RULE &copy
+  (&part_cell_division.tile (:P *P_in) *P_outer (:P_inner *P_out))
+  (&part_cell_division.tile (:P *M) P_outer)
+  (&marker (:P M)))
+
+(RULE &output
+  (&copy (:P_in *P2) (:P_out *P))
+  (input (:P P2) (:Col *C))
+  (IF ((&marker (:P P2)))
+      ((&background (:C *Col)))
+      ((= Col C))))
+
+(OUT (&output ^P ^Col))

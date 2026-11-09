@@ -1,0 +1,7 @@
+;; inputs 6314c6927f777e0f0fb7129f750733ed164cb199710dcfa358d1606b5df03e70 programs/solvers/929ab4e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 929ab4e9
+
+(representative b8825c91)
+
+(param &noise Color (2))

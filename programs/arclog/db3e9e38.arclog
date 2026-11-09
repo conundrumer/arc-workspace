@@ -1,0 +1,261 @@
+;; inputs 8c7f27e9b60b409a1ade9c0fd7f7e4bcf02cd8a81d327e45b58f48bfedaa58d4 programs/solvers/db3e9e38.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db3e9e38
+
+(INPUT hanging-line "the only non-background cells form one straight line of the line color 7, perpendicular to the anchor edge and touching that edge, on a field of the background color")
+
+(OUTPUT staircase-length "a column at distance d from the line, on either side, is filled along the line's rows, from the line's end nearest the anchor edge, for L - d cells, with L the line's length; a column with L - d <= 0 stays background, and the grid edge clips the staircase"
+
+  (DET &anchor_edge DirDomain)
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &lines Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (RULE &bent
+    (&lines.component *P (:Id *X))
+    (&lines.component (:P *Q) (:Id X))
+    (perp *A (:A2 *A_across))
+    (axis_of *D (:A A_across))
+    (NOT (same_dist D (:P1 P) (:P2 Q))))
+
+  (RULE &straight
+    (&lines.component (:Id *X))
+    (axis_elem *A)
+    (NOT (&bent X A)))
+
+  (RULE &hang
+    (&anchor_edge *D)
+    (axis_of D (:A *A_line))
+    (&straight *X (:A A_line)))
+
+  (RULE &far_end
+    (&hang *X *D)
+    (&lines.component *P (:Id X))
+    (opposite D (:Opp *D_far))
+    (neighbor P (:D D_far) *Q)
+    (NOT (&lines.component (:P Q) (:Id X))))
+
+  (INIT &up_frame Frame
+    (key ((&far_end ^X ^D *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&far_end X D *P)
+        (frame_extent P *A *N))))
+
+  ;; From the far end back toward the edge: the line's column, each cell at its
+  ;; distance from the far end.
+  (INIT &up Ray
+    (key ((OR ((&far_end ^X ^D *P))
+              ((&hang X D))
+              ((&up_frame.cell (:key X D) P))))
+      (source (P)
+        (&far_end X D *P))
+      (node (P)
+        (&up_frame.cell (:key X D) *P))
+      (dir (D)
+        (&hang X D))))
+
+  (RULE &up_cell
+    (&hang *X *D)
+    (input *P))
+
+  (INIT &side_frame Frame
+    (key ((&up.ray (:key ^X ^D) *P)
+          (&up_cell X D P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&up.ray (:key X D) *P)
+        (&up_cell X D P)
+        (frame_extent P *A *N))))
+
+  ;; From each cell of that column out to both sides.
+  (INIT &side Ray
+    (key ((OR ((&up.ray (:key ^X ^D) *P)
+               (&up_cell X D P))
+              ((&hang X D)
+               (perp_dir D (:D2 *S)))
+              ((&side_frame.cell (:key X D) P))))
+      (source (P)
+        (&up.ray (:key X D) *P)
+        (&up_cell X D P))
+      (node (P)
+        (&side_frame.cell (:key X D) *P))
+      (dir ((:D S))
+        (&hang X D)
+        (perp_dir D (:D2 *S))))))
+
+(OUTPUT alternating-color "a filled column at even distance d takes the line's color, and one at odd d takes the stripe color")
+
+(OUTPUT keep-rest "every other cell keeps its input color"
+
+  (RULE &line_color
+    (&lines.component *P (:Id *X))
+    (input P *Col)))
+
+(ALTS $a "which edge the staircase hangs from" $StoredEdge
+  (ALT $StoredEdge
+    (ALTS $e "how far each column of the staircase reaches along the line" $LineRows
+      (ALT $ToEdge
+        (OUTPUT staircase-length "the column at distance d, the line's column included, fills from the anchor edge to d cells short of the line's far end")
+        (RULE &spine
+          (&up.ray (:key *X *D) *P *K)
+          (&up_cell X D P)))
+      (ALT $EdgeAligned
+        (OUTPUT staircase-length "the column at distance d, the line's column included, fills L - d cells from the anchor edge, wherever the line lies")
+        ;; The line moved along its column until its near end touches its edge.
+        (RULE &spine
+          (&up.ray (:key *X *D) (:P *P0) *K)
+          (&up_cell X D (:P P0))
+          (&lines.component (:P P0) (:Id X))
+          (&lines.component (:P *P_near) (:Id X))
+          (neighbor (:P P_near) D *Q)
+          (NOT (&lines.component (:P Q) (:Id X)))
+          (margin (:B P_near) D (:K *G))
+          (jump (:P P0) D (:K G) (:Q *P))))))
+  (ALT $EdgeFromLine
+    (INPUT hanging-line "the anchor edge is the edge the line's end touches, the line vertical or horizontal; undefined where the line touches no edge or two edges"
+      ;; The edge one end of the line touches.
+      (RULE &hang
+        (&lines.component *P (:Id *X))
+        (margin (:B P) *D (:K 0))
+        (axis_of D (:A *A_line))
+        (&straight X (:A A_line))))))
+
+(ALTS $v "the color of the columns at even distance" $LineColor
+  (ALT $StoredEvenColor
+    (OUTPUT alternating-color "a column at even distance takes a stored color"
+      (DET_OR_RULE &even_color RarestColor))
+    (RULE &even_paint
+      (&lines.component (:Id *X))
+      (&even_color (:C *Col)))))
+
+(ALTS $s "the color of the columns at odd distance" $StoredStripe
+  (ALT $StripeByLineColor
+    (OUTPUT alternating-color "a column at odd distance takes the color a table gives for the line's color; undefined where the line's color is no key of that table"
+      (DET &stripe_of_line ColorColorDomain))
+    (RULE &stripe_paint
+      (&line_color *X (:Col *C))
+      (&stripe_of_line (:C_from C) (:C_to *Col)))))
+
+(ALTS $n "how many lines the input holds" $OneLine
+  (ALT $PerLine
+    (INPUT hanging-line "each line grows its own staircase; undefined where two staircases give one cell different colors")
+    (RULE &undefined
+      (OR ((&stray))
+          ((&clash))))))
+
+(INIT &field_count Cardinality
+  (key ((ex_input ^E *P ^Col))
+    (member ((:m P))
+      (ex_input E *P Col))))
+
+(DET &stripe_color AnyOutNewColor)
+
+(RULE &side_cell
+  (&hang *X *D)
+  (input))
+
+(RULE &spine
+  (&up.ray (:key *X *D) *P *K)
+  (&up_cell X D P)
+  (&lines.component P (:Id X)))
+
+(RULE &extent_of)
+
+(RULE &stair
+  (&hang *X *D)
+  (&extent_of)
+  (&spine X D *P (:K *K_far))
+  (&side.ray (:key X D) (:P *Q) *K (:Origin P))
+  (&side_cell X D)
+  (input (:P Q))
+  (<= K K_far)
+  (NOT (&lines.component (:P Q) (:Id X))))
+
+;; The commonest color of each input, its field.
+(INIT &field Order
+  (key ((&field_count.size (:key ^E *Col)))
+    (member ((:t Col))
+      (&field_count.size (:key E *Col)))
+    (score ((:t Col) (:S N))
+      (&field_count.size (:key E *Col) *N))))
+
+(INIT &ink_box BoundingBox
+  (key ((ex_input ^E *P *Col)
+        (NOT (&field.maximal (:key E) (:t Col))))
+    (cell (P)
+      (ex_input E *P *Col)
+      (NOT (&field.maximal (:key E) (:t Col))))))
+
+;; The line's width: the lesser extent of its box.
+(INIT &extent Order
+  (key ((&ink_box.box (:key ^E) *B)
+        (ex_input E *P)
+        (box_extent B P *A *N))
+    (member ((:t N))
+      (&ink_box.box (:key E) *B)
+      (ex_input E *P)
+      (box_extent B P *A *N))
+    (score ((:t N) (:S N))
+      (&ink_box.box (:key E) *B)
+      (ex_input E *P)
+      (box_extent B P *A *N))))
+
+(INIT &width Singleton
+  (member ((:v N))
+    (&extent.minimal (:key *E) (:t *N))
+    (ex_output E)))
+
+(DET &run
+  (&width.value (:v *K)))
+
+(RULE &even_step
+  (&stair *K)
+  (&run (:K *W))
+  (divide (:T K) (:Side W) (:Gap W)))
+
+(RULE &even_paint
+  (&line_color *X *Col))
+
+(RULE &stripe_paint
+  (&lines.component (:Id *X))
+  (&stripe_color (:C *Col)))
+
+(RULE &paint
+  (&stair *X *Q *K)
+  (IF ((&even_step K))
+      ((&even_paint X *Col))
+      ((&stripe_paint X Col))))
+
+(RULE &stray
+  (&lines.component (:Id *X))
+  (NOT (&hang X)))
+
+(RULE &clash
+  (&hang *X (:D *D1))
+  (&hang X (:D *D2))
+  (!= D1 D2))
+
+(RULE &many
+  (&lines.component (:Id *X))
+  (&lines.component (:Id *Y))
+  (!= X Y))
+
+(RULE &undefined
+  (OR ((OR ((&stray))
+           ((&clash))))
+      ((OR ((&many))
+           ((NOT (&lines.component)))))))
+
+(RULE &output
+  (NOT (&undefined))
+  (input *P (:Col *C0))
+  (OR ((&paint (:Q P) *Col))
+      ((NOT (&stair (:Q P)))
+       (= Col C0))))
+
+(OUT (&output ^P ^Col))

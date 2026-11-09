@@ -1,0 +1,358 @@
+;; inputs d6937d896c868ea4ebe87e8d37da1ed21aaafa81e85f370a66e81ad94ecc6ea8 programs/solvers/fe9372f3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; fe9372f3
+
+(INPUT one-plus "one plus of plus_color 2 on a field of background 0: a center cell and its four cardinal arms, each arm_length 1 cells long, every other cell background.")
+
+(OUTPUT keep-input "every input cell keeps its color unless a ray below paints it.")
+
+(OUTPUT diagonal-rays "from the center (the non-background cell whose four neighbors are non-background) toward each of the four diagonal directions, every cell from distance 1 to the grid edge takes diag_color."
+
+  (DET_OR_RULE &background DominantColor)
+
+  (RULE &plus
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &open_side
+    (&plus *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (NOT (&plus (:P Q))))
+
+  (RULE &center
+    (&plus *P)
+    (NOT (&open_side P)))
+
+  (RULE &origin
+    (&center (:P *C))
+    (diag_dir_elem (:D *Dg))
+    (neighbor (:P C) (:D Dg) (:Q *P)))
+
+  (INIT &diags_frame Frame
+    (extent (A N)
+      (&origin *P)
+      (frame_extent P *A *N)))
+
+  (RULE &diags_blocked
+    (&origin)
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (INIT &diags Ray
+    (source (P)
+      (&origin *P))
+    (node (P)
+      (&diags_frame.cell *P)
+      (NOT (&diags_blocked P)))
+    (dir ((:D Dg))
+      (&origin *Dg))))
+
+(OUTPUT dashed-cardinal-rays "from each arm tip (the last non-background cell of the run out of the center) toward its own cardinal direction, the cell k steps past the tip, for k from 1 to the grid edge, takes dash_pattern[(k - 1) mod |dash_pattern|]."
+
+  (DET &plus2
+    (ex_input *E *P *Col)
+    (NOT (&background (:C Col))))
+
+  ;; The arms: the runs of plus cells out of each cell.
+  (INIT &arms2 Ray
+    (key ((OR ((&plus2 ^E *P))
+              ((&plus2 E)
+               (dir_elem *D))))
+      (source (P)
+        (&plus2 E *P))
+      (node (P)
+        (&plus2 E *P))
+      (dir (D)
+        (&plus2 E)
+        (dir_elem *D))))
+
+  (DET &arms_halt_full2
+    (&arms2.end (:key *E) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  ;; The arms: the runs of plus cells out of each cell.
+  (INIT &arms Ray
+    (source (P)
+      (&plus *P))
+    (node (P)
+      (&plus *P))
+    (dir (D)
+      (&plus)
+      (dir_elem *D)))
+
+  (RULE &arms_halt_full
+    (&arms.end (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+    (!= N 0))
+
+  (RULE &tip
+    (&center (:P *C))
+    (dir_elem *D)
+    (&arms_halt_full (:V1 C) (:V2 D) (:V3 *P)))
+
+  (RULE &anchor
+    (&tip *C *D *P))
+
+  (RULE &spokes_mark
+    (OR ((&anchor *C (:D *Key))
+         (&tip C (:D Key) *P))
+        ((&anchor (:D Key) P))))
+
+  (INIT &spokes_frame Frame
+    (key ((&spokes_mark (:Key ^D) *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&spokes_mark (:Key D) *P)
+        (frame_extent P *A *N))))
+
+  (INIT &spokes_full Ray
+    (key ((OR ((&spokes_mark (:Key ^D) *P))
+              ((&anchor D))
+              ((&spokes_frame.cell (:key D) P))))
+      (source (P)
+        (&spokes_mark (:Key D) *P))
+      (node (P)
+        (&spokes_frame.cell (:key D) *P))
+      (dir (D)
+        (&anchor D))))
+
+  (INIT &span_frame Frame
+    (key ((&tip ^D *P)
+          (frame_extent P *A *N))
+      (extent (A N)
+        (&tip D *P)
+        (frame_extent P *A *N))))
+
+  (DET &open_side2
+    (&plus2 *E *P)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (NOT (&plus2 E (:P Q))))
+
+  (DET &center2
+    (&plus2 *E *P)
+    (NOT (&open_side2 E P)))
+
+  (DET &tip2
+    (&center2 *E (:P *C))
+    (dir_elem *D)
+    (&arms_halt_full2 E (:V1 C) (:V2 D) (:V3 *P)))
+
+  (RULE &spokes_blocked
+    (&anchor (:D *Key))
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  ;; The cardinal rays, cast from each tip and each anchor along the tip's own
+  ;; direction.
+  (INIT &spokes Ray
+    (key ((OR ((&spokes_mark (:Key ^D) *P))
+              ((&anchor D))
+              ((&spokes_frame.cell (:key D) P)
+               (NOT (&spokes_blocked (:Key D) P)))))
+      (source (P)
+        (&spokes_mark (:Key D) *P))
+      (node (P)
+        (&spokes_frame.cell (:key D) *P)
+        (NOT (&spokes_blocked (:Key D) P)))
+      (dir (D)
+        (&anchor D))))
+
+  (RULE &spokes_cell
+    (&anchor (:D *Key))
+    (input))
+
+  (DET &ray_col
+    (&tip2 *E *D (:P *T))
+    (neighbor (:P T) D (:Q *N))
+    (ex_input E *P)
+    (margin (:B P) D (:K *I))
+    (jump (:P N) D (:K I) *Q)
+    (ex_output E (:P Q) *Col))
+
+  (DET &cand
+    (&ray_col (:I *W))
+    (!= W 0))
+
+  ;; The colors every ray carries at each slot of a candidate period.
+  (INIT &slot_color Singleton
+    (key ((&cand ^W)
+          (&ray_col *I *Col)
+          (divide (:T I) (:Side W) (:Gap 0) (:Remainder ^K)))
+      (member ((:v Col))
+        (&cand W)
+        (&ray_col *I *Col)
+        (divide (:T I) (:Side W) (:Gap 0) (:Remainder K)))))
+
+  ;; The shortest period no ray breaks.
+  (INIT &unbroken Order
+    (member ((:t W))
+      (&cand *W)
+      (NOT (&slot_color.plural (:key W))))
+    (score ((:t W) (:S W))
+      (&cand *W)
+      (NOT (&slot_color.plural (:key W)))))
+
+  (DET &dash_pattern
+    (&unbroken.minimal (:t *W))
+    (&slot_color.value (:key W *K) (:v *Col)))
+
+  (RULE &pattern
+    (&tip *D)
+    (&dash_pattern *K *Col))
+
+  (RULE &span_blocked
+    (&tip (:D *Key))
+    (input *P)
+    (NOT (&plus P)))
+
+  ;; The plus's span through each tip, cast back from the tip, the tip at 0.
+  (INIT &span Ray
+    (key ((OR ((&tip ^D *P))
+              ((&tip D)
+               (opposite D (:Opp *B)))
+              ((&span_frame.cell (:key D) P)
+               (NOT (&span_blocked (:Key D) P)))))
+      (source (P)
+        (&tip D *P))
+      (node (P)
+        (&span_frame.cell (:key D) *P)
+        (NOT (&span_blocked (:Key D) P)))
+      (dir ((:D B))
+        (&tip D)
+        (opposite D (:Opp *B)))))
+
+  (INIT &dash_cycle Order
+    (key ((&pattern ^D *K))
+      (member ((:t K))
+        (&pattern D *K))
+      (score ((:t K) (:S K))
+        (&pattern D *K))))
+
+  (INIT &dash_walk Walk
+    (key ((OR ((&dash_cycle.cyclic_successor (:key ^D) (:a *K) (:b *K2)))
+              ((&pattern D)
+               (&spokes_full.ray (:key D) D K))))
+      (successor ((:p K) (:p_next K2))
+        (&dash_cycle.cyclic_successor (:key D) (:a *K) (:b *K2)))
+      (steps ((:N K))
+        (&pattern D)
+        (&spokes_full.ray (:key D) D *K))))
+
+  (RULE &diags_cell
+    (&origin)
+    (input)))
+
+(ALTS $phase "where the dash pattern's count starts" $FromTip
+  (ALT $PhaseFromCenter
+    (OUTPUT dashed-cardinal-rays "the count starts at the first arm cell out of the center, so the cell at distance d from the center takes dash_pattern[(d - 2) mod |dash_pattern|]."
+      (RULE &anchor
+        (&tip *C *D)
+        (neighbor (:P C) D (:Q *P))))))
+
+(ALTS $period "what fixes the dash period" $StoredPattern
+  (ALT $PeriodFromSpan
+    (OUTPUT dashed-cardinal-rays "the period is the plus's span through the tip, 2·arm_length + 1 cells: span − 1 cells of dash_color, then one of accent_color."
+      (DET &dash_color AnyOutNewColor)
+
+      (DET &accent_color AnyOutNewColor)
+
+      (RULE &span_cell
+        (&tip (:D *Key))
+        (&plus))
+
+      ;; One slot per span cell: the far tip's slot is the accent, the others dash.
+      (RULE &pattern
+        (&span.ray (:key *D) (:P *Q) (:D *B) *K)
+        (&span_cell (:Key D))
+        (&plus (:P Q))
+        (IF ((&tip (:D B) (:P Q)))
+            ((&accent_color (:C *Col)))
+            ((&dash_color (:C Col))))))))
+
+(ALTS $diag "where each diagonal ray starts" $FromCenter
+  (ALT $DiagFromCorner
+    (OUTPUT diagonal-rays "each diagonal ray starts at the plus's bounding-box corner, arm_length steps out, and leaves the nearer diagonal cells as they are."
+      ;; The plus's bounding-box corner: level with one tip along each of the
+      ;; corner's two directions.
+      (RULE &origin
+        (diag_dirs (:D *Dg) *D1 *D2)
+        (&tip *C (:D D1) (:P *T1))
+        (&tip C (:D D2) (:P *T2))
+        (input *P)
+        (same_dist (:D D1) (:P1 P) (:P2 T1))
+        (same_dist (:D D2) (:P1 P) (:P2 T2))))))
+
+(ALTS $stop "where a ray stops" $ToEdge
+  (ALT $HaltAtObstacle
+    (OUTPUT diagonal-rays "the ray stops before the first input cell that is not background.")
+    (OUTPUT dashed-cardinal-rays "the ray stops before the first input cell that is not background.")
+    (RULE &spoke
+      (&anchor *C *D (:P *A))
+      (&tip C D (:P *T))
+      (&spokes.ray (:key D) *P D (:K *K_tip) (:Origin T))
+      (&spokes_cell (:Key D))
+      (input P)
+      (!= K_tip 0)
+      (&spokes_full.ray (:key D) P D *K (:Origin A)))
+
+    (RULE &diag_cell
+      (&diags.ray *P (:D *Dg) (:Origin *Q))
+      (&diags_cell)
+      (input P)
+      (&origin Dg (:P Q))
+      (NOT (&diags_blocked (:P Q))))))
+
+(ALTS $locate "how the plus is found" $NonBackground
+  (ALT $PlusByColor
+    (OUTPUT diagonal-rays "the plus is the cells of plus_color, and where none forms a plus the output is the input."
+      (DET_OR_RULE &plus_color RarestColor)
+
+      (RULE &plus
+        (input *P *Col)
+        (&plus_color (:C Col))))
+    (OUTPUT dashed-cardinal-rays "the plus is the cells of plus_color.")))
+
+(INIT &diags_full Ray
+  (source (P)
+    (&origin *P))
+  (node (P)
+    (&diags_frame.cell *P))
+  (dir ((:D Dg))
+    (&origin *Dg)))
+
+(DET &diag_color AnyOutNewColor)
+
+(RULE &spoke
+  (&anchor *C *D (:P *A))
+  (&tip C D (:P *T))
+  (&spokes_full.ray (:key D) *P D (:K *K_tip) (:Origin T))
+  (&spokes_cell (:Key D))
+  (input P)
+  (!= K_tip 0)
+  (&spokes_full.ray (:key D) P D *K (:Origin A)))
+
+(RULE &dash
+  (&spoke *D *P *K)
+  (&dash_cycle.cyclic_successor (:key D) (:a *S_last) (:b 0))
+  (&dash_walk.walk (:key D) (:p0 S_last) (:N K) (:p *S))
+  (&pattern D (:K S) *Col))
+
+(RULE &diag_cell
+  (&diags_full.ray *P (:D *Dg) (:Origin *Q))
+  (&diags_cell)
+  (input P)
+  (&origin Dg (:P Q)))
+
+(RULE &paint
+  (OR ((&dash *P *Col))
+      ((&diag_cell P)
+       (&diag_color (:C Col)))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&paint P *Col))
+      ((NOT (&paint P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

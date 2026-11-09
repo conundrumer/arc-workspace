@@ -1,0 +1,173 @@
+;; inputs 651f55cb7f482fbfaf62f5c17272f843416fec2129f113d658310f0921fc8f90 programs/solvers/c35c1b4c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c35c1b4c
+
+(INPUT one-blob "one color, the blob color, forms a large connected region near the middle of the grid, and that region is the largest single-color region in the grid"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &region8 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &commonest_color Singleton
+    (member ((:v Col))
+      (&commonest.maximal (:t *Col)))))
+
+(OUTPUT mirror-union "each cell of the blob color is copied, in the blob color, to the cell that mirrors it across the grid's midline on axis &axis"
+
+  (INIT &region4 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &region
+    (&region4.component (:key *Col) *P *Id))
+
+  (INIT &color_largest_count Cardinality
+    (key ((&region *P ^Col ^Id))
+      (member ((:m P))
+        (&region *P Col Id))))
+
+  (DET &axis AxisDomain)
+
+  ;; The largest regions of each color.
+  (INIT &color_largest Order
+    (key ((&color_largest_count.size (:key ^Col *Id)))
+      (member ((:t Id))
+        (&color_largest_count.size (:key Col *Id)))
+      (score ((:t Id) (:S N))
+        (&color_largest_count.size (:key Col *Id) *N))))
+
+  (INIT &blob_region Singleton
+    (key ((&color_largest.maximal (:key ^Col) (:t *Id)))
+      (member ((:v Id))
+        (&color_largest.maximal (:key Col) (:t *Id))))))
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (INIT &largest_count Cardinality
+    (key ((&region *P ^Id))
+      (member ((:m P))
+        (&region *P Id))))
+
+  ;; The largest regions.
+  (INIT &largest Order
+    (member ((:t Id))
+      (&largest_count.size (:key *Id)))
+    (score ((:t Id) (:S N))
+      (&largest_count.size (:key *Id) *N)))
+
+  (INIT &largest_color Singleton
+    (member ((:v Col))
+      (&largest.maximal (:t *Id))
+      (&region *Col Id)))
+
+  (RULE &mirror
+    (input *P)
+    (axis_elem *A)
+    (axis_inversion A (:T *G))
+    (apply (:D G) P (:P_out *Q)))
+
+  (RULE &pick_color
+    (&largest_color.value (:v *Col)))
+
+  (RULE &blob_color
+    (&pick_color *Col))
+
+  (RULE &mirror_axis
+    (&axis *A))
+
+  (RULE &source
+    (&blob_color *Col)
+    (input *P Col)))
+
+(ALTS $color "which color is the blob" $Largest
+  (ALT $CommonestColor
+    (INPUT one-blob "the blob color is the color with the most cells; undefined where two colors tie for the most cells"
+      (RULE &pick_color
+        (&commonest_color.value (:v *Col))))))
+
+(ALTS $adj "the adjacency that joins a region" $Adj4
+  (ALT $Adj8
+    (INPUT one-blob "diagonal contacts join a region as well"
+      (RULE &region
+        (&region8.component (:key *Col) *P *Id)))))
+
+(ALTS $source "which cells are mirrored" $AllOfColor
+  (ALT $BlobOnly
+    (OUTPUT mirror-union "only the cells of the largest region of the blob color are mirrored; undefined where two such regions tie"
+      (RULE &blob_color
+        (&pick_color *Col)
+        (&blob_region.value (:key Col)))
+
+      (RULE &source
+        (&blob_color *Col)
+        (&blob_region.value (:key Col) (:v *Id))
+        (&region *P Col Id)))))
+
+(ALTS $dir "which way the mirror copies" $Union
+  (ALT $OneWay
+    (OUTPUT mirror-union "only the blob cells on side &source_side are copied, to their mirror cells on the other side; the axis of &source_side is the mirror axis"
+      ;; The side whose blob cells are copied.
+      (DET &source_side DirDomain)
+
+      (RULE &mirror_axis
+        (&source_side *D)
+        (axis_of D *A)))
+    (RULE &paint
+      (&source (:P *P2))
+      (&mirror_axis (:A *Ax))
+      (&mirror (:A Ax) (:P P2) (:Q *P))
+      (&source_side *D)
+      (nearer D (:P P2) (:Q P)))))
+
+(ALTS $axis "the axis the blob is mirrored across" $StoredAxis
+  (ALT $IntactHalf
+    (OUTPUT mirror-union "the mirror axis is the one axis that has a side whose blob cells hold the mirror of every blob cell on the other side; undefined where no axis or both axes have such a side"
+      (RULE &unmatched
+        (&source *P)
+        (axis_of *D (:A *Ax))
+        (&mirror (:A Ax) P *Q)
+        (nearer D (:P Q) (:Q P))
+        (NOT (&source (:P Q))))
+
+      ;; The axes with a side that holds the mirror of the other side's blob cells.
+      (INIT &intact Singleton
+        (member ((:v Ax))
+          (&blob_color)
+          (axis_of *D (:A *Ax))
+          (NOT (&unmatched D))))
+
+      (RULE &mirror_axis
+        (&intact.value (:v *A))))))
+
+(RULE &paint
+  (&source (:P *P2))
+  (&mirror_axis (:A *Ax))
+  (&mirror (:A Ax) (:P P2) (:Q *P)))
+
+(RULE &output
+  (OR ((&paint *P)
+       (&blob_color *Col))
+      ((input P Col)
+       (&blob_color)
+       (&mirror_axis)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

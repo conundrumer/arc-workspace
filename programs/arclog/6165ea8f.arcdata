@@ -1,0 +1,12 @@
+;; inputs 08e53db4f19280252f15b1066673ac7970bcd75e268dc0dcaec0f93a7d39ad3d programs/solvers/6165ea8f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6165ea8f
+
+(param &bg Color (0))
+(param &legend_dir Dir (DIR_R))
+(param &header_corner DiagDir (DIAG_TL))
+(param &header number (1))
+(param &block number (2))
+(param &gap number (1))
+(param &alike Color (2))
+(param &unlike Color (5))

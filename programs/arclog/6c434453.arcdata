@@ -1,0 +1,17 @@
+;; inputs 0d77d931427619d13424155d999571d0daea50768664b672a98565051e60b667 programs/solvers/6c434453.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6c434453
+
+(param &src (Position Color)
+  (grid
+    (1 1 1)
+    (1 0 1)
+    (1 1 1)))
+(param &dst (Position Color)
+  (grid
+    (0 2 0)
+    (2 2 2)
+    (0 2 0)))
+(param &bg Color (0))
+(param &ink Color (1))
+(param &fill Color (2))

@@ -1,0 +1,64 @@
+;; inputs 17cbb8ec01f86940618aa8b1eac5dd94a7ecdf611607539ef0df7d9d391d3918 programs/solvers/6e82a1ae.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6e82a1ae
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &size Cardinality
+  (key ((&objs.component *P (:Id ^O)))
+    (member ((:m P))
+      (&objs.component *P (:Id O)))))
+
+(RULE &cell_count
+  (&objs.component *P (:Id *O))
+  (&size.size (:key O) *N))
+
+(DET &count_color
+  (&cell_count *E *P *N)
+  (ex_output E P *Col))
+
+(ALTS $choice "what the color lookup is keyed by" $Count
+  (ALT $Rank
+    ;; The counts ranked among the grid's objects.
+    (INIT &size_rank Order
+      (member ((:t N))
+        (&cell_count *N))
+      (score ((:t N) (:S N))
+        (&cell_count *N)))
+
+    (DET &big_color
+      (&cell_count *E *P *N)
+      (&size_rank.dual_rank E (:t N) *R)
+      (ex_output E P *Col))
+
+    (RULE &output
+      (OR ((&cell_count *P *N)
+           (&size_rank.dual_rank (:t N) *R)
+           (&big_color R *Col))
+          ((input P Col)
+           (&bg (:C Col)))))
+    (ALTS $a "which end of the size order counts as rank 0" $Big
+      (ALT $Small
+        (DET &small_color
+          (&cell_count *E *P *N)
+          (&size_rank.rank E (:t N) *R)
+          (ex_output E P *Col))
+        (RULE &output
+          (OR ((&cell_count *P *N)
+               (&size_rank.rank (:t N) *R)
+               (&small_color R *Col))
+              ((input P Col)
+               (&bg (:C Col)))))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&cell_count P *N)
+       (&count_color N Col))))
+
+(OUT (&output ^P ^Col))

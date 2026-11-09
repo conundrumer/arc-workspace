@@ -1,0 +1,7 @@
+;; inputs a4ce87f8965af7ea86b2db149279284016b26b18901645c181d5edadc59a1bbd programs/solvers/5117e062.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5117e062
+
+(param &bg Color (0))
+(param &mark Color (8))
+(param &win_dim number (3))

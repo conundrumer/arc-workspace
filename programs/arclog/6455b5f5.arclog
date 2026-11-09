@@ -1,0 +1,39 @@
+;; inputs 0a03b1f4dbbcf6aece037a8848a3dc10cceefe90e2a2afdb74ce60f8123698e7 programs/solvers/6455b5f5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6455b5f5
+
+(DET &bg DominantColor)
+
+(DET &most AnyOutNewColor)
+
+(DET &fewest AnyOutNewColor)
+
+(INIT &region Connectivity
+  (node (P)
+    (input *P *Col)
+    (&bg (:C Col))))
+
+(INIT &area Cardinality
+  (key ((&region.component *P ^Id))
+    (member ((:m P))
+      (&region.component *P Id))))
+
+(INIT &extreme Order
+  (member ((:t (:V Id) (:S N)))
+    (&area.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&area.size (:key *Id) *N)))
+
+(RULE &paint
+  (&region.component *P *Id)
+  (OR ((&extreme.maximal (:t (:V Id)))
+       (&most (:C *Col)))
+      ((&extreme.minimal (:t (:V Id)))
+       (&fewest (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

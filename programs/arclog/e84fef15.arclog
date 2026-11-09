@@ -1,0 +1,327 @@
+;; inputs bb13f89327cf598c008adaaeb6f8f0e3cb1d05bfcaa9a416b26e0e29bbd97ceb programs/solvers/e84fef15.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e84fef15
+
+(INPUT divided-grid "full lines of &divider (3) cut the grid into equal square tiles, with one line between each two tiles on each axis"
+
+  (DET &missing
+    (ex_input (:Col *C))
+    (ex_output *E)
+    (NOT (ex_input E (:Col C))))
+
+  (DET_OR_RULE &divider SharedColor
+    (ex_input (:Col *C))
+    (NOT (&missing C))
+    (NOT (ex_output (:Col C)))))
+
+(INPUT repeated-tile "every tile but one holds the same pattern of marks on a field of 8")
+
+(INPUT damaged-tile "one tile differs from the pattern, and each cell where it differs is a mark of the pattern that is 8 in that tile")
+
+(OUTPUT output-tile "the output is the pattern, at the size of one tile"
+
+  ;; Each line, as its place on its axis, with the color that fills it.
+  (INIT &line Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Along ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Along L)))))
+
+  (RULE &panels_divider
+    (&line.value (:key *A *L) (:v *Col))
+    (&divider (:C Col)))
+
+  (RULE &panels_on_divider
+    (input *P)
+    (&panels_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &panels_rank Order
+    (key ((OR ((&panels_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((input *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&panels_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&panels_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (input *P)
+        (margin (:B P) D *K))))
+
+  (RULE &panels_part_idx
+    (input *P)
+    (axis_of *D *A)
+    (NOT (&panels_on_divider P A))
+    (margin (:B P) D *K)
+    (&panels_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &panels_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&panels_part_idx *P D (:N *N1))
+    (&panels_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &panels_tile_of
+    (&panels_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&panels_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&panels_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&panels_tile_of *P (:P_tile T)))))
+
+  (RULE &tile_cell
+    (&panels_tile_of *P (:P_tile *T))
+    (&tile_box.box (:key T) *B)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *Q))
+    (input P *Col))
+
+  (RULE &differ_at
+    (&tile_cell *T *Q *Col)
+    (&tile_cell (:T *T2))
+    (!= T T2)
+    (OR ((&tile_cell (:T T2) Q (:Col *Col2))
+         (!= Col Col2))
+        ((NOT (&tile_cell (:T T2) Q)))))
+
+  (RULE &ragged
+    (&differ_at *T2 *Q)
+    (NOT (&tile_cell (:T T2) Q)))
+
+  (RULE &disagree
+    (&differ_at *Q)
+    (NOT (&ragged)))
+
+  (INIT &majority_count Cardinality
+    (key ((&tile_cell *T ^Q ^Col)
+          (&disagree))
+      (member ((:m T))
+        (&tile_cell *T Q Col)
+        (&disagree))))
+
+  ;; The value most tiles hold at each cell.
+  (INIT &majority Order
+    (key ((&majority_count.size (:key ^Q *Col)))
+      (member ((:t Col))
+        (&majority_count.size (:key Q *Col)))
+      (score ((:t Col) (:S N))
+        (&majority_count.size (:key Q *Col) *N)))))
+
+(OUTPUT mark-lost "each cell where the damaged tile differs from the pattern takes &fill"
+
+  (DET &gap_cand
+    (ex_input *P)
+    (margin (:B P) *D (:K *G)))
+
+  ;; The one extent of the train outputs on either axis.
+  (INIT &extent Singleton
+    (member ((:v N))
+      (ex_output *P)
+      (frame_extent P *A *N)))
+
+  (DET &tile_size
+    (&extent.value (:v *K)))
+
+  (INIT &tiled_division Division
+    (key ((&gap_cand ^G)
+          (&tile_size ^K))
+      (side (A K)
+        (axis_elem *A))
+      (gap (A G)
+        (axis_elem *A)))
+    (cell (P)
+      (ex_input *P)))
+
+  (RULE &differ
+    (OR ((&differ_at *T *T2))
+        ((&differ_at (:T T2) (:T2 T)))))
+
+  (RULE &other_clash
+    (&tile_cell *T)
+    (&differ (:T *T1) *T2)
+    (!= T1 T)
+    (!= T2 T))
+
+  (RULE &damaged
+    (&differ *T)
+    (NOT (&other_clash T)))
+
+  (RULE &pattern
+    (&damaged (:T *D))
+    (&tile_cell *T *Q *Col)
+    (!= T D))
+
+  (DET &fill
+    (ex_output (:Col *C))
+    (NOT (ex_input (:Col C))))
+
+  (DET &divider_determined
+    (ex_input (:Col *C))
+    (NOT (&missing C))
+    (NOT (ex_output (:Col C))))
+
+  (DET &tiled
+    (&tiled_division.tile (:key *G) *P)
+    (ex_input *E P))
+
+  (DET &gap_misfit
+    (&gap_cand *G)
+    (&divider_determined (:C *Div))
+    (ex_input *E *P *Col)
+    (IF ((&tiled E G P))
+        ((= Col Div))
+        ((!= Col Div))))
+
+  (DET &gap
+    (&gap_cand (:G *K))
+    (NOT (&gap_misfit (:G K)))))
+
+(ALTS $c "how the grid is cut into tiles" $ByLines
+  (ALT $CutBySize
+    (INPUT divided-grid "tiles of &tile_size on each axis with &gap between each two, read without the divider; undefined where an axis is no whole number of tiles and gaps, or where the cut tiles do not hold one pattern and one damaged tile"
+      (INIT &tile_cell_division Division
+        (cell (P)
+          (input *P))
+        (side (A K)
+          (axis_elem *A)
+          (&tile_size *K))
+        (gap (A G)
+          (axis_elem *A)
+          (&gap (:K *G))))
+
+      (RULE &tile_cell
+        (input *P *Col)
+        (&tile_cell_division.tile P (:P_outer *T) (:P_inner *Q)))))
+  (ALT $CutByCount
+    (INPUT divided-grid "&tile_count tiles on each axis with &gap between each two, read without the divider; undefined where an axis does not divide into that count"
+      (INIT &parts_division Division
+        (key ((&tile_size ^K)
+              (&gap (:K ^G)))
+          (side ((:A A2) K)
+            (axis_elem (:A *A2)))
+          (gap ((:A A2) G)
+            (axis_elem (:A *A2))))
+        (cell (P)
+          (ex_input *P)))
+
+      ;; The tiles along each axis of each input.
+      (INIT &parts Cardinality
+        (key ((ex_input ^E)
+              (axis_elem ^A))
+          (member ((:m T_a))
+            (ex_input E *P)
+            (&parts_division.tile P (:P_outer *T))
+            (split (:P T) A (:Along *T_a)))
+          (domain ()
+            (ex_input E)
+            (axis_elem A))))
+
+      (INIT &tiles Singleton
+        (member ((:v N))
+          (&parts.size *N)))
+
+      (DET &tile_count
+        (&tiles.value (:v *N)))
+
+      (INIT &tile_cell_division2 Division
+        (cell (P)
+          (input *P))
+        (parts (A N)
+          (axis_elem *A)
+          (&tile_count *N))
+        (gap (A G)
+          (axis_elem *A)
+          (&gap (:K *G))))
+
+      (RULE &tile_cell
+        (input *P *Col)
+        (&tile_cell_division2.tile P (:P_outer *T) (:P_inner *Q))))))
+
+(ALTS $n "how many tiles may differ" $OneDamaged
+  (ALT $Disagreement
+    (INPUT repeated-tile "the tiles need not hold one pattern")
+    (INPUT damaged-tile "any number of tiles may differ")
+    (OUTPUT output-tile "the output is one tile's frame, each cell the value every tile holds there; undefined where the tiles are unequal in size or agree at every cell")
+    (OUTPUT mark-lost "each cell where the tiles disagree takes &fill")
+    (RULE &output
+      (&tile_cell (:Q *P) (:Col *Col0))
+      (&disagree)
+      (IF ((&disagree (:Q P)))
+          ((&fill (:C *Col)))
+          ((= Col Col0))))
+    (ALT $LostMarkOnly
+      (OUTPUT mark-lost "each cell where the pattern is not &background and the damaged tile is &background takes &fill, and each other cell keeps the pattern"
+        (RULE &lost_mark_major
+          (&disagree *Q)
+          (&majority.maximal (:key Q) (:t *Col0))
+          (NOT (&background (:C Col0)))
+          (&tile_cell Q (:Col *Col1))
+          (&background (:C Col1))))
+      (RULE &output
+        (&majority.maximal (:key (:Q *P)) (:t *Col0))
+        (IF ((&lost_mark_major (:Q P)))
+            ((&fill (:C *Col)))
+            ((= Col Col0)))))))
+
+(ALTS $k "which differing cells take the fill" $AnyDifference
+  (ALT $LostMarkOnly
+    (OUTPUT mark-lost "each cell where the pattern is not &background and the damaged tile is &background takes &fill, and each other cell keeps the pattern"
+      (INIT &common_count Cardinality
+        (key ((ex_input ^E *P ^Col))
+          (member ((:m P))
+            (ex_input E *P Col))))
+
+      ;; The commonest color of each input.
+      (INIT &common Order
+        (key ((&common_count.size (:key ^E *Col)))
+          (member ((:t Col))
+            (&common_count.size (:key E *Col)))
+          (score ((:t Col) (:S N))
+            (&common_count.size (:key E *Col) *N))))
+
+      (DET &uncommon
+        (&common.maximal (:t *C))
+        (ex_input *E)
+        (NOT (&common.maximal (:key E) (:t C))))
+
+      (DET_OR_RULE &background DominantColor
+        (&common.maximal (:t *C))
+        (NOT (&uncommon C)))
+
+      (RULE &lost_mark
+        (&damaged (:T *D))
+        (&pattern *Q (:Col *Col0))
+        (NOT (&background (:C Col0)))
+        (&tile_cell (:T D) Q (:Col *Col1))
+        (&background (:C Col1))))
+    (RULE &output
+      (&pattern (:Q *P) (:Col *Col0))
+      (IF ((&lost_mark (:Q P)))
+          ((&fill (:C *Col)))
+          ((= Col Col0))))))
+
+(RULE &output
+  (&damaged (:T *D))
+  (&pattern (:Q *P) (:Col *Col0))
+  (OR ((&differ_at *T (:T2 D) (:Q P))
+       (!= T D)
+       (&fill (:C *Col)))
+      ((NOT (&differ_at (:T2 D) (:Q P)))
+       (= Col Col0))))
+
+(OUT (&output ^P ^Col))

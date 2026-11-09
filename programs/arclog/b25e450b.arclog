@@ -1,0 +1,318 @@
+;; inputs 51bbe350ce928963a571669bd86f7650db67c2c455a1035bbfd4fa0578cdf5bb programs/solvers/b25e450b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b25e450b
+
+(INPUT speckled-field "the background is a mix of the two field colors, 5 and 7, with no pattern in where each color falls")
+
+(INPUT edge-blocks "the cells of block_color form solid rectangles, each one touching exactly one edge of the grid and not reaching the opposite edge"
+
+  (DET &block_color ColorDomain)
+
+  (RULE &block_cell
+    (input *P *Col)
+    (&block_color (:C Col)))
+
+  (INIT &eight Connectivity
+    (node (P)
+      (&block_cell *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (DET &kept
+    (ex_input *E *P *Col)
+    (ex_output E P Col))
+
+  (DET &lapse
+    (&kept *Col)
+    (ex_output *E)
+    (NOT (&kept E Col)))
+
+  (DET &field_color
+    (&kept *Col)
+    (NOT (&lapse Col))))
+
+(INPUT blocks-apart "no two blocks touch, not even at a corner")
+
+(OUTPUT cross-to-opposite "each block moves to the opposite edge on the axis normal to the edge it touches, and it keeps its place on the other axis"
+
+  (INIT &four Connectivity
+    (node (P)
+      (&block_cell *P)))
+
+  (RULE &piece
+    (&four.component *P (:Id *K)))
+
+  (INIT &box BoundingBox
+    (key ((&piece (:K ^Id) *P))
+      (cell (P)
+        (&piece (:K Id) *P))))
+
+  (INIT &nearest Order
+    (key ((&box.box (:key ^Id) *B)
+          (margin B *D (:K *N)))
+      (member ((:t (:V D) (:S N)))
+        (&box.box (:key Id) *B)
+        (margin B *D (:K *N)))
+      (score ((:t (:V D) (:S N)) (:S N))
+        (&box.box (:key Id) *B)
+        (margin B *D (:K *N))))))
+
+(OUTPUT wipe-track "each cell in the band the block's rows (for a block on a side edge) or columns (for a block on the top or bottom edge) span, from edge to edge, takes trail_color")
+
+(OUTPUT block-on-top "a cell where a moved block lands takes block_color, also where it lies in the track of another block")
+
+(OUTPUT rest-kept "every other cell keeps its input color"
+
+  (RULE &source
+    (&box.box (:key (:Id *K)) *B)
+    (margin B *D (:K 0)))
+
+  (RULE &pair
+    (&source *K *D)
+    (&source K (:D *D2))
+    (!= D D2))
+
+  (RULE &lone
+    (&source *K *D)
+    (NOT (&pair K D)))
+
+  (RULE &heading
+    (&lone *K (:D *E))
+    (opposite (:D E) (:Opp *D))
+    (&box.box (:key (:Id K)) *B)
+    (margin B D (:K *N)))
+
+  (RULE &travels
+    (&heading *K *D)
+    (axis_of D *A))
+
+  (RULE &dest_part
+    (OR ((&heading *K *D *N)
+         (axis_of D *A)
+         (&box.box (:key (:Id K)) (:B *B3))
+         (jump (:P B3) D (:K N) (:Q *B2))
+         (split (:P B2) A (:Along *B)))
+        ((&box.box (:key (:Id K)) (:B *B22))
+         (axis_elem A)
+         (NOT (&travels K A))
+         (split (:P B22) A (:Along B)))))
+
+  (RULE &move
+    (&dest_part *K *A (:B *B1))
+    (perp A *A2)
+    (&dest_part K (:A A2) (:B *B2))
+    (compose (:A B1) (:B B2) (:C *B_dest))
+    (&box.box (:key (:Id K)) *B)
+    (relative (:Base B) (:X B_dest) (:X_rel *V)))
+
+  (RULE &track
+    (&heading *K *D)
+    (&box.box (:key (:Id K)) *B)
+    (axis_of D *A)
+    (split (:P B) A (:Across *Band))
+    (input *P)
+    (inside (:A P) (:B Band)))
+
+  (RULE &wiped
+    (&track *P))
+
+  (RULE &crowded
+    (&pair *K *D *D2)
+    (&source K (:D *D3))
+    (!= D3 D)
+    (!= D3 D2)))
+
+(ALTS $u "what moves" $Block
+  (ALT $Block
+    (ALTS $c "how block cells join" $FourConnected
+      (ALT $EightConnected
+        (INPUT edge-blocks "the 8-connected groups of block_color cells are the blocks; undefined where such a group touches two edges or none"
+          (RULE &piece
+            (&eight.component *P (:Id *K))))
+        (INPUT blocks-apart "blocks that touch at a corner are one block")))
+    (ALTS $l "where the block's cells land" $Translate
+      (ALT $Mirror
+        (OUTPUT cross-to-opposite "the block lands at the opposite edge flipped along the axis of travel")
+        (RULE &landing
+          (&move *K *V)
+          (&box.box (:key (:Id K)) *B)
+          (&piece K *P)
+          (input P *Col)
+          (inside (:A P) B)
+          (relative (:Base B) (:X P) (:X_rel *P_rel))
+          (perp *A *A2)
+          (IF ((&travels K A))
+              ((axis_inversion A (:T *F))
+               (apply (:D F) (:P P_rel) (:P_out *P_rel1)))
+              ((= P_rel1 P_rel)))
+          (IF ((&travels K (:A A2)))
+              ((axis_inversion (:A A2) (:T *F2))
+               (apply (:D F2) (:P P_rel1) (:P_out *P_rel2)))
+              ((= P_rel2 P_rel1)))
+          (compose (:A B) (:B P_rel2) (:C *P2))
+          (compose (:A P2) (:B V) (:C *Q)))))
+    (ALTS $k "where a block goes whose heading is read from two adjacent edges" $CornerUndefined
+      (ALT $Diagonal
+        (OUTPUT cross-to-opposite "a block whose heading is read from two adjacent edges moves away from both to the opposite corner, with a track along each axis"
+          (RULE &corner
+            (&pair *K *D *D2)
+            (perp_dir D D2)
+            (NOT (&crowded K)))
+          (RULE &heading
+            (OR ((&corner *K (:D *E))
+                 (opposite (:D E) (:Opp *D))
+                 (&box.box (:key (:Id K)) *B)
+                 (margin B D (:K *N)))
+                ((&lone K (:D *E2))
+                 (opposite (:D E2) (:Opp D))
+                 (&box.box (:key (:Id K)) (:B *B2))
+                 (margin (:B B2) D (:K N))))))
+        (RULE &settled
+          (OR ((&corner *K))
+              ((&lone K))))
+        (ALT $SpanStays
+          (RULE &settled
+            (OR ((&corner *K))
+                ((&span K))
+                ((&lone K)))))))
+    (ALTS $s "where a block goes whose heading is read from two opposite edges" $SpanUndefined
+      (ALT $SpanStays
+        (OUTPUT cross-to-opposite "a block whose heading is read from two opposite edges stays where it is, with no track"
+          (RULE &span
+            (&pair *K *D *D2)
+            (opposite D (:Opp D2))
+            (NOT (&crowded K))))
+        (RULE &settled
+          (OR ((&span *K))
+              ((&lone K)))))))
+  (ALT $PerLine
+    (INPUT edge-blocks "block cells lie in runs along rows and columns"
+      (RULE &run_blocked
+        (input *P)
+        (NOT (&block_cell P)))
+
+      ;; The runs of block cells cast from each block cell along its line.
+      (INIT &run Ray
+        (source (P)
+          (&block_cell *P))
+        (node (P)
+          (input *P)
+          (NOT (&run_blocked P)))
+        (dir (D)
+          (dir_elem *D))))
+    (OUTPUT cross-to-opposite "in each row and each column, a run of block cells that touches exactly one end of the line moves to the other end; other runs stay"
+      (INIT &run_full Ray
+        (source (P)
+          (&block_cell *P))
+        (node (P)
+          (input *P))
+        (dir (D)
+          (dir_elem *D)))
+
+      (RULE &run_stop_full
+        (&run.end (:P *E1) (:D *V2) (:Origin *V4))
+        (neighbor (:P E1) (:D V2) (:Q *V1))
+        (&run_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+      (RULE &moving
+        (&run_stop_full (:V1 *S) (:V2 *D) (:V4 *Src))
+        (opposite D (:Opp *E))
+        (margin (:B Src) (:D E) (:K 0))
+        (&run.ray (:P *Last) D (:Origin Src))
+        (neighbor (:P Last) D (:Q S))
+        (margin (:B Last) D (:K *N)))
+
+      (RULE &wiped
+        (&moving *Src *D)
+        (&run_full.ray *P D (:Origin Src))))
+    (OUTPUT wipe-track "each line in which a run moves takes trail_color")
+    (RULE &landed
+      (&moving *Src *D *N)
+      (&run.ray (:P *P2) D (:Origin Src))
+      (input (:P P2) *Col)
+      (jump (:P P2) D (:K N) (:Q *P)))
+
+    (RULE &output
+      (OR ((&landed *P *Col))
+          ((input P (:Col *Col_in))
+           (NOT (&landed P))
+           (IF ((&painted P))
+               ((&trail_color (:C Col)))
+               ((= Col Col_in))))))))
+
+(ALTS $h "what sets a block's axis and heading" $TouchedEdge
+  (ALT $AwayFromNearestEdge
+    (INPUT edge-blocks "each block has one nearest edge; undefined where a block has two")
+    (OUTPUT cross-to-opposite "each block moves to the edge opposite its nearest edge"
+      (RULE &source
+        (&nearest.minimal (:key (:Id *K)) (:t (:V *D)))))
+    (ALTS $e "which cells take trail_color" $Band
+      (ALT $SweptOnly
+        (OUTPUT wipe-track "only the cells of the band between the block's place and its landing take trail_color"
+          (RULE &track
+            (&heading *K *D)
+            (&box.box (:key (:Id K)) *B)
+            (axis_of D *A)
+            (split (:P B) A (:Across *Band))
+            (opposite D (:Opp *E))
+            (margin B (:D E) (:K *M))
+            (edge_inset (:D E) (:K M) (:B *Ahead))
+            (input *P)
+            (inside (:A P) (:B Band))
+            (inside (:A P) (:B Ahead))))))))
+
+(ALTS $b "which cells are block cells" $OfBlockColor
+  (ALT $OfBlockColor
+    (ALTS $t "what a track does to its cells" $PaintAll
+      (ALT $RecolorTrack
+        (OUTPUT wipe-track "in the track, the cells of a field color and the block cells take trail_color, and cells of other colors keep their color")
+        (RULE &painted
+          (&wiped *P)
+          (OR ((input P *Col)
+               (&field_color Col))
+              ((&block_cell P)))))))
+  (ALT $NonFieldColor
+    (INPUT edge-blocks "the cells of neither field color are the block cells"
+      (RULE &block_cell
+        (input *P *Col)
+        (NOT (&field_color Col))))
+    (OUTPUT block-on-top "each block cell lands in its own color; undefined where landings of two colors meet")))
+
+(DET &trail_color ColorDomain)
+
+(RULE &landing
+  (&move *K *V)
+  (&piece K *P)
+  (input P *Col)
+  (compose (:A P) (:B V) (:C *Q)))
+
+(RULE &landed
+  (&landing (:Q *P) *Col))
+
+(RULE &settled
+  (&lone *K))
+
+(RULE &stuck
+  (&piece *K)
+  (NOT (&settled K)))
+
+(RULE &undefined
+  (&stuck))
+
+(RULE &painted
+  (&wiped *P))
+
+(RULE &output
+  (OR ((&landed *P *Col)
+       (NOT (&undefined)))
+      ((NOT (&undefined))
+       (input P (:Col *Col_in))
+       (NOT (&landed P))
+       (IF ((&painted P))
+           ((&trail_color (:C Col)))
+           ((= Col Col_in))))))
+
+(OUT (&output ^P ^Col))

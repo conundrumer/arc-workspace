@@ -1,0 +1,137 @@
+;; inputs fc7adb0d2dac3e2abcb0ce016fcce3b19714f7e0a40627fb98b8da332f56b242 programs/solvers/f5c89df1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f5c89df1
+
+(INPUT one-anchor "exactly one cell has the anchor color 3; it is the shape's center.")
+
+(INPUT markers "one or more cells have the marker color 2.")
+
+(INPUT pattern "every other non-background cell has the pattern color 8; together these cells are the shape."
+
+  (INIT &common_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of every input.
+  (INIT &common Order
+    (key ((&common_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&common_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&common_count.size (:key E *Col) *N))))
+
+  (DET &not_common
+    (&common.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&common.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background DominantColor
+    (&common.maximal (:t *C))
+    (NOT (&not_common (:Col C))))
+
+  (DET &vanished
+    (ex_output *E)
+    (ex_input E *Col)
+    (NOT (ex_output Col)))
+
+  (DET &not_single
+    (&vanished *Col)
+    (ex_output *E)
+    (OR ((NOT (ex_input E Col)))
+        ((ex_input E *P Col)
+         (ex_input E (:P *Q) Col)
+         (!= P Q))))
+
+  (DET &anchor_color
+    (&vanished (:Col *C))
+    (NOT (&not_single (:Col C))))
+
+  (DET &marker_color
+    (&vanished (:Col *C))
+    (NOT (&anchor_color C)))
+
+  (INIT &comp8 Connectivity
+    (node (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))
+      (NOT (&marker_color (:C Col))))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S)))))))
+
+(OUTPUT stamp-at-markers "for each marker, each shape cell is painted at the marker plus that cell's offset from the center, in the shape cell's color; overlapping stamps paint the same color.")
+
+(OUTPUT erase-source "every cell no stamp paints is background, so the original shape, the center and the markers do not survive unless a stamp covers them."
+
+  (RULE &center
+    (input *P *Col)
+    (&anchor_color (:C Col)))
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&anchor_color (:C Col)))
+    (NOT (&marker_color (:C Col))))
+
+  (RULE &member
+    (&ink *P))
+
+  (DET &background_determined
+    (&common.maximal (:t *C))
+    (NOT (&not_common (:Col C))))
+
+  (DET &pattern_color
+    (ex_output (:Col *C))
+    (NOT (&background_determined C))))
+
+(ALTS $reach "which cells form the shape" $AllInk
+  (ALT $AnchorComponent
+    (INPUT pattern "the shape is the 8-connected component, among the non-background non-marker cells, that holds the center."
+      (RULE &member
+        (&center (:P *A))
+        (&comp8.component (:P A) *Id)
+        (&ink *P)
+        (&comp8.component P Id)))))
+
+(ALTS $color "which colors the shape takes" $AnyColor
+  (ALT $AnyColor
+    (ALTS $s "the color a stamped cell gets" $SourceColor
+      (ALT $PaintStored
+        (OUTPUT stamp-at-markers "every stamped cell paints the pattern color.")
+        (RULE &shape
+          (&member *P)
+          (&pattern_color (:C *Col))))))
+  (ALT $ColorShape
+    (INPUT pattern "the shape is the cells of the pattern color; cells of other colors are wiped and not stamped.")
+    (RULE &shape
+      (&member *P)
+      (&ink P *Col)
+      (&pattern_color (:C Col)))))
+
+(RULE &shift
+  (&center (:P *A))
+  (input (:P *M) *Col)
+  (&marker_color (:C Col))
+  (relative (:Base A) (:X M) (:X_rel *V)))
+
+(RULE &shape
+  (&member *P)
+  (&ink P *Col))
+
+(RULE &stamp
+  (&shape (:P *P2) *Col)
+  (&shift *V)
+  (compose (:A P2) (:B V) (:C *P))
+  (input P))
+
+;; The stamps on background.
+(RULE &output
+  (input *P)
+  (OR ((&stamp P *Col))
+      ((NOT (&stamp P))
+       (&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

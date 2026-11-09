@@ -1,0 +1,145 @@
+;; inputs 88d7fffd4dfcb4b88c994dc7ebea1c08e6b88be46b665399a4a120c0cb1601ff programs/solvers/b6afb2da.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b6afb2da
+
+(INPUT background "every cell outside the rectangles is the background color 0")
+
+(INPUT solid-rectangles "the other cells form solid rectangles of the color shape, each at least 3 cells on each side, no two touching")
+
+(OUTPUT corner "each corner cell of a rectangle of shape cells takes corner_color"
+
+  ;; the color of the rectangles' cells
+  (DET &shape ChangedColor)
+
+  (RULE &rect_cell
+    (input *P *Col)
+    (&shape (:C Col)))
+
+  (RULE &link
+    (&rect_cell *P)
+    (neighbor P *D *Q)
+    (&rect_cell (:P Q)))
+
+  (INIT &objects Quotient
+    (edge ((:a P) (:b P2))
+      (OR ((&link *P *D (:Q *P2))
+           (dir_elem D))
+          ((&rect_cell P)
+           (= P2 P)))))
+
+  (INIT &bbox BoundingBox
+    (key ((&objects.class (:a *P) ^Id))
+      (cell (P)
+        (&objects.class (:a *P) Id)))))
+
+(OUTPUT edge "each other cell on a rectangle's border takes edge_color")
+
+(OUTPUT interior "each cell inside a rectangle's border takes interior_color")
+
+(OUTPUT keep-background "each background cell stays as it is"
+
+  (RULE &open_dir
+    (&rect_cell *P)
+    (dir8_elem *D)
+    (NOT (&link P D))))
+
+(ALTS $cells "which cells make up the rectangles" $ShapeCells
+  (ALT $AnyNonBackground
+    (INPUT solid-rectangles "the cells of every color other than background form the rectangles, and touching cells of different colors join one rectangle; undefined on no input"
+      (DET &background UnchangedColor)
+
+      (RULE &rect_cell
+        (input *P *Col)
+        (NOT (&background (:C Col)))))
+    (ALTS $color "whether cells of different colors join one rectangle" $MixedColors
+      (ALT $PerColorObjects
+        (INPUT solid-rectangles "a cell joins only touching cells of its own color; undefined on no input"
+          (RULE &apart
+            (input *P *Col)
+            (neighbor P *D *Q)
+            (input (:P Q) (:Col *Col2))
+            (!= Col Col2))
+          (RULE &link
+            (&rect_cell *P)
+            (neighbor P *D *Q)
+            (&rect_cell (:P Q))
+            (NOT (&apart P Q))))))))
+
+(ALTS $role "how a cell's role (corner, side, inside) is read" $BoxRoles
+  (ALT $BoxRoles
+    (ALTS $adjacency "which contacts join cells into one rectangle" $Objects4
+      (ALT $Objects8
+        (INPUT solid-rectangles "cells that meet at a corner join one rectangle; undefined on no input"
+          (INIT &objects Quotient
+            (edge ((:a P) (:b P2))
+              (OR ((&link *P (:Q *P2)))
+                  ((&rect_cell P)
+                   (= P2 P)))))))))
+  (ALT $CellNeighbors
+    (OUTPUT corner "a rectangle cell missing a neighbor on both axes takes corner_color, a cell past the grid edge counting as missing; undefined on no input")
+    (OUTPUT edge "a cell missing a neighbor on one axis takes edge_color")
+    (OUTPUT interior "a cell missing no neighbor takes interior_color")
+    (RULE &side
+      (&open_dir *P *D)
+      (axis_of D *A))
+    (ALTS $border "which missing neighbors put a non-corner cell on the border" $Border4
+      (ALT $Border8
+        (OUTPUT edge "each other cell missing any of its 8 neighbors takes edge_color; undefined on no input")
+        (OUTPUT interior "a cell missing none of its 8 neighbors takes interior_color")
+        (RULE &rim
+          (OR ((&open_dir *P))
+              ((&side P)))))))
+  (ALT $BorderTurns
+    (OUTPUT corner "a rectangle cell missing any of its 8 neighbors is on the border, a cell past the grid edge counting as missing, and a border cell with border cells beside it on both axes takes corner_color; undefined on no input"
+      (RULE &run_axis
+        (&open_dir *P)
+        (&link P *D *Q)
+        (&open_dir (:P Q))
+        (axis_of D *A)))
+    (OUTPUT edge "each other border cell takes edge_color")
+    (OUTPUT interior "a cell missing none of its 8 neighbors takes interior_color")
+    (RULE &rim
+      (&open_dir *P))
+
+    (RULE &corner
+      (&run_axis *P *A)
+      (perp A *A2)
+      (&run_axis P (:A A2)))))
+
+(DET &corner_color AnyOutNewColor)
+
+(DET &edge_color AnyOutNewColor)
+
+(DET &interior_color AnyOutNewColor)
+
+(RULE &side
+  (&objects.class (:a *P) *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (same_dist *D (:P1 P) (:P2 B))
+  (axis_of D *A))
+
+(RULE &rim
+  (&side *P))
+
+(RULE &corner
+  (&side *P *A)
+  (perp A *A2)
+  (&side P (:A A2)))
+
+(RULE &paint
+  (&rect_cell *P)
+  (OR ((&corner P)
+       (&corner_color (:C *Col)))
+      ((&rim P)
+       (NOT (&corner P))
+       (&edge_color (:C Col)))
+      ((NOT (&rim P))
+       (&interior_color (:C Col)))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

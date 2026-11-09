@@ -1,0 +1,64 @@
+;; inputs 020ecd20a6fec7b3dac6d977c3651b64532a51e3820fc26640f6f3bfb0a35f7e programs/solvers/99fa7670.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 99fa7670
+
+(DET &dir DirDomain)
+
+(DET &bg DominantColor)
+
+(RULE &legs_blocked
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; Line fill: each dot casts its color toward &dir through bg; the next
+;; dot occludes.
+(INIT &legs Ray
+  (source (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (node (P)
+    (input *P)
+    (NOT (&legs_blocked P)))
+  (dir (D)
+    (&dir *D)))
+
+(RULE &leg
+  (&legs.ray *P (:Origin *Src))
+  (input (:P Src) *Col))
+
+(INIT &bends_frame Frame
+  (extent (A N)
+    (&leg *P)
+    (&dir *D)
+    (margin (:B P) D (:K 0))
+    (frame_extent P *A *N)))
+
+(DET &sense SenseDomain)
+
+;; At the &dir edge the fill bends and runs along the edge; legs occlude.
+(INIT &bends Ray
+  (source (P)
+    (&leg *P)
+    (&dir *D)
+    (margin (:B P) D (:K 0)))
+  (node (P)
+    (&bends_frame.cell *P)
+    (NOT (&leg P)))
+  (dir ((:D D2))
+    (&dir *D)
+    (&sense *S)
+    (turn S D *D2)))
+
+(RULE &bend
+  (&bends.ray *P (:Origin *Src))
+  (input P)
+  (&leg (:P Src) *Col))
+
+(RULE &output
+  (OR ((&leg *P *Col))
+      ((&bend P Col))
+      ((input P Col)
+       (NOT (&leg P))
+       (NOT (&bend P)))))
+
+(OUT (&output ^P ^Col))

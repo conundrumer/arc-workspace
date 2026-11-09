@@ -1,0 +1,7 @@
+;; inputs 732c0ac83dde21d9e11b11e894b7f0132140313ca6bc604702b250f4596c56bd programs/solvers/825aa9e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 825aa9e9
+
+(param &bg Color (7))
+(param &fall Dir (DIR_B))
+(param &gap number (1))

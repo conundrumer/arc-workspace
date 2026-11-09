@@ -1,0 +1,292 @@
+;; inputs f72f3f555a9c680419ea145d560cfc846636a9af744ff1646249f3441ddb17e0 programs/solvers/b0f4d537.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b0f4d537
+
+(param &key_band number (1))
+(param &divider Color (5))
+(param &marker Color (4))
+(param &background Color (0))
+(param &key_end Dir (DIR_T))
+
+(exclude ($GapToEnd $DrawLines) "$DrawLines reads no key gap's content, so it takes the concept's gap reading alone.")
+
+(alts $l
+  (alt $LineByEitherEnd
+    (witness line-one-end borderline $LineByEitherEnd
+      (relaxed field-markers)
+      (separates "The field's row 4 keeps its left end marker and its crossing markers and loses its right end marker. The concept reads no line row and draws only the two key columns; $LineByEitherEnd and $LineByCrossing read row 4 as a line and draw the train3 output.")
+      (input (grid
+        (0 0 4 0 4 0 0 5 0 2 0 3 0)
+        (0 0 0 0 0 0 0 5 1 2 1 3 1)
+        (0 0 0 0 0 0 0 5 0 2 0 3 0)
+        (0 0 0 0 0 0 0 5 5 5 5 5 5)
+        (4 0 4 0 4 0 0 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 5 5 5 5 5 5)
+        (0 0 4 0 4 0 0 5 5 5 5 5 5)))
+      (output $LineByBothEnds (grid
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)))
+      (output $LineByCrossing $LineByEitherEnd (grid
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (1 1 2 1 3 1 1)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)))))
+  (alt $LineByCrossing
+    (witness line-ends-only variant concept
+      (relaxed field-markers)
+      (separates "The field marks each line by its two end markers alone, with no marker at the crossings. The concept and the readings by line ends draw the train0 output; $LineByCrossing finds no line and gives an all-background field.")
+      (input (grid
+        (0 1 0 5 0 0 0 0 4 0 0)
+        (3 3 3 5 0 0 0 0 0 0 0)
+        (0 1 0 5 4 0 0 0 0 0 4)
+        (2 1 2 5 0 0 0 0 0 0 0)
+        (0 1 0 5 0 0 0 0 0 0 0)
+        (5 5 5 5 4 0 0 0 0 0 4)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 4 0 0)))
+      (output $LineByBothEnds $LineByEitherEnd (grid
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (3 3 3 3 3 3 3)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (2 2 2 2 1 2 2)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)))
+      (output $LineByCrossing (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $d
+  (alt $DrawLines
+    (witness key-ground borderline concept
+      (relaxed key-grid)
+      (separates "The key's cells off its lines are 7, a ground other than the field's. The concept stretches the key, ground included, so the output ground is 7; $DrawLines draws the lines on background 0.")
+      (input (grid
+        (0 0 4 0 4 0 0 5 7 2 7 3 7)
+        (0 0 0 0 0 0 0 5 1 2 1 3 1)
+        (0 0 0 0 0 0 0 5 7 2 7 3 7)
+        (0 0 0 0 0 0 0 5 5 5 5 5 5)
+        (4 0 4 0 4 0 4 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 5 5 5 5 5 5)
+        (0 0 4 0 4 0 0 5 5 5 5 5 5)))
+      (output $Stretch (grid
+        (7 7 2 7 3 7 7)
+        (7 7 2 7 3 7 7)
+        (7 7 2 7 3 7 7)
+        (7 7 2 7 3 7 7)
+        (1 1 2 1 3 1 1)
+        (7 7 2 7 3 7 7)
+        (7 7 2 7 3 7 7)))
+      (output $DrawLines (grid
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (1 1 2 1 3 1 1)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0))))))
+
+(alts $g
+  (alt $GapToEnd
+    (witness middle-gap borderline concept
+      (relaxed key-grid)
+      (separates "The key's middle gap row is 6 1 6, unlike its end gap rows. The concept gives the field rows between the two lines that key row; $GapToEnd gives every field gap row the end gap row, 0 1 0.")
+      (input (grid
+        (0 1 0 5 0 0 0 0 4 0 0)
+        (3 3 3 5 0 0 0 0 0 0 0)
+        (6 1 6 5 4 0 0 0 4 0 4)
+        (2 1 2 5 0 0 0 0 0 0 0)
+        (0 1 0 5 0 0 0 0 0 0 0)
+        (5 5 5 5 4 0 0 0 4 0 4)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 4 0 0)))
+      (output ($Stretch $GapByCount) (grid
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (3 3 3 3 3 3 3)
+        (6 6 6 6 1 6 6)
+        (6 6 6 6 1 6 6)
+        (2 2 2 2 1 2 2)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)))
+      (output $GapToEnd $DrawLines (grid
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (3 3 3 3 3 3 3)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (2 2 2 2 1 2 2)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0))))))
+
+(alts $m
+  (alt $MarkerFromField
+    (witness marker-recolored variant $MarkerFromField
+      (relaxed field)
+      (separates "The field's markers are 6 in place of 4. The concept finds no panel holding marker cells and gives no grid; $KeyByFill with the stored marker finds no line and gives an all-background field; $KeyByFill & $MarkerFromField reads 6 as the marker and draws the train0 output.")
+      (input (grid
+        (0 1 0 5 0 0 0 0 6 0 0)
+        (3 3 3 5 0 0 0 0 0 0 0)
+        (0 1 0 5 6 0 0 0 6 0 6)
+        (2 1 2 5 0 0 0 0 0 0 0)
+        (0 1 0 5 0 0 0 0 0 0 0)
+        (5 5 5 5 6 0 0 0 6 0 6)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 6 0 0)))
+      (output $FieldByMarker undefined)
+      (output $MarkerStored (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)))
+      (output $MarkerFromField (grid
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (3 3 3 3 3 3 3)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (2 2 2 2 1 2 2)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0))))))
+
+(alts $f
+  (alt $KeyByFill
+    (witness key-line-marker-color borderline $KeyByFill
+      (relaxed key-grid)
+      (separates "The key's second column line has the marker color 4. The concept finds marker cells in both panels and gives no grid; $KeyByFill takes the key from the panel the divider fills and draws column 5 in 4.")
+      (input (grid
+        (0 2 0 4 0 5 0 4 0 0 0 4 0)
+        (3 3 3 3 3 5 4 4 0 0 0 4 4)
+        (0 2 0 4 0 5 0 0 0 0 0 0 0)
+        (3 3 3 3 3 5 0 0 0 0 0 0 0)
+        (0 2 0 4 0 5 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 4 4 0 0 0 4 4)
+        (5 5 5 5 5 5 0 0 0 0 0 0 0)
+        (5 5 5 5 5 5 0 4 0 0 0 4 0)))
+      (output $FieldByMarker undefined)
+      (output $KeyByFill (grid
+        (0 2 0 0 0 4 0)
+        (3 3 3 3 3 3 3)
+        (0 2 0 0 0 4 0)
+        (0 2 0 0 0 4 0)
+        (0 2 0 0 0 4 0)
+        (0 2 0 0 0 4 0)
+        (3 3 3 3 3 3 3)
+        (0 2 0 0 0 4 0)
+        (0 2 0 0 0 4 0))))))
+
+(alts $v
+  (alt $DividerFromFullLine
+    (witness divider-recolored variant $DividerFromFullLine
+      (relaxed two-panels)
+      (separates "The divider and its fill are 8 in place of 5. The stored divider finds no divider line and every reading on it gives no grid; $DividerFromFullLine reads 8 and draws the train0 output.")
+      (input (grid
+        (0 1 0 8 0 0 0 0 4 0 0)
+        (3 3 3 8 0 0 0 0 0 0 0)
+        (0 1 0 8 4 0 0 0 4 0 4)
+        (2 1 2 8 0 0 0 0 0 0 0)
+        (0 1 0 8 0 0 0 0 0 0 0)
+        (8 8 8 8 4 0 0 0 4 0 4)
+        (8 8 8 8 0 0 0 0 0 0 0)
+        (8 8 8 8 0 0 0 0 0 0 0)
+        (8 8 8 8 0 0 0 0 4 0 0)))
+      (output $DividerStored undefined)
+      (output $DividerFromFullLine (grid
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (3 3 3 3 3 3 3)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (2 2 2 2 1 2 2)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0))))))
+
+(alts $y
+  (alt $LayoutStored
+    (witness key-line-divider-color borderline $LayoutStored
+      (relaxed key-grid)
+      (separates "The key's line row has the divider color 5 off its crossings. The concept drops those cells from the key and gives no grid; $LayoutStored takes the key as the panel's cells above the first all-divider row and draws the line row in 5.")
+      (input (grid
+        (0 0 4 0 4 0 0 5 0 2 0 3 0)
+        (0 0 0 0 0 0 0 5 5 2 5 3 5)
+        (0 0 0 0 0 0 0 5 0 2 0 3 0)
+        (0 0 0 0 0 0 0 5 5 5 5 5 5)
+        (4 0 4 0 4 0 4 5 5 5 5 5 5)
+        (0 0 0 0 0 0 0 5 5 5 5 5 5)
+        (0 0 4 0 4 0 0 5 5 5 5 5 5)))
+      (output $LayoutFree undefined)
+      (output $LayoutStored (grid
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0)
+        (5 5 2 5 3 5 5)
+        (0 0 2 0 3 0 0)
+        (0 0 2 0 3 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed field)
+      (relaxed key-grid)
+      (separates "The ground is 9 in place of 0 in both panels. $DrawLines with the stored background draws the lines on 0; background=DominantColor reads 9, the commonest color, and draws on 9, as the concept's stretched key does.")
+      (input (grid
+        (9 1 9 5 9 9 9 9 4 9 9)
+        (3 3 3 5 9 9 9 9 9 9 9)
+        (9 1 9 5 4 9 9 9 4 9 4)
+        (2 1 2 5 9 9 9 9 9 9 9)
+        (9 1 9 5 9 9 9 9 9 9 9)
+        (5 5 5 5 4 9 9 9 4 9 4)
+        (5 5 5 5 9 9 9 9 9 9 9)
+        (5 5 5 5 9 9 9 9 9 9 9)
+        (5 5 5 5 9 9 9 9 4 9 9)))
+      (output $Stretch &background=$Derived (grid
+        (9 9 9 9 1 9 9)
+        (9 9 9 9 1 9 9)
+        (3 3 3 3 3 3 3)
+        (9 9 9 9 1 9 9)
+        (9 9 9 9 1 9 9)
+        (2 2 2 2 1 2 2)
+        (9 9 9 9 1 9 9)
+        (9 9 9 9 1 9 9)
+        (9 9 9 9 1 9 9)))
+      (output ($DrawLines &background=$Stored) (grid
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (3 3 3 3 3 3 3)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (2 2 2 2 1 2 2)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0)
+        (0 0 0 0 1 0 0))))))

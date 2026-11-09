@@ -1,0 +1,27 @@
+;; inputs 4def4f07af3d0898a2eb5f57843766d842e4d9161ba98fa07749b53780fc07e3 programs/solvers/ca8de6ea.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ca8de6ea
+
+(param &in_label (Position Ident)
+  (grid
+    (1 _ _ _ 3)
+    (_ 2 _ 4 _)
+    (_ _ 9 _ _)
+    (_ 8 _ 6 _)
+    (7 _ _ _ 5)))
+(param &out_label (Position Ident)
+  (grid
+    (1 2 3)
+    (8 9 4)
+    (7 6 5)))
+(param &ring_succ (Position Position)
+  (grid
+    ((0 2 1 1) (0 2 2 0) (1 1 2 0))
+    ((0 2 0 2) _ (2 0 2 0))
+    ((1 1 0 2) (2 0 0 2) (2 0 1 1))))
+(param &ring_shift (number number) (0 0) (1 1))
+(param &out_center Position
+  (grid
+    (_ _ _)
+    (_ 1 _)
+    (_ _ _)))

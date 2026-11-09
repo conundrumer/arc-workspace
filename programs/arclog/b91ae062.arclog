@@ -1,0 +1,64 @@
+;; inputs 59020dd57b2a8cbf9f0b6f2144612328b5c06024852eb639322d10f04e805a3b programs/solvers/b91ae062.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b91ae062
+
+(INPUT colored-cells-on-background "every input holds a few cells of colors other than the background 0 on a field of the background, with at least one color other than the background")
+
+(OUTPUT scale-factor-is-color-count "k is the number of distinct colors other than the background in the input"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (INIT &palette Cardinality
+    (member ((:m Col))
+      (input *Col)
+      (NOT (&background (:C Col))))))
+
+(OUTPUT scale-up "the output is the input scaled by k on both axes: each input cell becomes a k×k block of its color")
+
+(ALTS $choice "how k follows from the count" $Count
+  (ALT $ScaleTable
+    (OUTPUT scale-factor-is-color-count "k is the entry a stored table gives for the count; undefined on an input whose count has no entry"
+      (INIT &scale_by_count_division Division
+        (key ((OR ((ex_input ^E (:P *P_in))
+                   (ex_output E (:P *P_out))
+                   (frame_extent (:P P_in) ^A))
+                  ((ex_input E (:P P_in))
+                   (frame_extent (:P P_in) A (:N *M)))))
+          (cell ((:P P_out))
+            (ex_input E (:P *P_in))
+            (ex_output E (:P *P_out))
+            (frame_extent (:P P_in) A))
+          (parts (A (:N M))
+            (ex_input E (:P *P_in))
+            (frame_extent (:P P_in) A (:N *M)))))
+
+      (DET &scale_by_count
+        (&palette.size *E *N)
+        (&scale_by_count_division.tile (:key E *A) (:P_inner *P_slab))
+        (split (:P P_slab) A (:Along *P_inner))
+        (frame_extent (:P P_inner) A (:N *K))))
+    ;; The k×k block each input cell becomes.
+    (INIT &block Frame
+      (extent (A (:N K))
+        (axis_elem *A)
+        (&palette.size *N)
+        (&scale_by_count N *K)))))
+
+;; The k×k block each input cell becomes.
+(INIT &block Frame
+  (extent (A N)
+    (axis_elem *A)
+    (&palette.size *N)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (input (:P *P_tile)))
+  (inner ((:P P_intile))
+    (&block.cell (:P *P_intile))))
+
+(RULE &output
+  (input (:P *P_tile) *Col)
+  (&block.cell (:P *P_intile))
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_intile) *P))
+
+(OUT (&output ^P ^Col))

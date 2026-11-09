@@ -1,0 +1,227 @@
+;; inputs 6f42affee3add6f08cc0d9b2854cf19026b2bb32c92e0857efcca3a97e7a92c3 programs/solvers/291dc1e1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 291dc1e1
+
+(DET &mark RarestColor)
+
+(RULE &mark_pos
+  (input *P *Col)
+  (&mark (:C Col)))
+
+(DET &primary_col SharedColor)
+
+(RULE &primary_axis
+  (input *P *Col)
+  (&primary_col (:C Col))
+  (&mark_pos (:P *P_m))
+  (axis_elem *A)
+  (same_line A P (:Q P_m)))
+
+(DET &bg DominantColor)
+
+(RULE &mark_corner
+  (&mark_pos *P)
+  (corner_dist P *Diag (:K 0)))
+
+(RULE &border
+  (input *P)
+  (&mark_corner *Diag)
+  (corner_dir (:C Diag) *D)
+  (margin (:B P) D (:K 0)))
+
+(INIT &blocks Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&border P))))
+
+(INIT &bbox BoundingBox
+  (key ((&blocks.component *P ^Id))
+    (cell (P)
+      (&blocks.component *P Id))))
+
+;; Blocks stack from stack_dir; one lying along the stack is turned by rot to lie across it.
+(DET &stack_dir DirDomain)
+
+(RULE &stack_axis
+  (&stack_dir *D)
+  (axis_of D *A))
+
+(RULE &slab_axis
+  (&stack_axis (:A *A3))
+  (perp (:A A3) (:A2 *A)))
+
+(RULE &along
+  (&blocks.component *P *Id)
+  (&bbox.box (:key Id) *B)
+  (box_extent B P *A (:N *N1))
+  (perp A *A2)
+  (box_extent B P (:A A2) (:N *N2))
+  (> N1 N2))
+
+(RULE &cropped
+  (&blocks.component *P *Id)
+  (input P *Col)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(DET &turnable
+  (ex_output *E)
+  (&stack_dir *D)
+  (axis_of D *A)
+  (&along E *Id A))
+
+;; Each candidate turn of such a block, sought in the output.
+(INIT &occ Occurrences
+  (key ((&turnable ^E ^Id)
+        (d4_elem ^D))
+    (cell (P (:v Col))
+      (ex_output E *P *Col))
+    (shape ((:P P_turn) (:v Col))
+      (&cropped E Id *P_inner *Col)
+      (apply D (:P P_inner) (:P_out *P_turn)))))
+
+(DET &unseen
+  (&turnable *E *Id)
+  (d4_elem *D)
+  (NOT (&occ.occurrence (:key E Id D))))
+
+(DET &rot
+  (d4_elem *D)
+  (NOT (&unseen D)))
+
+(RULE &turned
+  (&cropped *Id *P_inner *Col)
+  (&stack_axis *A)
+  (OR ((&along Id A)
+       (&rot (:D *R))
+       (apply (:D R) (:P P_inner) (:P_out *P)))
+      ((NOT (&along Id A))
+       (= P P_inner))))
+
+(INIT &widest Order
+  (member ((:t N))
+    (&turned (:P *P_turn))
+    (&slab_axis *A)
+    (frame_extent (:P P_turn) A *N))
+  (score ((:t N) (:S N))
+    (&turned (:P *P_turn))
+    (&slab_axis *A)
+    (frame_extent (:P P_turn) A *N)))
+
+;; As thick as its own block, as long as the longest.
+(INIT &slab Frame
+  (key ((OR ((&turned ^Id (:P *P_turn))
+             (&stack_axis *A)
+             (frame_extent (:P P_turn) A *N))
+            ((&blocks.component Id)
+             (&slab_axis A)
+             (&widest.maximal (:t N))))
+        (OR ((&turned Id (:P *P_turn2))
+             (&stack_axis (:A *A2))
+             (frame_extent (:P P_turn2) (:A A2) (:N *N2)))
+            ((&blocks.component Id)
+             (&slab_axis (:A A2))
+             (&widest.maximal (:t N2))))
+        (perp A A2))
+    (extent (A N)
+      (OR ((&turned Id (:P *P_turn))
+           (&stack_axis *A)
+           (frame_extent (:P P_turn) A *N))
+          ((&blocks.component Id)
+           (&slab_axis A)
+           (&widest.maximal (:t N)))))))
+
+(RULE &placed
+  (&turned *Id (:P *P_turn) *Col)
+  (&slab.cell (:key Id) *P)
+  (relative (:Base P_turn) (:X P) (:X_rel *V))
+  (centered (:P V)))
+
+(ALTS $choice "The cases claim the primary axis of that reading order" $Marked
+  (ALT $Aspect
+    (RULE &primary_axis
+      (input *P)
+      (axis_extents P *A *N1 *N2)
+      (< N1 N2)))
+  (ALT $Lanes
+    (RULE &overlap
+      (&blocks.component (:P *P1) *Id)
+      (&blocks.component (:P *P2) (:Id *Id2))
+      (!= Id Id2)
+      (perp *A *A2)
+      (same_line (:A A2) (:P P1) (:Q P2)))
+
+    (RULE &unstratified
+      (&overlap *A (:Id *Id1) *Id2)
+      (axis_of *D A)
+      (&bbox.box (:key (:Id Id1)) (:B *B1))
+      (margin (:B B1) D (:K *K1))
+      (&bbox.box (:key (:Id Id2)) (:B *B2))
+      (margin (:B B2) D (:K *K2))
+      (!= K1 K2))
+
+    (RULE &primary_axis
+      (axis_elem *A)
+      (NOT (&unstratified A)))))
+
+(RULE &reading_cell
+  (&bbox.box (:B *P))
+  (&primary_axis))
+
+(RULE &reading_corner
+  (&mark_corner (:Diag *D))
+  (&primary_axis))
+
+;; Each block compares as its box.
+(INIT &reading Order
+  (member ((:t P))
+    (&reading_cell *P))
+  (score ((:t P) (:S K1))
+    (&reading_cell *P)
+    (&reading_corner (:D *Diag))
+    (&primary_axis *A)
+    (diag_dist P Diag A *K1 *K2))
+  (secondary_score ((:t P) (:S K2))
+    (&reading_cell *P)
+    (&reading_corner (:D *Diag))
+    (&primary_axis *A)
+    (diag_dist P Diag A *K1 *K2)))
+
+(INIT &slot_size Cardinality
+  (member ((:m R))
+    (&reading.rank *R)))
+
+(INIT &slot_frame Frame
+  (extent (A N)
+    (&stack_dir *D)
+    (axis_of D *A)
+    (&slot_size.size *N)))
+
+(RULE &slot_pos
+  (&slot_frame.cell *P)
+  (&stack_dir *D)
+  (margin (:B P) D *K)
+  (&reading.rank (:R K)))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&reading.rank *R)
+    (&slot_pos (:K R) (:P *P_tile)))
+  (inner ((:P P_slab))
+    (&bbox.box (:key *Id))
+    (&slab.cell (:key Id) (:P *P_slab))))
+
+(RULE &output
+  (&reading.rank (:t *B) *R)
+  (&bbox.box (:key *Id) B)
+  (&slot_pos (:K R) (:P *P_tile))
+  (&slab.cell (:key Id) (:P *P_slab))
+  (OR ((&placed Id (:P P_slab) *Col))
+      ((NOT (&placed Id (:P P_slab)))
+       (&bg (:C Col))))
+  (&stack_axis)
+  (&output_tiling.cell (:P_outer P_tile) (:P_inner P_slab) *P))
+
+(OUT (&output ^P ^Col))

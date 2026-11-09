@@ -1,0 +1,107 @@
+;; inputs 4422062699059dd5ee6004364d6fcb9bc81701f249b21b14864f6b54c366b426 programs/solvers/9aec4887.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9aec4887
+
+(param &bg Color (0))
+(param &fixed Color (8))
+
+(alts $t
+  (alt $Clash
+    (witness recolored-shape variant concept
+      (separates "$Derived (the shape is the color on no one line) from $Stored (the shape is &fixed), and $Own (a tied cell keeps the shape's color) from $Clash (a tied cell takes &fixed): the shape drawn in a color other than the stored ones")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 0 0 5 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 5 0 5 0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 5 0 5 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 4 4 4 4 0 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 0 3 3 3 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Own (grid
+        (0 4 4 4 4 0)
+        (2 5 0 0 5 1)
+        (2 0 5 0 1 1)
+        (2 2 5 5 1 1)
+        (2 0 3 0 5 1)
+        (0 3 3 3 3 0)))
+      (output $Clash (grid
+        (0 4 4 4 4 0)
+        (2 8 0 0 8 1)
+        (2 0 8 0 1 1)
+        (2 2 8 8 1 1)
+        (2 0 3 0 8 1)
+        (0 3 3 3 3 0)))
+      (output ($Stored $Cells) (grid
+        (5 0 0 5 0 0 0 0 0 0 0)
+        (0 5 0 5 0 0 0 0 0 0 0)
+        (5 5 5 5 0 0 0 0 0 0 0)
+        (0 5 0 5 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 4 4 4 4 0)
+        (0 0 0 0 0 2 0 0 0 0 1)
+        (0 0 0 0 0 2 0 0 0 0 1)
+        (0 0 0 0 0 2 0 0 0 0 1)
+        (0 0 0 0 0 2 0 0 0 0 1)
+        (0 0 0 0 0 0 3 3 3 3 0)))
+      (output ($Stored $Runs) (grid
+        (0 5 5 5 5 5 5 5 5 5 0)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (5 0 0 0 0 0 0 0 0 0 1)
+        (0 3 3 3 3 3 3 3 3 3 0))))))
+
+(alts $shape
+  (alt $Stored
+    (witness recolored-shape variant concept)))
+
+(alts $border
+  (alt $Runs
+    (witness side-gap borderline concept
+      (relaxed sides)
+      (separates "$Cells (the border keeps the side cells as drawn) from $Runs (each side redrawn as a full run along its edge): a side with a missing cell")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 0 0 8 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 8 0 0 0 0 0 0 0 0 0 0 0)
+        (0 8 8 8 8 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 8 0 8 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 4 0 4 4 0 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 2 0 0 0 0 1 0 0 0 0)
+        (0 0 0 0 0 0 0 3 3 3 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output $Cells (grid
+        (0 4 0 4 4 0)
+        (2 8 0 0 8 1)
+        (2 0 8 0 1 1)
+        (2 2 8 8 1 1)
+        (2 0 3 0 8 1)
+        (0 3 3 3 3 0)))
+      (output $Runs (grid
+        (0 4 4 4 4 0)
+        (2 8 0 0 8 1)
+        (2 0 8 0 1 1)
+        (2 2 8 8 1 1)
+        (2 0 3 0 8 1)
+        (0 3 3 3 3 0))))))

@@ -1,0 +1,7 @@
+;; inputs baf158591b8c83bb5905b51ccce70341f0b578c51351e3f68d5039fdd7b66b58 programs/solvers/58490d8a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 58490d8a
+
+(param &panel Color (0))
+(param &spread_dir Dir (DIR_R))
+(param &period number (2))

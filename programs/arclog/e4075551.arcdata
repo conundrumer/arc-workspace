@@ -1,0 +1,86 @@
+;; inputs 3f40373f8e07a966f32df3bfb3a9e1d33e43829a02f73581faf160940319e682 programs/solvers/e4075551.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e4075551
+
+(param &background Color (0))
+(param &cross_color Color (5))
+(param &corner_axis Axis (AXIS_V))
+(param &center_color Color (2))
+
+(alts $choice
+  (alt $CenterByPlace
+    (witness center-not-2 borderline $CenterByPlace
+      (relaxed center-dot)
+      (separates "the inner dot has color 8 and no cell is 2: the concept finds no center and is undefined; $CenterByPlace takes the dot extreme on no side as the center and draws the frame and the cross around it")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 8 0 0 0 0 0 0 3 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 7 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 4 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept undefined)
+      (output $CenterByPlace (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 1 1 1 1 1 1 1 1 1 1 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 5 8 5 5 5 5 5 5 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 7 0 5 0 0 0 0 0 0 3 0 0 0)
+        (0 0 4 4 4 4 4 4 4 4 4 4 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor borderline &background=$Derived
+      (relaxed five-dots)
+      (separates "the field is 7 in place of 0: the concept and $CenterByPlace read every field cell as a dot and are undefined; the derived background is 7, and that branch draws the frame and the cross on a field of 7")
+      (input (grid
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 8 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 4 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 3 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 2 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 6 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)))
+      (output &background=$Stored undefined)
+      (output &background=$Derived (grid
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 8 8 8 8 8 8 8 8 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 5 5 2 5 5 5 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 4 7 7 5 7 7 7 3 7 7 7 7 7)
+        (7 7 6 6 6 6 6 6 6 6 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7)
+        (7 7 7 7 7 7 7 7 7 7 7 7 7 7 7))))))

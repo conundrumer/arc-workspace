@@ -1,0 +1,7 @@
+;; inputs 789d551f97991bae486ab68836bbfaacf857e4597677260ba341faf76a403943 programs/solvers/03560426.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 03560426
+
+(param &bg Color (0))
+(param &order Dir (DIR_L))
+(param &corner DiagDir (DIAG_BR))

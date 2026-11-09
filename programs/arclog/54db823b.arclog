@@ -1,0 +1,58 @@
+;; inputs 8a9ac7e275199fc85b6936a284c6c2428cd8191561a95d3e89b46a4a7a1f69e1 programs/solvers/54db823b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 54db823b
+
+(DET &mark RarestColor)
+
+(DET &bg
+  (ex_input *E *P (:Col *C_in))
+  (ex_output E P (:Col *C))
+  (!= C_in C))
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+;; An object with no mark cells counts zero, so it wins.
+(INIT &marks Cardinality
+  (key ((&objs.component (:Id ^O)))
+    (member ((:m P))
+      (&objs.component *P (:Id O))
+      (input P *Col)
+      (&mark (:C Col)))
+    (domain ()
+      (&objs.component (:Id O)))))
+
+(INIT &fewest Order
+  (member ((:t (:V O) (:S N)))
+    (&marks.size (:key *O) *N))
+  (score ((:t (:V O) (:S N)) (:S N))
+    (&marks.size (:key *O) *N)))
+
+(RULE &erased_object
+  (&fewest.minimal (:t (:V *O)))
+  (&objs.component *P (:Id O)))
+
+(RULE &erased_cell
+  (&erased_object *P))
+
+(ALTS $choice "the cases differ in what the erasure covers" $Cells
+  (ALT $Box
+    (INIT &ebox BoundingBox
+      (key ((&erased_object ^O *P))
+        (cell (P)
+          (&erased_object O *P))))
+
+    (RULE &erased_cell
+      (input *P)
+      (&ebox.box *B)
+      (inside (:A P) B))))
+
+(RULE &output
+  (OR ((&erased_cell *P)
+       (&bg (:C *Col)))
+      ((input P Col)
+       (NOT (&erased_cell P)))))
+
+(OUT (&output ^P ^Col))

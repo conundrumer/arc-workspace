@@ -1,0 +1,105 @@
+;; inputs 6d4aba9b3cb66aa40c5db72e4b5d3bc18c6648bfb9256b5abc69e12795f135f1 programs/solvers/9772c176.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9772c176
+
+(DET &bg DominantColor)
+
+(RULE &shape
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &obj Connectivity
+  (node (P)
+    (&shape *P)))
+
+(INIT &edge Boundary
+  (key ((&obj.component ^Id *P))
+    (cell (P)
+      (&obj.component Id *P))))
+
+(RULE &base
+  (dir_elem *D)
+  (&edge.exposed (:key *Id) *P D))
+
+;; the wedges' color
+(DET &cap AnyOutNewColor)
+
+(ALTS $choice "what the wedge's base holds" $Rim
+  (ALT $Extreme
+    (INIT &hull BoundingBox
+      (key ((&obj.component ^Id *P))
+        (cell (P)
+          (&obj.component Id *P))))
+
+    (RULE &base
+      (&obj.component *Id *P)
+      (&hull.box (:key Id) *B)
+      (inside (:A P) B)
+      (same_dist *D (:P1 P) (:P2 B))))
+  (ALT $Widest
+    ;; The object's lines along axis a, each keyed by its coordinate on the other axis.
+    (INIT &line BoundingBox
+      (key ((&obj.component ^Id *P)
+            (axis_elem ^A)
+            (perp A *A2)
+            (split P (:A A2) (:Along ^L)))
+        (cell (P)
+          (&obj.component Id *P)
+          (perp A *A2)
+          (split P (:A A2) (:Along L)))))
+
+    (INIT &longest Order
+      (key ((&line.box (:key ^Id ^A *L) *B)
+            (&line.cell (:key Id A L) *P)
+            (box_extent B P A *N))
+        (member ((:t (:V L) (:S N)))
+          (&line.box (:key Id A *L) *B)
+          (&line.cell (:key Id A L) *P)
+          (box_extent B P A *N))
+        (score ((:t (:V L) (:S N)) (:S N))
+          (&line.box (:key Id A *L) *B)
+          (&line.cell (:key Id A L) *P)
+          (box_extent B P A *N))))
+
+    (RULE &base
+      (axis_of *D *A)
+      (&longest.maximal (:key *Id A) (:t (:V *L)))
+      (&line.box (:key Id A L) *B)
+      (&obj.component Id *P)
+      (inside (:A P) B)
+      (same_dist D (:P1 P) (:P2 B)))))
+
+(INIT &spread_frame Frame
+  (key ((&base ^Id ^D *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&base Id D *P)
+      (frame_extent P *A *N))))
+
+;; A side's base cells cast the two diagonals that lead away from that side.
+(INIT &spread Ray
+  (key ((OR ((&base ^Id ^D *P))
+            ((&base Id D)
+             (corner_dir (:C *Dg) D))
+            ((&spread_frame.cell (:key Id D) P))))
+    (source (P)
+      (&base Id D *P))
+    (node (P)
+      (&spread_frame.cell (:key Id D) *P))
+    (dir ((:D Dg))
+      (&base Id D)
+      (corner_dir (:C *Dg) D))))
+
+(RULE &cap_cell
+  (&spread.ray (:key *Id *D) *P (:D *Dg1))
+  (NOT (&shape P))
+  (&spread.ray (:key Id D) P (:D *Dg2))
+  (!= Dg1 Dg2))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&cap_cell P)))
+      ((&cap_cell P)
+       (&cap (:C Col)))))
+
+(OUT (&output ^P ^Col))

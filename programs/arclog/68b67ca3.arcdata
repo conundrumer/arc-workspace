@@ -1,0 +1,20 @@
+;; inputs 607f7813d73cabb66c872571c131036314482328735fa6f493e132e2bc28206d programs/solvers/68b67ca3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 68b67ca3
+
+(param &in_label (Position Ident)
+  (grid
+    (1 _ 2 _ 3 _)
+    (_ _ _ _ _ _)
+    (4 _ 5 _ 6 _)
+    (_ _ _ _ _ _)
+    (7 _ 8 _ 9 _)
+    (_ _ _ _ _ _)))
+(param &out_label (Position Ident)
+  (grid
+    (1 2 3)
+    (4 5 6)
+    (7 8 9)))
+(param &anchor DiagDir (DIAG_TL))
+(param &divisor number (3))
+(param &tile_size number (2))

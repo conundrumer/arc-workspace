@@ -1,0 +1,281 @@
+;; inputs e88932ea7486b11704bb3bcf6ae7c382b0e616d5d78416cd30342964a8bd12c4 programs/solvers/ac6f9922.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ac6f9922
+
+(INPUT framed-bars "every input is a field of the background color with bars of one other color on it; the background shows outside the bars, at least along the grid edge"
+
+  (INIT &commonest_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &commonest Order
+    (member ((:t Col))
+      (&commonest_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&commonest_count.size (:key *Col) *N)))
+
+  (INIT &sole_commonest Singleton
+    (member ((:v Col))
+      (&commonest.maximal (:t *Col)))))
+
+(INPUT window-grid "the bars enclose rectangular windows of the background color; the windows fall into rows that share their top and bottom rows of cells, and into columns that share their left and right columns of cells, so each window is at one row and one column of a full grid of windows; the bars between windows can be wider than one cell, and differ in width"
+
+  (INIT &edge Singleton
+    (member ((:v Col))
+      (input *P *Col)
+      (margin (:B P) *D (:K 0))))
+
+  (RULE &bg
+    (&edge.value (:v *Col)))
+
+  (INIT &bar_mode_count Cardinality
+    (key ((&bg (:Col *C))
+          (input *P ^Col)
+          (!= Col C))
+      (member ((:m P))
+        (&bg (:Col *C))
+        (input *P Col)
+        (!= Col C))))
+
+  ;; The bar color: the commonest color other than the background.
+  (INIT &bar_mode Order
+    (member ((:t Col))
+      (&bar_mode_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&bar_mode_count.size (:key *Col) *N)))
+
+  (INIT &bar_color Singleton
+    (member ((:v Col))
+      (&bar_mode.maximal (:t *Col))))
+
+  (INIT &bar_box BoundingBox
+    (cell (P)
+      (&bar_color.value (:v *L))
+      (input *P (:Col L))))
+
+  (RULE &bar_area
+    (&bar_box.box (:B *Bx))
+    (input *P)
+    (inside (:A P) (:B Bx)))
+
+  (RULE &broken_line
+    (&bar_area *P)
+    (&bar_color.value (:v *C))
+    (input P *Col)
+    (!= Col C)
+    (split P *A (:Along *L)))
+
+  (RULE &tiles_divider
+    (&bar_area *P)
+    (split P *A (:Along *L))
+    (NOT (&broken_line A L)))
+
+  (RULE &tiles_on_divider
+    (&bar_area *P)
+    (&tiles_divider *A *L)
+    (axis_of *D A)
+    (same_dist D (:P1 P) (:P2 L)))
+
+  (INIT &tiles_rank Order
+    (key ((OR ((&tiles_divider *A *L)
+               (axis_of ^D A)
+               (margin (:B L) D *K))
+              ((&bar_area *P)
+               (margin (:B P) D K))))
+      (member ((:t K))
+        (&tiles_divider *A *L)
+        (axis_of D A)
+        (margin (:B L) D *K))
+      (score ((:t K) (:S K))
+        (OR ((&tiles_divider *A *L)
+             (axis_of D A)
+             (margin (:B L) D *K))
+            ((&bar_area *P)
+             (margin (:B P) D K))))
+      (probe ((:t K))
+        (&bar_area *P)
+        (margin (:B P) D *K))))
+
+  (RULE &tiles_part_idx
+    (&bar_area *P)
+    (axis_of *D *A)
+    (NOT (&tiles_on_divider P A))
+    (margin (:B P) D *K)
+    (&tiles_rank.rank (:key D) (:t K) (:R *N)))
+
+  (RULE &tiles_part_of
+    (axis_of *D *A)
+    (opposite D (:Opp *D2))
+    (&tiles_part_idx *P D (:N *N1))
+    (&tiles_part_idx P (:D D2) (:N *N2))
+    (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+  (RULE &tiles_tile_of
+    (&tiles_part_of *P *A (:P_part *P1))
+    (perp A *A2)
+    (&tiles_part_of P (:A A2) (:P_part *P2))
+    (compose (:A P1) (:B P2) (:C *P_tile)))
+
+  (INIT &tile_box BoundingBox
+    (key ((&tiles_tile_of *P (:P_tile ^T)))
+      (cell (P)
+        (&tiles_tile_of *P (:P_tile T))))))
+
+(INPUT one-mark "a window holds no mark or one mark: a solid rectangle of one color that is neither the background nor the bar color, which touches no edge of the window; marks differ in size and shape, and two windows can hold marks of one color"
+
+  (INIT &closed Enclosure
+    (cell (P)
+      (&bar_color.value (:v *L))
+      (input *P *Col)
+      (!= Col L)))
+
+  (INIT &region_box BoundingBox
+    (key ((&closed.enclosed *P ^Id))
+      (cell (P)
+        (&closed.enclosed *P Id))))
+
+  (RULE &window_cell
+    (&closed.enclosed *P *Id)
+    (&region_box.box (:key Id) *B))
+
+  (RULE &unit_cell
+    (&window_cell *B *P))
+
+  (RULE &fill
+    (&unit_cell *B)
+    (&bg *Col))
+
+  ;; The colors of a unit that are neither its fill nor the bar color.
+  (INIT &mark Singleton
+    (key ((&fill (:B ^Bx) (:Col *F))
+          (&unit_cell (:B Bx) *P)
+          (input P *Col)
+          (!= Col F)
+          (&bar_color.value (:v *L))
+          (!= Col L))
+      (member ((:v Col))
+        (&fill (:B Bx) (:Col *F))
+        (&unit_cell (:B Bx) *P)
+        (input P *Col)
+        (!= Col F)
+        (&bar_color.value (:v *L))
+        (!= Col L)))))
+
+(OUTPUT window-picture "the output has one row per row of windows and one column per column of windows, in the order of the windows in the input"
+
+  (RULE &unit_line
+    (&unit_cell *B *P)
+    (split P *A (:Along *L)))
+
+  ;; The units that form one row or one column.
+  (INIT &same_band Quotient
+    (equivalent ((:a A (:B Bx)) (:b A (:B Bx2)))
+      (&unit_line *A (:B *Bx))
+      (&unit_line A (:B *Bx2))
+      (split (:P Bx) A (:Along *E))
+      (split (:P Bx2) A (:Along E))))
+
+  (INIT &layout Order
+    (key ((&same_band.class (:a ^A))
+          (axis_of ^D A))
+      (member ((:t I))
+        (&same_band.class (:a A (:B *Bx)) (:Id *I))
+        (&unit_line A (:B Bx) *L))
+      (before ((:a I) (:b I2))
+        (&same_band.class (:a A (:B *Bx)) (:Id *I))
+        (&unit_line A (:B Bx) *L)
+        (&same_band.class (:a A (:B *Bx2)) (:Id *I2))
+        (&unit_line A (:B Bx2) (:L *L2))
+        (!= I I2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2)))))
+
+(OUTPUT mark-color "each output cell takes the color of the mark in its window, and the background color where the window holds no mark"
+
+  ;; The colors of a unit's cells beside the bars.
+  (INIT &rim Singleton
+    (key ((&unit_cell (:B ^Bx) *P)
+          (input P *Col)
+          (&bar_color.value (:v *L))
+          (dir_elem *D)
+          (neighbor P D *Q)
+          (input (:P Q) (:Col L)))
+      (member ((:v Col))
+        (&unit_cell (:B Bx) *P)
+        (input P *Col)
+        (&bar_color.value (:v *L))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (input (:P Q) (:Col L))))))
+
+(ALTS $bg "how the background color is found" $EdgeColor
+  (ALT $CommonestBackground
+    (INPUT framed-bars "the background is the commonest color of the input; undefined where two colors tie for commonest"
+      (RULE &bg
+        (&sole_commonest.value (:v *Col))))))
+
+(ALTS $unit "what one output cell stands for" $Window
+  (ALT $Window
+    (ALTS $region "which cells make up a window" $ClosedRegion
+      (ALT $BgRegionWindows
+        (INPUT window-grid "a window is a connected region of background cells closed off from the grid edge, and its marks are the non-bar cells inside its bounding box"
+          (INIT &closed Enclosure
+            (cell (P)
+              (&bg *Col)
+              (input *P Col)))
+          (RULE &window_cell
+            (&region_box.box *B)
+            (&bar_color.value (:v *L))
+            (input *P *Col)
+            (!= Col L)
+            (inside (:A P) B)))))
+    (ALTS $grouping "how windows group into rows and columns" $SameExtent
+      (ALT $WindowBands
+        (INPUT window-grid "windows whose row extents overlap merge into one band, and the same holds for columns"
+          ;; The units that form one row or one column.
+          (INIT &same_band Quotient
+            (edge ((:a A (:B Bx)) (:b A (:B Bx2)))
+              (&unit_line *A (:B *Bx) *L)
+              (&unit_line A (:B *Bx2) L)))))))
+  (ALT $DividerTiles
+    (INPUT window-grid "the bars' full lines cut their bounding box into tiles, one per place of the grid")
+    (OUTPUT window-picture "the output has one row per row of tiles and one column per column of tiles; a tile takes its one color that is neither the background nor the bar color, or the background; undefined where a tile holds two such colors"
+      (RULE &unit_cell
+        (&tiles_tile_of *P (:P_tile *T))
+        (&tile_box.box (:key T) *B)))))
+
+(ALTS $empty "the color of an empty window's cell" $BackgroundEmpty
+  (ALT $WindowFill
+    (INPUT window-grid "a window may be filled with any non-bar color")
+    (OUTPUT mark-color "an empty window gives its own fill, the one color its cells take where they touch the bars; undefined where they take two"
+      (RULE &fill
+        (&rim.value (:key (:Bx *B)) (:v *Col))))))
+
+(RULE &layout_pos
+  (&layout.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+  (&layout.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(RULE &mixed
+  (&same_band.class (:a *A (:B *Bx)) (:Id *I1))
+  (&same_band.class (:a A (:B *Bx2)) (:Id *I2))
+  (!= I1 I2)
+  (&unit_line A (:B Bx) *L)
+  (&unit_line A (:B Bx2) L))
+
+(RULE &output
+  (&fill (:B *Bx) (:Col *F))
+  (NOT (&mixed))
+  (OR ((&mark.value (:key Bx) (:v *Col)))
+      ((NOT (&mark.member (:key Bx)))
+       (= Col F)))
+  (&same_band.class (:a *A (:B Bx)) (:Id *I1))
+  (&layout_pos (:Key A) (:M I1) (:P_pos *P1))
+  (perp A *A2)
+  (&same_band.class (:a (:A A2) (:B Bx)) (:Id *I2))
+  (&layout_pos (:Key A2) (:M I2) (:P_pos *P2))
+  (compose (:A P1) (:B P2) (:C *P)))
+
+(OUT (&output ^P ^Col))

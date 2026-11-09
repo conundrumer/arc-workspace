@@ -1,6 +1,6 @@
 //! The end check of the checker stage, and of step 1, over the corpus:
 //! `cargo run --profile tool --example lint -- <dir> <report>`, with
-//! `<dir>` the corpus directory, such as `work/arclog/gen/`, and `<report>`
+//! `<dir>` the corpus directory, such as `programs/arclog/`, and `<report>`
 //! the `--all` output of the Python lint over `<dir>`, read by
 //! [`arclog::harness::LintReport`].
 //!

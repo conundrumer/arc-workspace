@@ -1,0 +1,145 @@
+;; inputs dbca10bd7111ae97f0d13e0a2c0e3aa52812c55c6f4bed7d9b4d5f9ae38239a4 programs/solvers/696d4842.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 696d4842
+
+(DET &bg DominantColor)
+
+(INIT &shapes Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &rim Boundary
+  (key ((&shapes.node (:key ^Col) *P))
+    (cell (P)
+      (&shapes.node (:key Col) *P))))
+
+(RULE &link
+  (&shapes.node (:key *Col) *P)
+  (dir_elem *D)
+  (NOT (&rim.exposed (:key Col) P D)))
+
+;; The one direction a shape cell's neighbors lie in.
+(INIT &behind Singleton
+  (key ((&link ^P *D))
+    (member ((:v D))
+      (&link P *D))))
+
+(RULE &end
+  (&behind.value (:key *P) (:v *D_in))
+  (opposite (:D D_in) (:Opp *D)))
+
+(RULE &sight_blocked
+  (dir_elem (:D *Key))
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &sight_frame Frame
+  (key ((&end *P ^D)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&end *P D)
+      (frame_extent P *A *N))))
+
+;; Ends look along their line, and any content stops the look.
+(INIT &sight Ray
+  (key ((OR ((&end *P ^D))
+            ((dir_elem D))
+            ((&sight_frame.cell (:key D) P)
+             (NOT (&sight_blocked (:Key D) P)))))
+    (source (P)
+      (&end *P D))
+    (node (P)
+      (&sight_frame.cell (:key D) *P)
+      (NOT (&sight_blocked (:Key D) P)))
+    (dir (D)
+      (dir_elem D))))
+
+(INIT &sight_full Ray
+  (key ((OR ((&end *P ^D))
+            ((dir_elem D))
+            ((&sight_frame.cell (:key D) P))))
+    (source (P)
+      (&end *P D))
+    (node (P)
+      (&sight_frame.cell (:key D) *P))
+    (dir (D)
+      (dir_elem D))))
+
+(RULE &sight_stop_full
+  (&sight.end (:key (:D *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&sight_full.ray (:key (:D V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &dot
+  (&shapes.node *P)
+  (NOT (&link P)))
+
+(RULE &sight_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(RULE &faces
+  (&sight_stop_full (:V0 *D) (:V1 *P_dot) (:V2 D) (:V4 *P_end))
+  (&dot (:P P_dot)))
+
+(RULE &growth
+  (&faces *P_end)
+  (&sight.ray (:key *D) *P D (:Origin P_end))
+  (&sight_cell P)
+  (dir_elem D))
+
+(RULE &shape_cell
+  (&faces *P_end)
+  (&shapes.component (:key *Col) (:P P_end) *Id)
+  (&shapes.component (:key Col) (:P *Q) Id))
+
+;; The near end advances one growth cell per step, and at each step the far
+;; end gives up the next cell of the shape.
+(INIT &crawl Unfold
+  (key ((OR ((&growth ^P_end *P)
+             (&end (:P P_end) *D)
+             (neighbor (:P P_end) D (:Q P)))
+            ((&growth P_end P)
+             (&end (:P P_end) D)
+             (neighbor P D (:Q *P2))
+             (&growth P_end (:P P2)))
+            ((&shape_cell P_end *Q))))
+    (start ((:t P))
+      (&growth P_end *P)
+      (&end (:P P_end) *D)
+      (neighbor (:P P_end) D (:Q P)))
+    (initial_untaken ((:item Q))
+      (&shape_cell P_end *Q))
+    (step ((:t P) (:t2 P2))
+      (&growth P_end *P)
+      (&end (:P P_end) *D)
+      (neighbor P D (:Q *P2))
+      (&growth P_end (:P P2)))
+    (take ((:t P) (:item Q))
+      (&growth P_end *P)
+      (&shape_cell P_end *Q)
+      (&crawl.untaken (:t P) (:item Q))
+      (OR ((&end (:P Q))
+           (!= Q P_end))
+          ((&link (:P Q) *D)
+           (neighbor (:P Q) D (:Q *Q2))
+           (&crawl.taken (:t P) (:item Q2)))))))
+
+(RULE &vacated
+  (&crawl.take (:key *P_end) (:item *P))
+  (&faces P_end *P_dot)
+  (input (:P P_dot) *Col))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&growth *P_end P)
+       (input (:P P_end) *Col))
+      ((&vacated P Col))
+      ((NOT (&growth P))
+       (NOT (&vacated P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

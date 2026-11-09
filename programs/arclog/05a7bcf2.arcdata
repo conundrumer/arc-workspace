@@ -1,0 +1,8 @@
+;; inputs c7dfbe0cacff59b8f605a72db47ad319e6838c20b79fdb13a329e55cd5ac19e0 programs/solvers/05a7bcf2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 05a7bcf2
+
+(param &wall Color (8))
+(param &push Color (2))
+(param &shape Color (4))
+(param &mark Color (3))

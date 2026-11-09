@@ -1,0 +1,123 @@
+;; inputs 517a268ca9bb8b2a3259fe5d20997e883665bd37801aed57c861f45692a5725e programs/solvers/8a371977.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8a371977
+
+(DET &bg UnchangedColor)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &off_line
+  (&ink *P)
+  (split P *A (:Along *L)))
+
+(RULE &cut_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&off_line A L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D *K)
+  (&cut_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &ring AnyOutNewColor)
+
+(DET &within AnyOutNewColor)
+
+;; The tile arrangement: the tile positions of the parts that hold ink.
+(INIT &tiling BoundingBox
+  (cell ((:P T))
+    (&ink *P)
+    (&cut_tile_of P (:P_tile *T))))
+
+(RULE &ring_cell
+  (&ink *P)
+  (&cut_tile_of P (:P_tile *T))
+  (&tiling.box *B)
+  (inside (:A T) B)
+  (same_dist (:P1 T) (:P2 B)))
+
+(INIT &blob Connectivity
+  (node (P)
+    (&ink *P)))
+
+(ALTS $choice "what a tile is, and how the ring tiles are found" $Tiling
+  (ALT $Blobs
+    (INIT &hull BoundingBox
+      (cell (P)
+        (&ink *P)))
+
+    ;; P shares a tile with a cell on the hull's edge.
+    (RULE &ring_cell
+      (&blob.component *P *Id)
+      (&blob.component (:P *Q) Id)
+      (&hull.box *B)
+      (inside (:A Q) B)
+      (same_dist (:P1 Q) (:P2 B))))
+  (ALT $Sight
+    (RULE &screened
+      (&blob.component *P *Id)
+      (&blob.component (:P *Q) (:Id *Id2))
+      (!= Id Id2)
+      (axis_of *D *A)
+      (same_line A P Q)
+      (nearer D (:P Q) (:Q P)))
+
+    (RULE &ring_cell
+      (&blob.component *P *Id)
+      (dir_elem *D)
+      (NOT (&screened Id D)))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&ring_cell P)
+       (&ring (:C Col)))
+      ((&ink P)
+       (NOT (&ring_cell P))
+       (&within (:C Col)))))
+
+(OUT (&output ^P ^Col))

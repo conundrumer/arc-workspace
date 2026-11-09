@@ -1,0 +1,67 @@
+;; inputs 9215fe81acc5acbde1ea417817f4a607d89115e02e099bab517420b61c4e63d6 programs/solvers/2037f2c7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2037f2c7
+
+(DET &bg DominantColor)
+
+(DET &mark AnyOutNewColor)
+
+(INIT &shapes Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component *P ^Id))
+    (cell (P)
+      (&shapes.component *P Id))))
+
+(RULE &filled
+  (&shapes.component (:P *P2) *Id)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(RULE &only_in
+  (&filled *Id *P)
+  (&shapes.component (:Id *Id2))
+  (!= Id2 Id)
+  (NOT (&filled (:Id Id2) P)))
+
+(RULE &differs
+  (&only_in *P))
+
+(ALTS $choice "what counts as a disagreement" $Xor
+  (ALT $Damage
+    (INIT &fullest_count Cardinality
+      (key ((&filled ^Id *P))
+        (member ((:m P))
+          (&filled Id *P))))
+
+    (INIT &fullest Order
+      (member ((:t Id))
+        (&fullest_count.size (:key *Id)))
+      (score ((:t Id) (:S N))
+        (&fullest_count.size (:key *Id) *N)))
+
+    (RULE &differs
+      (&fullest.maximal (:t *Id))
+      (&only_in Id *P))))
+
+(INIT &view BoundingBox
+  (cell (P)
+    (&differs *P)))
+
+(RULE &output
+  (input (:P *P_grid))
+  (&bbox.box (:B *B_copy))
+  (inside (:A P_grid) (:B B_copy))
+  (relative (:Base B_copy) (:X P_grid) (:X_rel *P_shared))
+  (&view.box *B)
+  (inside (:A P_shared) B)
+  (relative (:Base B) (:X P_shared) (:X_rel *P))
+  (IF ((&differs (:P P_shared)))
+      ((&mark (:C *Col)))
+      ((&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

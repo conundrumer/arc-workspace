@@ -1,0 +1,9 @@
+;; inputs 9929487d033b5d2f74e3dff8d14fbdfa1d13763810542f3d5e56162c6482a070 programs/solvers/221dfab4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 221dfab4
+
+(param &marker_col Color (4))
+(param &beam_col Color (3))
+(param &period number (6))
+(param &copy_phase number (0) (2))
+(param &beam_phase number (4))

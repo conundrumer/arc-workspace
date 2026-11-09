@@ -1,0 +1,8 @@
+;; inputs 5572598fba2d54fb5c19897b6f966f1a981224d2d6026a2e64054516f90f998b programs/solvers/963c33f8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 963c33f8
+
+(param &bg Color (7))
+(param &fall Dir (DIR_B))
+(param &solid Color (5))
+(param &stop Color (1))

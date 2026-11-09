@@ -1,0 +1,86 @@
+;; inputs 565ec2ab71d03263021e35ed7e74fd9529c8bb8237caa3d5933d9de900773132 programs/solvers/6ecd11f4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6ecd11f4
+
+(DET &bg DominantColor)
+
+(INIT &objs Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+  (step ((:Delta S))
+    (OR ((diag_dir_elem *D)
+         (step_offset D (:V *S)))
+        ((dir_elem (:D *D2))
+         (step_offset (:D D2) (:V S))))))
+
+;; Every object's box.
+(INIT &boxes BoundingBox
+  (key ((&objs.component *P ^Id))
+    (cell (P)
+      (&objs.component *P Id))))
+
+(RULE &box_size
+  (&boxes.cell (:key *Id) *P)
+  (&boxes.box (:key Id) *B)
+  (box_extent B P *A *N))
+
+(INIT &obj_col Singleton
+  (key ((&objs.component *P ^Id)
+        (input P *Col))
+    (member ((:v Col))
+      (&objs.component *P Id)
+      (input P *Col))))
+
+(RULE &square_id
+  (&obj_col.plural (:key *Id)))
+
+(ALTS $choice "which object is the square" $Multicolor
+  (ALT $Smallest
+    (INIT &by_extent Order
+      (member ((:t (:V Id) (:S N)))
+        (&box_size *Id *N))
+      (score ((:t (:V Id) (:S N)) (:S N))
+        (&box_size *Id *N)))
+
+    (RULE &square_id
+      (&by_extent.minimal (:t (:V *Id))))))
+
+(RULE &shape_id
+  (&objs.component *Id)
+  (NOT (&square_id Id)))
+
+(RULE &shape_cell
+  (&shape_id (:Id *Sh))
+  (&boxes.box (:key (:Id Sh)) *B)
+  (input *P)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner)))
+
+(RULE &blocks_dim
+  (&square_id *Id)
+  (&box_size Id *A *N))
+
+;; The shape's box divided into the square's cell arrangement.
+(INIT &blocks Division
+  (cell ((:P P_inner))
+    (&blocks_dim)
+    (&shape_cell *P_inner))
+  (parts (A N)
+    (&blocks_dim *A *N)))
+
+(RULE &output
+  (&square_id (:Id *Sq))
+  (input (:P *P_grid) (:Col *Col_sq))
+  (&boxes.box (:key (:Id Sq)) (:B *B_sq))
+  (inside (:A P_grid) (:B B_sq))
+  (relative (:Base B_sq) (:X P_grid) (:X_rel *P))
+  (&blocks.tile (:P *P_inner) (:P_outer P))
+  (&shape_id (:Id *Sh))
+  (&shape_cell (:P *P_shape) P_inner)
+  (OR ((NOT (&objs.component (:P P_shape) (:Id Sh)))
+       (&bg (:C *Col)))
+      ((&objs.component (:P P_shape) (:Id Sh))
+       (= Col Col_sq))))
+
+(OUT (&output ^P ^Col))

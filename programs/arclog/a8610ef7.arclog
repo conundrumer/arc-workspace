@@ -1,0 +1,60 @@
+;; inputs a928f2db3b8d9447c1dbbef74477789e34725c4f35f71e223412562ba5e9982d programs/solvers/a8610ef7.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a8610ef7
+
+(DET &mirror D4Domain)
+
+(DET &bg RarestColor)
+
+(RULE &non_bg
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; The color the output paints a cell. The key is the cell's own color and
+;; the color of its image under a transform.
+(INIT &pair_color Singleton
+  (key ((d4_elem ^D)
+        (ex_input *E *P (:Col ^C))
+        (apply D P (:P_out *P_m))
+        (ex_input E (:P P_m) (:Col ^C_m))
+        (ex_output E P *Col))
+    (member ((:v Col))
+      (ex_input *E *P (:Col C))
+      (apply D P (:P_out *P_m))
+      (ex_input E (:P P_m) (:Col C_m))
+      (ex_output E P *Col))))
+
+(DET &recolor
+  (&mirror *D)
+  (&pair_color.value (:key D (:C *C_self) (:C_m *C_mirror)) (:v *C_out)))
+
+(DET &matched
+  (&recolor (:C_self *C2) (:C_mirror *C_m) (:C_out *C))
+  (NOT (&bg (:C C2)))
+  (NOT (&bg (:C C_m))))
+
+(DET &unmatched
+  (&recolor (:C_self *C2) (:C_mirror *C_m) (:C_out *C))
+  (NOT (&bg (:C C2)))
+  (&bg (:C C_m)))
+
+(ALTS $choice "which model recolors a cell from its own color and its image's color" $Direct
+  (ALT $Lookup
+    (RULE &output
+      (input *P (:Col *C_self))
+      (&mirror *D)
+      (apply D P (:P_out *P_m))
+      (input (:P P_m) (:Col *C_mirror))
+      (&recolor C_self C_mirror (:C_out *Col)))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (&bg (:C Col)))
+      ((&non_bg P)
+       (&mirror *D)
+       (apply D P (:P_out *P_m))
+       (IF ((&non_bg (:P P_m)))
+           ((&matched (:C Col)))
+           ((&unmatched (:C Col)))))))
+
+(OUT (&output ^P ^Col))

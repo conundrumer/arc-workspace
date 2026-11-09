@@ -1,0 +1,10 @@
+;; inputs 41a4ab922ca19a1257f71b3cf3bbc7408d207fdaad752e5f8ca3fdb61c5872a5 programs/solvers/543a7ed5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 543a7ed5
+
+(param &bg Color (8))
+(param &fill Color (4))
+(param &outline Color (3))
+(param &ring_width number (1))
+
+(exclude ($Boxed $Band) "Every shape in the pairs is a rectangle with a solid border, and that separates neither class, so $Boxed with $Band is left out: where a box's border is not a solid shape, some bg cell on that border is both inside the box and one step off the shape, so the two readings claim it for different colors. Where the border is solid, that combination agrees with $Boxed and $Ring everywhere.")

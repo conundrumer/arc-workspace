@@ -1,0 +1,375 @@
+;; inputs 15e59618196393c940b64a0fa653d5c72427719dec64428bf46bffca79a5d2f1 programs/solvers/c0f76784.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c0f76784
+
+(param &background Color (0))
+(param &fill_by_side (number Color) (1 6) (2 7) (3 8))
+(param &fill_by_area (number Color) (1 6) (4 7) (9 8))
+(param &frame_color Color (5))
+(param &fill_by_outline_side (number Color) (3 6) (4 7) (5 8))
+(param &fill_by_outline_count (number Color) (8 6) (12 7) (16 8))
+(param &fill_by_rank (number Color) (0 8) (1 7) (2 6))
+
+(exclude ($HoleSide $Enclose8) "A case that reads outline objects under both the measure and the hole reading reads them under one adjacency.A hole has a side only where it is a solid square, and there its side is the shorter side of its bounding box, so the case that takes $KeyByMinSide in place of $HoleSide gives the output of each of these cases wherever that case is defined, at every assignment.")
+(exclude ($HoleSide $WallsOfFrameColor) "A case that reads outline objects under both the measure and the hole reading reads them under one adjacency.A hole has a side only where it is a solid square, and there its side is the shorter side of its bounding box, so the case that takes $KeyByMinSide in place of $HoleSide gives the output of each of these cases wherever that case is defined, at every assignment.")
+(exclude ($HoleSide $FillBboxInterior) "A case that reads outline objects under both the measure and the hole reading reads them under one adjacency.A hole has a side only where it is a solid square, and there its side is the shorter side of its bounding box, so the case that takes $KeyByMinSide in place of $HoleSide gives the output of each of these cases wherever that case is defined, at every assignment.")
+(exclude ($HoleSide $RankBySize) "A case that reads outline objects under both the measure and the hole reading reads them under one adjacency.A hole has a side only where it is a solid square, and there its side is the shorter side of its bounding box, so the case that takes $KeyByMinSide in place of $HoleSide gives the output of each of these cases wherever that case is defined, at every assignment.")
+(exclude ($OutlineAdj8 $OutlineAdj4) "A case that reads outline objects under both the measure and the hole reading reads them under one adjacency.A hole has a side only where it is a solid square, and there its side is the shorter side of its bounding box, so the case that takes $KeyByMinSide in place of $HoleSide gives the output of each of these cases wherever that case is defined, at every assignment.")
+
+(alts $m
+  (alt $KeyByOutlineCount
+    (witness corner-touch foreign concept
+      (relaxed outlines-apart)
+      (separates "two 3x3 outlines touching at a corner: 8-adjacent outline objects merge, the bounding-box and outline-side readings are undefined, and the merged outline's 16 cells fill both holes 8; 4-adjacent objects stay apart and fill both holes 6")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 5 0 5 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 0 0 0 5 5 5 0)
+        (0 0 0 0 5 0 5 0)
+        (0 0 0 0 5 5 5 0)
+        (0 0 0 0 0 0 0 0)))
+      (output $OutlineAdj4 $Enclose8 $WallsOfFrameColor concept ($KeyByArea $MeasureKey $Enclose4) ($KeyByMaxSide $MeasureKey $Enclose4) ($KeyByMinSide $MeasureKey $Enclose4) (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 5 6 5 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 0 0 0 5 5 5 0)
+        (0 0 0 0 5 6 5 0)
+        (0 0 0 0 5 5 5 0)
+        (0 0 0 0 0 0 0 0)))
+      (output ($FillBboxInterior $OutlineAdj8) ($OutlineSide $OutlineAdj8) undefined)
+      (output $RankBySize $KeyByOutlineCount (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 5 8 5 0 0 0 0)
+        (0 5 5 5 0 0 0 0)
+        (0 0 0 0 5 5 5 0)
+        (0 0 0 0 5 8 5 0)
+        (0 0 0 0 5 5 5 0)
+        (0 0 0 0 0 0 0 0))))))
+
+(alts $adj
+  (alt $OutlineAdj4
+    (witness corner-touch foreign concept)))
+
+(alts $measure
+  (alt $KeyByArea
+    (witness hole-1x4 borderline any
+      (relaxed square-outlines)
+      (separates "a 1x4 hole: the side readings are undefined; the cell count 4 fills 7; the shorter side 1 fills 6; the longer side has no key")
+      (input (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 0)
+        (0 5 0 0 0 0 5 0)
+        (0 5 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0)))
+      (output concept $KeyByOutlineSide ($KeyByMaxSide $MeasureKey) undefined)
+      (output $RankBySize (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 0)
+        (0 5 8 8 8 8 5 0)
+        (0 5 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0)))
+      (output ($KeyByArea $MeasureKey) (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 0)
+        (0 5 7 7 7 7 5 0)
+        (0 5 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0)))
+      (output ($KeyByMinSide $MeasureKey) (grid
+        (0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 5 0)
+        (0 5 6 6 6 6 5 0)
+        (0 5 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0)))))
+  (alt $KeyByMinSide
+    (witness hole-2x3 borderline any
+      (relaxed square-outlines)
+      (separates "a 2x3 hole: the side, area and outline-side readings are undefined; the shorter side fills 7; the longer side fills 8")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0)
+        (0 5 0 0 0 5 0)
+        (0 5 0 0 0 5 0)
+        (0 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0)))
+      (output concept $KeyByOutlineSide ($KeyByArea $MeasureKey) undefined)
+      (output $RankBySize $KeyByMaxSide (grid
+        (0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0)
+        (0 5 8 8 8 5 0)
+        (0 5 8 8 8 5 0)
+        (0 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0)))
+      (output ($KeyByMinSide $MeasureKey) (grid
+        (0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0)
+        (0 5 7 7 7 5 0)
+        (0 5 7 7 7 5 0)
+        (0 5 5 5 5 5 0)
+        (0 0 0 0 0 0 0)))))
+  (alt $KeyByMaxSide
+    (witness hole-2x3 borderline any))
+  (alt $KeyByOutlineSide
+    (witness thick-outline borderline concept
+      (relaxed square-outlines)
+      (separates "a two-cell-thick 5x5 outline around a 1x1 hole beside a 4x4 outline: the hole side fills 6; the outline side 5 fills 8; the outline's 24 cells have no key; the descending rank fills the 1x1 hole 7 and the 2x2 hole 8")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 5 0 0 5)
+        (0 5 5 0 5 5 0 5 0 0 5)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output concept ($KeyByArea $MeasureKey) ($KeyByMaxSide $MeasureKey) ($KeyByMinSide $MeasureKey) (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 5 7 7 5)
+        (0 5 5 6 5 5 0 5 7 7 5)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $RankBySize (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 5 8 8 5)
+        (0 5 5 7 5 5 0 5 8 8 5)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $KeyByOutlineCount undefined)
+      (output $OutlineSide (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 5 7 7 5)
+        (0 5 5 8 5 5 0 5 7 7 5)
+        (0 5 5 5 5 5 0 5 5 5 5)
+        (0 5 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $key
+  (alt $RankBySize
+    (witness rank-two-sizes ordinary concept
+      (separates "two outlines only, holes of side 1 and 2: the side table fills 6 and 7; the descending rank fills the larger 8 and the smaller 7")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 5 5 5 5 0)
+        (0 5 0 5 0 5 0 0 5 0)
+        (0 5 5 5 0 5 0 0 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $MeasureKey (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 5 5 5 5 0)
+        (0 5 6 5 0 5 7 7 5 0)
+        (0 5 5 5 0 5 7 7 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RankBySize (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 5 5 0 5 5 5 5 0)
+        (0 5 7 5 0 5 8 8 5 0)
+        (0 5 5 5 0 5 8 8 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts $region
+  (alt $Enclose8
+    (witness corner-gap foreign concept
+      (relaxed square-outlines)
+      (separates "a 4x4 outline missing a corner cell: a 4-adjacent walk finds the hole closed and fills 7; an 8-adjacent walk leaks through the corner and fills nothing")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 0 5 5 5 0)
+        (0 5 0 0 5 0)
+        (0 5 0 0 5 0)
+        (0 5 5 5 5 0)
+        (0 0 0 0 0 0)))
+      (output $FillBboxInterior $WallsOfFrameColor concept $OutlineSide ($KeyByArea $MeasureKey $Enclose4) ($KeyByMaxSide $MeasureKey $Enclose4) ($KeyByMinSide $MeasureKey $Enclose4) (grid
+        (0 0 0 0 0 0)
+        (0 0 5 5 5 0)
+        (0 5 7 7 5 0)
+        (0 5 7 7 5 0)
+        (0 5 5 5 5 0)
+        (0 0 0 0 0 0)))
+      (output $Enclose8 (grid
+        (0 0 0 0 0 0)
+        (0 0 5 5 5 0)
+        (0 5 0 0 5 0)
+        (0 5 0 0 5 0)
+        (0 5 5 5 5 0)
+        (0 0 0 0 0 0)))
+      (output $RankBySize (grid
+        (0 0 0 0 0 0)
+        (0 0 5 5 5 0)
+        (0 5 8 8 5 0)
+        (0 5 8 8 5 0)
+        (0 5 5 5 5 0)
+        (0 0 0 0 0 0)))
+      (output $KeyByOutlineCount undefined)))
+  (alt $WallsOfFrameColor
+    (witness third-color-outline foreign concept
+      (relaxed square-outlines)
+      (separates "a 3x3 outline drawn in 3 beside a 4x4 outline in 5: the background-region readings fill its hole 6; the frame-color readings fill only the 5 outline; the outline-side reading has no outline for that hole")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 0 5 5 5 5 0)
+        (0 3 0 3 0 5 0 0 5 0)
+        (0 3 3 3 0 5 0 0 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $Enclose8 concept ($KeyByArea $MeasureKey $Enclose4) ($KeyByMaxSide $MeasureKey $Enclose4) ($KeyByMinSide $MeasureKey $Enclose4) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 0 5 5 5 5 0)
+        (0 3 6 3 0 5 7 7 5 0)
+        (0 3 3 3 0 5 7 7 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($FillBboxInterior &frame_color=$Stored) ($WallsOfFrameColor &frame_color=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 0 5 5 5 5 0)
+        (0 3 0 3 0 5 7 7 5 0)
+        (0 3 3 3 0 5 7 7 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($FillBboxInterior &frame_color=$Derived) ($WallsOfFrameColor &frame_color=$Derived) (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 0 5 5 5 5 0)
+        (0 3 6 3 0 5 0 0 5 0)
+        (0 3 3 3 0 5 0 0 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RankBySize (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 3 3 3 0 5 5 5 5 0)
+        (0 3 7 3 0 5 8 8 5 0)
+        (0 3 3 3 0 5 8 8 5 0)
+        (0 0 0 0 0 5 5 5 5 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $KeyByOutlineSide undefined)))
+  (alt $FillBboxInterior
+    (witness broken-outline foreign concept
+      (relaxed square-outlines)
+      (separates "a 4x4 outline with a gap in its top side: the enclosed-region readings leave it unfilled; the bounding-box reading fills its 2x2 interior 7")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 0 5 5 0 5 5 5 0)
+        (0 5 0 0 5 0 5 0 5 0)
+        (0 5 0 0 5 0 5 5 5 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output ($MeasureKey $Enclose4) $Enclose8 $WallsOfFrameColor (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 0 5 5 0 5 5 5 0)
+        (0 5 0 0 5 0 5 6 5 0)
+        (0 5 0 0 5 0 5 5 5 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $FillBboxInterior (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 0 5 5 0 5 5 5 0)
+        (0 5 7 7 5 0 5 6 5 0)
+        (0 5 7 7 5 0 5 5 5 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0)))
+      (output $RankBySize (grid
+        (0 0 0 0 0 0 0 0 0 0)
+        (0 5 0 5 5 0 5 5 5 0)
+        (0 5 0 0 5 0 5 8 5 0)
+        (0 5 0 0 5 0 5 5 5 0)
+        (0 5 5 5 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed square-outlines)
+      (separates "`background=DominantColor` from the stored value: train 0 with 0 and 1 swapped")
+      (input (grid
+        (1 1 1 1 1 1 1 5 5 5 5 5)
+        (1 1 1 1 1 1 1 5 1 1 1 5)
+        (1 1 5 5 5 1 1 5 1 1 1 5)
+        (1 1 5 1 5 1 1 5 1 1 1 5)
+        (1 1 5 5 5 1 1 5 5 5 5 5)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 5 5 5 5 1 1)
+        (1 1 1 1 1 1 5 1 1 5 1 1)
+        (1 1 1 1 1 1 5 1 1 5 1 1)
+        (1 1 1 1 1 1 5 5 5 5 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)))
+      (output &background=$Stored (grid
+        (1 1 1 1 1 1 1 5 5 5 5 5)
+        (1 1 1 1 1 1 1 5 1 1 1 5)
+        (1 1 5 5 5 1 1 5 1 1 1 5)
+        (1 1 5 1 5 1 1 5 1 1 1 5)
+        (1 1 5 5 5 1 1 5 5 5 5 5)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 5 5 5 5 1 1)
+        (1 1 1 1 1 1 5 1 1 5 1 1)
+        (1 1 1 1 1 1 5 1 1 5 1 1)
+        (1 1 1 1 1 1 5 5 5 5 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)))
+      (output &background=$Derived (grid
+        (1 1 1 1 1 1 1 5 5 5 5 5)
+        (1 1 1 1 1 1 1 5 8 8 8 5)
+        (1 1 5 5 5 1 1 5 8 8 8 5)
+        (1 1 5 6 5 1 1 5 8 8 8 5)
+        (1 1 5 5 5 1 1 5 5 5 5 5)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 5 5 5 5 1 1)
+        (1 1 1 1 1 1 5 7 7 5 1 1)
+        (1 1 1 1 1 1 5 7 7 5 1 1)
+        (1 1 1 1 1 1 5 5 5 5 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1)
+        (1 1 1 1 1 1 1 1 1 1 1 1))))))
+
+(alts &frame_color
+  (alt &frame_color=$Derived
+    (witness frame_color=RarestColor variant &frame_color=$Derived
+      (relaxed square-outlines)
+      (separates "`frame_color=RarestColor` from the stored value: train 0 with 5 and 1 swapped")
+      (input (grid
+        (0 0 0 0 0 0 0 1 1 1 1 1)
+        (0 0 0 0 0 0 0 1 0 0 0 1)
+        (0 0 1 1 1 0 0 1 0 0 0 1)
+        (0 0 1 0 1 0 0 1 0 0 0 1)
+        (0 0 1 1 1 0 0 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 1 1 1 1 0 0)
+        (0 0 0 0 0 0 1 0 0 1 0 0)
+        (0 0 0 0 0 0 1 0 0 1 0 0)
+        (0 0 0 0 0 0 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &frame_color=$Derived $Enclose8 concept ($KeyByArea $Enclose4) ($KeyByMaxSide $Enclose4) ($KeyByMinSide $Enclose4) (grid
+        (0 0 0 0 0 0 0 1 1 1 1 1)
+        (0 0 0 0 0 0 0 1 8 8 8 1)
+        (0 0 1 1 1 0 0 1 8 8 8 1)
+        (0 0 1 6 1 0 0 1 8 8 8 1)
+        (0 0 1 1 1 0 0 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 1 1 1 1 0 0)
+        (0 0 0 0 0 0 1 7 7 1 0 0)
+        (0 0 0 0 0 0 1 7 7 1 0 0)
+        (0 0 0 0 0 0 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($FillBboxInterior &frame_color=$Stored) ($WallsOfFrameColor &frame_color=$Stored) (grid
+        (0 0 0 0 0 0 0 1 1 1 1 1)
+        (0 0 0 0 0 0 0 1 0 0 0 1)
+        (0 0 1 1 1 0 0 1 0 0 0 1)
+        (0 0 1 0 1 0 0 1 0 0 0 1)
+        (0 0 1 1 1 0 0 1 1 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 1 1 1 1 0 0)
+        (0 0 0 0 0 0 1 0 0 1 0 0)
+        (0 0 0 0 0 0 1 0 0 1 0 0)
+        (0 0 0 0 0 0 1 1 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($KeyByOutlineSide &frame_color=$Stored) undefined))))

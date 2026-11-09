@@ -1,0 +1,373 @@
+;; inputs 04e385aa8190c2df12bd537bf2e5cbd762968de4fd5940de07af702b15b46108 programs/solvers/f8f52ecc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f8f52ecc
+
+(INPUT background "a field of 1.")
+
+(INPUT walls "straight segments of 8, which no route crosses.")
+
+(INPUT dots "scattered cells of other colors; some colors have one cell, and the cells of each color with several can all be joined by one 4-connected route over background cells that avoids the walls.")
+
+(OUTPUT join-dots "for each color other than the background 1 and the wall color 8, the color's cells fall into 4-connected pieces. The length of the link between two pieces is the fewest steps between them over background cells and the color's own cells, and two pieces are linked when no chain of shorter links joins them. A piece with one link is an end. Between each two ends, the output paints in that color the walks that follow the chain of links between them, run each link by one of its fewest-step walks and cross each piece over its own cells, and of those, make the fewest steps and quarter turns together.")
+
+(OUTPUT keep-rest "every other cell keeps its input color; a color with one cell, and the wall color, are left as they are."
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &outnumbered
+    (&commonest.maximal (:t *Col))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t Col))))
+
+  (DET_OR_RULE &background "the field color, the only color a route paints over" DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&outnumbered (:Col C))))
+
+  (DET &background_determined
+    (&commonest.maximal (:t *C))
+    (NOT (&outnumbered (:Col C))))
+
+  ;; The pieces of each color in each train output.
+  (INIT &out_piece Connectivity
+    (key ((ex_output ^E *P ^Col))
+      (node (P)
+        (ex_output E *P Col))))
+
+  (DET &split
+    (&out_piece.component (:key *E *Col) *Id)
+    (&out_piece.component (:key E Col) (:Id *Id2))
+    (!= Id Id2))
+
+  (DET &wall_color
+    (&split (:Col *C))
+    (NOT (&background_determined C)))
+
+  (RULE &dot
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&wall_color (:C Col))))
+
+  ;; The 4-connected pieces of each color's dots.
+  (INIT &piece Connectivity
+    (key ((&dot *P ^Col))
+      (node (P)
+        (&dot *P Col))))
+
+  (RULE &open
+    (&dot *Col)
+    (input *P (:Col *C))
+    (OR ((&background C))
+        ((= C Col))))
+
+  ;; The fewest steps from each piece to each open cell.
+  (INIT &near Distance
+    (key ((OR ((&piece.component (:key ^Col) *P ^Id))
+              ((&piece.component (:key Col) Id)
+               (&open Col P)
+               (dir_elem *D)
+               (neighbor P D *Q)
+               (&open Col (:P Q)))))
+      (edge ((:a P) (:b Q))
+        (&piece.component (:key Col) Id)
+        (&open Col *P)
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&open Col (:P Q)))
+      (source ((:n P))
+        (&piece.component (:key Col) *P Id))))
+
+  ;; The length of the link between two pieces: the fewest steps from A to a
+  ;; cell of B.
+  (INIT &gap Order
+    (key ((&near.distance (:key ^Col (:Id ^A)) (:n *P) *K)
+          (&piece.component (:key Col) P (:Id ^B))
+          (!= B A))
+      (member ((:t K))
+        (&near.distance (:key Col (:Id A)) (:n *P) *K)
+        (&piece.component (:key Col) P (:Id B))
+        (!= B A))
+      (score ((:t K) (:S K))
+        (&near.distance (:key Col (:Id A)) (:n *P) *K)
+        (&piece.component (:key Col) P (:Id B))
+        (!= B A))))
+
+  ;; The pieces that links shorter than the link from A to B join to A.
+  (INIT &shorter Propagation
+    (key ((&gap.minimal (:key ^Col ^A ^B)))
+      (source ((:n A))
+        (&gap.minimal (:key Col A B)))
+      (edge ((:a X) (:b Y))
+        (&gap.minimal (:key Col A B) (:t *K))
+        (&gap.minimal (:key Col (:A *X) (:B *Y)) (:t *K2))
+        (< K2 K))))
+
+  (RULE &link
+    (&gap.minimal (:key *Col *A *B))
+    (NOT (&shorter.reached (:key Col A B) (:n B))))
+
+  (RULE &branched
+    (&link *Col *A (:B *B1))
+    (&link Col A (:B *B2))
+    (!= B1 B2))
+
+  (RULE &end
+    (&link *Col *A)
+    (NOT (&branched Col A)))
+
+  ;; The cells on a fewest-step walk of a link, traced back from B's nearest
+  ;; cells.
+  (INIT &corridor Propagation
+    (key ((&link ^Col ^A ^B))
+      (source ((:n P))
+        (&gap.minimal (:key Col A B) (:t *K))
+        (&piece.component (:key Col) *P (:Id B))
+        (&near.distance (:key Col (:Id A)) (:n P) K))
+      (edge ((:a Q) (:b P))
+        (&near.predecessor (:key Col (:Id A)) (:b *Q) (:a *P)))))
+
+  ;; From an end, the fewest steps plus quarter turns to each state of a walk
+  ;; along its chain of links.
+  (INIT &walk Distance
+    (key ((&end ^Col (:A ^E)))
+      (edge ((:a P D A B) (:b (:P Q) (:D D3) (:A A2) (:B B2)))
+        (OR ((&link Col *A *B)
+             (OR ((&corridor.reached (:key Col A B) (:n *Q))
+                  (&near.predecessor (:key Col (:Id A)) (:b Q) (:a *P)))
+                 ((&piece.component (:key Col) P (:Id A))
+                  (&piece.component (:key Col) (:P Q) (:Id A))))
+             (dir_elem *D)
+             (neighbor P D Q)
+             (= *D3 D)
+             (= *A2 A)
+             (= *B2 B))
+            ((&link Col A B)
+             (OR ((&corridor.reached (:key Col A B) (:n P)))
+                 ((&piece.component (:key Col) P (:Id A))))
+             (perp_dir D (:D2 D3))
+             (= Q P)
+             (= A2 A)
+             (= B2 B))
+            ((&link Col A B)
+             (&link Col (:A B) (:B B2))
+             (!= B2 A)
+             (&piece.component (:key Col) P (:Id B))
+             (dir_elem D)
+             (= Q P)
+             (= D3 D)
+             (= A2 B))))
+      (source ((:n P D (:A E) B))
+        (&link Col (:A E) *B)
+        (&piece.component (:key Col) *P (:Id E))
+        (dir_elem *D))))
+
+  ;; The states at which the walk from an end first arrives at another end.
+  (INIT &arrive Order
+    (key ((&walk.distance (:key ^Col ^E) (:n *P *D *A (:B ^F)) *K)
+          (&end Col (:A F))
+          (!= F E)
+          (&piece.component (:key Col) P (:Id F)))
+      (member ((:t P D A (:B F) (:S K)))
+        (&walk.distance (:key Col E) (:n *P *D *A (:B F)) *K)
+        (&end Col (:A F))
+        (!= F E)
+        (&piece.component (:key Col) P (:Id F)))
+      (score ((:t P D A (:B F) (:S K)) (:S K))
+        (&walk.distance (:key Col E) (:n *P *D *A (:B F)) *K)
+        (&end Col (:A F))
+        (!= F E)
+        (&piece.component (:key Col) P (:Id F)))))
+
+  ;; The states of the walks that arrive, traced back to the end they start
+  ;; from.
+  (INIT &route Propagation
+    (key ((OR ((&arrive.minimal (:key ^Col ^E) (:t (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b))))
+              ((&walk.predecessor (:key Col E) (:b (:P *S2_p) (:D *S2_d) (:A *S2_a) (:B *S2_b)) (:a (:P S_p) (:D S_d) (:A S_a) (:B S_b))))))
+      (source ((:n (:P S_p) (:D S_d) (:A S_a) (:B S_b)))
+        (&arrive.minimal (:key Col E) (:t (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b))))
+      (edge ((:a (:P S2_p) (:D S2_d) (:A S2_a) (:B S2_b)) (:b (:P S_p) (:D S_d) (:A S_a) (:B S_b)))
+        (&walk.predecessor (:key Col E) (:b (:P *S2_p) (:D *S2_d) (:A *S2_a) (:B *S2_b)) (:a (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b))))))
+
+  (RULE &path
+    (&route.reached (:key *Col) (:n *P))))
+
+(ALTS $o "what blocks a route" $OverBackground
+  (ALT $CrossDots
+    (OUTPUT join-dots "only wall cells block a route, and a route may run over a dot of another color; undefined where the concept is.")
+    (OUTPUT keep-rest "a dot of another color on a route keeps its color."
+      (RULE &open
+        (&dot *Col)
+        (input *P (:Col *C))
+        (NOT (&wall_color C))))
+    (RULE &paint
+      (&path *Col *P)
+      (input P (:Col *B))
+      (&background (:C B)))
+    (ALTS $crossed "what a route does to a dot of another color it runs over" $KeepDot
+      (ALT $PaintOver
+        (OUTPUT keep-rest "the route paints the crossed dot in its own color.")
+        (RULE &paint
+          (&path *Col *P))))))
+
+(ALTS $m "which count a walk between two ends keeps fewest first" $StepsFirst
+  (ALT $TurnsFirst
+    (OUTPUT join-dots "a walk runs each link over any cells a route may step on, passing on to the next link where it first meets a cell of the piece the link leads to, and of the walks between two ends, the output paints those with the fewest quarter turns, and of those, the fewest steps; undefined where the concept is."
+      ;; The straight runs over the cells a route may step on.
+      (INIT &line Ray
+        (key ((OR ((&open ^Col *P))
+                  ((&open Col)
+                   (dir_elem *D))))
+          (source (P)
+            (&open Col *P))
+          (node (P)
+            (&open Col *P))
+          (dir (D)
+            (&open Col)
+            (dir_elem *D))))
+
+      (RULE &line_run_full
+        (&line.ray (:key (:Col *V0)) (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+        (!= N 0))
+
+      (RULE &state
+        (&link *Col *A *B)
+        (&open Col *P)
+        (dir_elem *D))
+
+      (RULE &ahead
+        (&state *Col *P *D *A *B)
+        (neighbor P D *Q)
+        (&open Col (:P Q))
+        (OR ((&piece.component (:key Col) (:P Q) (:Id B))
+             (&link Col (:A B) (:B *B2))
+             (!= B2 A)
+             (= *A2 B))
+            ((OR ((NOT (&piece.component (:key Col) (:P Q) (:Id B))))
+                 ((&end Col (:A B))))
+             (= A2 A)
+             (= B2 B))))
+
+      ;; The states a straight run reaches from each state, that state included.
+      (INIT &run Propagation
+        (key ((&state ^Col ^P ^D ^A ^B))
+          (source ((:n P D A B)))
+          (edge ((:a (:P P2) D (:A A3) (:B B3)) (:b (:P Q) D (:A A2) (:B B2)))
+            (OR ((&line_run_full (:V0 Col) (:V1 P) (:V2 D) (:V3 *P2)))
+                ((= P2 P)))
+            (&ahead Col (:P P2) D (:A *A3) (:B *B3) *Q *A2 *B2))))
+
+      ;; From an end, the fewest quarter turns to each state that starts a run.
+      (INIT &bends Distance
+        (key ((&end ^Col (:A ^E)))
+          (edge ((:a (:P S_p) (:D S_d) (:A S_a) (:B S_b)) (:b (:P Q) (:D D2) A B))
+            (&run.reached (:key Col (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)) (:n (:P *Q) *D *A *B))
+            (perp_dir D *D2))
+          (source ((:n P D (:A E) B))
+            (&link Col (:A E) *B)
+            (&piece.component (:key Col) *P (:Id E))
+            (&open Col P)
+            (dir_elem *D))))
+
+      (RULE &arrival
+        (&run.reached (:key *Col *P *D *A *B) (:n (:P *Q) (:B *F)))
+        (&end Col (:A F))
+        (&piece.component (:key Col) (:P Q) (:Id F)))
+
+      ;; The fewest quarter turns of a walk from an end to another end.
+      (INIT &fewest_bends Order
+        (key ((&bends.distance (:key ^Col ^E) (:n (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)) *K)
+              (&arrival Col (:P S_p) (:D S_d) (:A S_a) (:B S_b) ^F)
+              (!= F E))
+          (member ((:t K))
+            (&bends.distance (:key Col E) (:n (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)) *K)
+            (&arrival Col (:P S_p) (:D S_d) (:A S_a) (:B S_b) F)
+            (!= F E))
+          (score ((:t K) (:S K))
+            (&bends.distance (:key Col E) (:n (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)) *K)
+            (&arrival Col (:P S_p) (:D S_d) (:A S_a) (:B S_b) F)
+            (!= F E))))
+
+      ;; From an end, the fewest steps plus quarter turns to each state of a walk
+      ;; that starts each of its runs with the fewest turns that state takes.
+      (INIT &ride Distance
+        (key ((OR ((&bends.distance (:key ^Col (:E ^Piece)) (:n (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)) (:K 0)))
+                  ((&run.reached (:key Col (:P *S0_p) (:D *S0_d) (:A *S0_a) (:B *S0_b)) (:n (:P S_p) (:D S_d) (:A S_a) (:B S_b)))
+                   (&bends.distance (:key Col (:E Piece)) (:n (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)))
+                   (&run.edge (:key Col (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)) (:a (:P S_p) (:D S_d) (:A S_a) (:B S_b)) (:b (:P *S2_p) (:D *S2_d) (:A *S2_a) (:B *S2_b))))
+                  ((&bends.predecessor (:key Col (:E Piece)) (:b (:P *Q) (:D *D2) *A *B) (:a (:P *P0) *D (:A *A0) (:B *B0))))))
+          (edge ((:a (:S_P S_p) (:S_D S_d) (:S_A S_a) (:S_B S_b) (:O_P S0_p) (:O_D S0_d) (:O_A S0_a) (:O_B S0_b)) (:b (:S_P S2_p) (:S_D S2_d) (:S_A S2_a) (:S_B S2_b) (:O_P P) (:O_D D3) (:O_A A2) (:O_B B2)))
+            (OR ((&run.reached (:key Col (:P *S0_p) (:D *S0_d) (:A *S0_a) (:B *S0_b)) (:n (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)))
+                 (&bends.distance (:key Col (:E Piece)) (:n (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)))
+                 (&run.edge (:key Col (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)) (:a (:P S_p) (:D S_d) (:A S_a) (:B S_b)) (:b (:P *S2_p) (:D *S2_d) (:A *S2_a) (:B *S2_b)))
+                 (= *P S0_p)
+                 (= *D3 S0_d)
+                 (= *A2 S0_a)
+                 (= *B2 S0_b))
+                ((&bends.predecessor (:key Col (:E Piece)) (:b (:P S_p) (:D S2_d) (:A S_a) (:B S_b)) (:a (:P S0_p) (:D S_d) (:A S0_a) (:B S0_b)))
+                 (= S0_d S_d)
+                 (= S2_p S_p)
+                 (= S2_a S_a)
+                 (= S2_b S_b)
+                 (= P S_p)
+                 (= D3 S2_d)
+                 (= A2 S_a)
+                 (= B2 S_b))))
+          (source ((:n (:S_P S_p) (:S_D S_d) (:S_A S_a) (:S_B S_b) (:O_P S_p) (:O_D S_d) (:O_A S_a) (:O_B S_b)))
+            (&bends.distance (:key Col (:E Piece)) (:n (:P *S_p) (:D *S_d) (:A *S_a) (:B *S_b)) (:K 0)))))
+
+      ;; The states at which a walk with the fewest turns first arrives at another
+      ;; end.
+      (INIT &ride_end Order
+        (key ((&ride.distance (:key ^Col (:Piece ^E)) (:n (:S_P *Q) (:S_D *D) (:S_A *A) (:S_B ^F) (:O_P *S0_p) (:O_D *S0_d) (:O_A *S0_a) (:O_B *S0_b)) *K)
+              (&end Col (:A F))
+              (!= F E)
+              (&piece.component (:key Col) (:P Q) (:Id F))
+              (&bends.distance (:key Col E) (:n (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)) (:K *T))
+              (&fewest_bends.minimal (:key Col E F) (:t T)))
+          (member ((:t (:V_S_P Q) (:V_S_D D) (:V_S_A A) (:V_S_B F) (:V_O_P S0_p) (:V_O_D S0_d) (:V_O_A S0_a) (:V_O_B S0_b) (:S K)))
+            (&ride.distance (:key Col (:Piece E)) (:n (:S_P *Q) (:S_D *D) (:S_A *A) (:S_B F) (:O_P *S0_p) (:O_D *S0_d) (:O_A *S0_a) (:O_B *S0_b)) *K)
+            (&end Col (:A F))
+            (!= F E)
+            (&piece.component (:key Col) (:P Q) (:Id F))
+            (&bends.distance (:key Col E) (:n (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)) (:K *T))
+            (&fewest_bends.minimal (:key Col E F) (:t T)))
+          (score ((:t (:V_S_P Q) (:V_S_D D) (:V_S_A A) (:V_S_B F) (:V_O_P S0_p) (:V_O_D S0_d) (:V_O_A S0_a) (:V_O_B S0_b) (:S K)) (:S K))
+            (&ride.distance (:key Col (:Piece E)) (:n (:S_P *Q) (:S_D *D) (:S_A *A) (:S_B F) (:O_P *S0_p) (:O_D *S0_d) (:O_A *S0_a) (:O_B *S0_b)) *K)
+            (&end Col (:A F))
+            (!= F E)
+            (&piece.component (:key Col) (:P Q) (:Id F))
+            (&bends.distance (:key Col E) (:n (:P S0_p) (:D S0_d) (:A S0_a) (:B S0_b)) (:K *T))
+            (&fewest_bends.minimal (:key Col E F) (:t T)))))
+
+      ;; The states of the walks that arrive, traced back to the end they start
+      ;; from.
+      (INIT &ride_route Propagation
+        (key ((OR ((&ride_end.minimal (:key ^Col ^E) (:t (:V_S_P *R_s_p) (:V_S_D *R_s_d) (:V_S_A *R_s_a) (:V_S_B *R_s_b) (:V_O_P *R_o_p) (:V_O_D *R_o_d) (:V_O_A *R_o_a) (:V_O_B *R_o_b))))
+                  ((&ride.predecessor (:key Col (:Piece E)) (:b (:S_P *R2_s_p) (:S_D *R2_s_d) (:S_A *R2_s_a) (:S_B *R2_s_b) (:O_P *R2_o_p) (:O_D *R2_o_d) (:O_A *R2_o_a) (:O_B *R2_o_b)) (:a (:S_P R_s_p) (:S_D R_s_d) (:S_A R_s_a) (:S_B R_s_b) (:O_P R_o_p) (:O_D R_o_d) (:O_A R_o_a) (:O_B R_o_b))))))
+          (source ((:n (:S_P R_s_p) (:S_D R_s_d) (:S_A R_s_a) (:S_B R_s_b) (:O_P R_o_p) (:O_D R_o_d) (:O_A R_o_a) (:O_B R_o_b)))
+            (&ride_end.minimal (:key Col E) (:t (:V_S_P *R_s_p) (:V_S_D *R_s_d) (:V_S_A *R_s_a) (:V_S_B *R_s_b) (:V_O_P *R_o_p) (:V_O_D *R_o_d) (:V_O_A *R_o_a) (:V_O_B *R_o_b))))
+          (edge ((:a (:S_P R2_s_p) (:S_D R2_s_d) (:S_A R2_s_a) (:S_B R2_s_b) (:O_P R2_o_p) (:O_D R2_o_d) (:O_A R2_o_a) (:O_B R2_o_b)) (:b (:S_P R_s_p) (:S_D R_s_d) (:S_A R_s_a) (:S_B R_s_b) (:O_P R_o_p) (:O_D R_o_d) (:O_A R_o_a) (:O_B R_o_b)))
+            (&ride.predecessor (:key Col (:Piece E)) (:b (:S_P *R2_s_p) (:S_D *R2_s_d) (:S_A *R2_s_a) (:S_B *R2_s_b) (:O_P *R2_o_p) (:O_D *R2_o_d) (:O_A *R2_o_a) (:O_B *R2_o_b)) (:a (:S_P *R_s_p) (:S_D *R_s_d) (:S_A *R_s_a) (:S_B *R_s_b) (:O_P *R_o_p) (:O_D *R_o_d) (:O_A *R_o_a) (:O_B *R_o_b))))))
+
+      (RULE &path
+        (&ride_route.reached (:key *Col) (:n (:S_P *P)))))))
+
+(RULE &paint
+  (&path *Col *P))
+
+(RULE &output
+  (OR ((&paint *Col *P))
+      ((input P Col)
+       (NOT (&paint P)))))
+
+(OUT (&output ^P ^Col))

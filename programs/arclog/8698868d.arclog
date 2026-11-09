@@ -1,0 +1,137 @@
+;; inputs 6f968398e0f74d0ad268e1641c0b565e7d2f24bd543c8f68fbbfd00915050fa3 programs/solvers/8698868d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 8698868d
+
+(INIT &bg_mode_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &bg_mode Order
+  (member ((:t Col))
+    (&bg_mode_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&bg_mode_count.size (:key *Col) *N)))
+
+;; Touching cells of one non-bg color.
+(INIT &squares Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg_mode.maximal (:t Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg_mode.maximal (:t Col))))))
+
+(INIT &bbox BoundingBox
+  (key ((&squares.component *P ^Id))
+    (cell (P)
+      (&squares.component *P Id))))
+
+(RULE &covered
+  (&bbox.box (:key *Id) *B)
+  (input *P)
+  (inside (:A P) B))
+
+(RULE &side
+  (&bbox.box (:key *Id) *B)
+  (&squares.component *P Id)
+  (box_extent B P *N))
+
+;; The largest squares are the blocks; the rest are the pieces.
+(INIT &size Order
+  (member ((:t N))
+    (&side *N))
+  (score ((:t N) (:S N))
+    (&side *N)))
+
+(RULE &block
+  (&side *Id *N)
+  (&size.maximal (:t N)))
+
+(RULE &piece
+  (&squares.component *Id)
+  (NOT (&block Id)))
+
+;; The background regions a square encloses: a block's dots, a piece's holes.
+(INIT &enclosed Connectivity
+  (key ((&covered ^Id *P)
+        (input P *Col)
+        (&bg_mode.maximal (:t Col)))
+    (node (P)
+      (&covered Id *P)
+      (input P *Col)
+      (&bg_mode.maximal (:t Col)))))
+
+(INIT &region_count Cardinality
+  (key ((OR ((&enclosed.component (:key ^Id) (:Id *R)))
+            ((&squares.component Id))))
+    (member ((:m R))
+      (&enclosed.component (:key Id) (:Id *R)))
+    (domain ()
+      (&squares.component Id))))
+
+(RULE &pair
+  (&block (:Id *Id_block))
+  (&piece (:Id *Id_piece))
+  (&region_count.size (:key (:Id Id_block)) *N)
+  (&region_count.size (:key (:Id Id_piece)) N))
+
+;; A block's interior, in its own frame: the piece's frame.
+(INIT &core BoundingBox
+  (key ((&block ^Id))
+    (cell (P)
+      (&bbox.box (:key Id) *B)
+      (input *P)
+      (interior (:A P) B))))
+
+;; The output frame is the region the blocks tile.
+(INIT &layout BoundingBox
+  (cell (P)
+    (&block *Id)
+    (&covered Id *P)))
+
+(ALTS $choice "which piece fills each block — data-equivalent on this task, since the blocks' and pieces' region counts are the same set" $Count
+  (ALT $Rank
+    (INIT &block_rank Order
+      (member ((:t Id))
+        (&block *Id))
+      (score ((:t Id) (:S N))
+        (&block *Id)
+        (&region_count.size (:key Id) *N)))
+
+    (INIT &piece_rank Order
+      (member ((:t Id))
+        (&piece *Id))
+      (score ((:t Id) (:S N))
+        (&piece *Id)
+        (&region_count.size (:key Id) *N)))
+
+    (RULE &pair
+      (OR ((&block_rank.rank (:t *Id_block) *R)
+           (&piece_rank.rank (:t *Id_piece) R))
+          ((&block_rank.dual_rank (:t Id_block) R)
+           (&piece_rank.dual_rank (:t Id_piece) R))))))
+
+(RULE &output
+  (&layout.cell (:P *P_grid_in))
+  (&layout.box (:B *B_l))
+  (inside (:A P_grid_in) (:B B_l))
+  (relative (:Base B_l) (:X P_grid_in) (:X_rel *P))
+  (&block (:Id *Id_b))
+  (&covered (:Id Id_b) (:P P_grid_in))
+  (OR ((NOT (&core.cell (:key (:Id Id_b)) (:P P_grid_in)))
+       (&squares.component (:Id Id_b) (:key *Col)))
+      ((&core.cell (:key (:Id Id_b)) (:P P_grid_in))
+       (&core.box (:key (:Id Id_b)) (:B *B_c))
+       (inside (:A P_grid_in) (:B B_c))
+       (relative (:Base B_c) (:X P_grid_in) (:X_rel *P_inner))
+       (&pair (:Id_block Id_b) (:Id_piece *Id_p))
+       (input (:P *Q) (:Col *C_q))
+       (&bbox.box (:key (:Id Id_p)) (:B *B_p))
+       (inside (:A Q) (:B B_p))
+       (relative (:Base B_p) (:X Q) (:X_rel P_inner))
+       (OR ((NOT (&bg_mode.maximal (:t C_q)))
+            (= Col C_q))
+           ((&bg_mode.maximal (:t C_q))
+            (&squares.component (:Id Id_b) (:key Col)))))))
+
+(OUT (&output ^P ^Col))

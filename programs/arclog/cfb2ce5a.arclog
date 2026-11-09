@@ -1,0 +1,185 @@
+;; inputs 92da62b872150be2fd0d1106d55f01dd2f66a370fac60525bc125a92a5f10ae9 programs/solvers/cfb2ce5a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; cfb2ce5a
+
+(INPUT source-tile "the &source_corner quadrant of a square holds a full tile of side 4 in 2 colors, none of them &background."
+
+  ;; The color of the grid's edge cells.
+  (INIT &edge Singleton
+    (member ((:v Col))
+      (ex_input *E *P *Col)
+      (margin (:B P) *D (:K 0))
+      (ex_output E)))
+
+  (DET_OR_RULE &background DominantColor
+    (&edge.value (:v *C)))
+
+  (INIT &ink_box BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (DET &source_corner DiagDirDomain)
+
+  ;; The tile's corner stands as far from both edges of the source corner in
+  ;; every example.
+  (INIT &margin Singleton
+    (member ((:v K))
+      (&ink_box.box (:E *E_train) *B)
+      (ex_output (:E E_train))
+      (&source_corner (:D *Diag))
+      (corner_dir (:C Diag) *D)
+      (margin B D *K)))
+
+  (DET_OR_RULE &border TileDim
+    (&margin.value (:v *D)))
+
+  (RULE &square
+    (&border (:D *K))
+    (uniform_inset K *B)
+    (diag_dir_elem *D))
+
+  (RULE &sq_cell
+    (&square *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_sq)))
+
+  (RULE &quad_nearer
+    (&sq_cell (:P_sq *P))
+    (dist_pair P *D *K *K2)
+    (< K K2))
+
+  (RULE &quad_quadrant
+    (diag_dirs (:D *Diag) *D1 *D2)
+    (&quad_nearer *P (:D D1))
+    (&quad_nearer P (:D D2)))
+
+  (RULE &open_quadrant
+    (&sq_cell *P *P_sq)
+    (input P *Col)
+    (&background (:C Col))
+    (&quad_quadrant (:P P_sq) (:Diag *Q)))
+
+  ;; The square's one quadrant with no background cell.
+  (INIT &pick Singleton
+    (member ((:v D))
+      (&square *D)
+      (NOT (&open_quadrant (:Q D))))))
+
+(INPUT diagonal-symmetric-tile "the tile is symmetric across its diagonal through &source_corner.")
+
+(INPUT square-in-border "the square is the grid inset by &border on every side, has side 2 × 4, and the border is &background."
+
+  (RULE &within_ring
+    (&ink_box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_box))
+    (diag_dist (:P P_box) (:Diag *D) *K1 *K2)
+    (input (:P *Q))
+    (inside (:A Q) B)
+    (relative (:Base B) (:X Q) (:X_rel *Q_box))
+    (diag_dist (:P Q_box) (:Diag D) (:K1 *R) (:K2 R))
+    (<= K1 R)
+    (<= K2 R))
+
+  (RULE &gap_within
+    (&within_ring *D *R *P)
+    (input P *Col)
+    (&background (:C Col)))
+
+  ;; The largest full square at each corner.
+  (INIT &tile_ring Order
+    (key ((&within_ring ^D *R)
+          (NOT (&gap_within D R)))
+      (member ((:t R))
+        (&within_ring D *R)
+        (NOT (&gap_within D R)))
+      (score ((:t R) (:S R))
+        (&within_ring D *R)
+        (NOT (&gap_within D R)))))
+
+  (INIT &full_tile BoundingBox
+    (key ((&tile_ring.maximal (:key ^D) (:t *R))
+          (&within_ring D R *P))
+      (cell (P)
+        (&tile_ring.maximal (:key D) (:t *R))
+        (&within_ring D R *P)))))
+
+(INPUT sparse-markers "each other quadrant holds a few non-background marker cells and is &background elsewhere.")
+
+(INPUT consistent-markers "in one quadrant, the markers over cells that mirror one tile color share one color.")
+
+(OUTPUT mirror-into-quadrants "each other quadrant takes the tile reflected across the line or lines that part it from the source quadrant: across the vertical midline for the quadrant beside it, across the horizontal midline for the quadrant below or above it, and across both for the diagonal quadrant.")
+
+(OUTPUT recolor-by-marker "in a quadrant, each cell of a tile color takes the color of the markers that sit over that tile color in that quadrant.")
+
+(OUTPUT unmarked-to-background "in a quadrant, each cell of a tile color that no marker in that quadrant sits over is &background.")
+
+(OUTPUT rest-kept "the source quadrant and the border are as in the input."
+
+  (RULE &source
+    (&source_corner *D)
+    (&square D *B))
+
+  (RULE &tile_cell
+    (&source *D *B)
+    (&sq_cell B (:P *S) (:P_sq *S_sq))
+    (&quad_quadrant (:P S_sq) (:Diag D))))
+
+(ALTS $copy "how each other quadrant's copy is placed" $Mirror
+  (ALT $RotatedCopies
+    (OUTPUT mirror-into-quadrants "each other quadrant takes the tile turned about the square's center by the quarter turns that bring the source quadrant onto it. Undefined where the concept is.")
+    (RULE &copy
+      (&tile_cell *D *B *S *S_sq)
+      (input (:P S) *Col)
+      (c4_elem (:D *R))
+      (apply_diag_dir (:D R) (:Dir D) (:Dir_out *Q))
+      (!= Q D)
+      (apply (:D R) (:P S_sq) (:P_out *P_sq))
+      (&sq_cell B *P P_sq))))
+
+(ALTS $square "where the square is" $Inset
+  (ALT $SquareFromFullTile
+    (INPUT square-in-border "the tile is the largest square of non-background cells at the source corner of the non-background bounding box, and the square has twice its side, drawn from that corner. Undefined where that square leaves the grid."
+      (RULE &square
+        (&full_tile.box (:key *D) (:B *T))
+        (&full_tile.cell (:key D) *P)
+        (box_extent (:B T) P *N)
+        (diag_opposite D (:Opp *D_far))
+        (corner_outset (:Diag D_far) (:K N) (:B *X))
+        (compose (:A T) (:B X) (:C *B))
+        (inside (:A B) (:B 0))))))
+
+(ALTS $source "which corner holds the tile" $StoredCorner
+  (ALT $SourceFromFullQuadrant
+    (INPUT source-tile "the source corner is the corner of the square's one quadrant with no background cell. Undefined where no quadrant or more than one is so."
+      (RULE &source
+        (&pick.value (:v *D))
+        (&square D *B)))))
+
+(RULE &copy
+  (&tile_cell *D *B *S *S_sq)
+  (input (:P S) *Col)
+  (&sq_cell B *P *P_sq)
+  (&quad_quadrant (:P P_sq) (:Diag *Q))
+  (!= Q D)
+  (diag_dist (:P P_sq) (:Diag Q) *A *K1 *K2)
+  (diag_dist (:P S_sq) (:Diag D) A K1 K2))
+
+(RULE &recolor
+  (&copy *Q *P *Col)
+  (input P (:Col *Col_mark))
+  (NOT (&background (:C Col_mark))))
+
+(RULE &output
+  (OR ((&copy *Q *P (:Col *Col2))
+       (OR ((&recolor Q (:Col Col2) (:Col_mark *Col)))
+           ((NOT (&recolor Q (:Col Col2)))
+            (&background (:C Col)))))
+      ((&source)
+       (input P Col)
+       (NOT (&copy P)))))
+
+(OUT (&output ^P ^Col))

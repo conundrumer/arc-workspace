@@ -1,0 +1,165 @@
+;; inputs 12030b3f2ee075aed2b42e782f44ff1d28d09548540f258feba2acd4f8d6ebdd programs/solvers/d5d6de2d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d5d6de2d
+
+(INPUT background-field "every cell that no shape covers has &background, and that color is the commonest one"
+
+  (INIT &counts_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  (INIT &counts Order
+    (key ((&counts_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&counts_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&counts_count.size (:key E *Col) *N))))
+
+  (DET &train
+    (ex_output *E))
+
+  (DET &commonest
+    (&counts.maximal (:key *E) (:t *C))
+    (&train E))
+
+  (DET &not_commonest
+    (&commonest *C)
+    (&train *E)
+    (NOT (&counts.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background DominantColor
+    (&commonest *C)
+    (NOT (&not_commonest C))))
+
+(INPUT outline-shapes "the shapes are separate rectangles in color 2, each a complete one-cell-wide border that encloses a rectangular hole of background, or a solid block too thin to hold a hole")
+
+(OUTPUT fill-hole "each &background cell that no walk through &background cells, from a cell to an edge neighbor, reaches from the frame edge takes &fill_color"
+
+  (RULE &wall
+    (input *P *Col)
+    (NOT (&background (:C Col))))
+
+  (RULE &open
+    (input *P)
+    (NOT (&wall P)))
+
+  (DET &fill_color
+    (ex_output *E (:Col *C))
+    (NOT (ex_input E (:Col C))))
+
+  (INIT &enclosed Enclosure
+    (cell (P)
+      (&open *P)))
+
+  (INIT &leak Flood
+    (node (P)
+      (&open *P))
+    (source (P)
+      (&open *P)
+      (margin (:B P) *D (:K 0)))
+    (step ((:Delta V))
+      (step_offset *V)))
+
+  (INIT &shapes4 Connectivity
+    (node (P)
+      (&wall *P)))
+
+  (RULE &shape
+    (&shapes4.component *P (:Id *S)))
+
+  (INIT &shapes8 Connectivity
+    (node (P)
+      (&wall *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  ;; Each shape alone blocks the walk: every cell outside it is open.
+  (INIT &hole Enclosure
+    (key ((&shapes4.component ^Id))
+      (cell (P)
+        (input *P)
+        (NOT (&shapes4.component P Id)))))
+
+  (INIT &shape_box BoundingBox
+    (key ((&shape (:S ^Id) *P))
+      (cell (P)
+        (&shape (:S Id) *P)))))
+
+(OUTPUT erase-rest "every other cell, the outline cells included, takes &background")
+
+(ALTS $scope "which closed-off cells fill" $Whole
+  (ALT $PerObject
+    (OUTPUT fill-hole "shapes are the edge-connected components of the non-background cells, and a background cell fills where one shape alone closes it off from the frame edge")
+    (RULE &filled
+      (&hole.enclosed *P)
+      (&open P))
+    (ALTS $region "which cells of a shape fill" $OwnHole
+      (ALT $BboxInterior
+        (OUTPUT fill-hole "the background cells of each shape's bounding box fill")
+        (RULE &filled
+          (&shape_box.box *B)
+          (&open *P)
+          (inside (:A P) B))
+        (ALT $Objects8
+          (RULE &filled
+            (&shape_box.box *B)
+            (&open *P)
+            (inside (:A P) B))))
+      (ALT $InsetBox
+        (OUTPUT fill-hole "every cell of each shape's bounding box inset by one fills, the shape's own cells included")
+        (RULE &filled
+          (&shape_box.box *B)
+          (input *P)
+          (interior (:A P) B))
+        (ALT $Objects8
+          (RULE &filled
+            (&shape_box.box *B)
+            (input *P)
+            (interior (:A P) B)))))
+    (ALTS $adj "which steps join the cells of a shape" $Objects4
+      (ALT $Objects8
+        (OUTPUT fill-hole "diagonal steps join the cells of a shape as well"
+          (RULE &shape
+            (&shapes8.component *P (:Id *S))))
+        (RULE &filled
+          (&enclosed.enclosed *P))))))
+
+(ALTS $walk "which steps a walk to the frame edge takes" $Walk4
+  (ALT $Enclose8
+    (OUTPUT fill-hole "the walk takes diagonal steps as well, so a hole that touches the outside only at a corner is open")
+    (RULE &filled
+      (&open *P)
+      (NOT (&leak.reached P)))))
+
+(ALTS $wall "which cells block the walk" $AnyInk
+  (ALT $WallOutlineOnly
+    (OUTPUT fill-hole "only &outline_color cells block the walk, and every cell of another color that is closed off fills"
+      (DET &missing
+        (ex_input (:Col *C))
+        (&train *E)
+        (NOT (ex_input E (:Col C))))
+
+      (DET_OR_RULE &outline_color RarestColor
+        (ex_input *E (:Col *C))
+        (&train E)
+        (NOT (&missing C))
+        (NOT (&commonest C)))
+
+      (RULE &wall
+        (input *P *Col)
+        (&outline_color (:C Col))))))
+
+(RULE &filled
+  (&enclosed.enclosed *P))
+
+(RULE &output
+  (input *P)
+  (IF ((&filled P))
+      ((&fill_color (:C *Col)))
+      ((&background (:C Col)))))
+
+(OUT (&output ^P ^Col))

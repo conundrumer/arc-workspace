@@ -1,0 +1,337 @@
+;; inputs 36c14000dc345fc22ec62a989b8f9098669c90ae11b27130f58f244c0dc767e1 programs/solvers/e1d2900e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e1d2900e
+
+(INPUT background "a field of &background_color"
+
+  (INIT &commonest_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &commonest Order
+    (key ((&commonest_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&commonest_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&commonest_count.size (:key E *Col) *N))))
+
+  (DET &outnumbered
+    (ex_input (:Col *C))
+    (ex_input *E)
+    (NOT (&commonest.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &background_color DominantColor
+    (&commonest.maximal (:t *C))
+    (NOT (&outnumbered C))))
+
+(INPUT squares "solid squares of &square_color, each 2 by 2, apart from one another"
+
+  (DET &background_color_determined
+    (&commonest.maximal (:t *C))
+    (NOT (&outnumbered C)))
+
+  (DET &ink
+    (ex_input *E *P (:Col *C))
+    (NOT (&background_color_determined C)))
+
+  (DET &paired
+    (&ink *E *P *C)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col C)))
+
+  (DET &lone
+    (&ink *E *P *C)
+    (NOT (&paired E P C)))
+
+  (DET &square_color
+    (&ink *C)
+    (NOT (&lone C)))
+
+  (RULE &ink2
+    (input *P *Col)
+    (NOT (&background_color (:C Col))))
+
+  ;; The components of the ink.
+  (INIT &ink_piece Connectivity
+    (node (P)
+      (&ink2 *P))))
+
+(INPUT dots "single cells of &dot_color, apart from the squares and from one another"
+
+  (DET &out_ink
+    (ex_output *E *P (:Col *C))
+    (NOT (&background_color_determined C)))
+
+  (DET &out_next
+    (&out_ink *E *P *C)
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_output E (:P Q) (:Col *C2)))
+
+  (DET &dot_color
+    (&out_next *E *P *C *Q (:C2 *Col2))
+    (&out_ink E (:P Q) (:C Col2))
+    (!= C Col2)
+    (NOT (&out_next E P C (:C2 C)))))
+
+(OUTPUT in-line "a dot is in line with a square when the dot's row crosses the square's rows, or the dot's column crosses the square's columns"
+
+  ;; The components of the square color.
+  (INIT &color_piece Connectivity
+    (node (P)
+      (input *P *Col)
+      (&square_color (:C Col))))
+
+  (RULE &block2
+    (&color_piece.component *P *Id))
+
+  (INIT &piece_box BoundingBox
+    (key ((&block2 *P ^Id))
+      (cell (P)
+        (&block2 *P Id)))))
+
+(OUTPUT nearest-square "of the squares a dot is in line with, the dot takes the one with the fewest cells between the dot and the square along that line"
+
+  (RULE &dot
+    (input *P *Col)
+    (&dot_color (:C Col)))
+
+  (RULE &square
+    (&block2 *P))
+
+  ;; Each dot casts along its row and column; the first square cell on each
+  ;; cast is the square it would slide to that way.
+  (INIT &slide Ray
+    (source (P)
+      (&dot *P))
+    (node (P)
+      (input *P)
+      (NOT (&square P)))
+    (dir (D)
+      (dir_elem *D)))
+
+  (INIT &slide_full Ray
+    (source (P)
+      (&dot *P))
+    (node (P)
+      (input *P))
+    (dir (D)
+      (dir_elem *D)))
+
+  (RULE &slide_stop_full
+    (&slide.end (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&slide_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  (RULE &crowded
+    (&slide.ray (:P *Q) *D (:Origin *Dot))
+    (&dot (:P Q))
+    (!= Q Dot)
+    (dir_elem D))
+
+  ;; The nearest of a dot's slides with no other dot on their path.
+  (INIT &near_clear Order
+    (key ((&slide_stop_full (:V2 *D) (:V3 *K) (:V4 ^Dot))
+          (dir_elem D)
+          (NOT (&crowded Dot D)))
+      (member ((:t (:V D) (:S K)))
+        (&slide_stop_full (:V2 *D) (:V3 *K) (:V4 Dot))
+        (dir_elem D)
+        (NOT (&crowded Dot D)))
+      (score ((:t (:V D) (:S K)) (:S K))
+        (&slide_stop_full (:V2 *D) (:V3 *K) (:V4 Dot))
+        (dir_elem D)
+        (NOT (&crowded Dot D))))))
+
+(OUTPUT slide-to-touch "the dot moves along that line toward the square's facing side, and its old cell becomes background; the dots that slide to one side of a square along one line pack against it, nearest first"
+
+  ;; The nearest of a dot's slides.
+  (INIT &near Order
+    (key ((&slide_stop_full (:V2 *D) (:V3 *K) (:V4 ^Dot))
+          (dir_elem D))
+      (member ((:t (:V D) (:S K)))
+        (&slide_stop_full (:V2 *D) (:V3 *K) (:V4 Dot))
+        (dir_elem D))
+      (score ((:t (:V D) (:S K)) (:S K))
+        (&slide_stop_full (:V2 *D) (:V3 *K) (:V4 Dot))
+        (dir_elem D))))
+
+  (RULE &best
+    (&near.minimal (:key *Dot) (:t (:V *D))))
+
+  (RULE &tied
+    (&best *Dot (:D *D1))
+    (&best Dot (:D *D2))
+    (!= D1 D2))
+
+  (RULE &go
+    (&best *Dot *D)
+    (NOT (&tied Dot)))
+
+  (RULE &resolved)
+
+  (RULE &slid
+    (&go *Dot *D)
+    (&resolved))
+
+  ;; The dots of one lane, ranked by the length of their slide.
+  (INIT &lane Order
+    (key ((&slid *Dot ^D)
+          (&slide_stop_full (:V1 ^Q) (:V2 D) (:V4 Dot)))
+      (member ((:t Dot))
+        (&slid *Dot D)
+        (&slide_stop_full (:V1 Q) (:V2 D) (:V4 Dot)))
+      (score ((:t Dot) (:S K))
+        (&slid *Dot D)
+        (&slide_stop_full (:V1 Q) (:V2 D) (:V3 *K) (:V4 Dot))))))
+
+(OUTPUT stay "a dot in line with no square keeps its cell")
+
+(OUTPUT squares-kept "the squares keep their cells")
+
+(ALTS $u "which of the squares a dot lies in line with it slides to" $Nearest
+  (ALT $TieStay
+    (OUTPUT nearest-square "as the claim, and a dot with a tie keeps its cell; defined on every input")
+    (RULE &output
+      (input *P (:Col *C0))
+      (&resolved)
+      (OR ((&paint P *Col))
+          ((&slid (:Dot P))
+           (NOT (&paint P))
+           (&background_color (:C Col)))
+          ((NOT (&paint P))
+           (NOT (&slid (:Dot P)))
+           (= Col C0)))))
+  (ALT $TieBoth
+    (OUTPUT nearest-square "as the claim, and a dot with a tie is drawn beside each tied square; defined on every input"
+      (RULE &go
+        (&best *Dot *D)))
+    (RULE &output
+      (input *P (:Col *C0))
+      (&resolved)
+      (OR ((&paint P *Col))
+          ((&slid (:Dot P))
+           (NOT (&paint P))
+           (&background_color (:C Col)))
+          ((NOT (&paint P))
+           (NOT (&slid (:Dot P)))
+           (= Col C0)))))
+  (ALT $TieEither
+    (OUTPUT nearest-square "as the claim, and a dot with a tie gives one output grid per tied square; defined on every input"
+      ;; The tied slide each resolution takes.
+      (RULE &ties
+        (&best (:Dot *S) (:D *X))
+        (&tied (:Dot S))
+        (ONE S))
+
+      (RULE &resolved
+        (OR ((&ties))
+            ((NOT (&ties)))))
+
+      (RULE &slid
+        (OR ((&go *Dot *D)
+             (&resolved))
+            ((&ties (:S Dot) (:X D))))))
+    (RULE &output
+      (input *P (:Col *C0))
+      (&resolved)
+      (OR ((&paint P *Col))
+          ((&slid (:Dot P))
+           (NOT (&paint P))
+           (&background_color (:C Col)))
+          ((NOT (&paint P))
+           (NOT (&slid (:Dot P)))
+           (= Col C0))))))
+
+(ALTS $w "what a dot does when another dot lies between it and the square it slides to" $Pack
+  (ALT $PathBlocked
+    (OUTPUT nearest-square "a slide whose path holds another dot is ruled out, the dot takes the nearest slide left, and a dot with none keeps its cell"
+      (RULE &best
+        (&near_clear.minimal (:key *Dot) (:t (:V *D)))))))
+
+(ALTS $r "how the program tells dots from squares" $ByColor
+  (ALT $RolesByShape
+    (INPUT squares "the components of more than one cell of a color other than &background_color"
+      (RULE &joined
+        (&ink_piece.component *P *Id)
+        (&ink_piece.component (:P *Q) Id)
+        (!= P Q))
+
+      (RULE &dot
+        (input *P *Col)
+        (&ink2 P)
+        (NOT (&joined P)))
+
+      (RULE &block2
+        (&joined *P)
+        (&ink_piece.component P *Id)))
+    (INPUT dots "the single-cell components of a color other than &background_color, each keeping its own color")))
+
+(ALTS $s "which components of the square color pull dots" $AnyBlock
+  (ALT $SquareSizeChecked
+    (OUTPUT in-line "only a solid &square_size by &square_size component pulls dots"
+      ;; The square-color components of each input.
+      (INIT &block Connectivity
+        (key ((ex_input ^E *P *Col)
+              (&square_color (:C Col)))
+          (node (P)
+            (ex_input E *P *Col)
+            (&square_color (:C Col)))))
+
+      (INIT &block_box BoundingBox
+        (key ((&block.component *P ^Id))
+          (cell (P)
+            (&block.component *P Id))))
+
+      (DET &extent
+        (&block_box.box (:key *Id) *B)
+        (&block.component *P Id)
+        (box_extent B P *A *N))
+
+      (DET &unshared
+        (&extent *N)
+        (&extent (:N *N2))
+        (!= N N2))
+
+      (DET_OR_RULE &square_size TileCount TileDim
+        (&extent *N)
+        (NOT (&unshared N)))
+
+      (RULE &misshapen
+        (&piece_box.box (:key *Id) *B)
+        (input *P)
+        (OR ((box_extent B P *A *N)
+             (NOT (&square_size N)))
+            ((inside (:A P) B)
+             (NOT (&block2 P Id)))))
+
+      (RULE &square
+        (&block2 *P *Id)
+        (NOT (&misshapen Id))))))
+
+(RULE &landing
+  (&lane.rank (:key *Q *D) (:t *Dot) (:R *K))
+  (opposite D (:Opp *D0))
+  (neighbor (:P Q) (:D D0) (:Q *L0))
+  (jump (:P L0) (:D D0) K (:Q *P)))
+
+(RULE &paint
+  (&landing *Dot *P)
+  (&dot (:P Dot) *Col))
+
+(RULE &output
+  (input *P (:Col *C0))
+  (&resolved)
+  (OR ((&paint P *Col))
+      ((&slid (:Dot P))
+       (NOT (&paint P))
+       (&background_color (:C Col)))
+      ((NOT (&paint P))
+       (NOT (&slid (:Dot P)))
+       (NOT (&tied (:Dot P)))
+       (= Col C0))))
+
+(OUT (&output ^P ^Col))

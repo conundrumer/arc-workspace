@@ -1,0 +1,61 @@
+;; inputs f7337b48f86dd8fe3c81801aae29fedb15c8f100db22a8205d5f3c8df2bd4862 programs/solvers/ed98d772.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; ed98d772
+
+(param &quadrant_transform (DiagDir D4)
+  (DIAG_TL D4_ID)
+  (DIAG_TR D4_CC)
+  (DIAG_BL D4_HT)
+  (DIAG_BR D4_CW))
+(param &order_corner DiagDir (DIAG_TL))
+(param &order_axis Axis (AXIS_V))
+(param &turn_sense Sense (SENSE_CC))
+(param &anchor DiagDir (DIAG_TL))
+(param &axis_step (Axis D4) (AXIS_V D4_HT) (AXIS_H D4_CC))
+
+(alts $choice
+  (alt $SuccessiveTurns
+    (witness mirror-tile ordinary concept
+      (separates "a quadrant table whose BR entry is a mirror, which no sequence of quarter turns and no product of a row step and a column step gives: the concept puts the input mirrored left-right at BR, while $SuccessiveTurns and $StepProduct put it turned a quarter clockwise there")
+      (assign &quadrant_transform (DIAG_TL D4_ID) (DIAG_TR D4_CC) (DIAG_BL D4_HT) (DIAG_BR D4_LR))
+      (input (grid
+        (9 9 9)
+        (0 0 0)
+        (9 9 0)))
+      (output concept (grid
+        (9 9 9 9 0 0)
+        (0 0 0 9 0 9)
+        (9 9 0 9 0 9)
+        (0 9 9 9 9 9)
+        (0 0 0 0 0 0)
+        (9 9 9 0 9 9)))
+      (output $SuccessiveTurns $StepProduct (grid
+        (9 9 9 9 0 0)
+        (0 0 0 9 0 9)
+        (9 9 0 9 0 9)
+        (0 9 9 9 0 9)
+        (0 0 0 9 0 9)
+        (9 9 9 0 0 9)))))
+  (alt $StepProduct
+    (witness mirror-tile ordinary concept)))
+
+(alts &side
+  (alt &side=$Stored
+    (witness side=stored variant concept
+      (relaxed square-input)
+      (separates "a 4x4 input: the concept and the turn-derived branches make an 8x8 pinwheel, while side=stored, whose output frame is stored 6x6 with 3x3 quadrants, cannot hold a 4x4 copy and is undefined")
+      (input (grid
+        (4 4 4 4)
+        (0 0 0 4)
+        (4 0 0 0)
+        (4 4 0 0)))
+      (output &side=$Derived (grid
+        (4 4 4 4 4 4 0 0)
+        (0 0 0 4 4 0 0 0)
+        (4 0 0 0 4 0 0 4)
+        (4 4 0 0 4 0 4 4)
+        (0 0 4 4 4 4 0 4)
+        (0 0 0 4 4 0 0 4)
+        (4 0 0 0 0 0 0 4)
+        (4 4 4 4 0 0 4 4)))
+      (output &side=$Stored undefined))))

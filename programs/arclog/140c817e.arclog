@@ -1,0 +1,75 @@
+;; inputs 6d8b30979bd13e4423aa7b5bedd6b1f4097d44efa2ad238ee77a089fcd789a7e programs/solvers/140c817e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 140c817e
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The row and column drawn through each mark.
+(DET &line ChangedColor)
+
+;; The mark cell itself.
+(DET &center AnyOutNewColor)
+
+;; The mark's four diagonal neighbors.
+(DET &corner AnyOutNewColor)
+
+;; The field is the commonest color; the marks are the cells that differ.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &crossed
+  (input *P)
+  (&mark (:P *M))
+  (axis_elem *A)
+  (same_line A P (:Q M)))
+
+(RULE &corner_cell
+  (&mark (:P *M))
+  (diag_dir_elem *D)
+  (neighbor (:P M) D (:Q *P))
+  (input P))
+
+(RULE &decor
+  (OR ((&mark *P)
+       (&center (:C *Col)))
+      ((&corner_cell P)
+       (&corner (:C Col)))))
+
+(ALTS $choice "how the corner decoration layers against the crossing lines" $CornerOver
+  (ALT $CornerUnder
+    ;; !crossed excludes marks: every mark is crossed by its own lines.
+    (RULE &output
+      (input *P (:Col *Col_in))
+      (OR ((&mark P)
+           (&center (:C *Col)))
+          ((NOT (&mark P))
+           (&crossed P)
+           (&line (:C Col)))
+          ((NOT (&crossed P))
+           (&corner_cell P)
+           (&corner (:C Col)))
+          ((NOT (&crossed P))
+           (NOT (&corner_cell P))
+           (= Col Col_in))))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&decor P *Col))
+      ((NOT (&decor P))
+       (&crossed P)
+       (&line (:C Col)))
+      ((NOT (&decor P))
+       (NOT (&crossed P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

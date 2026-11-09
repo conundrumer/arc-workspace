@@ -1,0 +1,396 @@
+;; inputs 9312a85c9048df9b3eab829596df795b3843a7db32a3da448f20e640d905b2d2 programs/solvers/dd2401ed.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; dd2401ed
+
+(param &background Color (0))
+(param &factor number (2))
+(param &near_edge Dir (DIR_L))
+(param &line_color Color (5))
+(param &near_color Color (1))
+(param &far_color Color (2))
+
+(exclude ($StoredNearEdge $NearColorOfNearSide) "Where the stored near edge has a destination, the divider is nearer that edge, so the case gives the output of $NearEdgeNearer with the same near color.")
+
+(alts $e
+  (alt $NearEdgeNearer
+    (witness near-marks-on-right variant $NearEdgeNearer
+      (relaxed near-marks)
+      (relaxed far-marks)
+      (relaxed room-to-move)
+      (separates "train0 input mirrored left to right, so the divider stands nearer the right edge with the near marks on its right: the stored left edge puts the destination outside the grid and the concept is undefined, and a near edge read from the divider moves it toward the left and recolors the far marks it passes")
+      (input (grid
+        (0 0 0 0 0 0 0 0 2 0 5 0 0 0 0)
+        (0 0 0 2 0 0 0 0 0 0 5 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 5 0 0 1 0)
+        (0 0 0 0 0 0 0 2 0 0 5 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 5 0 1 0 0)
+        (0 2 0 0 0 0 0 0 0 0 5 0 0 0 1)
+        (0 0 0 0 0 0 2 0 0 0 5 0 0 0 0)))
+      (output $StoredNearEdge undefined)
+      (output ($NearEdgeNearer &side_color=$Derived) (grid
+        (0 0 0 0 0 5 0 0 1 0 0 0 0 0 0)
+        (0 0 0 2 0 5 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0 0 1 0)
+        (0 0 0 0 0 5 0 1 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0 1 0 0)
+        (0 2 0 0 0 5 0 0 0 0 0 0 0 0 1)
+        (0 0 0 0 0 5 1 0 0 0 0 0 0 0 0)))
+      (output ($FarColorOnly &side_color=$Stored) (grid
+        (0 0 0 0 0 5 0 0 2 0 0 0 0 0 0)
+        (0 0 0 2 0 5 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0 0 1 0)
+        (0 0 0 0 0 5 0 2 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0 1 0 0)
+        (0 2 0 0 0 5 0 0 0 0 0 0 0 0 1)
+        (0 0 0 0 0 5 2 0 0 0 0 0 0 0 0)))
+      (output ($NearColorOfNearSide $RecolorAnySwept) (grid
+        (0 0 0 0 0 5 0 0 2 0 0 0 0 0 0)
+        (0 0 0 2 0 5 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 0 5 0 2 0 0 0 0 0 0 0)
+        (0 0 0 0 0 5 0 0 0 0 0 0 2 0 0)
+        (0 2 0 0 0 5 0 0 0 0 0 0 0 0 2)
+        (0 0 0 0 0 5 2 0 0 0 0 0 0 0 0))))))
+
+(alts $l
+  (alt $LineColorOfFullLine
+    (witness divider-of-another-color variant $LineColorOfFullLine
+      (relaxed divider-line)
+      (separates "train0 input with the divider in 3: no full line of the stored line color exists and the concept is undefined, and a line color read from the full line moves the 3 divider")
+      (input (grid
+        (0 0 0 0 3 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 0 0 0 0 0 0 2 0 0 0)
+        (0 1 0 0 3 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 3 0 0 2 0 0 0 0 0 0 0)
+        (0 0 1 0 3 0 0 0 0 0 0 0 0 0 0)
+        (1 0 0 0 3 0 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 3 0 0 0 2 0 0 0 0 0 0)))
+      (output $StoredLineColor undefined)
+      (output $LineColorOfFullLine (grid
+        (0 0 0 0 0 0 1 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 3 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 3 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 3 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 3 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 3 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 3 0 0 0 0 0))))))
+
+(alts $n
+  (alt $NearColorOfNearSide
+    (witness near-marks-of-another-color variant $NearColorOfNearSide
+      (relaxed background)
+      (separates "train0 input with the near marks in 3: the swept far marks take the stored near color 1, and a near color read from the near side gives them 3")
+      (input (grid
+        (0 0 0 0 5 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 2 0 0 0)
+        (0 3 0 0 5 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 2 0 0 0 0 0 0 0)
+        (0 0 3 0 5 0 0 0 0 0 0 0 0 0 0)
+        (3 0 0 0 5 0 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 5 0 0 0 2 0 0 0 0 0 0)))
+      (output ($FarColorOnly &side_color=$Stored) ($StoredNearColor $FarColorOnly &near_color=$Stored) ($StoredNearColor $SweptColumns &near_color=$Stored) (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 3 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 5 0 0 0 0 0)
+        (3 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output ($NearColorOfNearSide &side_color=$Derived) &near_color=$Derived (grid
+        (0 0 0 0 0 0 3 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 3 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 3 0 5 0 0 0 0 0)
+        (0 0 3 0 0 0 0 0 0 5 0 0 0 0 0)
+        (3 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 3 5 0 0 0 0 0)))
+      (output ($RecolorAnySwept $RecolorNearSide) (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0))))))
+
+(alts $d
+  (alt $MarkOverLine
+    (witness far-mark-on-destination borderline concept
+      (relaxed destination-clear)
+      (separates "train0 input with a far mark at (2,9), on the destination column: the concept draws 5 there, a mark kept over the line leaves 2, and a sweep that takes in the destination gives 1")
+      (input (grid
+        (0 0 0 0 5 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 2 0 0 0)
+        (0 1 0 0 5 0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 5 0 0 2 0 0 0 0 0 0 0)
+        (0 0 1 0 5 0 0 0 0 0 0 0 0 0 0)
+        (1 0 0 0 5 0 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 5 0 0 0 2 0 0 0 0 0 0)))
+      (output $LineOverMark (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output $MarkOverLine (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 2 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output $SweptMarkOverLine (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 1 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))))
+  (alt $SweptMarkOverLine
+    (witness far-mark-on-destination-swept borderline concept
+      (relaxed destination-clear)
+      (separates "train0 input with a far mark at (5,9), on the destination column: the concept draws 5 there, a mark kept over the line leaves 2, and a sweep that takes in the destination gives 1")
+      (input (grid
+        (0 0 0 0 5 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 2 0 0 0)
+        (0 1 0 0 5 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 2 0 0 0 0 0 0 0)
+        (0 0 1 0 5 0 0 0 0 0 0 0 0 0 0)
+        (1 0 0 0 5 0 0 0 0 2 0 0 0 2 0)
+        (0 0 0 0 5 0 0 0 2 0 0 0 0 0 0)))
+      (output $LineOverMark (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output $MarkOverLine (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 2 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output $SweptMarkOverLine (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 1 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0))))))
+
+(alts $c
+  (alt $RecolorAnySwept
+    (witness mark-of-third-color-swept foreign concept
+      (relaxed background)
+      (separates "train0 input with a 3 at (2,7), between the old and the new divider: the concept recolors only far marks and the 3 stays, and a sweep over every mark turns it 1")
+      (input (grid
+        (0 0 0 0 5 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 2 0 0 0)
+        (0 1 0 0 5 0 0 3 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 2 0 0 0 0 0 0 0)
+        (0 0 1 0 5 0 0 0 0 0 0 0 0 0 0)
+        (1 0 0 0 5 0 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 5 0 0 0 2 0 0 0 0 0 0)))
+      (output ($FarColorOnly &near_color=$Stored) (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 3 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output $RecolorAnySwept (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output &near_color=$Derived (grid
+        (0 0 0 0 0 0 3 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 3 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 3 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 3 5 0 0 0 0 0))))))
+
+(alts $r
+  (alt $RecolorNearSide
+    (witness far-mark-on-near-side foreign $RecolorNearSide
+      (relaxed far-marks)
+      (separates "train0 input with a far mark at (3,1), left of the divider: the concept recolors only the swept columns and it stays 2, and a recolor of the whole near side of the destination turns it 1")
+      (input (grid
+        (0 0 0 0 5 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 2 0 0 0)
+        (0 1 0 0 5 0 0 0 0 0 0 0 0 0 0)
+        (0 2 0 0 5 0 0 2 0 0 0 0 0 0 0)
+        (0 0 1 0 5 0 0 0 0 0 0 0 0 0 0)
+        (1 0 0 0 5 0 0 0 0 0 0 0 0 2 0)
+        (0 0 0 0 5 0 0 0 2 0 0 0 0 0 0)))
+      (output ($FarColorOnly &side_color=$Stored) ($StoredNearColor $SweptColumns) (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 2 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0)))
+      (output ($NearColorOfNearSide &side_color=$Derived) undefined)
+      (output $RecolorNearSide (grid
+        (0 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 1 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 2 0)
+        (0 0 0 0 0 0 0 0 1 5 0 0 0 0 0))))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed background)
+      (separates "train0 input with the background in 4: the old divider line takes the stored background 0, and the commonest color gives it 4")
+      (input (grid
+        (4 4 4 4 5 4 2 4 4 4 4 4 4 4 4)
+        (4 4 4 4 5 4 4 4 4 4 4 2 4 4 4)
+        (4 1 4 4 5 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 5 4 4 2 4 4 4 4 4 4 4)
+        (4 4 1 4 5 4 4 4 4 4 4 4 4 4 4)
+        (1 4 4 4 5 4 4 4 4 4 4 4 4 2 4)
+        (4 4 4 4 5 4 4 4 2 4 4 4 4 4 4)))
+      (output ($FarColorOnly &side_color=$Stored) ($StoredLineColor $StoredNearColor $LineOverMark $FarColorOnly &background=$Stored) $SweptMarkOverLine (grid
+        (4 4 4 4 0 4 1 4 4 5 4 4 4 4 4)
+        (4 4 4 4 0 4 4 4 4 5 4 2 4 4 4)
+        (4 1 4 4 0 4 4 4 4 5 4 4 4 4 4)
+        (4 4 4 4 0 4 4 1 4 5 4 4 4 4 4)
+        (4 4 1 4 0 4 4 4 4 5 4 4 4 4 4)
+        (1 4 4 4 0 4 4 4 4 5 4 4 4 2 4)
+        (4 4 4 4 0 4 4 4 1 5 4 4 4 4 4)))
+      (output ($NearColorOfNearSide &side_color=$Derived) $LineColorOfFullLine undefined)
+      (output ($RecolorAnySwept $RecolorNearSide) (grid
+        (1 1 1 1 0 1 1 1 1 5 4 4 4 4 4)
+        (1 1 1 1 0 1 1 1 1 5 4 2 4 4 4)
+        (1 1 1 1 0 1 1 1 1 5 4 4 4 4 4)
+        (1 1 1 1 0 1 1 1 1 5 4 4 4 4 4)
+        (1 1 1 1 0 1 1 1 1 5 4 4 4 4 4)
+        (1 1 1 1 0 1 1 1 1 5 4 4 4 2 4)
+        (1 1 1 1 0 1 1 1 1 5 4 4 4 4 4)))
+      (output &background=$Derived (grid
+        (4 4 4 4 4 4 1 4 4 5 4 4 4 4 4)
+        (4 4 4 4 4 4 4 4 4 5 4 2 4 4 4)
+        (4 1 4 4 4 4 4 4 4 5 4 4 4 4 4)
+        (4 4 4 4 4 4 4 1 4 5 4 4 4 4 4)
+        (4 4 1 4 4 4 4 4 4 5 4 4 4 4 4)
+        (1 4 4 4 4 4 4 4 4 5 4 4 4 2 4)
+        (4 4 4 4 4 4 4 4 1 5 4 4 4 4 4)))
+      (output ($RecolorAnySwept $SweptColumns) (grid
+        (4 4 4 4 0 1 1 1 1 5 4 4 4 4 4)
+        (4 4 4 4 0 1 1 1 1 5 4 2 4 4 4)
+        (4 1 4 4 0 1 1 1 1 5 4 4 4 4 4)
+        (4 4 4 4 0 1 1 1 1 5 4 4 4 4 4)
+        (4 4 1 4 0 1 1 1 1 5 4 4 4 4 4)
+        (1 4 4 4 0 1 1 1 1 5 4 4 4 2 4)
+        (4 4 4 4 0 1 1 1 1 5 4 4 4 4 4)))
+      (output $MarkOverLine (grid
+        (4 4 4 4 0 4 1 4 4 4 4 4 4 4 4)
+        (4 4 4 4 0 4 4 4 4 4 4 2 4 4 4)
+        (4 1 4 4 0 4 4 4 4 4 4 4 4 4 4)
+        (4 4 4 4 0 4 4 1 4 4 4 4 4 4 4)
+        (4 4 1 4 0 4 4 4 4 4 4 4 4 4 4)
+        (1 4 4 4 0 4 4 4 4 4 4 4 4 2 4)
+        (4 4 4 4 0 4 4 4 1 4 4 4 4 4 4))))))
+
+(alts &near_color
+  (alt &near_color=$Derived
+    (witness near_color=RarestColor ordinary concept
+      (separates "train0 input with four near marks and three far marks: the swept far marks take the stored near color 1, and the rarest color, 2, leaves them 2")
+      (input (grid
+        (1 0 0 0 5 0 2 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 2 0 0 0)
+        (0 1 0 0 5 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 2 0 0 0 0 0 0 0)
+        (0 0 1 0 5 0 0 0 0 0 0 0 0 0 0)
+        (1 0 0 0 5 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 5 0 0 0 0 0 0 0 0 0 0)))
+      (output &near_color=$Stored (grid
+        (1 0 0 0 0 0 1 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 0 0 0 0)))
+      (output &near_color=$Derived (grid
+        (1 0 0 0 0 0 2 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 2 0 0 0)
+        (0 1 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 2 0 5 0 0 0 0 0)
+        (0 0 1 0 0 0 0 0 0 5 0 0 0 0 0)
+        (1 0 0 0 0 0 0 0 0 5 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 5 0 0 0 0 0))))))
+
+(alts &side_color
+  (alt &side_color=$Stored
+    (witness side_color=stored variant &background=$Derived
+      (relaxed background)
+      (separates "`side_color=stored` from the derived value: train 0 with 0 and 3 swapped")
+      (input (grid
+        (3 3 3 3 5 3 2 3 3 3 3 3 3 3 3)
+        (3 3 3 3 5 3 3 3 3 3 3 2 3 3 3)
+        (3 1 3 3 5 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 5 3 3 2 3 3 3 3 3 3 3)
+        (3 3 1 3 5 3 3 3 3 3 3 3 3 3 3)
+        (1 3 3 3 5 3 3 3 3 3 3 3 3 2 3)
+        (3 3 3 3 5 3 3 3 2 3 3 3 3 3 3)))
+      (output ($FarColorOnly &side_color=$Stored) ($StoredLineColor $StoredNearColor $LineOverMark $FarColorOnly &background=$Stored) $SweptMarkOverLine (grid
+        (3 3 3 3 0 3 1 3 3 5 3 3 3 3 3)
+        (3 3 3 3 0 3 3 3 3 5 3 2 3 3 3)
+        (3 1 3 3 0 3 3 3 3 5 3 3 3 3 3)
+        (3 3 3 3 0 3 3 1 3 5 3 3 3 3 3)
+        (3 3 1 3 0 3 3 3 3 5 3 3 3 3 3)
+        (1 3 3 3 0 3 3 3 3 5 3 3 3 2 3)
+        (3 3 3 3 0 3 3 3 1 5 3 3 3 3 3)))
+      (output ($NearColorOfNearSide &side_color=$Derived) $LineColorOfFullLine undefined)
+      (output ($RecolorAnySwept $RecolorNearSide) (grid
+        (1 1 1 1 0 1 1 1 1 5 3 3 3 3 3)
+        (1 1 1 1 0 1 1 1 1 5 3 2 3 3 3)
+        (1 1 1 1 0 1 1 1 1 5 3 3 3 3 3)
+        (1 1 1 1 0 1 1 1 1 5 3 3 3 3 3)
+        (1 1 1 1 0 1 1 1 1 5 3 3 3 3 3)
+        (1 1 1 1 0 1 1 1 1 5 3 3 3 2 3)
+        (1 1 1 1 0 1 1 1 1 5 3 3 3 3 3)))
+      (output &background=$Derived (grid
+        (3 3 3 3 3 3 1 3 3 5 3 3 3 3 3)
+        (3 3 3 3 3 3 3 3 3 5 3 2 3 3 3)
+        (3 1 3 3 3 3 3 3 3 5 3 3 3 3 3)
+        (3 3 3 3 3 3 3 1 3 5 3 3 3 3 3)
+        (3 3 1 3 3 3 3 3 3 5 3 3 3 3 3)
+        (1 3 3 3 3 3 3 3 3 5 3 3 3 2 3)
+        (3 3 3 3 3 3 3 3 1 5 3 3 3 3 3)))
+      (output ($RecolorAnySwept $SweptColumns) (grid
+        (3 3 3 3 0 1 1 1 1 5 3 3 3 3 3)
+        (3 3 3 3 0 1 1 1 1 5 3 2 3 3 3)
+        (3 1 3 3 0 1 1 1 1 5 3 3 3 3 3)
+        (3 3 3 3 0 1 1 1 1 5 3 3 3 3 3)
+        (3 3 1 3 0 1 1 1 1 5 3 3 3 3 3)
+        (1 3 3 3 0 1 1 1 1 5 3 3 3 2 3)
+        (3 3 3 3 0 1 1 1 1 5 3 3 3 3 3)))
+      (output $MarkOverLine (grid
+        (3 3 3 3 0 3 1 3 3 3 3 3 3 3 3)
+        (3 3 3 3 0 3 3 3 3 3 3 2 3 3 3)
+        (3 1 3 3 0 3 3 3 3 3 3 3 3 3 3)
+        (3 3 3 3 0 3 3 1 3 3 3 3 3 3 3)
+        (3 3 1 3 0 3 3 3 3 3 3 3 3 3 3)
+        (1 3 3 3 0 3 3 3 3 3 3 3 3 2 3)
+        (3 3 3 3 0 3 3 3 1 3 3 3 3 3 3))))))

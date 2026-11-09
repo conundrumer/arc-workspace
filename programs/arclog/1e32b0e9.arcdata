@@ -1,0 +1,9 @@
+;; inputs 2fa1a32f4042c658edc476a9c2c89801508e66afa430002360b84bde9ddcb259 programs/solvers/1e32b0e9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e32b0e9
+
+(param &bg Color (0))
+(param &gap number (1))
+(param &tile_count number (3))
+(param &tile_dim number (5))
+(param &corner DiagDir (DIAG_TL))

@@ -1,0 +1,8 @@
+;; inputs 7f4eaa446de28032c340a70012b03687de1c9be9759323c69c3eceda5d17ca2e programs/solvers/1e97544e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 1e97544e
+
+(param &hole Color (0))
+(param &corner DiagDir (DIAG_TL))
+(param &axis Axis (AXIS_V))
+(param &diag_axis DiagAxis (DAXIS_DG))

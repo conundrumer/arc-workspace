@@ -1,0 +1,53 @@
+;; inputs 7b37012c5b75e47fd20f820c059e28e0fea8e917b56f9851c94a20d6bc31a8ed programs/solvers/67a423a3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 67a423a3
+
+(DET &bg DominantColor)
+
+(DET &ring AnyOutNewColor)
+
+(RULE &cell_line
+  (input *P)
+  (split P *A (:Across *L)))
+
+(RULE &gapped
+  (&cell_line *P *A *L)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &line
+  (&cell_line *A *L)
+  (NOT (&gapped A L)))
+
+(ALTS $choice "what a line is" $Span
+  (ALT $Color
+    (INIT &color_line Singleton
+      (key ((&cell_line *P ^A *L)
+            (input P ^Col)
+            (NOT (&bg (:C Col))))
+        (member ((:v L))
+          (&cell_line *P A *L)
+          (input P Col)
+          (NOT (&bg (:C Col))))))
+
+    (RULE &line
+      (&color_line.value (:key *A) (:v *L)))))
+
+(RULE &crossing
+  (&cell_line *P *A *L)
+  (&line A L)
+  (perp A *A2)
+  (&cell_line P (:A A2) (:L *L2))
+  (&line (:A A2) (:L L2)))
+
+(RULE &ring2
+  (&crossing (:P *C))
+  (neighbor (:P C) *D (:Q *P)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (IF ((&ring2 P))
+      ((&ring (:C *Col)))
+      ((= Col C_in))))
+
+(OUT (&output ^P ^Col))

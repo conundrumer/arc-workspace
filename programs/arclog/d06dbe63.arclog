@@ -1,0 +1,391 @@
+;; inputs 36461c2be231900eff0dcf6d501ba44bc8d8d2431f0929cb52ef3f7beb6fb20e programs/solvers/d06dbe63.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d06dbe63
+
+(INPUT one-marker "every input is a field of 0 with exactly one cell of 8.")
+
+(OUTPUT staircase "toward each corner of &diag_axis (the anti-diagonal), a path of 5 leaves each marker and repeats one step: 2 cells along V toward that corner's direction on V, then 2 cells across toward the corner's direction on H, each leg starting from the end of the one before."
+
+  ;; the axis whose two corners the arms climb toward
+  (DET &diag_axis DiagAxisDomain))
+
+(OUTPUT clip "the path is drawn only where it is in the grid, and it stops at the grid edge.")
+
+(OUTPUT keep-rest "every non-background input cell, and every cell no path reaches, keeps its input color."
+
+  (INIT &shade_count Cardinality
+    (key ((ex_input ^E *P ^Col))
+      (member ((:m P))
+        (ex_input E *P Col))))
+
+  ;; The commonest color of each input.
+  (INIT &shade Order
+    (key ((&shade_count.size (:key ^E *Col)))
+      (member ((:t Col))
+        (&shade_count.size (:key E *Col)))
+      (score ((:t Col) (:S N))
+        (&shade_count.size (:key E *Col) *N))))
+
+  (DET &uncommon
+    (&shade.maximal (:t *C))
+    (ex_input *E)
+    (NOT (&shade.maximal (:key E) (:t C))))
+
+  (DET_OR_RULE &bg DominantColor
+    (&shade.maximal (:t *C))
+    (NOT (&uncommon C)))
+
+  (DET &repainted
+    (ex_input *E *P (:Col *Bg))
+    (&bg (:C Bg))
+    (ex_output E P *Col))
+
+  (DET &path_color
+    (&repainted (:Col *C))
+    (NOT (&bg C)))
+
+  (DET &first_blocked
+    (ex_output (:E *Key) *P *Col)
+    (NOT (&path_color (:C Col))))
+
+  (DET &first_dir
+    (ex_output (:E *Key))
+    (dir_elem *D))
+
+  (DET &first_mark
+    (ex_input (:E *Key) *P *Col)
+    (NOT (&bg (:C Col))))
+
+  ;; The path's run that leaves the marker, toward each direction.
+  (INIT &first Ray
+    (key ((OR ((&first_mark (:Key ^Ky) *P))
+              ((&first_dir (:Key Ky) *D))
+              ((&first_dir (:Key Ky))
+               (ex_input (:E Ky) P)
+               (NOT (&first_blocked (:Key Ky) P)))))
+      (source (P)
+        (&first_mark (:Key Ky) *P))
+      (node (P)
+        (&first_dir (:Key Ky))
+        (ex_input (:E Ky) *P)
+        (NOT (&first_blocked (:Key Ky) P)))
+      (dir (D)
+        (&first_dir (:Key Ky) *D))))
+
+  (INIT &first_full Ray
+    (key ((OR ((&first_mark (:Key ^Ky) *P))
+              ((&first_dir (:Key Ky) *D))
+              ((&first_dir (:Key Ky))
+               (ex_input (:E Ky) P))))
+      (source (P)
+        (&first_mark (:Key Ky) *P))
+      (node (P)
+        (&first_dir (:Key Ky))
+        (ex_input (:E Ky) *P))
+      (dir (D)
+        (&first_dir (:Key Ky) *D))))
+
+  (DET &first_stop_full
+    (&first.end (:key (:Ky *V0)) (:P *E1) (:D *V2) (:Origin *V4))
+    (neighbor (:P E1) (:D V2) (:Q *V1))
+    (&first_full.ray (:key (:Ky V0)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+  ;; the axis of the leg that leaves the marker
+  (DET &first_axis AxisDomain)
+
+  (RULE &arm_corner
+    (&diag_axis (:Da *DA))
+    (diag_axis_of (:D *C) (:Da DA)))
+
+  (RULE &marker
+    (input *P *Col)
+    (NOT (&bg (:C Col))))
+
+  (RULE &arm2
+    (&arm_corner *C)
+    (&marker (:P *M)))
+
+  (RULE &first_axis_of
+    (&first_axis *A)
+    (diag_dir_elem (:D *C)))
+
+  (DET &first_end
+    (&first.ray (:key (:Ky *E)) *P *D (:K *N) (:Origin *M))
+    (ex_output E P)
+    (&first_stop_full (:V0 E) (:V1 *Q) (:V2 D) (:V4 M))
+    (neighbor P D Q)
+    (nearer D P (:Q M))
+    (axis_of D *A))
+
+  (DET &leg
+    (&first_end *N))
+
+  (RULE &second_leg
+    (&leg *N))
+
+  (RULE &legs
+    (&first_axis_of *C *A)
+    (diag_dirs (:D C) A *D1 *D2)
+    (&leg (:N *N1))
+    (&second_leg (:N *N2))
+    (input *P)
+    (jump P (:D D1) (:K N1) (:Q *E1))
+    (jump (:P E1) (:D D2) (:K N2) *Q))
+
+  (RULE &step_next
+    (&legs *C *P *Q))
+
+  ;; The start of each step of an arm: its marker, then each step's end.
+  (INIT &walk Propagation
+    (key ((&arm2 ^C ^M))
+      (source ((:n M)))
+      (edge ((:a P) (:b Q))
+        (&step_next C *P *Q))))
+
+  (RULE &arm_cell
+    (&walk.reached (:key *C *M) (:n *P3))
+    (&legs C (:P P3) *D1 (:E1 *E) *D2 (:Q *P2))
+    (OR ((= *X P3)
+         (= *D D1)
+         (= *Y E))
+        ((= X E)
+         (= D D2)
+         (= Y P2)))
+    (input *P)
+    (axis_of D *A)
+    (same_line A (:P X) (:Q P))
+    (nearer D P (:Q X))
+    (NOT (nearer D P (:Q Y))))
+
+  (DET &mark
+    (ex_output *E)
+    (ex_input E (:P *M) *Col)
+    (NOT (&bg (:C Col))))
+
+  (DET &path
+    (&repainted *E *P *Col)
+    (&path_color (:C Col)))
+
+  (DET &toward
+    (&mark *E *M)
+    (&path E *P)
+    (diag_dirs (:D *C) *D1 *D2))
+
+  (DET &corners
+    (&toward *C *M *P *D1 *D2)
+    (nearer (:D D1) P (:Q M))
+    (nearer (:D D2) P (:Q M))))
+
+(ALTS $step "how one step of an arm is given" $Legs
+  (ALT $Legs
+    (ALTS $legs "whether the two legs of a step share one length" $SharedLeg
+      (ALT $UnequalLegs
+        (OUTPUT staircase "the second leg has its own length leg2 (2), and the first leg reads leg. Defined wherever the concept is."
+          (INIT &second_frame Frame
+            (key ((&first_end ^E *A *P)
+                  (perp A ^A2)
+                  (frame_extent P (:A *A3) *N))
+              (extent ((:A A3) N)
+                (&first_end E *A *P)
+                (perp A A2)
+                (frame_extent P (:A *A3) *N))))
+          (INIT &second_full Ray
+            (key ((OR ((&first_end ^E *A *P)
+                       (perp A ^A2))
+                      ((&first_end E A)
+                       (perp A A2)
+                       (axis_of *D (:A A2)))
+                      ((&second_frame.cell (:key E A2) P))))
+              (source (P)
+                (&first_end E *A *P)
+                (perp A A2))
+              (node (P)
+                (&second_frame.cell (:key E A2) *P))
+              (dir (D)
+                (&first_end E *A)
+                (perp A A2)
+                (axis_of *D (:A A2)))))
+          (DET &second_blocked
+            (&first_end *E (:A *A3))
+            (perp (:A A3) (:A2 *A))
+            (ex_output E *P *Col)
+            (NOT (&path_color (:C Col))))
+          (INIT &second Ray
+            (key ((OR ((&first_end ^E *A *P)
+                       (perp A ^A2))
+                      ((&first_end E A)
+                       (perp A A2)
+                       (axis_of *D (:A A2)))
+                      ((&second_frame.cell (:key E A2) P)
+                       (NOT (&second_blocked E (:A A2) P)))))
+              (source (P)
+                (&first_end E *A *P)
+                (perp A A2))
+              (node (P)
+                (&second_frame.cell (:key E A2) *P)
+                (NOT (&second_blocked E (:A A2) P)))
+              (dir (D)
+                (&first_end E *A)
+                (perp A A2)
+                (axis_of *D (:A A2)))))
+          (DET &second_stop_full
+            (&second.end (:key *E (:A2 *A)) (:P *E1) (:D *V2) (:Origin *V4))
+            (neighbor (:P E1) (:D V2) (:Q *V1))
+            (&second_full.ray (:key E (:A2 A)) (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+          (DET &second_cell
+            (&first_end *E (:A *A3))
+            (perp (:A A3) (:A2 *A))
+            (ex_output E *P))
+          (DET &leg2
+            (&second.ray (:key (:E *T_e) (:A2 *T_a)) *P *D (:K *N) (:Origin *M))
+            (&second_cell (:E T_e) (:A T_a) P)
+            (&second_stop_full (:E T_e) (:A T_a) (:V1 *Q) (:V2 D) (:V4 M))
+            (neighbor P D Q)
+            (nearer D P (:Q M)))
+          (RULE &second_leg
+            (&leg2 *N)))))
+    (ALTS $first "how the two arms' first axes relate" $SharedFirstAxis
+      (ALT $FirstAxisPerCorner
+        (OUTPUT staircase "corner_first_axis stores a first axis for each corner. Defined wherever the concept is."
+          (DET &corner_first_axis
+            (&corners *C)
+            (corner_dir C *A *D)
+            (&mark *E *M)
+            (neighbor (:P M) D *Q)
+            (&path E (:P Q)))
+          (RULE &first_axis_of
+            (&corner_first_axis *C *A))))))
+  (ALT $StoredStep
+    (OUTPUT staircase "step stores the cells of one step relative to its start; the step cell nearest the step's own corner is the next step's start, and the arm toward each corner repeats the step turned by the rotation that takes the step's corner to that corner. Defined wherever the concept is."
+      (DET &arm
+        (&corners *C)
+        (&toward *E C *M *P *D1 *D2)
+        (opposite (:D D1) (:Opp *O1))
+        (opposite (:D D2) (:Opp *O2))
+        (NOT (nearer (:D O1) P (:Q M)))
+        (NOT (nearer (:D O2) P (:Q M))))
+
+      (DET &moved
+        (&arm *E *C *M (:P *T))
+        (relative (:Base M) (:X T) (:X_rel *V))
+        (&arm E C M *P)
+        (compose (:A P) (:B V) (:C *Q)))
+
+      (DET &unrepeated
+        (&moved *E *C *M *T *Q)
+        (ex_input E (:P Q))
+        (NOT (&arm E C M (:P Q))))
+
+      (DET &repeat_end
+        (&arm *E *C *M (:P *T))
+        (NOT (&unrepeated E C M T)))
+
+      (DET &later_end
+        (&repeat_end *E *C *M *T)
+        (&repeat_end E C M (:T *T2))
+        (nearer (:D C) (:P T) (:Q T2)))
+
+      (DET &shifted
+        (&moved *E *C *M *T (:Q *P))
+        (&arm E C M P))
+
+      (DET &cell
+        (&repeat_end *E *C *M *T)
+        (NOT (&later_end E C M T))
+        (&arm E C M *P)
+        (relative (:Base M) (:X P) (:X_rel *V))
+        (NOT (&shifted E C M T P)))
+
+      ;; the cells of one step, as offsets from its start
+      (RIGID_DET &step
+        (instance ((&cell ^E ^C))
+          (&cell E C *V)))
+
+      (RULE &step_behind
+        (&step.cell (:Pose *D) *V)
+        (diag_dirs (:D *C) *D1 *D2)
+        (OR ((opposite (:D D1) (:Opp *O)))
+            ((opposite (:D D2) (:Opp O))))
+        (nearer (:D O) (:P V) (:Q 0)))
+
+      (RULE &step_corner
+        (&step.cell (:Pose *D))
+        (diag_dir_elem (:D *C))
+        (NOT (&step_behind D C)))
+
+      (RULE &turned
+        (&step_corner *D *C)
+        (&step.cell (:Pose D) *V)
+        (&step.pose (:Pose *D0))
+        (pose_difference (:A D0) (:B D) (:D *T))
+        (c4_elem (:D T)))
+
+      (RULE &short_of
+        (&turned *C *V)
+        (&turned C (:V *W))
+        (nearer (:D C) (:P W) (:Q V)))
+
+      (RULE &placed
+        (&turned *C *V)
+        (input *P)
+        (compose (:A P) (:B V) (:C *Q)))
+
+      (RULE &arm_cell
+        (&walk.reached (:key *C *M) (:n *P2))
+        (&placed C (:P P2) (:Q *P)))
+
+      (RULE &step_next
+        (&placed *C *P *V *Q)
+        (NOT (&short_of C V))))))
+
+(ALTS $corners "which corners the arms climb toward" $AxisCorners
+  (ALT $CornerSet
+    (OUTPUT staircase "corners stores the set of corners in place of diag_axis. Defined wherever the concept is."
+      (RULE &arm_corner
+        (&corners *C)))))
+
+(ALTS $select "which cells are markers" $NonBg
+  (ALT $MarkerByColor
+    (OUTPUT staircase "markers are the cells of marker_color (8). Defined wherever the concept is."
+      (DET_OR_RULE &marker_color RarestColor
+        (ex_input (:Col *C))
+        (NOT (&bg C)))
+
+      (RULE &marker
+        (input *P *Col)
+        (&marker_color (:C Col))))))
+
+(ALTS $block "what an arm does when it reaches a non-background cell" $PassCells
+  (ALT $StopAtCell
+    (OUTPUT staircase "an arm ends at the first non-background cell it reaches. Defined wherever the concept is."
+      (RULE &blocked
+        (&arm_cell *C *M (:P *U))
+        (input (:P U) *Col)
+        (NOT (&bg (:C Col))))
+
+      (RULE &cut
+        (&blocked *C *M *U)
+        (&arm_cell C M *P)
+        (nearer (:D C) P (:Q U))))
+    (RULE &painted
+      (&arm_corner *C)
+      (&marker (:P *M))
+      (&arm_cell C M *P)
+      (input P *Col)
+      (&bg (:C Col))
+      (NOT (&cut C M P)))))
+
+(RULE &painted
+  (&arm_corner *C)
+  (&marker (:P *M))
+  (&arm_cell C M *P)
+  (input P *Col)
+  (&bg (:C Col)))
+
+(RULE &output
+  (OR ((&painted *P)
+       (&path_color (:C *Col)))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

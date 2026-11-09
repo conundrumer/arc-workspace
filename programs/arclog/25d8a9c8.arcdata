@@ -1,0 +1,19 @@
+;; inputs 29450bece389c027e86b37500146cb1651596ab297dfa703bf3936b674dbd1db programs/solvers/25d8a9c8.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 25d8a9c8
+
+(param &axis Axis (AXIS_H))
+(param &uniform_color Color (5))
+(param &non_uniform_color Color (0))
+(param &uniform_template (Position Color)
+  (grid
+    (5 5 5)))
+(param &non_uniform_template (Position Color)
+  (grid
+    (0 0 0)))
+(param &count_color (number Color) (1 5) (2 0))
+(param &count_template (number Position Color)
+  (1 (grid
+    (5 5 5)))
+  (2 (grid
+    (0 0 0))))

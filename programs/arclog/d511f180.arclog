@@ -1,0 +1,18 @@
+;; inputs 2602411d35bd848f7917c8a70f33d0ece2996b47d33dd2990c31567ccb4a27a0 programs/solvers/d511f180.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d511f180
+
+;; the color pairs that trade places
+(DET &swap ColorColorDomain)
+
+(RULE &mapping
+  (OR ((&swap *C_from *C_to))
+      ((&swap (:C_from C_to) (:C_to C_from)))))
+
+(RULE &output
+  (OR ((input *P (:Col *Col_in))
+       (&mapping (:C_from Col_in) (:C_to *Col)))
+      ((input P Col)
+       (NOT (&mapping (:C_from Col))))))
+
+(OUT (&output ^P ^Col))

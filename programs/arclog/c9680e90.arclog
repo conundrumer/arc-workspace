@@ -1,0 +1,251 @@
+;; inputs 19843ad4060f5398433a568736b39189d5c56758cf8298c7547d8278bef6ba48 programs/solvers/c9680e90.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; c9680e90
+
+(INPUT center-divider "one full line of &divider_color runs along &divider_axis through the center of the grid, so the two halves have the same extent"
+
+  (DET &tail_color VanishedColor)
+
+  (DET &head_color
+    (ex_input *E *P (:Col *C))
+    (ex_output E P)
+    (NOT (ex_output E P (:Col C)))
+    (NOT (&tail_color C))
+    (dir_elem *D)
+    (neighbor P D *Q)
+    (ex_input E (:P Q) (:Col *Col_q))
+    (&tail_color (:C Col_q)))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *Col_in))
+    (&tail_color (:C Col_in))
+    (ex_output E P (:Col *C))
+    (NOT (&head_color C)))
+
+  ;; The color that fills each full line: the line along axis a through l.
+  (INIT &line_fill Singleton
+    (key ((input *P *Col)
+          (axis_elem ^A)
+          (split P A (:Across ^L)))
+      (member ((:v Col))
+        (input *P *Col)
+        (split P A (:Across L)))))
+
+  (DET &divider_fill
+    (&line_fill.value *E (:key *A) (:v *Col))
+    (NOT (&background (:C Col)))
+    (ex_output E))
+
+  (DET &divider_defect
+    (&divider_fill *A *Col)
+    (ex_output *E)
+    (NOT (&divider_fill E A Col)))
+
+  (DET &divider_color
+    (&divider_fill *A (:Col *C))
+    (NOT (&divider_defect A (:Col C))))
+
+  (DET &divider_axis
+    (&divider_fill *A *Col)
+    (NOT (&divider_defect A Col))))
+
+(INPUT heads-on-one-side "every &head_color cell and every &tail_color cell is in the half on the bottom side of the divider")
+
+(INPUT straight-tail "each head has one straight run of &tail_color cells that starts at a 4-neighbor of the head and goes away from it in one direction, with length 1 or more")
+
+(INPUT mirror-twins "the other half has a &mark_color cell at the mirror image across the divider of each head cell, and no other mark cells"
+
+  (DET &mark_color
+    (ex_input (:Col *C))
+    (NOT (&background C))
+    (NOT (&divider_color C))
+    (NOT (&head_color C))
+    (NOT (&tail_color C))))
+
+(OUTPUT crawl-to-tail-end "each head moves to the last cell of its tail; the tail cells and the head's old cell become &background"
+
+  (RULE &tail
+    (input *P *Col)
+    (&tail_color (:C Col)))
+
+  (RULE &head
+    (input *P *Col)
+    (&head_color (:C Col)))
+
+  ;; Each head's walk along the 4-connected &tail_color cells it touches.
+  (INIT &walk Distance
+    (key ((&head (:P ^H)))
+      (edge ((:a P) (:b Q))
+        (OR ((&tail *P))
+            ((= P H)))
+        (dir_elem *D)
+        (neighbor P D *Q)
+        (&tail (:P Q)))
+      (source ((:n H)))))
+
+  ;; The cell farthest along each head's walk.
+  (INIT &far Order
+    (key ((&walk.distance (:key ^H) (:n *P) *K))
+      (member ((:t (:V P) (:S K)))
+        (&walk.distance (:key H) (:n *P) *K))
+      (score ((:t (:V P) (:S K)) (:S K))
+        (&walk.distance (:key H) (:n *P) *K)))))
+
+(OUTPUT twin-follows "each mark moves to the mirror image across the divider of its head's new cell; the mark's old cell becomes &background")
+
+(OUTPUT divider-kept "the divider line stays as it is"
+
+  (RULE &run_dir
+    (dir_elem *D))
+
+  (RULE &run_node
+    (&run_dir)
+    (&tail *P))
+
+  ;; The straight runs of &tail_color cells.
+  (INIT &run Ray
+    (source (P)
+      (&run_node *P))
+    (node (P)
+      (&run_node *P))
+    (dir (D)
+      (&run_dir *D)))
+
+  (RULE &mark
+    (input *P *Col)
+    (&mark_color (:C Col)))
+
+  ;; The one divider line of each way of finding it.
+  (INIT &divider_line Singleton
+    (member ((:v A L))
+      (&line_fill.value (:key *A *L) (:v *Col))
+      (&divider_axis A)
+      (&divider_color (:C Col))))
+
+  (RULE &mirror_axis
+    (&divider_line.value (:v *A)))
+
+  (RULE &mirror
+    (&divider_line.value (:v *A *L))
+    (perp A *A2)
+    (axis_inversion (:A A2) (:T *F))
+    (input (:P *D))
+    (split (:P D) A (:Across L))
+    (input *P)
+    (relative (:Base D) (:X P) (:X_rel *P_rel))
+    (apply (:D F) (:P P_rel) (:P_out *Q_rel))
+    (compose (:A D) (:B Q_rel) (:C *Q)))
+
+  (RULE &ready
+    (&mirror_axis))
+
+  (RULE &tail_start
+    (&head (:P *H))
+    (&run_dir *D)
+    (neighbor (:P H) D (:Q *T))
+    (&tail (:P T)))
+
+  (RULE &move
+    (&tail_start *H *D *T)
+    (&run.end (:P *E1) D (:Origin T))))
+
+(ALTS $tail "which cells the head crawls along" $StraightTail
+  (ALT $PathTail
+    (INPUT straight-tail "the tail is the 4-connected component of &tail_color cells that touches the head")
+    (OUTPUT crawl-to-tail-end "the head moves to the component cell farthest from it along the component, and the whole component becomes &background"
+      (RULE &move
+        (&far.maximal (:key *H) (:t (:V *E1)))))
+    (RULE &vacated
+      (&walk.distance (:n *P))))
+  (ALT $Dir8Tail
+    (INPUT straight-tail "runs start along the four diagonals as well, and a head with runs in several directions is drawn at the end of each run"
+      (RULE &run_dir
+        (dir8_elem *D)))))
+
+(ALTS $twin "which mark moves with a head" $MirrorTwin
+  (ALT $ColumnTwin
+    (OUTPUT twin-follows "every mark on the head's line across the divider moves to the mirror image of that head's new cell")
+    (RULE &twin
+      (&head (:P *H))
+      (&mark (:P *M))
+      (&mirror_axis *A)
+      (perp A *A2)
+      (same_line (:A A2) (:P M) (:Q H))))
+  (ALT $MirrorRedraw
+    (OUTPUT twin-follows "every mark becomes &background, and a mark is drawn at the mirror image of each head's new cell")
+    (RULE &paint
+      (OR ((&move (:E1 *E))
+           (&mirror (:P E) (:Q *P))
+           (&mark_color (:C *Col)))
+          ((&ready)
+           (&move (:E1 P))
+           (&head_color (:C Col)))))
+
+    (RULE &cleared
+      (OR ((&ready)
+           (&mark *P))
+          ((&ready)
+           (&vacated P))))))
+
+(ALTS $mirror "the line the twins mirror across" $DividerMirror
+  (ALT $DividerMirror
+    (ALTS $locate "how the program finds the divider" $StoredDivider
+      (ALT $DividerDerived
+        (INPUT center-divider "the divider is the one full line of a single color other than &background, along either axis"
+          ;; The one divider line of each way of finding it.
+          (INIT &divider_line Singleton
+            (member ((:v A L))
+              (&line_fill.value (:key *A *L) (:v *Col))
+              (NOT (&background (:C Col)))))))))
+  (ALT $CenterMirror
+    (OUTPUT twin-follows "the twins mirror across the grid's center line along &divider_axis; defined where no divider line exists"
+      (RULE &mirror_axis
+        (&divider_axis *A))
+
+      (RULE &mirror
+        (input *P)
+        (&divider_axis *A)
+        (perp A *A2)
+        (axis_inversion (:A A2) (:T *F))
+        (apply (:D F) P (:P_out *Q))))))
+
+(RULE &run_run_full
+  (&run.ray (:P *V3) (:D *V2) (:K *N) (:Origin *V1))
+  (!= N 0))
+
+(RULE &twin
+  (&head (:P *H))
+  (&mirror (:P H) (:Q *M))
+  (&mark (:P M)))
+
+(RULE &paint
+  (OR ((&ready)
+       (&move (:E1 *P))
+       (&head_color (:C *Col)))
+      ((&twin *H)
+       (&move H (:E1 *E))
+       (&mirror (:P E) (:Q P))
+       (&mark_color (:C Col)))))
+
+(RULE &vacated
+  (&tail_start *H *D *T)
+  (OR ((&run_run_full (:V1 T) (:V2 D) (:V3 *P)))
+      ((= P H))
+      ((= P T))))
+
+(RULE &cleared
+  (OR ((&ready)
+       (&vacated *P))
+      ((&twin (:M P) *H)
+       (&move H))))
+
+(RULE &output
+  (OR ((&paint *P *Col))
+      ((input P (:Col *Col0))
+       (&ready)
+       (NOT (&paint P))
+       (IF ((&cleared P))
+           ((&background (:C Col)))
+           ((= Col Col0))))))
+
+(OUT (&output ^P ^Col))

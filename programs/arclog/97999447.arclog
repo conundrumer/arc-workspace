@@ -1,0 +1,127 @@
+;; inputs 5dd355386e8b1ae7d999386b83ce71ae884fa7ac1761a34aa9ad3df98f761837 programs/solvers/97999447.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 97999447
+
+(DET &bg DominantColor)
+
+(DET &ray_dir DirDomain)
+
+(DET &alt_color AnyOutNewColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &rays Ray
+  (source (P)
+    (&mark *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (&ray_dir *D)))
+
+(RULE &on_ray
+  (&rays.ray *P *K (:Origin *Src))
+  (&mark (:P Src) (:Col *M)))
+
+;; Each dot color's two-color cycle, one advance per ray step.
+(INIT &colors Walk
+  (key ((OR ((&mark (:Col ^M))
+             (&alt_color (:C *Alt))
+             (OR ((= *A M)
+                  (= *B Alt))
+                 ((= A Alt)
+                  (= B M))))
+            ((&on_ray M *K))))
+    (successor ((:p A) (:p_next B))
+      (&mark (:Col M))
+      (&alt_color (:C *Alt))
+      (OR ((= *A M)
+           (= *B Alt))
+          ((= A Alt)
+           (= B M))))
+    (steps ((:N K))
+      (&on_ray M *K))))
+
+(ALTS $choice "how the ray is colored" $Toggle
+  (ALT $Mask
+    (DET &dot
+      (ex_input *E *P *Col)
+      (NOT (&bg (:C Col)))
+      (ex_output E))
+
+    (DET &ray_col
+      (&dot *E (:P *M))
+      (&ray_dir *D)
+      (ex_input E *P)
+      (margin (:B P) D (:K *I))
+      (jump (:P M) D (:K I) *Q)
+      (ex_output E (:P Q) *Col))
+
+    (DET &cand
+      (&ray_col (:I *W))
+      (!= W 0))
+
+    ;; The colors one ray carries at each slot of a candidate period.
+    (INIT &slot_color Singleton
+      (key ((&cand ^W)
+            (&ray_col ^E ^M *I *Col)
+            (divide (:T I) (:Side W) (:Gap 0) (:Remainder ^K)))
+        (member ((:v Col))
+          (&cand W)
+          (&ray_col E M *I *Col)
+          (divide (:T I) (:Side W) (:Gap 0) (:Remainder K)))))
+
+    ;; The shortest period no ray breaks.
+    (INIT &unbroken Order
+      (member ((:t W))
+        (&cand *W)
+        (NOT (&slot_color.plural (:key W))))
+      (score ((:t W) (:S W))
+        (&cand *W)
+        (NOT (&slot_color.plural (:key W)))))
+
+    (DET &slot
+      (&ray_col (:I *K))
+      (&unbroken.minimal (:t *N))
+      (< K N))
+
+    (INIT &slots Order
+      (member ((:t K))
+        (&slot *K))
+      (score ((:t K) (:S K))
+        (&slot *K)))
+
+    ;; A step along the ray advances the slot cycle.
+    (INIT &slot_walk Walk
+      (successor ((:p K) (:p_next K2))
+        (&slots.cyclic_successor (:a *K) (:b *K2)))
+      (steps ((:N K))
+        (&on_ray *K)))
+
+    (RULE &ray_slot
+      (&on_ray *P *M (:K *K2))
+      (&slot_walk.walk (:p0 0) (:N K2) (:p *K)))
+
+    (DET &mask
+      (&ray_col *E *M *I *Col)
+      (&dot E (:P M) (:Col *Mc))
+      (!= Col Mc)
+      (&unbroken.minimal (:t *N))
+      (divide (:T I) (:Side N) (:Gap 0) (:Remainder *K)))
+
+    (RULE &output
+      (OR ((&ray_slot *P *K)
+           (&mask K *Col))
+          ((&ray_slot P (:M Col) (:K *K2))
+           (NOT (&mask (:K K2))))
+          ((input P Col)
+           (NOT (&on_ray P)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&on_ray P)))
+      ((&on_ray P *M *K)
+       (&colors.walk (:key M) (:p0 M) (:N K) (:p Col)))))
+
+(OUT (&output ^P ^Col))

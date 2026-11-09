@@ -1,0 +1,6 @@
+;; inputs 6671b9868185b7586b18da5de49ba9a0b1508c368355a1571bdb9c873d0930dc programs/solvers/963e52fc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 963e52fc
+
+(param &dir Dir (DIR_R))
+(param &scale number (2))

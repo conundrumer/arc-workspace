@@ -1,0 +1,120 @@
+;; inputs a7b93d656c43f75afe9b9df61f2223d25803326b729c3f070a08c818aba786cf programs/solvers/50aad11f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 50aad11f
+
+(DET &shape VanishedColor)
+
+(INIT &shapes Connectivity
+  (node (P)
+    (input *P *Col)
+    (&shape (:C Col))))
+
+(RULE &shared_line
+  (axis_elem *A)
+  (&shapes.component (:Id *Id1) (:P *P1))
+  (&shapes.component (:Id *Id2) (:P *P2))
+  (!= Id1 Id2)
+  (same_line A (:P P1) (:Q P2)))
+
+(RULE &layout_axis
+  (perp *A (:A2 *A_across))
+  (NOT (&shared_line (:A A_across))))
+
+(INIT &order Order
+  (key ((&layout_axis (:A ^A2))
+        (axis_of ^D (:A A2)))
+    (before ((:a Id) (:b Id2))
+      (&shapes.component *Id *P)
+      (&layout_axis *A)
+      (split P A (:Along *P_along))
+      (&shapes.component (:Id *Id2) (:P *P2))
+      (&layout_axis (:A *A22))
+      (split (:P P2) (:A A22) (:Along *P_along2))
+      (!= Id Id2)
+      (margin (:B P_along) D (:K *K1))
+      (margin (:B P_along2) D (:K *K2))
+      (< K1 K2)))
+  (member ((:t Id))
+    (&shapes.component *Id *P)
+    (&layout_axis *A)
+    (split P A (:Along *P_along))))
+
+(RULE &order_pos
+  (&order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+  (&order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+  (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+(INIT &bbox BoundingBox
+  (key ((&shapes.component ^Id *P))
+    (cell (P)
+      (&shapes.component Id *P))))
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&shape (:C Col))))
+
+(RULE &shape_color
+  (&mark (:P *P_mark) *Col)
+  (&shapes.component *Id *P)
+  (&layout_axis *A)
+  (perp A (:A2 *A_across))
+  (same_line (:A A_across) (:P P_mark) (:Q P)))
+
+(ALTS $choice "how a shape gets its marker's color (each pair puts every marker on its own shape's band, which hides which reading it is)" $Aligned
+  (ALT $Ranked
+    (INIT &mark_order Order
+      (key ((&layout_axis (:A ^A2))
+            (axis_of ^D (:A A2)))
+        (before ((:a P) (:b P2))
+          (&mark *P)
+          (&layout_axis *A)
+          (split P A (:Along *P_along))
+          (&mark (:P *P2))
+          (&layout_axis (:A *A22))
+          (split (:P P2) (:A A22) (:Along *P_along2))
+          (!= P P2)
+          (margin (:B P_along) D (:K *K1))
+          (margin (:B P_along2) D (:K *K2))
+          (< K1 K2)))
+      (member ((:t P))
+        (&mark *P)
+        (&layout_axis *A)
+        (split P A (:Along *P_along))))
+
+    (RULE &mark_order_pos
+      (&mark_order.rank (:key (:A2 *A) *D) (:t *M) (:R *R1))
+      (&mark_order.dual_rank (:key (:A2 A) D) (:t M) (:R *R2))
+      (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos)))
+
+    (RULE &shape_color
+      (&order_pos (:M *Id) (:P_pos *P_place))
+      (&mark_order_pos (:M *P_mark) (:P_pos P_place))
+      (&mark (:P P_mark) *Col))))
+
+(INIT &output_tiling Tiling
+  (key ((&shape_color ^Id))
+    (outer ((:P P_tile))
+      (&order_pos (:M Id) (:P_pos *P_tile)))
+    (inner ((:P P_intile))
+      (input (:P *P_grid_in))
+      (&bbox.box (:key Id) *B)
+      (inside (:A P_grid_in) B)
+      (relative (:Base B) (:X P_grid_in) (:X_rel *P_intile)))))
+
+(RULE &output
+  (input (:P *P_grid_in))
+  (&bbox.box (:key *Id) *B)
+  (inside (:A P_grid_in) B)
+  (relative (:Base B) (:X P_grid_in) (:X_rel *P_intile))
+  (&output_tiling.cell (:key Id) (:P_inner P_intile) *P)
+  (&layout_axis)
+  (&shape_color Id (:Col *Col_shape))
+  (OR ((NOT (&shapes.component Id (:P P_grid_in)))
+       (&bg (:C *Col)))
+      ((&shapes.component Id (:P P_grid_in))
+       (= Col Col_shape))))
+
+(OUT (&output ^P ^Col))

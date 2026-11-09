@@ -1,0 +1,327 @@
+;; inputs a7e7d5c5b12fd13081465e603cd5309d9e61589a6de9b8af9d137adabe3d040a programs/solvers/b2bc3ffd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b2bc3ffd
+
+(INPUT floor "a full line of floor_color lies along the floor_side edge of the grid")
+
+(INPUT background "every cell that is neither floor nor object is background")
+
+(INPUT objects "the objects are 4-connected single-color components of the cells that are neither background nor floor_color, and each object has a different color"
+
+  (DET_OR_RULE &background DominantColor)
+
+  (DET &floor_side DirDomain)
+
+  (DET &floor_color UnchangedColor)
+
+  (RULE &floor_side2
+    (&floor_side *D))
+
+  (RULE &floor_color2
+    (&floor_color *C))
+
+  (RULE_OR_DET &floor_cell "The cells that stay as floor."
+    (&floor_color2 (:C *Col))
+    (input *P Col))
+
+  (RULE &ink
+    (&floor_side2)
+    (input *P *Col)
+    (NOT (&background (:C Col)))
+    (NOT (&floor_cell P)))
+
+  (INIT &one8 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &any4 Connectivity
+    (node (P)
+      (&ink *P)))
+
+  (INIT &any8 Connectivity
+    (node (P)
+      (&ink *P))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &color_id Quotient
+    (equivalent ((:a Col) (:b Col))
+      (&ink *Col))))
+
+(INPUT grounded "each object touches the line next to the floor")
+
+(INPUT fits "each object, moved away from the floor by its cell count, stays inside the grid")
+
+(OUTPUT jump "each object moves away from the floor by a distance equal to its cell count, and keeps its shape and color; the cells moved past the far edge are lost; undefined where two moved objects of different colors land on one cell, or a moved object lands on a floor cell"
+
+  (RULE &heading
+    (&floor_side2 (:D *D2))
+    (opposite (:D D2) (:Opp *D)))
+
+  (INIT &one4 Connectivity
+    (key ((&ink *P ^Col))
+      (node (P)
+        (&ink *P Col))))
+
+  (RULE &obj_cell
+    (&one4.component (:key *Col) *P (:Id *O)))
+
+  (INIT &size Cardinality
+    (key ((&obj_cell (:O ^Id) *P))
+      (member ((:m P))
+        (&obj_cell (:O Id) *P))))
+
+  ;; Each line along the heading as a cycle that runs from the floor edge to
+  ;; the far edge and back in at the floor edge.
+  (INIT &cycle Walk
+    (successor ((:p P) (:p_next Q))
+      (&heading (:D *H))
+      (input *P)
+      (OR ((neighbor P (:D H) *Q)
+           (input (:P Q)))
+          ((margin (:B P) (:D H) (:K 0))
+           (&floor_side2 *D)
+           (input (:P Q))
+           (margin (:B Q) D (:K 0))
+           (axis_of D *A)
+           (same_line A P Q))))
+    (steps (N)
+      (&size.size *N))))
+
+(OUTPUT clear "the cells an object left, and that no moved object covers, become background")
+
+(OUTPUT keep-floor "the floor stays as it is"
+
+  (RULE &grounded
+    (&obj_cell *O *P)
+    (&floor_side2 *D)
+    (neighbor P D *Q)
+    (margin (:B Q) D (:K 0)))
+
+  (INIT &box BoundingBox
+    (key ((&obj_cell (:O ^Id) *P))
+      (cell (P)
+        (&obj_cell (:O Id) *P))))
+
+  (RULE &lift
+    (OR ((&grounded *O)
+         (&size.size (:key (:Id O)) *N)
+         (&box.box (:key (:Id O)) *B))
+        ((&size.size (:key (:Id O)) N)
+         (NOT (&grounded O))
+         (&box.box (:key (:Id O)) B))))
+
+  (RULE &shift
+    (&lift *O (:B *B0) *N)
+    (&heading (:D *H))
+    (jump (:P B0) (:D H) (:K N) (:Q *B1))
+    (&box.box (:key (:Id O)) *B)
+    (relative (:Base B) (:X B1) (:X_rel *V)))
+
+  (RULE &drift
+    (&shift *O *V))
+
+  (RULE &landing
+    (&drift (:O *Id) *V)
+    (&obj_cell (:O Id) *P *Col)
+    (compose (:A P) (:B V) (:C *K))
+    (input (:P K)))
+
+  (INIT &top Order
+    (key ((&landing (:K ^P) *Id *Col)
+          (&size.size (:key Id) *N))
+      (member ((:t (:V Col) (:S N)))
+        (&landing (:K P) *Id *Col)
+        (&size.size (:key Id) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&landing (:K P) *Id *Col)
+        (&size.size (:key Id) *N)))))
+
+(ALTS $s "where floor_side and floor_color come from" $FloorStored
+  (ALT $FloorDerived
+    (INPUT floor "the floor is the one edge line that is all one color other than background; floor_side and floor_color are read from it; undefined where no edge line, or more than one, is like that"
+      (RULE &uniform_edge
+        (input *P *Col)
+        (margin (:B P) *D (:K 0))
+        (ALL ((input (:P *Pm) (:Col *Colm))
+              (margin (:B Pm) D (:K 0))
+              (input (:P *Q) (:Col *Col2))
+              (margin (:B Q) D (:K 0)))
+             ((= Colm Col2)))
+        (NOT (&background (:C Col))))
+
+      (RULE &floor_side2
+        (&uniform_edge *D)
+        (ALL ((&uniform_edge (:D *D2)))
+             ((= D D2))))
+
+      (RULE &floor_color2
+        (&floor_side2 *D)
+        (&uniform_edge D (:Col *C))))))
+
+(ALTS $e "which cells are floor, which stay and are not ink" $FloorColor
+  (ALT $FloorLineOnly
+    (INPUT objects "the objects are 4-connected single-color components of the cells that are neither background nor on the floor line; the floor is the floor line alone"
+      (RULE &floor_cell
+        (&floor_side2 *D)
+        (input *P)
+        (margin (:B P) D (:K 0)))))
+  (ALT $FloorMoves
+    (INPUT objects "the objects are 4-connected single-color components of the cells that are not background, the floor line included"
+      (RULE &ink
+        (&floor_side2)
+        (input *P *Col)
+        (NOT (&background (:C Col)))))
+    (OUTPUT keep-floor "no cell is floor")
+    (RULE &output
+      (OR ((&floor_side2)
+           (input *P (:Col *Col0))
+           (NOT (&landing (:K P)))
+           (&background (:C *Col)))
+          ((&landing (:K P) Col))))
+    (ALT $LargerOnTop
+      (RULE &output
+        (OR ((&top.maximal (:key *P) (:t (:V *Col))))
+            ((&floor_side2)
+             (input P (:Col *Col0))
+             (NOT (&landing (:K P)))
+             (&background (:C Col))))))
+    (ALT $SmallerOnTop
+      (RULE &output
+        (OR ((&top.minimal (:key *P) (:t (:V *Col))))
+            ((&floor_side2)
+             (input P (:Col *Col0))
+             (NOT (&landing (:K P)))
+             (&background (:C Col))))))))
+
+(ALTS $o "what an object is" $Component
+  (ALT $Component
+    (ALTS $color "which ink cells join one component" $OneColor
+      (ALT $MultiColor
+        (INPUT objects "the objects are 4-connected components of the ink cells, of any colors, and an object jumps by its whole cell count"
+          (RULE &obj_cell
+            (&any4.component *P (:Id *O))
+            (&ink P *Col)))
+        (ALT $Adj8
+          (INPUT objects "the components are 8-connected"
+            (RULE &obj_cell
+              (&any8.component *P (:Id *O))
+              (&ink P *Col))))))
+    (ALTS $adj "which cells count as touching" $Adj4
+      (ALT $Adj8
+        (INPUT objects "the components are 8-connected"
+          (RULE &obj_cell
+            (&one8.component (:key *Col) *P (:Id *O)))))))
+  (ALT $ColorClass
+    (INPUT objects "all ink cells of one color form one object, wherever they lie"
+      (RULE &obj_cell
+        (&ink *P *Col)
+        (&color_id.class (:a Col) (:Id *O))))))
+
+(ALTS $f "how an object that does not touch the line next to the floor moves" $FromPlace
+  (ALT $FromFloor
+    (OUTPUT jump "an object that does not touch the line next to the floor lands with its cell nearest the floor its cell count past that line"
+      (RULE &lift
+        (OR ((&size.size (:key (:Id *O)) *N)
+             (NOT (&grounded O))
+             (&box.box (:key (:Id O)) (:B *B2))
+             (&floor_side2 *D)
+             (margin (:B B2) D (:K *M))
+             (&obj_cell O *P)
+             (margin (:B P) D (:K M))
+             (input (:P *Q0))
+             (margin (:B Q0) D (:K 0))
+             (axis_of D *A)
+             (same_line A P (:Q Q0))
+             (&heading (:D *H))
+             (neighbor (:P Q0) (:D H) *Q)
+             (relative (:Base P) (:X Q) (:X_rel *V))
+             (compose (:A B2) (:B V) (:C *B)))
+            ((&grounded O)
+             (&size.size (:key (:Id O)) N)
+             (&box.box (:key (:Id O)) B))))))
+  (ALT $GroundedOnly
+    (OUTPUT jump "an object that does not touch the line next to the floor stays"
+      (RULE &lift
+        (OR ((&grounded *O)
+             (&size.size (:key (:Id O)) *N)
+             (&box.box (:key (:Id O)) *B))
+            ((&size.size (:key (:Id O)))
+             (NOT (&grounded O))
+             (&box.box (:key (:Id O)) B)
+             (= N 0)))))))
+
+(ALTS $ov "what happens to cells that a jump takes past the far edge" $Lost
+  (ALT $Clamp
+    (OUTPUT jump "an object that would leave the grid moves only until it reaches the far edge"
+      (RULE &escapes
+        (&shift *O *V)
+        (&box.box (:key (:Id O)) *B)
+        (compose (:A B) (:B V) (:C *B2))
+        (&heading (:D *H))
+        (margin (:B B2) (:D H) *K)
+        (< K 0))
+
+      (RULE &drift
+        (OR ((&shift *O *V)
+             (NOT (&escapes O)))
+            ((&escapes O)
+             (&box.box (:key (:Id O)) *B)
+             (&heading (:D *H))
+             (margin B (:D H) *K)
+             (jump_offset (:D H) K V))))))
+  (ALT $Wrap
+    (OUTPUT jump "a cell moved past the far edge comes back in at the floor edge of its line and goes on from there"
+      (RULE &landing
+        (&lift (:O *Id) (:B *B0) *N)
+        (&obj_cell (:O Id) *P *Col)
+        (&box.box (:key Id) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_rel))
+        (compose (:A B0) (:B P_rel) (:C *P2))
+        (&cycle.walk (:p0 P2) N (:p *K))))))
+
+(ALTS $co "which color a cell takes when two moved objects land on it" $Clash
+  (ALT $LargerOnTop
+    (OUTPUT larger-on-top "where two moved objects land on one cell, the object with more cells paints over the other")
+    (RULE &output
+      (OR ((&top.maximal (:key *P) (:t (:V *Col))))
+          ((&floor_side2)
+           (input P (:Col *Col0))
+           (OR ((NOT (&floor_cell P))
+                (NOT (&landing (:K P)))
+                (&background (:C Col)))
+               ((&floor_cell P)
+                (= Col Col0)))))))
+  (ALT $SmallerOnTop
+    (OUTPUT smaller-on-top "where two moved objects land on one cell, the object with fewer cells paints over the other")
+    (RULE &output
+      (OR ((&top.minimal (:key *P) (:t (:V *Col))))
+          ((&floor_side2)
+           (input P (:Col *Col0))
+           (OR ((NOT (&floor_cell P))
+                (NOT (&landing (:K P)))
+                (&background (:C Col)))
+               ((&floor_cell P)
+                (= Col Col0))))))))
+
+(RULE &output
+  (OR ((&floor_side2)
+       (input *P (:Col *Col0))
+       (OR ((NOT (&floor_cell P))
+            (NOT (&landing (:K P)))
+            (&background (:C *Col)))
+           ((&floor_cell P)
+            (= Col Col0))))
+      ((&landing (:K P) Col))))
+
+(OUT (&output ^P ^Col))

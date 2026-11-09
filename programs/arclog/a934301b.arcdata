@@ -1,0 +1,230 @@
+;; inputs 92442589dfb7a1673de52613c6c54d6fbfcf51aa5c817c803c0fe6ba26f8045d programs/solvers/a934301b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; a934301b
+
+(param &background Color (0))
+(param &mark Color (8))
+(param &body Color (1))
+(param &max_marks number (1))
+(param &keep_count number (0) (1))
+(param &drop_count number (2) (3) (4))
+
+(alts $a
+  (alt $EightAdjacent
+    (witness corner-contact borderline concept
+      (relaxed rectangles)
+      (separates "Two rectangles of 1 meet only at a corner, (2,3) against (3,4), and each holds one 8. Four-adjacent objects keep the rectangles apart, each with one mark, and both stay. $EightAdjacent joins them into one object with two marks and erases both.")
+      (input (grid
+        (0 0 0 0 0 0 0)
+        (0 1 8 1 0 0 0)
+        (0 1 1 1 0 0 0)
+        (0 0 0 0 1 8 0)
+        (0 0 0 0 1 1 0)
+        (0 0 0 0 0 0 0)))
+      (output $FourAdjacent (grid
+        (0 0 0 0 0 0 0)
+        (0 1 8 1 0 0 0)
+        (0 1 1 1 0 0 0)
+        (0 0 0 0 1 8 0)
+        (0 0 0 0 1 1 0)
+        (0 0 0 0 0 0 0)))
+      (output $EightAdjacent (grid
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0))))))
+
+(alts $k
+  (alt $NonBody
+    (witness third-color borderline $NonBody
+      (relaxed rectangles)
+      (separates "A rectangle of 1 holds one 8 and two cells of 2. Counting cells of 8 gives one mark, and the rectangle stays. $NonBody counts every cell that is not 1, gives three, and erases the rectangle.")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 1 8 1 1 0)
+        (0 1 1 1 2 0)
+        (0 2 1 1 1 0)
+        (0 0 0 0 0 0)))
+      (output $MarkColor (grid
+        (0 0 0 0 0 0)
+        (0 1 8 1 1 0)
+        (0 1 1 1 2 0)
+        (0 2 1 1 1 0)
+        (0 0 0 0 0 0)))
+      (output $NonBody (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0))))))
+
+(alts $u
+  (alt $MarkGroups
+    (witness mark-domino ordinary concept
+      (separates "A rectangle of 1 holds two 8 cells side by side. Counting cells gives two marks and erases the rectangle. $MarkGroups counts the two cells as one connected group and keeps it.")
+      (input (grid
+        (0 0 0 0 0)
+        (0 1 1 1 0)
+        (0 8 8 1 0)
+        (0 1 1 1 0)
+        (0 0 0 0 0)))
+      (output $MarkCells (grid
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)
+        (0 0 0 0 0)))
+      (output $MarkGroups (grid
+        (0 0 0 0 0)
+        (0 1 1 1 0)
+        (0 8 8 1 0)
+        (0 1 1 1 0)
+        (0 0 0 0 0))))))
+
+(alts $s
+  (alt $CountTable
+    (witness five-marks ordinary concept
+      (separates "A 3x4 rectangle of 1 holds five 8 cells, a count no pair shows, with five added to the kept counts. The threshold erases the rectangle, and $CountTable keeps it. drop_count=TileCount takes 5 as a dropped count too, since the grid has 5 rows, so the rectangle is both kept and erased and the output is undefined.")
+      (assign &keep_count (0) (1) (5))
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 8 1 8 1 0)
+        (0 1 8 1 8 0)
+        (0 8 1 1 1 0)
+        (0 0 0 0 0 0)))
+      (output $Threshold (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output ($CountTable &drop_count=$Stored) (grid
+        (0 0 0 0 0 0)
+        (0 8 1 8 1 0)
+        (0 1 8 1 8 0)
+        (0 8 1 1 1 0)
+        (0 0 0 0 0 0)))
+      (output &drop_count=$Derived undefined))))
+
+(alts &background
+  (alt &background=$Derived
+    (witness background=DominantColor variant &background=$Derived
+      (relaxed rectangles)
+      (separates "`background=DominantColor` from the stored value: train 0 with 0 and 2 swapped")
+      (input (grid
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 1 8 1 2 2 2 2 2 2 2 2 2 2)
+        (2 1 1 8 2 1 1 1 2 2 1 8 2 2)
+        (2 2 2 2 2 1 8 1 2 2 1 1 2 2)
+        (2 2 2 2 2 1 1 8 2 2 2 2 2 2)
+        (2 2 2 2 2 8 1 1 2 2 2 1 1 1)
+        (2 2 2 2 2 2 2 2 2 2 2 1 8 1)
+        (2 1 1 8 2 2 2 2 2 2 2 1 1 1)
+        (2 8 1 1 2 2 2 2 2 2 2 2 2 2)
+        (2 1 1 1 2 2 2 1 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 1 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 8 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 1 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2)))
+      (output ($Threshold &background=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($CountTable &background=$Stored) undefined)
+      (output &background=$Derived (grid
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 1 8 2 2)
+        (2 2 2 2 2 2 2 2 2 2 1 1 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 1 1 1)
+        (2 2 2 2 2 2 2 2 2 2 2 1 8 1)
+        (2 2 2 2 2 2 2 2 2 2 2 1 1 1)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2)
+        (2 2 2 2 2 2 2 1 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 1 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 8 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 1 1 1 2 2 2 2)
+        (2 2 2 2 2 2 2 2 2 2 2 2 2 2))))))
+
+(alts &mark
+  (alt &mark=$Derived
+    (witness mark=RarestColor variant &mark=$Derived
+      (relaxed rectangles)
+      (separates "`mark=RarestColor` from the stored value: train 0 with 8 and 2 swapped")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 2 1 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 2 0 1 1 1 0 0 1 2 0 0)
+        (0 0 0 0 0 1 2 1 0 0 1 1 0 0)
+        (0 0 0 0 0 1 1 2 0 0 0 0 0 0)
+        (0 0 0 0 0 2 1 1 0 0 0 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 1 2 1)
+        (0 1 1 2 0 0 0 0 0 0 0 1 1 1)
+        (0 2 1 1 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 2 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($MarkColor &mark=$Stored) (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 1 2 1 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 2 0 1 1 1 0 0 1 2 0 0)
+        (0 0 0 0 0 1 2 1 0 0 1 1 0 0)
+        (0 0 0 0 0 1 1 2 0 0 0 0 0 0)
+        (0 0 0 0 0 2 1 1 0 0 0 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 1 2 1)
+        (0 1 1 2 0 0 0 0 0 0 0 1 1 1)
+        (0 2 1 1 0 0 0 0 0 0 0 0 0 0)
+        (0 1 1 1 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 2 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &mark=$Derived $NonBody (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 1 2 0 0)
+        (0 0 0 0 0 0 0 0 0 0 1 1 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 1 2 1)
+        (0 0 0 0 0 0 0 0 0 0 0 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 2 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 1 1 1 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0))))))
+
+(alts &drop_count
+  (alt &drop_count=$Derived
+    (witness drop_count=TileCount ordinary concept
+      (separates "A 3x4 rectangle of 1 holds five 8 cells, on a grid of 5 rows and 6 columns. The stored table has no entry for five, so $CountTable is undefined. drop_count=TileCount takes the tile counts that fit the grid's sides, which include 5 since the grid has 5 rows, and erases the rectangle, as the threshold does.")
+      (input (grid
+        (0 0 0 0 0 0)
+        (0 8 1 8 1 0)
+        (0 1 8 1 8 0)
+        (0 8 1 1 1 0)
+        (0 0 0 0 0 0)))
+      (output $Threshold &drop_count=$Derived (grid
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)
+        (0 0 0 0 0 0)))
+      (output ($CountTable &drop_count=$Stored) undefined))))

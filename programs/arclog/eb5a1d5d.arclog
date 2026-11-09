@@ -1,0 +1,229 @@
+;; inputs 54501b7b7c6edefb3e9b1437687bc2b6e80c7b9057f3a7cc6c43ca8248362555 programs/solvers/eb5a1d5d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; eb5a1d5d
+
+(INPUT background-field "the outermost layer is one color that fills the grid border and everything outside the first rectangle")
+
+(INPUT nested-rectangles "one or more solid filled rectangles, each strictly inside the one before it, touching none of its edges, so the layers form one chain by containment")
+
+(INPUT layer-differs-from-container "each layer's color differs from the color of the layer that contains it; a color may recur at layers further apart")
+
+(OUTPUT depth-chain "the layers, from the background inward, are numbered by depth 0 to n-1"
+
+  (INIT &layers4 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col))))
+
+  (RULE &layer
+    (&layers4.component *P (:Id *L)))
+
+  (INIT &extent BoundingBox
+    (key ((&layer *P ^L))
+      (cell (P)
+        (&layer *P L))))
+
+  (INIT &layers8 Connectivity
+    (key ((input *P ^Col))
+      (node (P)
+        (input *P Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &cells Cardinality
+    (key ((&layer *P ^L))
+      (member ((:m P))
+        (&layer *P L))))
+
+  (INIT &area Cardinality
+    (key ((&extent.box (:key ^L) *B)
+          (input *P)
+          (inside (:A P) B))
+      (member ((:m P))
+        (&extent.box (:key L) *B)
+        (input *P)
+        (inside (:A P) B)))))
+
+(OUTPUT concentric-output "the output is a square of side (2n-1)·ring_width; a cell takes the color of the layer whose depth equals its ring, its distance from the output's border counted in rings of ring_width cells"
+
+  (RULE &line
+    (input *P)
+    (split P *A (:Along *L)))
+
+  (RULE &line_differs
+    (input (:P *P1) (:Col *C1))
+    (split (:P P1) *A (:Along *L1))
+    (axis_of *D A)
+    (neighbor (:P P1) D (:Q *P2))
+    (input (:P P2) (:Col *C2))
+    (!= C1 C2)
+    (split (:P P2) A (:Along *L2)))
+
+  ;; A run of identical consecutive lines.
+  (INIT &runs Quotient
+    (equivalent ((:a A L) (:b A L))
+      (&line *A *L))
+    (edge ((:a A (:L L1)) (:b A (:L L2)))
+      (&line *A (:L *L1))
+      (neighbor (:P L1) (:Q *L2))
+      (&line A (:L L2))
+      (NOT (&line_differs A L1 L2))))
+
+  ;; Each run collapses to one line.
+  (INIT &run_frame Order
+    (key ((axis_elem ^A)
+          (axis_of ^D A))
+      (member ((:t R))
+        (&runs.class (:a A *L) (:Id *R)))
+      (before ((:a R) (:b R2))
+        (&runs.class (:a A *L) (:Id *R))
+        (&runs.class (:a A (:L *L2)) (:Id *R2))
+        (!= R R2)
+        (margin (:B L) D (:K *K1))
+        (margin (:B L2) D (:K *K2))
+        (< K1 K2)))))
+
+(OUTPUT sizes-dropped "the rectangles' sizes, margins and positions do not reach the output; only the order of their colors does"
+
+  ;; The rings of each train output, from its border inward.
+  (INIT &rings Boundary
+    (key ((ex_output ^E *P))
+      (cell (P)
+        (ex_output E *P))))
+
+  (INIT &rings_depth CellDistance
+    (key ((OR ((&rings.boundary (:key (:E ^Ky)) *P))
+              ((ex_output (:E Ky) P))))
+      (node (P)
+        (ex_output (:E Ky) *P))
+      (source (P)
+        (&rings.boundary (:key (:E Ky)) *P))))
+
+  ;; The layers of each case, ordered from the background inward.
+  (INIT &depth_order Order
+    (member ((:t L))
+      (&layer *L))
+    (before ((:a L1) (:b L2))
+      (&extent.box (:key (:L *L1)) (:B *B1))
+      (&extent.box (:key (:L *L2)) (:B *B2))
+      (inside (:A B2) (:B B1))
+      (!= B1 B2)))
+
+  (RULE &depth
+    (&depth_order.rank (:t *L) (:R *K)))
+
+  (RULE &layer_color
+    (&layer *P *L)
+    (input P *Col))
+
+  (INIT &deepest Order
+    (member ((:t K))
+      (&depth *K))
+    (score ((:t K) (:S K))
+      (&depth *K)))
+
+  (RULE &square
+    (&deepest.maximal (:t *K))
+    (uniform_inset K (:B *P_center))
+    (&depth (:K *K1))
+    (jump (:P P_center) (:K K1) *Q)
+    (&depth (:K *K2))
+    (jump (:P Q) (:K K2) (:Q *P_tile)))
+
+  (RULE &ring
+    (&square *P_tile)
+    (&depth *K)
+    (uniform_inset K *B)
+    (inside (:A P_tile) B)
+    (NOT (interior (:A P_tile) B)))
+
+  ;; A depth at which a train output holds a color other than its border's.
+  (INIT &inner Order
+    (member ((:t K))
+      (&rings.boundary (:key *E) *P)
+      (ex_output E P *Col)
+      (&rings_depth.distance (:key (:Ky E)) (:P *Q) *K)
+      (ex_output E (:P Q) (:Col *Col2))
+      (!= Col2 Col))
+    (score ((:t K) (:S K))
+      (&rings.boundary (:key *E) *P)
+      (ex_output E P *Col)
+      (&rings_depth.distance (:key (:Ky E)) (:P *Q) *K)
+      (ex_output E (:P Q) (:Col *Col2))
+      (!= Col2 Col)))
+
+  (DET &ring_width
+    (&inner.minimal (:t *K)))
+
+  ;; Each ring is ring_width cells wide.
+  (INIT &ring_cell Frame
+    (extent (A (:N W))
+      (axis_elem *A)
+      (&ring_width (:K *W)))))
+
+(ALTS $choice "How the output is built from the input." $Concentric
+  (ALT $Concentric
+    (ALTS $u "What one layer is." $Layers4Connected
+      (ALT $Layers8Connected
+        (OUTPUT depth-chain "a layer is one same-color 8-connected component; undefined where those do not chain by containment"
+          (RULE &layer
+            (&layers8.component *P (:Id *L))))))
+    (ALTS $o "How the layers are ordered from the background inward." $LayersByContainment
+      (ALT $LayersByCellCount
+        (OUTPUT depth-chain "the layers are ordered by their cell counts, descending; undefined where two layers of different colors tie"
+          ;; The layers of each case, ordered from the background inward.
+          (INIT &depth_order Order
+            (member ((:t L))
+              (&layer *L))
+            (score ((:t L) (:S N))
+              (&cells.size (:key *L) *N)))
+          ;; The larger layer lies outside.
+          (RULE &depth
+            (&depth_order.dual_rank (:t *L) (:R *K)))))
+      (ALT $LayersByBboxArea
+        (OUTPUT depth-chain "the layers are ordered by their bounding-box areas, descending, with no chain needed; undefined where two layers of different colors tie"
+          ;; The layers of each case, ordered from the background inward.
+          (INIT &depth_order Order
+            (member ((:t L))
+              (&layer *L))
+            (score ((:t L) (:S N))
+              (&area.size (:key *L) *N)))
+          ;; The larger layer lies outside.
+          (RULE &depth
+            (&depth_order.dual_rank (:t *L) (:R *K)))))))
+  (ALT $CompressRuns
+    (OUTPUT depth-chain "dropped"
+      (RULE &run_frame_pos
+        (&run_frame.rank (:key (:A *Key) *D) (:t *M) (:R *R1))
+        (&run_frame.dual_rank (:key (:A Key) D) (:t M) (:R *R2))
+        (axis_inset D (:K1 R1) (:K2 R2) (:B *P_pos))))
+    (OUTPUT sizes-dropped "dropped")
+    (OUTPUT concentric-output "replaced: the output is the input with each run of identical consecutive rows, and each run of identical consecutive columns, collapsed to one line; defined on every input")
+    (RULE &output
+      (input (:P *P_grid_in) *Col)
+      (perp *A *A2)
+      (split (:P P_grid_in) A (:Along *L1) (:Across *L2))
+      (&runs.class (:a A (:L L1)) (:Id *R1))
+      (&run_frame_pos (:Key A) (:M R1) (:P_pos *Q1))
+      (&runs.class (:a (:A A2) (:L L2)) (:Id *R2))
+      (&run_frame_pos (:Key A2) (:M R2) (:P_pos *Q2))
+      (compose (:A Q1) (:B Q2) (:C *P)))))
+
+(INIT &output_tiling Tiling
+  (outer ((:P P_tile))
+    (&ring *P_tile *K)
+    (&depth *L K)
+    (&layer_color L))
+  (inner ((:P P_intile))
+    (&ring_cell.cell (:P *P_intile))))
+
+(RULE &output
+  (&ring *P_tile *K)
+  (&depth *L K)
+  (&layer_color L *Col)
+  (&output_tiling.cell (:P_outer P_tile) *P))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,424 @@
+;; inputs 9fc9115a4b5faea7b2c86fc69205916019235540aa214111e4a555ff8d74b4b0 programs/solvers/db615bd4.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; db615bd4
+
+(INPUT dot-class "a background field with a dot of one dot color at each cell on the dot class, the cells whose row and column are both odd.")
+
+(INPUT frame "one color draws the outline of a rectangle on the dot class, a dot at each dot-class cell of that outline, in place of the dot color."
+
+  (INIT &palette_count Cardinality
+    (key ((input *P ^Col))
+      (member ((:m P))
+        (input *P Col))))
+
+  (INIT &palette Order
+    (member ((:t Col))
+      (&palette_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&palette_count.size (:key *Col) *N)))
+
+  (INIT &inks_count Cardinality
+    (key ((input *P ^Col)
+          (NOT (&palette.maximal (:t Col))))
+      (member ((:m P))
+        (input *P Col)
+        (NOT (&palette.maximal (:t Col))))))
+
+  ;; The dot color: the commonest color off the background.
+  (INIT &inks Order
+    (member ((:t Col))
+      (&inks_count.size (:key *Col)))
+    (score ((:t Col) (:S N))
+      (&inks_count.size (:key *Col) *N)))
+
+  (INIT &largest Order
+    (member ((:t (:V Col) (:S N)))
+      (&inks_count.size (:key *Col) *N)
+      (NOT (&inks.maximal (:t Col))))
+    (score ((:t (:V Col) (:S N)) (:S N))
+      (&inks_count.size (:key *Col) *N)
+      (NOT (&inks.maximal (:t Col))))))
+
+(INPUT frame-interior "inside the frame outline, the dot-class cells hold the dot color, and the other cells the background.")
+
+(INPUT pieces "two or more pieces, each in its own color, distinct from the background, the dot color and the frame color; each piece has a dot at each cell of a rectangle whose row and column are both even, at a spacing of 2, and no other cell.")
+
+(INPUT pieces-outside "every piece lies outside the frame's bounding box.")
+
+(INPUT pieces-apart "along the frame's long axis, the spans of the pieces' bounding boxes are pairwise disjoint.")
+
+(INPUT common-cross-extent "across the frame's long axis, the pieces' bounding boxes have one extent.")
+
+(INPUT exact-fit "along the frame's long axis, the pieces' bounding-box extents with `gap` between consecutive ones add up to the interior extent less a margin of 1 at each end.")
+
+(INPUT cross-room "across the long axis, the interior extent less the common block extent is even and at least 2.")
+
+(OUTPUT solid-outline "every cell of the frame outline takes the frame color.")
+
+(OUTPUT clear-interior "every interior cell of the frame takes the background, before the blocks are drawn.")
+
+(OUTPUT lift-pieces "every piece cell takes the background.")
+
+(OUTPUT stack-blocks "each piece becomes a solid block of its color the size of its bounding box; the blocks line up in the frame interior along the frame's long axis, in the order of the pieces along that axis, `gap` cells between consecutive blocks, and the stack is centered in the interior on both axes.")
+
+(OUTPUT keep-rest "every other cell keeps its input color."
+
+  ;; The dot class: the cells the dots reach in steps of two cells.
+  (INIT &lattice Flood
+    (node (P)
+      (input *P *Col)
+      (NOT (&palette.maximal (:t Col))))
+    (source (P)
+      (input *P *Col)
+      (&inks.maximal (:t Col)))
+    (step ((:Delta V))
+      (OR ((dir_elem *D)
+           (step_offset D (:V *V1))
+           (compose (:A V1) (:B V1) (:C *V)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) V)))))
+
+  (RULE &off_lattice
+    (input *P *Col)
+    (NOT (&lattice.reached P)))
+
+  (RULE &frame_cand
+    (input *Col)
+    (NOT (&palette.maximal (:t Col)))
+    (NOT (&inks.maximal (:t Col)))
+    (NOT (&off_lattice Col)))
+
+  (INIT &frame_color Singleton
+    (member ((:v Col))
+      (&frame_cand *Col)))
+
+  (RULE &piece
+    (&frame_color.value)
+    (input *Col)
+    (NOT (&palette.maximal (:t Col)))
+    (NOT (&inks.maximal (:t Col)))
+    (NOT (&frame_color.value (:v Col))))
+
+  (RULE &span_defect
+    (input (:P *P1) (:Col *Col1))
+    (input (:P *P2) (:Col *Col2))
+    (!= Col1 Col2)
+    (NOT (&palette.maximal (:t Col1)))
+    (NOT (&inks.maximal (:t Col1)))
+    (NOT (&palette.maximal (:t Col2)))
+    (NOT (&inks.maximal (:t Col2)))
+    (dir_elem *D)
+    (NOT (nearer D (:P P1) (:Q P2))))
+
+  (RULE &span_before
+    (&piece (:Col *Col1))
+    (&piece (:Col *Col2))
+    (!= Col1 Col2)
+    (dir_elem *D)
+    (NOT (&span_defect D Col1 Col2)))
+
+  (RULE &piece_before
+    (&span_before (:D *K) *Col1 *Col2))
+
+  (INIT &piece_order Order
+    (key ((OR ((&piece *Col)
+               (dir_elem ^D))
+              ((&piece_before (:K D) *Col1 *Col2))))
+      (member ((:t Col))
+        (&piece *Col)
+        (dir_elem D))
+      (before ((:a Col1) (:b Col2))
+        (&piece_before (:K D) *Col1 *Col2))))
+
+  (INIT &piece_box BoundingBox
+    (key ((input *P ^Col)
+          (NOT (&palette.maximal (:t Col)))
+          (NOT (&inks.maximal (:t Col))))
+      (cell (P)
+        (input *P Col)
+        (NOT (&palette.maximal (:t Col)))
+        (NOT (&inks.maximal (:t Col))))))
+
+  (RULE &block
+    (&piece_box.box (:key *Col) *B)
+    (input *P)
+    (inside (:A P) B)
+    (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+  (INIT &frame_box BoundingBox
+    (cell (P)
+      (&frame_color.value (:v *Col))
+      (input *P Col)))
+
+  ;; The background cells between consecutive blocks along the stack.
+  (DET &gap DivisorRatio)
+
+  (INIT &interior_box BoundingBox
+    (cell (P)
+      (&frame_box.box *B)
+      (input *P)
+      (interior (:A P) B)))
+
+  (RULE &inner
+    (&interior_box.box *B)
+    (input (:P *Q))
+    (inside (:A Q) B)
+    (relative (:Base B) (:X Q) (:X_rel *Q_inner)))
+
+  (RULE &gap_cand
+    (OR ((&frame_box.box)
+         (axis_elem *A)
+         (&gap (:K *G)))
+        ((&frame_box.box)
+         (axis_elem A)
+         (= G 0))
+        ((&inner *Q_inner)
+         (sub_extent (:P Q_inner) A (:K G)))))
+
+  (RULE &unordered
+    (&piece (:Col *Col1))
+    (&piece (:Col *Col2))
+    (!= Col1 Col2)
+    (dir_elem (:D *K))
+    (NOT (&piece_before K Col1 Col2))
+    (NOT (&piece_before K (:Col1 Col2) (:Col2 Col1))))
+
+  (RULE &layout
+    (axis_of *D *A)
+    (&gap_cand A *G)
+    (NOT (&unordered (:K D))))
+
+  (INIT &gap_lines Frame
+    (key ((&gap_cand ^A ^G))
+      (extent (A (:N G)))))
+
+  (RULE &stack_elem
+    (OR ((&layout *D *G)
+         (&piece_order.successor (:key D) (:a *A) (:b *B))
+         (axis_of D (:A *A2))
+         (&gap_lines.cell (:key G (:A A2)) *P))
+        ((&layout D G)
+         (&piece (:Col A))
+         (axis_of D (:A *A22))
+         (&block (:Col A) (:P *P2))
+         (split (:P P2) (:A A22) (:Along P))
+         (= B A))))
+
+  (INIT &stack Order
+    (key ((OR ((&stack_elem ^D ^G (:A *T_a) (:P *T_p) (:B *T_b)))
+              ((&stack_elem D G (:A *A1) (:P *L1) (:B *B1))
+               (&stack_elem D G (:A *A2) (:P *L2) (:B *B2))
+               (OR ((&piece_order.before (:key D) (:a B1) (:b A2)))
+                   ((= B1 A2)
+                    (OR ((!= A1 B1))
+                        ((!= A2 B2))))
+                   ((= A1 A2)
+                    (= B1 B2)
+                    (nearer D (:P L1) (:Q L2)))))))
+      (member ((:t (:A T_a) (:P T_p) (:B T_b)))
+        (&stack_elem D G (:A *T_a) (:P *T_p) (:B *T_b)))
+      (before ((:a (:A A1) (:P L1) (:B B1)) (:b (:A A2) (:P L2) (:B B2)))
+        (&stack_elem D G (:A *A1) (:P *L1) (:B *B1))
+        (&stack_elem D G (:A *A2) (:P *L2) (:B *B2))
+        (OR ((&piece_order.before (:key D) (:a B1) (:b A2)))
+            ((= B1 A2)
+             (OR ((!= A1 B1))
+                 ((!= A2 B2))))
+            ((= A1 A2)
+             (= B1 B2)
+             (nearer D (:P L1) (:Q L2)))))))
+
+  (RULE &stack_line_edge
+    (OR ((&stack.dual_rank (:key (:D *Key_d) *G) (:t *A *P *B) (:R *K))
+         (opposite (:D Key_d) (:Opp *D)))
+        ((&stack.rank (:key (:D Key_d) G) (:t A P B) (:R K))
+         (= D Key_d))))
+
+  (RULE &stack_line_axis
+    (axis_of (:D *D3) *A)
+    (opposite (:D D3) (:Opp *D2))
+    (&stack_line_edge (:Key_d *D) *G (:A *Key_a) *P (:B *Key_b) (:D D3) (:K *K1))
+    (&stack_line_edge (:Key_d D) G (:A Key_a) P (:B Key_b) (:D D2) (:K *K2))
+    (axis_inset (:D D3) K1 K2 *B))
+
+  ;; The background cells between the end blocks and the frame outline.
+  (DET &margin DivisorRatio)
+
+  (RULE &inner_line
+    (&inner *Q_inner)
+    (split (:P Q_inner) *A (:Along *L)))
+
+  ;; The joint bounding box of the pieces.
+  (INIT &spread BoundingBox
+    (cell (P)
+      (&piece *Col)
+      (input *P Col)))
+
+  (RULE &long_axis
+    (OR ((&interior_box.box *B))
+        ((&spread.box B)))
+    (input *P)
+    (box_extent B P *A (:N *N1))
+    (perp A *A2)
+    (box_extent B P (:A A2) (:N *N2))
+    (> N1 N2))
+
+  (RULE &stack_axis
+    (&interior_box.box *B)
+    (&long_axis B *A))
+
+  (RULE &case_layout
+    (&stack_axis *A)
+    (axis_of *D A)
+    (&gap (:K *G))
+    (&layout D G))
+
+  (RULE &placed
+    (&case_layout *D *G)
+    (axis_of D *A)
+    (&block *Col *P *P_rel)
+    (split P A (:Along *L))
+    (split (:P P_rel) A *Across)
+    (&stack_line_axis D G (:Key_a Col) (:P L) (:Key_b Col) A (:B *L_stack))
+    (compose (:A L_stack) (:B Across) *C)
+    (&inner *Q *Q_inner)
+    (relative (:Base C) (:X Q_inner) (:X_rel *X))
+    (centered (:P X)))
+
+  (RULE &unplaced
+    (&case_layout *D *G)
+    (&piece *Col)
+    (&block Col *P)
+    (NOT (&placed D G P Col)))
+
+  (RULE &far_end
+    (&stack.minimal (:key *D *G) (:t (:A *T_a) (:P *T_p) (:B *T_b)))
+    (axis_of D *A)
+    (&stack_line_axis D G (:Key_a T_a) (:P T_p) (:Key_b T_b) A (:B *L0))
+    (&inner_line A *L)
+    (relative (:Base L0) (:X L) (:X_rel *X))
+    (&margin (:K *M))
+    (margin (:B X) D (:K M))
+    (opposite D (:Opp *D2))
+    (margin (:B X) (:D D2) (:K *N))))
+
+(ALTS $axis "The axis the blocks line up along" $FrameLong
+  (ALT $SpreadAxis
+    (OUTPUT stack-blocks "the blocks line up along the long side of the joint bounding box of all the pieces; undefined where that box is square."
+      (RULE &stack_axis
+        (&spread.box *B)
+        (&long_axis B *A))))
+  (ALT $RoomAxis
+    (OUTPUT stack-blocks "the blocks line up along the one axis on which they fit, `gap` apart, in the interior less `margin` at each end; undefined where they fit on both axes or on neither."
+      (RULE &room
+        (&far_end *D *G *N)
+        (&gap (:K G))
+        (&margin (:K *M))
+        (>= N M)
+        (axis_of D *A))
+
+      (RULE &stack_axis
+        (&room *A)
+        (perp A *A2)
+        (NOT (&room (:A A2)))))
+    (INPUT exact-fit "dropped.")))
+
+(ALTS $order "The order of the blocks along the stack" $SpanOrder
+  (ALT $OrderByCenter
+    (OUTPUT stack-blocks "the blocks follow the order of the pieces' bounding-box centers along the stack axis; undefined where two centers tie."
+      (RULE &center
+        (&block *Col *P *P_rel)
+        (axis_of *D *A)
+        (dist_pair (:P P_rel) D *K (:K2 K)))
+
+      (RULE &piece_before
+        (&piece (:Col *Col1))
+        (&piece (:Col *Col2))
+        (axis_of (:D *K) *A)
+        (&center (:Col Col1) A (:P *P1))
+        (&center (:Col Col2) A (:P *P2))
+        (nearer (:D K) (:P P1) (:Q P2))))
+    (INPUT pieces-apart "dropped."))
+  (ALT $OrderAlongSpread
+    (OUTPUT stack-blocks "the blocks follow the pieces' order along the long side of their joint bounding box, a quarter turn in `spread_sense` taking that order onto the stack axis where the two axes differ; undefined where that box is square or where the spans along its long side overlap."
+      (DET &spread_sense SenseDomain)
+
+      (RULE &piece_before
+        (&spread.box *B)
+        (&long_axis B (:A *A_s))
+        (&span_before (:D *D_s) *Col1 *Col2)
+        (axis_of (:D D_s) (:A A_s))
+        (OR ((&spread_sense *S)
+             (turn S (:D D_s) (:D2 *K))
+             (NOT (axis_of (:D K) (:A A_s))))
+            ((axis_of (:D K) (:A A_s))
+             (= K D_s)))))))
+
+(ALTS $cross "How the blocks sit across the stack" $CenterStack
+  (ALT $CenterEachBlock
+    (OUTPUT stack-blocks "each block is centered across the stack on its own; undefined where the interior extent less a block's extent is odd.")
+    (INPUT common-cross-extent "dropped.")
+    (RULE &complete
+      (&case_layout *D *G)
+      (NOT (&unplaced D G)))))
+
+(ALTS $along "How the stack sits along its axis" $CenterAlong
+  (ALT $GapFromFit
+    (OUTPUT stack-blocks "the gap is the one at which the stack runs from `margin` after one end of the interior to `margin` before the other; undefined where no gap does."
+      (RULE &case_layout
+        (&stack_axis *A)
+        (axis_of *D A)
+        (&far_end D *G (:N *M))
+        (&margin (:K M))))))
+
+(ALTS $frame "Which color draws the frame" $DotClassFrame
+  (ALT $FrameLargest
+    (INPUT frame "the frame is the color, other than the background and the dot color, with the most cells; undefined where two colors tie."
+      (RULE &frame_cand
+        (&largest.maximal (:t (:V *Col)))))))
+
+(RULE &stack_line
+  (&stack_line_axis *D *G (:Key_a *A) *P *Key_b (:A *A3) (:B *B1))
+  (perp (:A A3) *A2)
+  (&stack_line_axis D G (:Key_a A) P Key_b (:A A2) (:B *B2))
+  (compose (:A B1) (:B B2) (:C *B)))
+
+(RULE &mixed_cross
+  (&piece (:Col *Col1))
+  (&piece_box.box (:key (:Col Col1)) (:B *B1))
+  (&piece (:Col *Col2))
+  (&piece_box.box (:key (:Col Col2)) (:B *B2))
+  (input *P)
+  (perp *A *A2)
+  (box_extent (:B B1) P (:A A2) (:N *N1))
+  (box_extent (:B B2) P (:A A2) (:N *N2))
+  (!= N1 N2))
+
+(RULE &complete
+  (&case_layout *D *G)
+  (NOT (&unplaced D G))
+  (axis_of D *A)
+  (NOT (&mixed_cross A)))
+
+(RULE &output
+  (&complete)
+  (&frame_box.box *B)
+  (input *P (:Col *Col_in))
+  (OR ((inside (:A P) B)
+       (same_dist (:P1 P) (:P2 B))
+       (&frame_color.value (:v *Col)))
+      ((interior (:A P) B)
+       (&complete (:D *K_d) (:G *K_g))
+       (&placed (:D K_d) (:G K_g) (:Q P) Col))
+      ((interior (:A P) B)
+       (&complete (:D *K_d2) (:G *K_g2))
+       (NOT (&placed (:D K_d2) (:G K_g2) (:Q P)))
+       (&palette.maximal (:t Col)))
+      ((NOT (inside (:A P) B))
+       (&piece (:Col Col_in))
+       (&palette.maximal (:t Col)))
+      ((NOT (inside (:A P) B))
+       (NOT (&piece (:Col Col_in)))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

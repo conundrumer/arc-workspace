@@ -1,0 +1,54 @@
+;; inputs d4bdbc0f7a69f63fed31dd25addcd24f8a2a45bb5b3eb58ab979f1e1a6ea8bd9 programs/solvers/3906de3d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3906de3d
+
+(DET &grav DirDomain)
+
+(DET &bg DominantColor)
+
+(DET &mover RarestColor)
+
+(RULE &mover2
+  (input *P *Col)
+  (&mover (:C Col)))
+
+;; Each mover cell travels toward the gravity edge and stops against the
+;; structure or against the movers already packed ahead of it.
+(INIT &pack Distance
+  (weight ((:a P2) (:b P) (:W K))
+    (&mover2 *P)
+    (&grav *D)
+    (&mover2 (:P *P2))
+    (!= P P2)
+    (gap D P (:Q P2) *K))
+  (source_distance ((:n P) K)
+    (OR ((&mover2 *P)
+         (&grav *D)
+         (margin (:B P) D *K))
+        ((&mover2 P)
+         (&grav (:D *D2))
+         (input (:P *P2) *Col)
+         (NOT (&bg (:C Col)))
+         (NOT (&mover (:C Col)))
+         (gap (:D D2) P (:Q P2) K)))))
+
+(RULE &pack_travel_full
+  (&pack.distance (:n *V1) *K)
+  (&grav *D)
+  (jump_offset D K (:V *V2)))
+
+(RULE &landed
+  (&pack_travel_full (:V1 *P2) (:V2 *V))
+  (compose (:A P2) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&landed *P)
+       (&mover (:C *Col)))
+      ((input P Col)
+       (NOT (&mover2 P))
+       (NOT (&landed P)))
+      ((&mover2 P)
+       (NOT (&landed P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

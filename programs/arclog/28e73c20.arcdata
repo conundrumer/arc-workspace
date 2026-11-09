@@ -1,0 +1,9 @@
+;; inputs 7746593accfdb05ab9e6e1185421a567cb6c8cdaba764a3e48c87c30e5dc5646 programs/solvers/28e73c20.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 28e73c20
+
+(param &ink Color (3))
+(param &corner DiagDir (DIAG_TL))
+(param &sense Sense (SENSE_CW))
+(param &pitch number (2))
+(param &bg Color (0))

@@ -1,0 +1,146 @@
+;; inputs 7e241938b7304a8f020b905747a5ac0698cca53f972e9497ca6f8bd5f74fdf6f programs/solvers/0becf7df.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0becf7df
+
+(DET &mapping
+  (ex_input *E *P (:Col *C1))
+  (ex_output E P (:Col *C2))
+  (!= C1 C2))
+
+(DET &key_cell
+  (ex_input *E *P *Col)
+  (ex_output E P Col)
+  (&mapping E (:C1 Col)))
+
+(DET &grid_partner
+  (&key_cell *E (:P *P1))
+  (ex_input E (:P P1) (:Col *C1))
+  (&key_cell E (:P *P2))
+  (ex_input E (:P P2) (:Col *C2))
+  (&mapping E C1 C2))
+
+(DET &axis
+  (&grid_partner *P1 *P2)
+  (axis_elem *A)
+  (same_line A (:P P1) (:Q P2)))
+
+(DET &corner
+  (&key_cell *P)
+  (corner_dist P (:Diag *D) (:K 0)))
+
+;; Distances from the corner's edges that key cells take, per axis.
+(INIT &key_dist Cardinality
+  (key ((&key_cell *P)
+        (&corner (:D *Diag))
+        (diag_dist P Diag ^A (:K1 *K)))
+    (member ((:m K))
+      (&key_cell *P)
+      (&corner (:D *Diag))
+      (diag_dist P Diag A (:K1 *K)))))
+
+(DET &dim
+  (&key_dist.size (:key *A) *N))
+
+(INIT &frame Frame
+  (extent (A N)
+    (&dim *A *N)))
+
+(DET &key_pos
+  (&key_cell (:P *P_grid))
+  (&corner (:D *Diag))
+  (&frame.cell (:P *P_key))
+  (same_corner (:D Diag) (:P1 P_grid) (:P2 P_key)))
+
+(DET &partner
+  (&grid_partner (:P1 *P_grid1) (:P2 *P_grid2))
+  (&key_pos (:P_grid P_grid1) (:P_key *P1))
+  (&key_pos (:P_grid P_grid2) (:P_key *P2)))
+
+(INIT &ident Quotient
+  (equivalent ((:a P1) (:b P1))
+    (&partner *P1)))
+
+(DET &dst
+  (&partner *P1 (:P2 *P))
+  (&ident.class (:a P1) *Id))
+
+(DET &pose2
+  (d4_compose (:A *D) (:B D) (:C D)))
+
+(DET &src
+  (&partner (:P1 *P))
+  (&ident.class (:a P) *Id))
+
+;; The key block, with the pose of the training key.
+(RIGID_DET &key
+  (&corner *D)
+  (&dim *A *N)
+  (&pose2 *D)
+  (&axis *A)
+  (&src *P *Id)
+  (&dst *P *Id))
+
+(RULE &placed
+  (&key.pose (:Pose *D0))
+  (pose_difference (:A D0) (:B *D) (:D *R))
+  (d4_compose (:A R) (:B R) (:C R)))
+
+(RULE &corner2
+  (&placed (:D *D2))
+  (&key.corner (:Pose D2) *D))
+
+(RULE &key_extent
+  (&placed *D)
+  (&key.dim (:Pose D) *A *N))
+
+(RULE &axis2
+  (&placed *D)
+  (&key.axis (:Pose D) *A))
+
+(RULE &key_cell2
+  (input *P)
+  (&corner2 (:D *Diag))
+  (diag_dist P Diag *A *K1 *K2)
+  (&key_extent A (:N *N1))
+  (< K1 N1)
+  (perp A *A2)
+  (&key_extent (:A A2) (:N *N2))
+  (< K2 N2))
+
+;; Two key cells on one line along the pair axis pair up, in both orders.
+(RULE &mapping2
+  (&key_cell2 (:P *P1))
+  (input (:P P1) (:Col *C1))
+  (&key_cell2 (:P *P2))
+  (input (:P P2) (:Col *C2))
+  (!= P1 P2)
+  (&axis2 *A)
+  (same_line A (:P P1) (:Q P2)))
+
+(ALTS $choice "how the key's cells pair up" $Line
+  (ALT $Map
+    (RULE &pair
+      (&placed *D)
+      (&key.src (:Pose D) (:P *P1) *Id)
+      (&key.dst (:Pose D) (:P *P2) Id))
+
+    ;; The stored pairing, anchored at the key's corner.
+    (RULE &mapping2
+      (&corner2 (:D *Diag))
+      (&pair (:P1 *I1) (:P2 *I2))
+      (input (:P *P1) (:Col *C1))
+      (same_corner (:D Diag) P1 (:P2 I1))
+      (input (:P *P2) (:Col *C2))
+      (same_corner (:D Diag) (:P1 P2) (:P2 I2)))))
+
+(RULE &output
+  (input *P (:Col *Col2))
+  (OR ((NOT (&key_cell2 P))
+       (&mapping2 (:C1 Col2) (:C2 *Col)))
+      ((&key_cell2 P)
+       (= Col Col2))
+      ((NOT (&key_cell2 P))
+       (NOT (&mapping2 (:C1 Col2)))
+       (= Col Col2))))
+
+(OUT (&output ^P ^Col))

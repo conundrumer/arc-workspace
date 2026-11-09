@@ -1,0 +1,12 @@
+;; inputs 4680f6104703f1adba813e7324d363778206a227a9ac9e0bfbd6a5847d1bcfe8 programs/solvers/d47aa2ff.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; d47aa2ff
+
+(param &bg Color (0))
+(param &panel_axis Axis (AXIS_H))
+(param &panel_gap number (1))
+(param &only_fill (Position Color)
+  (grid
+    (2 1)))
+(param &panel_count number (2))
+(param &panel_size number (10))

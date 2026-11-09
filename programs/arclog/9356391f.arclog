@@ -1,0 +1,119 @@
+;; inputs 89674e2c9ba80d4c194db125f06c1bb70e88ef48881dc96fbcf39a3bbd0f0d6d programs/solvers/9356391f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9356391f
+
+(DET &divider SharedColor)
+
+;; The side of the divider the legend sits on.
+(DET &legend_dir DirDomain)
+
+(RULE &panel_divider
+  (input *P *Col)
+  (&divider (:C Col))
+  (&legend_dir *D)
+  (axis_of D *A)
+  (split P A (:Along *L)))
+
+(RULE &panel_on_divider
+  (input *P)
+  (&panel_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+;; The panels the divider cuts.
+(INIT &panel_rank Order
+  (key ((OR ((&panel_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D K))))
+    (member ((:t K))
+      (&panel_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&panel_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K))
+      (input *P)
+      (margin (:B P) D *K))))
+
+(RULE &panel_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&panel_on_divider P A))
+  (margin (:B P) D *K)
+  (&panel_rank.rank (:key D) (:t K) (:R *N)))
+
+(RULE &panel_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&panel_part_idx *P D (:N *N1))
+  (&panel_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &panel_tile_of
+  (&panel_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&panel_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+(DET &bg DominantColor)
+
+;; The quarter turn from legend_dir onto the edge the legend is read from.
+(DET &read_sense SenseDomain)
+
+(RULE &read_dir
+  (&legend_dir (:D *D0))
+  (&read_sense *S)
+  (turn S (:D D0) (:D2 *D)))
+
+(RULE &legend
+  (input *P *Col)
+  (&legend_dir *D)
+  (&panel_part_idx P D (:N 0))
+  (&read_dir (:D *D_read))
+  (margin (:B P) (:D D_read) *K))
+
+(RULE &canvas
+  (&legend_dir *D)
+  (opposite D (:Opp *D2))
+  (&panel_part_idx *P (:D D2) (:N 0)))
+
+(RULE &marker
+  (&canvas *P)
+  (input P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &ring_color
+  (&marker (:P *P_mark))
+  (&legend *K *Col)
+  (uniform_outset K (:B *W))
+  (compose (:A P_mark) (:B W) (:C *B))
+  (&canvas *P)
+  (inside (:A P) B)
+  (same_dist (:P1 P) (:P2 B)))
+
+(ALTS $choice "what a bg legend entry means" $Paint
+  (ALT $Skip
+    (RULE &inked
+      (&ring_color *P *Col)
+      (NOT (&bg (:C Col))))
+
+    (RULE &output
+      (OR ((&canvas *P)
+           (OR ((&inked P *Col))
+               ((NOT (&inked P))
+                (input P Col))))
+          ((input P Col)
+           (NOT (&canvas P)))))))
+
+(RULE &output
+  (OR ((input *P *Col)
+       (NOT (&canvas P)))
+      ((&ring_color P Col))))
+
+(OUT (&output ^P ^Col))

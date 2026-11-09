@@ -37,7 +37,7 @@ class Programs:
             result=None, dict(status='unavailable',reason='runtime has no native source-name recovery API')
         else:
             try:
-                names=program.relation_source_names_json(str(MAIN_ROOT / 'work/arclog/gen'),record['task'],record['case'])
+                names=program.relation_source_names_json(str(MAIN_ROOT / 'programs/arclog'),record['task'],record['case'])
                 result=names, dict(status='complete',origin='native exact source-case recovery')
             except self.engine.Refusal as error:
                 result=None, dict(status='unavailable',reason=str(error))

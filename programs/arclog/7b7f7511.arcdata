@@ -1,0 +1,5 @@
+;; inputs 82402ba66fe432eaed090edc97399fcb0a313dd0060cabba1e98dc293e7c8456 programs/solvers/7b7f7511.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b7f7511
+
+(param &copies number (2))

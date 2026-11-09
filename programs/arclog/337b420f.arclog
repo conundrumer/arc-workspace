@@ -1,0 +1,159 @@
+;; inputs 6a411a971cc6a1e0776ad8a9e1e2938adfc6945d203bc8048473e4e8cf973848 programs/solvers/337b420f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 337b420f
+
+(DET &panel_axis AxisDomain)
+
+(DET &panel_count SepTileCount)
+
+(DET &sep_width DivisorRatio)
+
+(INIT &panel_cell_division Division
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (parts (A N)
+    (&panel_axis *A)
+    (&panel_count *N))
+  (gap (A G)
+    (&panel_axis *A)
+    (&sep_width (:K *G))))
+
+(DET &bg DominantColor)
+
+(RULE &panel_cell
+  (&panel_cell_division.tile (:P *P_grid) (:P_outer *P_panel) (:P_inner *P_frame)))
+
+(ALTS $d "what the panel cut reads" $Count
+  (ALT $Size
+    (DET &panel_size ConstOutDim)
+
+    (INIT &panel_cell_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (&panel_axis *A)
+        (&panel_size (:N *K)))
+      (gap (A G)
+        (&panel_axis *A)
+        (&sep_width (:K *G))))
+
+    (RULE &panel_cell
+      (&panel_cell_division2.tile (:P *P_grid) (:P_outer *P_panel) (:P_inner *P_frame)))))
+
+(ALTS $move "which shape slides" $Least
+  (ALT $Yield
+    (INIT &smallest Order
+      (member ((:t (:V M) (:S N)))
+        (&least_slide.minimal (:key *M))
+        (&size.size (:key (:Id M)) *N))
+      (score ((:t (:V M) (:S N)) (:S N))
+        (&least_slide.minimal (:key *M))
+        (&size.size (:key (:Id M)) *N)))
+
+    (RULE &mover
+      (&smallest.minimal (:t (:V *M))))))
+
+(INIT &obj Connectivity
+  (node ((:P P_grid))
+    (&panel_cell *P_grid)
+    (input (:P P_grid) *Col)
+    (NOT (&bg (:C Col)))))
+
+(INIT &size Cardinality
+  (key ((&obj.component (:P *P_grid) ^Id))
+    (member ((:m P_grid))
+      (&obj.component (:P *P_grid) Id))))
+
+;; A panel's piece is the larger of the shapes it holds.
+(INIT &largest Order
+  (key ((&obj.component (:P *P_grid) *Id)
+        (&panel_cell P_grid ^P_panel)
+        (&size.size (:key Id) *N))
+    (member ((:t (:V Id) (:S N)))
+      (&obj.component (:P *P_grid) *Id)
+      (&panel_cell P_grid P_panel)
+      (&size.size (:key Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&obj.component (:P *P_grid) *Id)
+      (&panel_cell P_grid P_panel)
+      (&size.size (:key Id) *N))))
+
+(RULE &piece
+  (&largest.maximal (:t (:V *Id)))
+  (&obj.component (:P *P_grid) Id)
+  (input (:P P_grid) *Col))
+
+(RULE &piece_cell
+  (&piece *Id)
+  (&obj.component (:P *P_grid) Id)
+  (&panel_cell P_grid *P_frame))
+
+(RULE &slide
+  (&panel_cell (:P_frame *P))
+  (margin (:B P) *D *K))
+
+(RULE &slid
+  (&piece (:Id *M))
+  (&slide *D *K)
+  (&piece_cell (:Id M) (:P_frame *P))
+  (jump P D K (:Q *P_frame)))
+
+(RULE &meet
+  (&piece_cell *Id (:P_frame *P))
+  (&piece_cell (:Id *Id2) (:P_frame P))
+  (!= Id Id2))
+
+(RULE &clash
+  (OR ((&slid *M *D *K (:P_frame *P))
+       (&piece_cell *Id (:P_frame P))
+       (!= Id M))
+      ((&piece (:Id M))
+       (&slide D K)
+       (&meet (:Id *Id3) *Id2)
+       (!= Id3 M)
+       (!= Id2 M))
+      ((&slid M D K (:P_frame *P2))
+       (NOT (&panel_cell (:P_frame P2))))))
+
+(RULE &fits
+  (&piece (:Id *M))
+  (&slide *D *K)
+  (NOT (&clash M D K)))
+
+;; The shortest slide each piece can clear the meeting with.
+(INIT &least_slide Order
+  (key ((&fits ^M *K))
+    (member ((:t K))
+      (&fits M *K))
+    (score ((:t K) (:S K))
+      (&fits M *K))))
+
+(INIT &shortest Order
+  (member ((:t (:V M) (:S K)))
+    (&least_slide.minimal (:key *M) (:t *K)))
+  (score ((:t (:V M) (:S K)) (:S K))
+    (&least_slide.minimal (:key *M) (:t *K))))
+
+(RULE &mover
+  (&shortest.minimal (:t (:V *M))))
+
+(RULE &chosen
+  (&mover *M)
+  (&least_slide.minimal (:key M) (:t *K))
+  (&fits M *D K))
+
+(RULE &paint
+  (&chosen *M *D *K)
+  (OR ((&piece_cell *Id *P_frame)
+       (!= Id M))
+      ((&slid M D K P_frame)
+       (= Id M)))
+  (&piece Id *Col))
+
+(RULE &output
+  (OR ((&paint (:P_frame *P) *Col))
+      ((&panel_cell (:P_frame P))
+       (&bg (:C Col))
+       (NOT (&paint (:P_frame P))))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,94 @@
+;; inputs ffe0cecd4c92a9f401197715e622329fccba47de86069d479b11a2026ee9124d programs/solvers/e3497940.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e3497940
+
+(DET &frame_dim ConstOutDimAxis)
+
+(INIT &frame_frame Frame
+  (extent (A N)
+    (&frame_dim *A *N)))
+
+(DET &base DirDomain)
+
+(DET &bg DominantColor)
+
+(DET &arr_dim SepTileCountAxis)
+
+(DET &gap DivisorRatio)
+
+(INIT &tile_decompose_outer Frame
+  (extent (A N)
+    (&arr_dim *A *N)))
+
+(INIT &tile_decompose_inner Frame
+  (extent (A N)
+    (&frame_dim *A *N)))
+
+(INIT &tile_decompose_tiling Tiling
+  (outer (P)
+    (&tile_decompose_outer.cell *P))
+  (inner (P)
+    (&tile_decompose_inner.cell *P))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(DET &divide_gap DivisorRatio)
+
+(RULE &decompose
+  (&tile_decompose_tiling.cell *P *P_outer *P_inner))
+
+(ALTS $choice "out's choice column (decompose)" $Table
+  (ALT $Count
+    (DET &divisor SepTileCount)
+
+    (INIT &decompose_division Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (parts (A N)
+        (&base *D)
+        (axis_of D *A)
+        (&divisor *N))
+      (gap (A G)
+        (&base *D)
+        (axis_of D *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &decompose
+      (&decompose_division.tile *P *P_outer *P_inner)))
+  (ALT $Size
+    (INIT &decompose_division2 Division
+      (cell ((:P P_grid))
+        (input (:P *P_grid)))
+      (side (A K)
+        (&base *D)
+        (axis_of D *A)
+        (&frame_dim A (:N *K)))
+      (gap (A G)
+        (&base *D)
+        (axis_of D *A)
+        (&divide_gap (:K *G))))
+
+    (RULE &decompose
+      (&decompose_division2.tile *P *P_outer *P_inner))))
+
+(RULE &ink
+  (input (:P *P_grid) *Col)
+  (NOT (&bg (:C Col)))
+  (&decompose (:P P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+  (&base *D)
+  (OR ((opposite D (:Opp *O))
+       (margin (:B P_tile) (:D O) (:K 0))
+       (axis_of D *A)
+       (axis_inversion A (:T *F))
+       (apply (:D F) (:P P_intile) (:P_out *P)))
+      ((margin (:B P_tile) D (:K 0))
+       (= P P_intile))))
+
+(RULE &output
+  (OR ((&ink *P *Col))
+      ((&frame_frame.cell P)
+       (&bg (:C Col))
+       (NOT (&ink P)))))
+
+(OUT (&output ^P ^Col))

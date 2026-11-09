@@ -1,0 +1,99 @@
+;; inputs 3f216a6bb225d21221cee74ca3f406031fff46912f20ac5c3f7ff3657b1bea0a programs/solvers/83eb0a57.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 83eb0a57
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(INIT &comps Connectivity
+  (node (P)
+    (input *P *Col)
+    (NOT (&field.maximal (:t Col)))))
+
+(INIT &size Cardinality
+  (key ((&comps.component *P ^Id))
+    (member ((:m P))
+      (&comps.component *P Id))))
+
+(INIT &largest Order
+  (member ((:t (:V Id) (:S N)))
+    (&size.size (:key *Id) *N))
+  (score ((:t (:V Id) (:S N)) (:S N))
+    (&size.size (:key *Id) *N)))
+
+(INIT &bbox BoundingBox
+  (key ((&comps.component *P ^Id))
+    (cell (P)
+      (&comps.component *P Id))))
+
+(RULE &rect
+  (&bbox.cell (:key *Id) *P)
+  (&bbox.box (:key Id) *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (input P *Col))
+
+(RULE &canvas
+  (&largest.maximal (:t (:V *Id)))
+  (&rect Id (:P_inner *P) *Col))
+
+(INIT &body_count Cardinality
+  (key ((&canvas *P ^Col))
+    (member ((:m P))
+      (&canvas *P Col))))
+
+(INIT &body Order
+  (member ((:t Col))
+    (&body_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&body_count.size (:key *Col) *N)))
+
+;; A rectangle in canvas colors: its marks keep their color, its body takes
+;; the canvas body color.
+(INIT &occ Occurrences
+  (key ((OR ((&rect ^Id)
+             (&canvas *P *Col))
+            ((&rect Id *P_inner (:Col *C))
+             (OR ((NOT (&canvas (:Col C)))
+                  (&body.maximal (:t Col)))
+                 ((&canvas (:Col C))
+                  (= Col C))))))
+    (cell (P (:v Col))
+      (&rect Id)
+      (&canvas *P *Col))
+    (shape ((:P P_inner) (:v Col))
+      (&rect Id *P_inner (:Col *C))
+      (OR ((NOT (&canvas (:Col C)))
+           (&body.maximal (:t *Col)))
+          ((&canvas (:Col C))
+           (= Col C))))))
+
+(RULE &layer
+  (&occ.occurrence (:key *Id) (:P *M))
+  (&rect Id *P_inner *Col)
+  (compose (:A M) (:B P_inner) (:C *P)))
+
+;; The smallest layer at each cell lies on top.
+(INIT &top Order
+  (key ((&layer *Id ^P)
+        (&size.size (:key Id) *N))
+    (member ((:t (:V Id) (:S N)))
+      (&layer *Id P)
+      (&size.size (:key Id) *N))
+    (score ((:t (:V Id) (:S N)) (:S N))
+      (&layer *Id P)
+      (&size.size (:key Id) *N))))
+
+(RULE &output
+  (&top.minimal (:key *P) (:t (:V *Id)))
+  (&layer Id P *Col))
+
+(OUT (&output ^P ^Col))

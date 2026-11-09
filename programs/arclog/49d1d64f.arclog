@@ -1,0 +1,47 @@
+;; inputs c1a65a81d6c16dffa03123eb296f9eed38f9918846d6adaded996a599ca7d347 programs/solvers/49d1d64f.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 49d1d64f
+
+;; Seat each train input among its output's cells, color for color.
+(INIT &occ Occurrences
+  (key ((OR ((ex_input ^E (:P *P_in) *Col))
+            ((ex_output E (:P *P_out) Col))))
+    (cell ((:P P_out) (:v Col))
+      (ex_output E (:P *P_out) *Col))
+    (shape ((:P P_in) (:v Col))
+      (ex_input E (:P *P_in) *Col))))
+
+(DET &broken
+  (&occ.occurrence *P)
+  (ex_output *E)
+  (NOT (&occ.occurrence (:key E) P)))
+
+(DET &ring_width
+  (&occ.occurrence (:P *Delta))
+  (NOT (&broken (:P Delta)))
+  (margin (:B Delta) *D *K))
+
+(RULE &seat_delta
+  (&ring_width *K)
+  (uniform_inset K (:B *P)))
+
+(DET &bg ColorDomain)
+
+(RULE &seated
+  (input (:P *P_in))
+  (&seat_delta (:P *Delta))
+  (compose (:A P_in) (:B Delta) (:C *P_out)))
+
+(RULE &output
+  (input (:P *P_in) (:Col *Col_in))
+  (&seated P_in (:P_out *P_seat))
+  (OR ((corner_dist (:P P_in) *Diag (:K 0))
+       (neighbor (:P P_seat) (:D Diag) (:Q *P))
+       (&bg (:C *Col)))
+      ((= P P_seat)
+       (= Col Col_in))
+      ((margin (:B P_in) *D (:K 0))
+       (neighbor (:P P_seat) D (:Q P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

@@ -36,7 +36,7 @@ class Corpus:
 
     def files(self) -> str:
         """The inputs line's account of the arclog files read."""
-        return f"the {len(self.stems)} `.arclog` files of `work/arclog/gen/`"
+        return f"the {len(self.stems)} `.arclog` files of `programs/arclog/`"
 
 
 @cache

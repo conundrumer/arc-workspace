@@ -1,0 +1,102 @@
+;; inputs b564fcc253e3fae66fef66f51e2d7fe490b8468206a0e58d37919a0e752dd52d programs/solvers/b7cb93ac.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; b7cb93ac
+
+(DET &bg DominantColor)
+
+;; A piece is one connected same-colored region of the input.
+(INIT &region Connectivity
+  (key ((input *P ^Col)
+        (NOT (&bg (:C Col))))
+    (node (P)
+      (input *P Col)
+      (NOT (&bg (:C Col))))))
+
+(INIT &largest_count Cardinality
+  (key ((&region.component (:key ^Col) ^Id *P))
+    (member ((:m P))
+      (&region.component (:key Col) Id *P))))
+
+;; The rectangle the pieces fill.
+(DET &rect_dim ConstOutDimAxis)
+
+(INIT &bbox BoundingBox
+  (key ((&region.component (:key ^Col) ^Id *P))
+    (cell (P)
+      (&region.component (:key Col) Id *P))))
+
+(RULE &shape
+  (&region.component (:key *Col) *Id (:P *P2))
+  (&bbox.box (:key Col Id) *B)
+  (inside (:A P2) B)
+  (relative (:Base B) (:X P2) (:X_rel *P)))
+
+(INIT &largest Order
+  (member ((:t (:Col Pc_col) (:Id Pc_id)))
+    (&largest_count.size (:key (:Col *Pc_col) (:Id *Pc_id))))
+  (score ((:t (:Col Pc_col) (:Id Pc_id)) (:S N))
+    (&largest_count.size (:key (:Col *Pc_col) (:Id *Pc_id)) *N)))
+
+;; The anchor's symmetries — the turns that fix its footprint.
+(INIT &turned Agreement
+  (key ((&largest.maximal (:t ^Col ^Id)))
+    (source ((:P S))
+      (&shape Col Id (:P *S)))
+    (target ((:P S))
+      (&shape Col Id (:P *S)))))
+
+(RULE &turned_src
+  (&largest.maximal (:t *Col *Id))
+  (&shape Col Id *P))
+
+(RULE &foot
+  (c4_elem *D)
+  (&shape *Col *Id (:P *S))
+  (apply D (:P S) (:P_out *P))
+  (OR ((NOT (&largest.maximal (:t Col Id))))
+      ((&turned_src Col Id)
+       (d4_elem D)
+       (NOT (&turned.mismatch (:key Col Id) D)))))
+
+(INIT &rect Frame
+  (extent (A N)
+    (&rect_dim *A *N)))
+
+(INIT &occ Occurrences
+  (key ((OR ((&foot ^Col ^Id ^D (:P *S)))
+            ((&foot Col Id D)
+             (&rect.cell *P))))
+    (cell (P)
+      (&foot Col Id D)
+      (&rect.cell *P))
+    (shape ((:P S))
+      (&foot Col Id D (:P *S)))))
+
+(RULE &covers
+  (&occ.occurrence (:key *Col *Id *D) (:P *B))
+  (&foot Col Id D (:P *S))
+  (compose (:A B) (:B S) (:C *P)))
+
+(CHOOSE &pruning
+  (for ((&occ.occurrence (:key ^Col ^Id)))
+    (from (&occ.occurrence (:key Col Id *D) (:P *B))))
+  (never
+    (&occ.occurrence (:key *Col *Id *D) (:P *B))
+    (&occ.occurrence (:key (:Col *Col2) (:Id *Id2) (:D *D2)) (:P *B2))
+    (&covers Col Id D B *P)
+    (&covers (:Col Col2) (:Id Id2) (:D D2) (:B B2) P)))
+
+(CHOOSE &ties
+  (for ((&pruning ^B))
+    (from (&pruning B *Col *Id)))
+  (never
+    (&pruning *B *Col *Id)
+    (&pruning (:B *B2) Col Id)
+    (!= B B2)))
+
+(RULE &output
+  (&ties *B *Col *Id)
+  (&pruning Col Id (:D *T_d) B)
+  (&covers Col Id (:D T_d) B *P))
+
+(OUT (&output ^P ^Col))

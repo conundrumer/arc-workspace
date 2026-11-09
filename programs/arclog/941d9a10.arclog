@@ -1,0 +1,87 @@
+;; inputs 38318ce7064dde5d501a114262ddefde768b7c99ef0a3b5be06d90de888652f3 programs/solvers/941d9a10.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 941d9a10
+
+(DET &sep UnchangedColor)
+
+(RULE &off_line
+  (input *P *Col)
+  (NOT (&sep (:C Col)))
+  (split P *A (:Along *L)))
+
+(RULE &cut_divider
+  (input *P)
+  (split P *A (:Along *L))
+  (NOT (&off_line A L)))
+
+(RULE &cut_on_divider
+  (input *P)
+  (&cut_divider *A *L)
+  (axis_of *D A)
+  (same_dist D (:P1 P) (:P2 L)))
+
+(INIT &cut_rank Order
+  (key ((OR ((&cut_divider *A *L)
+             (axis_of ^D A)
+             (margin (:B L) D *K))
+            ((input *P)
+             (margin (:B P) D (:K *K2)))))
+    (member ((:t K))
+      (&cut_divider *A *L)
+      (axis_of D A)
+      (margin (:B L) D *K))
+    (score ((:t K) (:S K))
+      (OR ((&cut_divider *A *L)
+           (axis_of D A)
+           (margin (:B L) D *K))
+          ((input *P)
+           (margin (:B P) D K))))
+    (probe ((:t K2))
+      (input *P)
+      (margin (:B P) D (:K *K2)))))
+
+(RULE &cut_part_idx
+  (input *P)
+  (axis_of *D *A)
+  (NOT (&cut_on_divider P A))
+  (margin (:B P) D (:K *K2))
+  (&cut_rank.rank (:key D) (:t K2) (:R *N)))
+
+(RULE &cut_part_of
+  (axis_of *D *A)
+  (opposite D (:Opp *D2))
+  (&cut_part_idx *P D (:N *N1))
+  (&cut_part_idx P (:D D2) (:N *N2))
+  (axis_inset D (:K1 N1) (:K2 N2) (:B *P_part)))
+
+(RULE &cut_tile_of
+  (&cut_part_of *P *A (:P_part *P1))
+  (perp A *A2)
+  (&cut_part_of P (:A A2) (:P_part *P2))
+  (compose (:A P1) (:B P2) (:C *P_tile)))
+
+;; the color of the block at the center of the arrangement
+(DET &center_color AnyOutNewColor)
+
+(DET &corner_color
+  (&cut_tile_of *E *P *P_tile)
+  (inside (:A P_tile) (:B 0))
+  (same_corner *D (:P1 P_tile) (:P2 0))
+  (ex_output E P (:Col *C))
+  (ex_input E P (:Col *Col_in))
+  (!= C Col_in))
+
+(RULE &painted
+  (&cut_tile_of *P *P_tile)
+  (OR ((&corner_color *D (:C *Col))
+       (inside (:A P_tile) (:B 0))
+       (same_corner D (:P1 P_tile) (:P2 0)))
+      ((&center_color (:C Col))
+       (centered (:P P_tile)))))
+
+(RULE &output
+  (OR ((&painted *P *Col))
+      ((input P Col)
+       (NOT (&painted P)))))
+
+(OUT (&output ^P ^Col))

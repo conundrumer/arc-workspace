@@ -1,0 +1,28 @@
+;; inputs cb88f81cd99efb1e2440fe560211a033d3f27766603b7af2498614677f44afcc programs/solvers/6f8cd79b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 6f8cd79b
+
+(DET &border AnyOutNewColor)
+
+(RULE &is_border
+  (input *P)
+  (margin (:B P) *D (:K 0)))
+
+(ALTS $choice "how the interior is filled" $Passthrough
+  (ALT $Repaint
+    (DET &bg DominantColor)
+
+    (RULE &output
+      (OR ((&is_border *P)
+           (&border (:C *Col)))
+          ((input P)
+           (interior (:A P) (:B 0))
+           (&bg (:C Col)))))))
+
+(RULE &output
+  (OR ((&is_border *P)
+       (&border (:C *Col)))
+      ((input P Col)
+       (interior (:A P) (:B 0)))))
+
+(OUT (&output ^P ^Col))

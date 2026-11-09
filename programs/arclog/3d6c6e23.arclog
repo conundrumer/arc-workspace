@@ -1,0 +1,130 @@
+;; inputs 68d3e09e676b55e3b1c15c5af612fb8447a22295f9c0cb711a30e5216fbabc8a programs/solvers/3d6c6e23.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 3d6c6e23
+
+(DET &bg DominantColor)
+
+(DET &gravity DirDomain)
+
+(RULE &line_of
+  (input *P)
+  (&gravity *D)
+  (axis_of D *A)
+  (split P A (:Across *L)))
+
+(RULE &pixel
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (&line_of P *L))
+
+(RULE &height
+  (&pixel *P)
+  (&gravity *D)
+  (opposite D (:Opp *D_up))
+  (margin (:B P) (:D D_up) *K))
+
+(RULE &cand
+  (&pixel *L)
+  (&line_of (:P *A) L))
+
+(RULE &beyond
+  (&cand *A)
+  (input *P)
+  (&gravity *D)
+  (opposite D (:Opp *D_up))
+  (corner_dir (:C *Diag) (:D D_up))
+  (corner_dist P Diag (:K *K_q))
+  (corner_dist (:P A) Diag (:K *K_a))
+  (< K_q K_a))
+
+;; The triangle an apex casts down to the floor, one cell wider to each
+;; side per step: the grid cells between its two diagonals.
+(INIT &cone_size Cardinality
+  (key ((&cand ^A)
+        (input (:P *Q))
+        (NOT (&beyond A (:P Q))))
+    (member ((:m Q))
+      (&cand A)
+      (input (:P *Q))
+      (NOT (&beyond A (:P Q))))))
+
+(INIT &line_size Cardinality
+  (key ((&pixel *P ^L))
+    (member ((:m P))
+      (&pixel *P L))))
+
+(RULE &apex
+  (&cand *L *A)
+  (&cone_size.size (:key A) *N)
+  (&line_size.size (:key L) N))
+
+(RULE &pile
+  (&apex *L *A)
+  (&cone_size.member (:key A) (:m *P)))
+
+(INIT &lex Order
+  (key ((&pile ^L *P)
+        (sense_elem ^S))
+    (member ((:t P))
+      (&pile L *P)
+      (sense_elem S))
+    (score ((:t P) (:S K1))
+      (&pile L *P)
+      (&gravity *D)
+      (opposite D (:Opp *D_up))
+      (turn S (:D D_up) (:D2 *Lat))
+      (diag_dirs (:D *Diag) (:D1 D_up) (:D2 Lat))
+      (&gravity (:D *D2))
+      (axis_of (:D D2) (:A *Ax))
+      (diag_dist P Diag (:A Ax) *K1 *K2))
+    (secondary_score ((:t P) (:S K2))
+      (&pile L *P)
+      (&gravity *D)
+      (opposite D (:Opp *D_up))
+      (turn S (:D D_up) (:D2 *Lat))
+      (diag_dirs (:D *Diag) (:D1 D_up) (:D2 Lat))
+      (&gravity (:D *D2))
+      (axis_of (:D D2) (:A *Ax))
+      (diag_dist P Diag (:A Ax) *K1 *K2))))
+
+(INIT &fill Order
+  (key ((&pixel *P ^L))
+    (member ((:t P))
+      (&pixel *P L))
+    (score ((:t P) (:S K))
+      (&pixel *P L)
+      (&height P *K))))
+
+(ALTS $choice "the order the pixels fill in" $Fall
+  (ALT $Sink
+    (INIT &group Cardinality
+      (key ((&pixel *P ^L ^Col))
+        (member ((:m P))
+          (&pixel *P L Col))))
+
+    (RULE &size_tie
+      (&group.size (:key *L *Col) *N)
+      (&group.size (:key L (:Col *C2)) N)
+      (!= Col C2))
+
+    (INIT &fill Order
+      (key ((&pixel *P ^L))
+        (member ((:t P))
+          (&pixel *P L))
+        (score ((:t P) (:S N))
+          (&pixel *P L *Col)
+          (&group.size (:key L Col) *N))
+        (secondary_score ((:t P) (:S K))
+          (&pixel *P L *Col)
+          (NOT (&size_tie L Col))
+          (&height P *K))))))
+
+(RULE &output
+  (OR ((&lex.rank (:key *L *S) (:t *P) *R)
+       (&fill.rank (:key L) (:t *P_px) R)
+       (&pixel (:P P_px) L *Col))
+      ((input P)
+       (NOT (&pile P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

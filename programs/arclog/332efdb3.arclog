@@ -1,0 +1,138 @@
+;; inputs 9325ee7ce76ebc3c9c4039359e3392cb1e6d9914c308ef52e16b55173e5de047 programs/solvers/332efdb3.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 332efdb3
+
+(DET &tile_gap DivisorRatio)
+
+(DET &tile_size DivisorRatio)
+
+(INIT &on_tile_division Division
+  (key ((axis_elem ^A))
+    (side (A K)
+      (&tile_size *K))
+    (gap (A G)
+      (&tile_gap (:K *G))))
+  (cell (P)
+    (input *P)))
+
+(DET &bg AnyOutNewColor)
+
+(DET &dot DominantColor)
+
+(ALTS $choice "which model reconstructs the wallpaper" $Stripes
+  (ALT $Motif
+    (DET &si_cand_full
+      (ex_output (:E *V0) *P)
+      (frame_offset P (:A *V1) (:K *V2) (:V *V3)))
+
+    (INIT &si Periods
+      (key ((ex_output ^E *P *Col))
+        (cell (P (:v Col))
+          (ex_output E *P *Col))))
+
+    (DET &si_mismatch_full
+      (ex_output (:E *V0) *P)
+      (frame_offset P (:A *V1) (:K *V2))
+      (NOT (&si.period (:key (:E V0)) (:A V1) (:K V2))))
+
+    (INIT &unbroken Order
+      (key ((&si_cand_full (:V1 ^A) (:V2 *K))
+            (NOT (&si_mismatch_full (:V1 A) (:V2 K))))
+        (member ((:t K))
+          (&si_cand_full (:V1 A) (:V2 *K))
+          (NOT (&si_mismatch_full (:V1 A) (:V2 K))))
+        (score ((:t K) (:S K))
+          (&si_cand_full (:V1 A) (:V2 *K))
+          (NOT (&si_mismatch_full (:V1 A) (:V2 K))))))
+
+    (DET &period
+      (&unbroken.minimal (:key *A) (:t *K)))
+
+    (DET &window
+      (ex_output *E (:P *Q))
+      (diag_dist (:P Q) *Diag *A *K1 *K2)
+      (&period A (:K *S1))
+      (<= K1 S1)
+      (perp A *A2)
+      (&period (:A A2) (:K *S2))
+      (<= K2 S2))
+
+    ;; Each window's cells in the motif's own frame.
+    (INIT &wframe BoundingBox
+      (key ((&window ^E ^Diag *Q))
+        (cell ((:P Q))
+          (&window E Diag *Q))))
+
+    (DET &motif
+      (&window *E (:Diag *Dg) *Q)
+      (&wframe.box (:key E (:Diag Dg)) *B)
+      (inside (:A Q) B)
+      (relative (:Base B) (:X Q) (:X_rel *P))
+      (ex_output E (:P Q) (:Col *C)))
+
+    (RULE &period_phase
+      (OR ((input *P))
+          ((&motif P)))
+      (diag_dist P (:Diag *Dg) *A (:K1 *T) (:K2 *T2))
+      (perp A *A2)
+      (&period A *K)
+      (divide T (:Side K) (:Gap 0) (:Remainder *R))
+      (&period (:A A2) (:K *K2))
+      (divide (:T T2) (:Side K2) (:Gap 0) (:Remainder *R2)))
+
+    ;; The motif seats at every corner, and each cell takes the motif cell at
+    ;; its period class.
+    (RULE &output
+      (&motif (:P *Pm) (:C *Col))
+      (&period_phase *Dg *A (:P Pm) *R *R2)
+      (input *P)
+      (&period_phase Dg A P R R2)))
+  (ALT $Inset
+    ;; The dots span the interior frame, so their distance to a grid edge is
+    ;; the border's width there.
+    (INIT &bbox BoundingBox
+      (key ((ex_output ^E *P *Col)
+            (&dot (:C Col)))
+        (cell (P)
+          (ex_output E *P *Col)
+          (&dot (:C Col)))))
+
+    (DET &border_width
+      (&bbox.box *B)
+      (margin B *D *K))
+
+    (INIT &interior_tile_division Division
+      (cell ((:P P_inner))
+        (input *P)
+        (&border_width (:K *K1))
+        (uniform_inset (:K K1) *B)
+        (inside (:A P) B)
+        (relative (:Base B) (:X P) (:X_rel *P_inner)))
+      (side (A K)
+        (axis_elem *A)
+        (&tile_size *K))
+      (gap (A G)
+        (axis_elem *A)
+        (&tile_gap (:K *G))))
+
+    (RULE &interior_tile
+      (input *P)
+      (&border_width (:K *K1))
+      (uniform_inset (:K K1) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_inner))
+      (&interior_tile_division.tile (:P P_inner)))
+
+    (RULE &output
+      (input *P)
+      (IF ((&interior_tile P))
+          ((&dot (:C *Col)))
+          ((&bg (:C Col)))))))
+
+(RULE &output
+  (input *P)
+  (IF ((&on_tile_division.tile P))
+      ((&bg (:C *Col)))
+      ((&dot (:C Col)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,66 @@
+;; inputs 262874709cfad41d8d6bf4e975cf9cacad922a1b307f0d944a3bcd0c1875f6a1 programs/solvers/60a26a3e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 60a26a3e
+
+(DET &bg DominantColor)
+
+(RULE &bg_cell
+  (input *P *Col)
+  (&bg (:C Col)))
+
+(DET &ring RarestColor)
+
+(RULE &ring_cell
+  (input *P *Col)
+  (&ring (:C Col)))
+
+(RULE &ring_gap
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (NOT (&ring_cell (:P Q))))
+
+(RULE &center
+  (&bg_cell *P)
+  (NOT (&ring_gap P)))
+
+(DET &line AnyOutNewColor)
+
+(ALTS $choice "what makes a bg cell a center" $Ringed
+  (ALT $Enclosed
+    (INIT &outside Flood
+      (node (P)
+        (&bg_cell *P))
+      (source (P)
+        (&bg_cell *P)
+        (margin (:B P) *D (:K 0))))
+
+    (RULE &center
+      (&bg_cell *P)
+      (NOT (&outside.reached P)))))
+
+(INIT &link Ray
+  (source (P)
+    (&center *P))
+  (node (P)
+    (input *P))
+  (dir (D)
+    (axis_elem *A)
+    (axis4_of *D A)))
+
+(RULE &link_between
+  (&bg_cell *P)
+  (NOT (&center P))
+  (axis_elem *A)
+  (axis4_of *D A)
+  (dir8_opposite D (:D2 *O))
+  (&link.ray P D)
+  (&link.ray P (:D O)))
+
+(RULE &output
+  (OR ((&link_between *P)
+       (&line (:C *Col)))
+      ((input P Col)
+       (NOT (&link_between P)))))
+
+(OUT (&output ^P ^Col))

@@ -1,0 +1,5 @@
+;; inputs 53fd6f025a3e6060ed80203b335de47296e55a5adafa3a8b67edfaf416b2201a programs/solvers/62593bfd.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 62593bfd
+
+(param &paired_dir Dir (DIR_T))

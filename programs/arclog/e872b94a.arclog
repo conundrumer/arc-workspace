@@ -1,0 +1,210 @@
+;; inputs 2f1851311ea4c1cdcb2491e96e1f2a88ba0295e926762add094479524217e0c1 programs/solvers/e872b94a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e872b94a
+
+(INPUT snakes-on-background "the input holds &shape_color (5) paths on a background field (0), and no other color."
+
+  (DET_OR_RULE &shape_color RarestColor))
+
+(INPUT snakes-apart "no two snakes touch, by a side or by a corner.")
+
+(OUTPUT count-snakes "each part of the &shape_color cells that is connected through shared sides is one snake.")
+
+(OUTPUT strip-length "the output is a strip along &axis, &strip_width cells wide, and as long as the snake count plus &extra_cells."
+
+  ;; the strip length less the snake count
+  (DET &extra_cells ConstOutDim)
+
+  (DET &short
+    (ex_output *P)
+    (axis_extents P *A *N1 *N2)
+    (<= N1 N2))
+
+  (DET &axis
+    (axis_elem *A)
+    (ex_output)
+    (NOT (&short A)))
+
+  (DET &strip_width
+    (&axis *A)
+    (perp A *A2)
+    (ex_output *P)
+    (frame_extent P (:A A2) (:N *K))))
+
+(OUTPUT strip-fill "every cell of the strip is &fill_color."
+
+  (DET_OR_RULE &fill_color DominantColor
+    (ex_output (:Col *C)))
+
+  (RULE &parts_key)
+
+  (RULE &snake_cell
+    (input *P *Col)
+    (&shape_color (:C Col)))
+
+  (RULE &part_cell
+    (&snake_cell *P))
+
+  (INIT &parts4 Connectivity
+    (node (P)
+      (&part_cell *P)))
+
+  (INIT &tally4 Cardinality
+    (member ((:m Id))
+      (&parts4.component *Id))
+    (domain ()
+      (&parts_key)))
+
+  (RULE &part_count
+    (&tally4.size *N)))
+
+(ALTS $cells "which cells the snakes are made of" $ShapeColor
+  (ALT $NonBackground
+    (OUTPUT count-snakes "a snake is a side-connected part of the cells that are not &background; defined on every input."
+      (DET_OR_RULE &background DominantColor)
+
+      (RULE &snake_cell
+        (input *P *Col)
+        (NOT (&background (:C Col)))))))
+
+(ALTS $parts "which parts the strip counts" $Snakes
+  (ALT $BackgroundRegions
+    (OUTPUT count-snakes "the counted parts are the side-connected parts of the cells that are not snake cells."
+      (RULE &part_cell
+        (input *P)
+        (NOT (&snake_cell P))))
+    (OUTPUT strip-length "the strip is as long as the count of those parts, with no extra cells; undefined on an input with no such cell.")
+    (RULE &length
+      (&part_count *N))
+    (ALT $CountTable
+      (OUTPUT strip-length "a stored table gives the output grid for each count; undefined on an input whose count is no key of the table."
+        (INIT &regions Connectivity
+          (key ((ex_input ^E *P *Col)
+                (NOT (&shape_color (:C Col))))
+            (node (P)
+              (ex_input E *P *Col)
+              (NOT (&shape_color (:C Col))))))
+
+        (INIT &region_count Cardinality
+          (key ((OR ((&regions.component (:key ^E) *Id))
+                    ((ex_input E))))
+            (member ((:m Id))
+              (&regions.component (:key E) *Id))
+            (domain ()
+              (ex_input E))))
+
+        (DET &region_count_table
+          (&region_count.size (:key *E) *N)
+          (ex_output E *P *Col)))
+      (RULE &output
+        (&part_count *N)
+        (&region_count_table N *P *Col)))))
+
+(ALTS $adj "how counted parts join" $Adjacency4
+  (ALT $Adjacency8
+    (OUTPUT count-snakes "counted parts also join through corners; defined on every input."
+      (INIT &parts8 Connectivity
+        (node (P)
+          (&part_cell *P))
+        (step ((:Delta S))
+          (OR ((diag_dir_elem *D)
+               (step_offset D (:V *S)))
+              ((dir_elem (:D *D2))
+               (step_offset (:D D2) (:V S))))))
+
+      (INIT &tally8 Cardinality
+        (member ((:m Id))
+          (&parts8.component *Id))
+        (domain ()
+          (&parts_key)))
+
+      (RULE &part_count
+        (&tally8.size *N)))
+    (ALT $Strip
+      (ALT $AxisFromSnakes
+        (OUTPUT strip-length "the axis is the axis that some snake spans from edge to edge; undefined on an input where no snake spans either axis, or where snakes span both."
+
+          (INIT &parts82 Connectivity
+            (node (P)
+              (&snake_cell *P))
+            (step ((:Delta S))
+              (OR ((diag_dir_elem *D)
+                   (step_offset D (:V *S)))
+                  ((dir_elem (:D *D2))
+                   (step_offset (:D D2) (:V S)))))))
+        (RULE &strip_axis
+          (&parts82.component (:P *P1) *Id)
+          (axis_of *D *A)
+          (margin (:B P1) D (:K 0))
+          (&parts82.component (:P *P2) Id)
+          (opposite D (:Opp *D2))
+          (margin (:B P2) (:D D2) (:K 0)))))))
+
+(ALTS $form "how the output is drawn from the count" $Strip
+  (ALT $Strip
+    (ALTS $axis "where the strip's axis comes from" $StoredAxis
+      (ALT $AxisFromSnakes
+        (OUTPUT strip-length "the axis is the axis that some snake spans from edge to edge; undefined on an input where no snake spans either axis, or where snakes span both."
+          (INIT &parts42 Connectivity
+            (node (P)
+              (&snake_cell *P))))
+        ;; some snake has a cell on each edge of axis A
+        (RULE &strip_axis
+          (&parts42.component (:P *P1) *Id)
+          (axis_of *D *A)
+          (margin (:B P1) D (:K 0))
+          (&parts42.component (:P *P2) Id)
+          (opposite D (:Opp *D2))
+          (margin (:B P2) (:D D2) (:K 0))))))
+  (ALT $CountTable
+    (OUTPUT strip-length "a stored table gives the output grid for each count; undefined on an input whose count is no key of the table."
+      ;; the snakes, and the background regions, of each example's input
+      (INIT &snakes Connectivity
+        (key ((ex_input ^E *P *Col)
+              (&shape_color (:C Col)))
+          (node (P)
+            (ex_input E *P *Col)
+            (&shape_color (:C Col)))))
+
+      (INIT &snake_count Cardinality
+        (key ((OR ((&snakes.component (:key ^E) *Id))
+                  ((ex_input E))))
+          (member ((:m Id))
+            (&snakes.component (:key E) *Id))
+          (domain ()
+            (ex_input E))))
+
+      (DET &count_table
+        (&snake_count.size (:key *E) *N)
+        (ex_output E *P *Col)))
+    (OUTPUT strip-fill "the table's grid gives every color.")
+    (RULE &output
+      (&part_count *N)
+      (&count_table N *P *Col))
+    (OUT (&output ^P ^Col))))
+
+;; the extra cells, on each axis
+(INIT &tail Frame
+  (key ((axis_elem ^A))
+    (extent (A (:N K))
+      (&extra_cells (:N *K)))))
+
+(RULE &length
+  (&part_count (:N *N2))
+  (&tail.cell (:key *A) *P)
+  (axis_of *D A)
+  (edge_outset D (:K N2) *B)
+  (box_extent B P A *N))
+
+(RULE &strip_axis
+  (&axis *A))
+
+(INIT &strip Frame
+  (extent (A (:N L))
+    (OR ((&length (:N *L))
+         (&strip_axis *A))
+        ((&strip_axis (:A *A3))
+         (perp (:A A3) (:A2 A))
+         (&strip_width (:K L))))))
+
+(OUT (&strip.cell ^P) (&fill_color ^C))

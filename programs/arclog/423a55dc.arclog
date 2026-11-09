@@ -1,0 +1,38 @@
+;; inputs 2396f1c7b6d946aabcd9d13df57ef1e50af4a63b9b87eac75fa59062480f29e2 programs/solvers/423a55dc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 423a55dc
+
+(DET &bg DominantColor)
+
+(DET &anchor DirDomain)
+
+(DET &sense SenseDomain)
+
+(RULE &ink
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (&ink *P)))
+
+(RULE &sheared
+  (&ink *P)
+  (&bbox.box *B)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner))
+  (&anchor (:D *D_anc))
+  (margin (:B P_inner) (:D D_anc) *K)
+  (&sense *S)
+  (turn S (:D D_anc) (:D2 *D_sh))
+  (jump P (:D D_sh) K (:Q *P2))
+  (input (:P P2)))
+
+(RULE &output
+  (OR ((&sheared (:P *P3) (:P2 *P))
+       (&ink (:P P3) *Col))
+      ((input P)
+       (&bg (:C Col))
+       (NOT (&sheared (:P2 P))))))
+
+(OUT (&output ^P ^Col))

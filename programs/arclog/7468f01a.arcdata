@@ -1,0 +1,6 @@
+;; inputs fabe298461e56c96166d3d84c72ecbf0e9d1d0ebe46f070fcdf4eef0e4a53db8 programs/solvers/7468f01a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7468f01a
+
+(param &bg Color (0))
+(param &transform D4 (D4_LR))

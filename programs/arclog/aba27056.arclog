@@ -1,0 +1,156 @@
+;; inputs edd1592368dfa2dd0355482287a0492895163330ff2b9cd4a4a2e847848ce1c2 programs/solvers/aba27056.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aba27056
+
+(INPUT background "every cell outside the container is &background"
+
+  (DET_OR_RULE &background DominantColor))
+
+(INPUT container "one object of one color other than &background is the outline of a rectangle, with one side broken by one opening: a run of background cells along that side's line, which does not include the corners of the rectangle"
+
+  (INIT &box BoundingBox
+    (cell (P)
+      (input *P *Col)
+      (NOT (&background (:C Col)))))
+
+  (RULE &corner
+    (&box.box *B)
+    (input *P)
+    (inside (:A P) B)
+    (same_corner (:P1 P) (:P2 B)))
+
+  (RULE &opening
+    (&box.box *B)
+    (input *P *Col)
+    (&background (:C Col))
+    (inside (:A P) B)
+    (same_dist *D (:P1 P) (:P2 B))
+    (NOT (&corner P)))
+
+  (INIT &runs Connectivity
+    (node (P)
+      (&opening *P)))
+
+  (INIT &one_run Singleton
+    (member ((:v Id))
+      (&runs.component *Id))))
+
+(INPUT interior "the cells strictly inside the rectangle are all &background")
+
+(OUTPUT fill-interior "every cell strictly inside the rectangle becomes &fill_color"
+
+  (DET &fill_color AnyOutNewColor))
+
+(OUTPUT fill-opening "every cell of the opening becomes &fill_color"
+
+  (RULE &source
+    (&opening *P *D))
+
+  (RULE &end
+    (&source *P *D)
+    (perp_dir D (:D2 *E1))
+    (neighbor P (:D E1) *Q)
+    (NOT (&source (:P Q) D)))
+
+  (RULE &light_mark
+    (OR ((&source *P (:D *Key)))
+        ((&end P *D (:E1 *E))
+         (diag_dirs (:D Key) (:D1 D) (:D2 E)))))
+
+  (INIT &light Ray
+    (key ((&light_mark (:Key ^D)))
+      (source (P)
+        (&light_mark (:Key D) *P))
+      (node (P)
+        (&light_mark (:Key D))
+        (input *P))
+      (dir (D)
+        (&light_mark (:Key D))))))
+
+(OUTPUT beam "from the opening, a band as wide as the opening goes straight out, perpendicular to the broken side and away from the interior, to the grid edge; every cell of that band becomes &fill_color")
+
+(OUTPUT diagonal-rays "from each end cell of the opening, a diagonal ray goes out to the grid edge, each step one line farther from the interior and one line farther from the band; every cell of each ray becomes &fill_color")
+
+(OUTPUT rest-kept "every other cell keeps its input color")
+
+(ALTS $openings "what the box does when its outline has more than one opening" $OneOpening
+  (ALT $EachOpening
+    (INPUT container "the outline may be broken by any number of openings, each a maximal run of background cells on a side line, off the corners")
+    (OUTPUT fill-opening "every cell of each opening becomes &fill_color")
+    (OUTPUT beam "each opening casts its own band")
+    (OUTPUT diagonal-rays "each opening casts its own two rays")
+    (RULE &output
+      (input *P (:Col *C_in))
+      (IF ((&painted P))
+          ((&fill_color (:C *Col)))
+          ((= Col C_in)))))
+  (ALT $SideSpan
+    (INPUT container "the outline may be broken by any number of openings; on each broken side, the stretch of the side line from its first to its last background cell counts as one opening")
+    (OUTPUT beam "each stretch casts one band as wide as the stretch, and only background cells of the band take &fill_color"
+      ;; A cell of side D between two openings of that side, the openings included.
+      (RULE &source
+        (&box.box *B)
+        (input *P)
+        (inside (:A P) B)
+        (same_dist *D (:P1 P) (:P2 B))
+        (&opening (:P *Q1) D)
+        (&opening (:P *Q2) D)
+        (perp_dir D (:D2 *E))
+        (opposite (:D E) (:Opp *F))
+        (NOT (nearer (:D E) P (:Q Q1)))
+        (NOT (nearer (:D F) P (:Q Q2)))))
+    (OUTPUT diagonal-rays "the two rays leave from the outer ends of each stretch, and only background cells of a ray take &fill_color")
+    (RULE &reach
+      (input *P *Col)
+      (&background (:C Col)))
+
+    (RULE &output
+      (input *P (:Col *C_in))
+      (IF ((&painted P))
+          ((&fill_color (:C *Col)))
+          ((= Col C_in))))))
+
+(ALTS $paint "what a cell of another color in the interior or in the light's path becomes" $PaintAll
+  (ALT $PaintBackground
+    (OUTPUT fill-interior "only background cells of the interior take &fill_color"
+      (RULE &kept
+        (input *P *Col)
+        (NOT (&background (:C Col)))))
+    (OUTPUT beam "only background cells of the band take &fill_color")
+    (OUTPUT diagonal-rays "only background cells of a ray take &fill_color")
+    (RULE &painted
+      (OR ((&light.ray *P)
+           (&light_cell)
+           (&reach P))
+          ((&box_interior P)))
+      (NOT (&kept P)))))
+
+(RULE &box_interior
+  (&box.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(RULE &reach
+  (input *P))
+
+(RULE &light_cell
+  (&light_mark *Key)
+  (&reach))
+
+(RULE &painted
+  (OR ((&light.ray *P)
+       (&light_cell)
+       (&reach P))
+      ((&box_interior P))))
+
+(RULE &undefined
+  (NOT (&one_run.value)))
+
+(RULE &output
+  (input *P (:Col *C_in))
+  (NOT (&undefined))
+  (IF ((&painted P))
+      ((&fill_color (:C *Col)))
+      ((= Col C_in))))
+
+(OUT (&output ^P ^Col))

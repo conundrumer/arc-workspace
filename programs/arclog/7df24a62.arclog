@@ -1,0 +1,50 @@
+;; inputs 25c5b04622b1750cb39b9266b6a8ecf537875ca0191387ed67bc1ab39c23c086 programs/solvers/7df24a62.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7df24a62
+
+(DET &box UnchangedColor)
+
+(DET &mark UnchangedColor)
+
+;; The drawn box, bounding the motif it holds.
+(INIT &tpl BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (&box (:C Col))))
+
+(RULE &pose
+  (&tpl.box *B)
+  (input *P *Col)
+  (inside (:A P) B)
+  (relative (:Base B) (:X P) (:X_rel *P_inner2))
+  (apply *D (:P P_inner2) (:P_out *P_inner)))
+
+;; The posed motif seated on the grid's marks.
+(INIT &occ Occurrences
+  (key ((OR ((&pose ^D *P_inner *Col)
+             (&mark (:C Col)))
+            ((d4_elem D)
+             (input *P Col)
+             (&mark (:C Col)))))
+    (cell (P)
+      (d4_elem D)
+      (input *P *Col)
+      (&mark (:C Col)))
+    (shape ((:P P_inner))
+      (&pose D *P_inner *Col)
+      (&mark (:C Col)))))
+
+(RULE &filled
+  (&occ.occurrence (:key *D) (:P *M))
+  (&pose D *P_inner)
+  (compose (:A M) (:B P_inner) (:C *P))
+  (input P *Col)
+  (NOT (&mark (:C Col))))
+
+(RULE &output
+  (OR ((&filled *P)
+       (&box (:C *Col)))
+      ((input P Col)
+       (NOT (&filled P)))))
+
+(OUT (&output ^P ^Col))

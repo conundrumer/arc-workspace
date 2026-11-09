@@ -1,0 +1,69 @@
+;; inputs 067ed3fe7a31bd4d71880f5ab07d497b91d365d6f599198ea484f205d441d631 programs/solvers/94414823.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 94414823
+
+(DET &wall SharedColor)
+
+(RULE &wall_cell
+  (input *P *Col)
+  (&wall (:C Col)))
+
+(INIT &outline Outlines
+  (node (P)
+    (&wall_cell *P)))
+
+(RULE &inner
+  (&outline.box *B)
+  (input *P)
+  (interior (:A P) B))
+
+(DET &bg DominantColor)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (NOT (&wall (:C Col))))
+
+(ALTS $choice "how the inside of the wall is delimited" $Rect
+  (ALT $Enclose
+    (INIT &closed Enclosure
+      (cell (P)
+        (input *P)
+        (NOT (&wall_cell P))))
+
+    (RULE &inner
+      (&closed.enclosed *P))))
+
+(INIT &inner_box BoundingBox
+  (cell (P)
+    (&inner *P)))
+
+(RULE &placed
+  (input *P)
+  (&inner_box.box *B)
+  (relative (:Base B) (:X P) (:X_rel *P_rel)))
+
+(RULE &quad_nearer
+  (&placed (:P_rel *P))
+  (dist_pair P *D *K *K2)
+  (< K K2))
+
+(RULE &quad_quadrant
+  (diag_dirs (:D *Diag) *D1 *D2)
+  (&quad_nearer *P (:D D1))
+  (&quad_nearer P (:D D2)))
+
+(RULE &on_diag
+  (&placed *P *P_rel)
+  (&quad_quadrant (:P P_rel) *Diag)
+  (diag_axis_of (:D Diag) *Da))
+
+(RULE &output
+  (OR ((&inner *P)
+       (&on_diag P (:Da *DA))
+       (&mark (:P *P_mark) *Col)
+       (&on_diag (:P P_mark) (:Da DA)))
+      ((input P Col)
+       (NOT (&inner P)))))
+
+(OUT (&output ^P ^Col))

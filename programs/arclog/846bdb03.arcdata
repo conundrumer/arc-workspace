@@ -1,0 +1,7 @@
+;; inputs 8ec318327c397500bd8736156371a2d5c3542aeab2ace63c6701592e3ab74ca0 programs/solvers/846bdb03.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 846bdb03
+
+(param &bg Color (0))
+(param &corner Color (4))
+(param &sym Sym (SYM_LR))

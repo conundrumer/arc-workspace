@@ -1,0 +1,86 @@
+;; inputs 1a03d4c691b451335c546fe5f4e62133a95bcfcb0f8cd3adb42699e3e7f5715d programs/solvers/0a938d79.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 0a938d79
+
+(DET &bg DominantColor)
+
+(DET &origin DiagDirDomain)
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+(RULE &on_axis_edge
+  (&mark *P)
+  (axis_of *D *A)
+  (margin (:B P) D (:K 0)))
+
+(RULE &off_axis_edge
+  (axis_elem *A)
+  (&mark *P)
+  (NOT (&on_axis_edge P A)))
+
+(RULE &step_axis
+  (perp (:A *A3) (:A2 *A))
+  (NOT (&off_axis_edge (:A A3))))
+
+(RULE &cell_line
+  (input *P)
+  (&step_axis (:A *A2))
+  (split P (:A A2) (:Along *P_line)))
+
+(RULE &ahead
+  (&cell_line (:P_line *P))
+  (&cell_line (:P_line *Q))
+  (&step_axis (:A *A2))
+  (axis_of *D (:A A2))
+  (relative (:Base P) (:X Q) (:X_rel *V))
+  (opposite D (:Opp *O))
+  (margin (:B V) (:D O) *K)
+  (>= K 0))
+
+(RULE &mark_line
+  (&mark (:P *P2) *Col)
+  (&cell_line (:P P2) (:P_line *P)))
+
+(RULE &lead
+  (&mark_line *P)
+  (&mark_line (:P *Q))
+  (&origin (:D *Dg))
+  (&step_axis (:A *A2))
+  (corner_dir (:C Dg) (:A A2) *D)
+  (nearer D P Q))
+
+(ALTS $choice "which mark leads" $Corner
+  (ALT $Margin
+    (RULE &lead
+      (&mark_line *P)
+      (&mark_line (:P *Q))
+      (&step_axis (:A *A2))
+      (axis_of *D (:A A2))
+      (margin (:B P) D *K)
+      (dist_pair (:P Q) D (:K *K2) (:K2 *K2_opp))
+      (< K K2)
+      (< K K2_opp))))
+
+(RULE &step
+  (&lead *P)
+  (&mark_line (:P *Q))
+  (!= Q P)
+  (&ahead P *D Q *K)
+  (> K 0))
+
+(RULE &line
+  (&mark_line (:P *M) *Col)
+  (&step *D *K)
+  (&ahead (:P M) D (:Q *P) (:K *T))
+  (divide T (:Side K) (:Gap K) (:Remainder 0)))
+
+(RULE &output
+  (OR ((&cell_line *P *P_line)
+       (&line (:P P_line) *Col))
+      ((&cell_line P (:P_line *P_line2))
+       (NOT (&line (:P P_line2)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

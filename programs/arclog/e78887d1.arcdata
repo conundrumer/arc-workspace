@@ -1,0 +1,208 @@
+;; inputs 1ddce7668016e911b1374d5851c6c863b4a8d7147e0ab8269d41af318cf923c6 programs/solvers/e78887d1.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; e78887d1
+
+(param &bg Color (0))
+(param &glyph_size number (3))
+(param &gap number (1))
+(param &shift_dir Dir (DIR_L))
+(param &shift_step number (1))
+(param &band_sense Sense (SENSE_CC))
+
+(exclude (&gap=$Stored &shift_step=$Derived) "wherever the stored gap tiles the input, the separators are that gap wide, so these cases are subsumed")
+
+(alts $s
+  (alt $StepFromBandsOrStored
+    (witness bands-move-right variant $StepFromBandsOrStored
+      (relaxed band-shift)
+      (separates "each band is the band before it with the patterns moved one slot to the right; the concept moves the last band's patterns one slot to the left, $StepFromBandsOrStored reads the move from the bands and moves them one slot to the right, and $FromFirstBand moves the first band's patterns two slots to the left, which gives the last band unchanged")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 3 0 0 0 1 1 1)
+        (0 2 0 0 3 3 3 0 0 1 0)
+        (2 0 2 0 0 0 3 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 2 2 0 3 0 3 0 1 0 0)
+        (0 2 0 0 0 3 0 0 1 1 1)
+        (0 2 0 0 3 0 3 0 0 0 1)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Stored $LastBand) (grid
+        (2 0 2 0 3 0 0 0 1 1 1)
+        (0 2 0 0 3 3 3 0 0 1 0)
+        (2 0 2 0 0 0 3 0 0 1 0)))
+      (output $PermutationFromBandsOrStored $StepFromBandsOrStored (grid
+        (2 0 0 0 3 3 3 0 1 0 1)
+        (2 2 2 0 0 3 0 0 0 1 0)
+        (0 0 2 0 0 3 0 0 1 0 1)))
+      (output $FromFirstBand (grid
+        (2 2 2 0 3 0 3 0 1 0 0)
+        (0 2 0 0 0 3 0 0 1 1 1)
+        (0 2 0 0 3 0 3 0 0 0 1)))))
+  (alt $PermutationFromBandsOrStored
+    (witness bands-swap-two borderline $PermutationFromBandsOrStored
+      (relaxed band-shift)
+      (separates "the second band is the first band with the patterns of its first two slots swapped; the concept moves the last band's patterns one slot to the left, $PermutationFromBandsOrStored reads the swap off the bands and swaps them back, and $StepFromBandsOrStored finds no cyclic move from one band to the next and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 3 0 0 0 1 1 1)
+        (0 2 0 0 3 3 3 0 0 1 0)
+        (2 0 2 0 0 0 3 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 0 0 3 0 3 0 1 1 1)
+        (2 2 2 0 0 3 0 0 0 1 0)
+        (0 0 2 0 3 0 3 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Stored $LastBand) (grid
+        (2 0 2 0 3 3 3 0 1 0 0)
+        (0 2 0 0 0 3 0 0 1 1 1)
+        (2 0 2 0 0 3 0 0 0 0 1)))
+      (output $PermutationFromBandsOrStored (grid
+        (2 0 2 0 3 0 0 0 1 1 1)
+        (0 2 0 0 3 3 3 0 0 1 0)
+        (2 0 2 0 0 0 3 0 0 1 0)))
+      (output $StepFromBandsOrStored undefined)
+      (output $FromFirstBand (grid
+        (2 2 2 0 3 0 3 0 1 0 0)
+        (0 2 0 0 0 3 0 0 1 1 1)
+        (0 2 0 0 3 0 3 0 0 0 1))))
+    (witness patterns-repeat ordinary concept
+      (separates "two slots hold one pattern, so two permutations of the slots take the first band onto the second and one cyclic move does; $StepFromBandsOrStored moves the last band's patterns one slot to the left, and $PermutationFromBandsOrStored gives a grid for each permutation")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 3 0 3 0 1 1 1)
+        (0 2 0 0 0 3 0 0 0 1 0)
+        (2 0 2 0 3 0 3 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 3 3 3 0 1 0 1)
+        (0 2 0 0 0 3 0 0 0 1 0)
+        (2 0 2 0 0 3 0 0 1 0 1)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $StepFromBandsOrStored $Stored (grid
+        (2 2 2 0 3 0 3 0 1 0 1)
+        (0 2 0 0 0 3 0 0 0 1 0)
+        (0 2 0 0 3 0 3 0 1 0 1)))
+      (output $PermutationFromBandsOrStored
+        (grid
+          (2 2 2 0 3 0 3 0 1 0 1)
+          (0 2 0 0 0 3 0 0 0 1 0)
+          (0 2 0 0 3 0 3 0 1 0 1))
+        (grid
+          (2 0 2 0 3 0 3 0 1 1 1)
+          (0 2 0 0 0 3 0 0 0 1 0)
+          (2 0 2 0 3 0 3 0 0 1 0))))))
+
+(alts $o
+  (alt $FromFirstBand
+    (witness bands-unrelated foreign concept
+      (relaxed band-shift)
+      (separates "the second band holds none of the first band's patterns; the concept moves the last band's patterns one slot to the left, $FromFirstBand moves the first band's patterns two slots to the left, and $StepFromBandsOrStored finds no move from one band to the next and is undefined")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 3 0 0 0 1 1 1)
+        (0 2 0 0 3 3 3 0 0 1 0)
+        (2 0 2 0 0 0 3 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 0 3 0 0 1 1 1)
+        (2 0 2 0 3 3 3 0 0 0 0)
+        (2 2 2 0 0 3 0 0 1 1 1)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output ($Stored $LastBand) (grid
+        (0 2 0 0 3 3 3 0 1 0 1)
+        (2 2 2 0 0 0 0 0 1 0 1)
+        (0 2 0 0 3 3 3 0 1 1 1)))
+      (output $PermutationFromBandsOrStored $StepFromBandsOrStored undefined)
+      (output $FromFirstBand (grid
+        (2 2 2 0 3 0 3 0 1 0 0)
+        (0 2 0 0 0 3 0 0 1 1 1)
+        (0 2 0 0 3 0 3 0 0 0 1))))))
+
+(alts $g
+  (alt $SlotColorFromFirstBand
+    (witness slot-colors-change foreign concept
+      (relaxed slot-colors)
+      (separates "the second band draws its slots in colors the first band does not use; the concept draws the moved patterns in the last band's slot colors, and $SlotColorFromFirstBand in the first band's")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 3 0 0 0 1 1 1)
+        (0 2 0 0 3 3 3 0 0 1 0)
+        (2 0 2 0 0 0 3 0 0 1 0)
+        (0 0 0 0 0 0 0 0 0 0 0)
+        (5 0 0 0 6 6 6 0 7 0 7)
+        (5 5 5 0 0 6 0 0 0 7 0)
+        (0 0 5 0 0 6 0 0 7 0 7)
+        (0 0 0 0 0 0 0 0 0 0 0)))
+      (output $LandingSlot (grid
+        (5 5 5 0 6 0 6 0 7 0 0)
+        (0 5 0 0 0 6 0 0 7 7 7)
+        (0 5 0 0 6 0 6 0 0 0 7)))
+      (output $SlotColorFromFirstBand (grid
+        (2 2 2 0 3 0 3 0 1 0 0)
+        (0 2 0 0 0 3 0 0 1 1 1)
+        (0 2 0 0 3 0 3 0 0 0 1))))))
+
+(alts &bg
+  (alt &bg=$Derived
+    (witness bg=DominantColor variant &bg=$Derived
+      (relaxed glyph-tiling)
+      (relaxed bands)
+      (separates "the field is 8 in place of 0; at the stored background 0 the blank lines hold 8 and the concept is undefined, and the derived background 8 cuts the bands and moves their patterns one slot to the left on a field of 8")
+      (input (grid
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (2 8 2 8 3 8 8 8 1 1 1)
+        (8 2 8 8 3 3 3 8 8 1 8)
+        (2 8 2 8 8 8 3 8 8 1 8)
+        (8 8 8 8 8 8 8 8 8 8 8)
+        (2 8 8 8 3 3 3 8 1 8 1)
+        (2 2 2 8 8 3 8 8 8 1 8)
+        (8 8 2 8 8 3 8 8 1 8 1)
+        (8 8 8 8 8 8 8 8 8 8 8)))
+      (output &bg=$Stored undefined)
+      (output &bg=$Derived (grid
+        (2 2 2 8 3 8 3 8 1 8 8)
+        (8 2 8 8 8 3 8 8 1 1 1)
+        (8 2 8 8 3 8 3 8 8 8 1))))))
+
+(alts &gap
+  (alt &gap=$Derived
+    (witness gap=SepThickness variant &gap=$Derived
+      (relaxed glyph-tiling)
+      (separates "the slots are two columns apart, and two rows border the band; the stored gap of one line fits no tiling of the grid and the concept is undefined, and the derived gap of two lines cuts the band and moves its patterns one slot to the left")
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 0 3 0 0 0 0 1 1 1 0 0 0 5 0)
+        (0 2 0 0 0 3 3 3 0 0 0 1 0 0 0 5 5 5)
+        (2 0 2 0 0 0 0 3 0 0 0 1 0 0 0 0 5 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &gap=$Stored undefined)
+      (output (&gap=$Derived &shift_step=$Stored) (grid
+        (2 0 0 0 0 3 3 3 0 0 0 1 0 0 0 5 0 5)
+        (2 2 2 0 0 0 3 0 0 0 1 1 1 0 0 0 5 0)
+        (0 0 2 0 0 0 3 0 0 0 0 1 0 0 0 5 0 5)))
+      (output (&gap=$Derived &shift_step=$Derived) (grid
+        (2 2 2 0 0 0 3 0 0 0 1 0 1 0 0 5 0 0)
+        (0 2 0 0 0 3 3 3 0 0 0 1 0 0 0 5 5 5)
+        (0 2 0 0 0 0 3 0 0 0 1 0 1 0 0 0 0 5))))))
+
+(alts &shift_step
+  (alt &shift_step=$Derived
+    (witness shift_step=SepThickness variant concept
+      (separates "the blank lines are two wide; the concept moves the patterns the stored one slot to the left, and shift_step=SepThickness moves them two slots, the separator thickness")
+      (assign &gap (2))
+      (input (grid
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (2 0 2 0 0 3 0 0 0 0 1 1 1 0 0 0 5 0)
+        (0 2 0 0 0 3 3 3 0 0 0 1 0 0 0 5 5 5)
+        (2 0 2 0 0 0 0 3 0 0 0 1 0 0 0 0 5 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)
+        (0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0)))
+      (output &shift_step=$Stored (grid
+        (2 0 0 0 0 3 3 3 0 0 0 1 0 0 0 5 0 5)
+        (2 2 2 0 0 0 3 0 0 0 1 1 1 0 0 0 5 0)
+        (0 0 2 0 0 0 3 0 0 0 0 1 0 0 0 5 0 5)))
+      (output &shift_step=$Derived (grid
+        (2 2 2 0 0 0 3 0 0 0 1 0 1 0 0 5 0 0)
+        (0 2 0 0 0 3 3 3 0 0 0 1 0 0 0 5 5 5)
+        (0 2 0 0 0 0 3 0 0 0 1 0 1 0 0 0 0 5))))))

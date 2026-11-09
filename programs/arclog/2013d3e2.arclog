@@ -1,0 +1,118 @@
+;; inputs c37f8c82ae5125881abd44871c51afc8f99b80faeed154ecdd3c5f9a42460549 programs/solvers/2013d3e2.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2013d3e2
+
+(DET &bg DominantColor)
+
+(INIT &bbox BoundingBox
+  (cell (P)
+    (input *P *Col)
+    (NOT (&bg (:C Col)))))
+
+(RULE &box_cell
+  (input (:P *P_grid) *Col)
+  (&bbox.box *B)
+  (inside (:A P_grid) B)
+  (relative (:Base B) (:X P_grid) (:X_rel *P_box)))
+
+(INIT &ex_box BoundingBox
+  (key ((ex_output ^E))
+    (cell (P)
+      (ex_input E *P *Col)
+      (NOT (&bg (:C Col))))))
+
+;; Each trained example's output, seated among its box cells: the
+;; placement is the box, in the box's frame, that the output fills.
+(INIT &seat Occurrences
+  (key ((OR ((ex_input ^E *P *Col)
+             (&ex_box.box (:key E) *B)
+             (inside (:A P) B)
+             (relative (:Base B) (:X P) (:X_rel *P_box)))
+            ((ex_output E (:P *Q) Col))))
+    (cell ((:P P_box) (:v Col))
+      (ex_input E *P *Col)
+      (&ex_box.box (:key E) *B)
+      (inside (:A P) B)
+      (relative (:Base B) (:X P) (:X_rel *P_box)))
+    (shape ((:P Q) (:v Col))
+      (ex_output E (:P *Q) *Col))))
+
+(INIT &half_at_division Division
+  (key ((&seat.occurrence (:key *E) (:P *M))
+        (ex_output E (:P *Q))
+        (compose (:A M) (:B Q) (:C *P_box))
+        (sub_extent (:P P_box) (:K ^N)))
+    (cell ((:P P_box))
+      (&seat.occurrence (:key *E) (:P *M))
+      (ex_output E (:P *Q))
+      (compose (:A M) (:B Q) (:C *P_box))
+      (sub_extent (:P P_box) (:K N)))
+    (parts ((:A A2) N)
+      (axis_elem (:A *A2))
+      (&seat.occurrence (:key *E) (:P *M))
+      (ex_output E (:P *Q))
+      (compose (:A M) (:B Q) (:C *P_box))
+      (sub_extent (:P P_box) (:K N)))))
+
+(DET &half_at
+  (&seat.occurrence (:key *E) (:P *M))
+  (ex_output E (:P *Q))
+  (compose (:A M) (:B Q) (:C *P_box))
+  (&half_at_division.tile (:key *N) (:P P_box) (:P_outer *P_tile) (:P_inner Q)))
+
+(DET &half_miss
+  (&half_at *N *P_tile)
+  (ex_output *E)
+  (NOT (&half_at E N P_tile)))
+
+(DET &out_tile_at
+  (&half_at *N *P_tile)
+  (NOT (&half_miss N P_tile)))
+
+(DET &divisor
+  (&out_tile_at *N))
+
+(INIT &output_division Division
+  (cell ((:P P_box))
+    (&box_cell *P_box))
+  (parts (A N)
+    (axis_elem *A)
+    (&divisor *N)))
+
+(DET &out_tile
+  (&out_tile_at *P_tile))
+
+(ALTS $choice "how the corner region is bounded" $Half
+  (ALT $Window
+    (DET &win_dim ConstOutDim)
+
+    (INIT &win Frame
+      (extent (A (:N K))
+        (&win_dim (:N *K))
+        (axis_elem *A)))
+
+    (DET &window_at
+      (&seat.occurrence (:key *E) (:P *M))
+      (corner_dist (:P M) (:Diag *D) (:K 0)))
+
+    (DET &corner_miss
+      (&window_at *D)
+      (ex_output *E)
+      (NOT (&window_at E D)))
+
+    (DET &corner
+      (&window_at *D)
+      (NOT (&corner_miss D)))
+
+    (RULE &output
+      (&box_cell *P_box *Col)
+      (&win.cell *P)
+      (&corner (:D *Diag))
+      (same_corner (:D Diag) (:P1 P_box) (:P2 P)))))
+
+(RULE &output
+  (&box_cell *P_box *Col)
+  (&output_division.tile (:P P_box) (:P_outer *P_tile) (:P_inner *P))
+  (&out_tile P_tile))
+
+(OUT (&output ^P ^Col))

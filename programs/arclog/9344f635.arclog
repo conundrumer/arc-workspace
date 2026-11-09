@@ -1,0 +1,35 @@
+;; inputs 59b09b52ee4f0a5626b5118d533a60ac61e72217f8689c3bd9768e63421684a4 programs/solvers/9344f635.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9344f635
+
+(DET &bg DominantColor)
+
+;; the axis whose filled lines cover the other axis's
+(DET &over AxisDomain)
+
+(RULE &segment
+  (input *P *Col)
+  (NOT (&bg (:C Col)))
+  (neighbor P *D *Q)
+  (input (:P Q) Col)
+  (axis_of D *A))
+
+(RULE &line_col
+  (input *P)
+  (&segment (:P *Q) *A *Col)
+  (same_line A P Q))
+
+(RULE &shown
+  (&over *A)
+  (perp A *A2)
+  (OR ((&line_col *P A *Col))
+      ((&line_col P (:A A2) Col)
+       (NOT (&line_col P A)))))
+
+(RULE &output
+  (input *P)
+  (OR ((&shown P *Col))
+      ((NOT (&shown P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

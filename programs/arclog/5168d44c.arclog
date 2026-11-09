@@ -1,0 +1,119 @@
+;; inputs b78be94d783d91bb2816a5700382f7ff6b24a82aee37d79a700e8969778a7f65 programs/solvers/5168d44c.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 5168d44c
+
+(DET &dot UnchangedColor)
+
+(RULE &dot_cell
+  (input *P *Col)
+  (&dot (:C Col)))
+
+(RULE &cast_blocked
+  (&dot_cell *P))
+
+(DET &ring ColorDomain)
+
+(RULE &ring_cell
+  (input *P *Col)
+  (&ring (:C Col)))
+
+(INIT &closed Enclosure
+  (cell (P)
+    (input *P)
+    (NOT (&ring_cell P))))
+
+(DET &corner DiagDirDomain)
+
+(RULE &move_dir
+  (&closed.enclosed (:P *C))
+  (&dot_cell *P)
+  (!= P C)
+  (&corner (:D *Diag))
+  (corner_dir (:C Diag) *A *D)
+  (same_line A (:P C) (:Q P)))
+
+(INIT &cast_frame Frame
+  (extent (A N)
+    (&closed.enclosed *P)
+    (frame_extent P *A *N)))
+
+(INIT &cast_full Ray
+  (source (P)
+    (&closed.enclosed *P))
+  (node (P)
+    (&cast_frame.cell *P))
+  (dir (D)
+    (&move_dir *D)))
+
+(DET &bg DominantColor)
+
+(RULE &shape
+  (&ring_cell *P)
+  (&closed.enclosed (:P *C))
+  (relative (:Base C) (:X P) (:X_rel *V)))
+
+(ALTS $choice "what fixes where the ring lands (coincide when the dots are two apart)" $Next
+  (ALT $Jump
+    (DET &step TileCount)
+
+    (RULE &target
+      (OR ((&closed.enclosed (:P *C))
+           (&move_dir *D)
+           (&step (:N *K))
+           (jump (:P C) D K (:Q *P)))
+          ((&cast_stop_full (:V1 P)))))
+
+    ;; $Next and $Fit both take the first cell ahead that halts the ring.
+    (INIT &cast Ray
+      (source (P)
+        (&closed.enclosed *P))
+      (node (P)
+        (&cast_frame.cell *P))
+      (dir (D)
+        (&move_dir *D))))
+  (ALT $Fit
+    (RULE &obstructed
+      (input *P)
+      (&shape *V)
+      (compose (:A P) (:B V) (:C *Q))
+      (&dot_cell (:P Q)))
+
+    ;; The travel halts where the ring covers no dot.
+    (RULE &cast_blocked
+      (input *P)
+      (NOT (&obstructed P)))))
+
+;; $Next and $Fit both take the first cell ahead that halts the ring.
+(INIT &cast Ray
+  (source (P)
+    (&closed.enclosed *P))
+  (node (P)
+    (&cast_frame.cell *P)
+    (NOT (&cast_blocked P)))
+  (dir (D)
+    (&move_dir *D)))
+
+(RULE &cast_stop_full
+  (&cast.end (:P *E1) (:D *V2) (:Origin *V4))
+  (neighbor (:P E1) (:D V2) (:Q *V1))
+  (&cast_full.ray (:P V1) (:D V2) (:K *V3) (:Origin V4)))
+
+(RULE &target
+  (&cast_stop_full (:V1 *P)))
+
+(RULE &new_ring
+  (&target (:P *Q))
+  (&shape *V)
+  (compose (:A Q) (:B V) (:C *P)))
+
+(RULE &output
+  (OR ((&dot_cell *P)
+       (&dot (:C *Col)))
+      ((&new_ring P)
+       (&ring (:C Col)))
+      ((input P)
+       (NOT (&dot_cell P))
+       (NOT (&new_ring P))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

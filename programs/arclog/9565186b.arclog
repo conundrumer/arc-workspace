@@ -1,0 +1,56 @@
+;; inputs 7ccfb2c8c42aebdd66e82240dc71306ccac9e7447ec7237bab6bd0b79835588d programs/solvers/9565186b.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 9565186b
+
+(INIT &commonest_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(INIT &comps Connectivity
+  (key ((input *P ^Col))
+    (node (P)
+      (input *P Col))))
+
+(INIT &biggest_count Cardinality
+  (key ((&comps.component (:key ^Col) *P ^Id))
+    (member ((:m P))
+      (&comps.component (:key Col) *P Id))))
+
+(DET &mark AnyOutNewColor)
+
+(INIT &commonest Order
+  (member ((:t Col))
+    (&commonest_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&commonest_count.size (:key *Col) *N)))
+
+(RULE &keep
+  (input *P *Col)
+  (&commonest.maximal (:t Col)))
+
+;; The largest component.
+(INIT &biggest Order
+  (member ((:t (:Col M_col) (:Id M_id)))
+    (&biggest_count.size (:key (:Col *M_col) (:Id *M_id))))
+  (score ((:t (:Col M_col) (:Id M_id)) (:S N))
+    (&biggest_count.size (:key (:Col *M_col) (:Id *M_id)) *N)))
+
+(ALTS $choice "what dominates the grid" $Count
+  (ALT $BlobColor
+    (RULE &keep
+      (input *P *Col)
+      (&biggest.maximal (:t Col))))
+  (ALT $Blob
+    (RULE &keep
+      (&biggest.maximal (:t *Col *Id))
+      (&comps.component (:key Col) *P Id))))
+
+(RULE &output
+  (OR ((&keep *P)
+       (input P *Col))
+      ((input P)
+       (NOT (&keep P))
+       (&mark (:C Col)))))
+
+(OUT (&output ^P ^Col))

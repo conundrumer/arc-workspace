@@ -1,0 +1,17 @@
+;; inputs b63c34228d4d487937d88ed4d65124a760084fe0d3bebbbd92ef8f1e051b4ae8 programs/solvers/44f52bb0.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 44f52bb0
+
+(param &sym_group Sym (SYM_BOX))
+(param &sym_out (Position Color)
+  (grid
+    (1)))
+(param &asym_out (Position Color)
+  (grid
+    (7)))
+(param &mapping_sym (Ident Sym) (0 SYM_BOX) (1 SYM_1))
+(param &mapping_out (Ident Position Color)
+  (0 (grid
+    (1)))
+  (1 (grid
+    (7))))

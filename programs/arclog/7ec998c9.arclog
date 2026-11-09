@@ -1,0 +1,123 @@
+;; inputs e10e5ab4b30c967644ac45a61b937dbc3481a22f0ea172a96af99420af3e9c85 programs/solvers/7ec998c9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7ec998c9
+
+;; The axis of the mark's own line, the stem of the Z.
+(DET &axis AxisDomain)
+
+(INIT &field_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+;; The field is the commonest color; the mark is the cell that differs.
+(INIT &field Order
+  (member ((:t Col))
+    (&field_count.size (:key *Col)))
+  (score ((:t Col) (:S N))
+    (&field_count.size (:key *Col) *N)))
+
+(RULE &mark
+  (input *P *Col)
+  (NOT (&field.maximal (:t Col))))
+
+(RULE &stem_dir
+  (&axis *A)
+  (axis_of (:D *Key) A))
+
+;; The Z's stem: rays from the mark both ways along the axis, keyed by their
+;; cast direction.
+(INIT &stem Ray
+  (key ((OR ((&stem_dir (:Key ^D))
+             (&mark *P))
+            ((&axis *A)
+             (axis_of D A))))
+    (source (P)
+      (&stem_dir (:Key D))
+      (&mark *P))
+    (node (P)
+      (&axis *A)
+      (axis_of D A)
+      (input *P))
+    (dir (D)
+      (&axis *A)
+      (axis_of D A))))
+
+(RULE &stem_ray
+  (&stem.ray (:key (:D *Key)) *P *D *K (:Origin *Src))
+  (&stem_dir Key)
+  (input P)
+  (NOT (&mark P)))
+
+;; The checkerboard's anchor corner, and the sense its shade turns by. Every grid is square, so the pairs do not separate DIAG_TL from DIAG_BR.
+(DET &corner DiagDirDomain)
+
+(RULE &corner_steps
+  (&mark *P)
+  (&corner (:D *Diag))
+  (corner_dist P Diag *K))
+
+;; The checkerboard: the anchor corner cell takes &corner_sense, and
+;; each unit step swaps sense.
+(INIT &checker Walk
+  (successor ((:p S) (:p_next S2))
+    (sense_elem *S)
+    (sense_elem (:S *S2))
+    (!= S S2))
+  (steps ((:N K))
+    (&corner_steps *K)))
+
+(DET &corner_sense SenseDomain)
+
+(RULE &shade
+  (&corner_steps *K)
+  (&corner_sense (:S *S0))
+  (&checker.walk (:p0 S0) (:N K) (:p *S)))
+
+(RULE &arm_mark
+  (&mark (:P *M))
+  (&stem.ray (:key *D) *P D (:Origin M))
+  (margin (:B P) D (:K 0))
+  (&shade *S)
+  (turn S D (:D2 *Key)))
+
+(INIT &arm_frame Frame
+  (key ((&arm_mark (:Key ^Ky) *P)
+        (frame_extent P *A *N))
+    (extent (A N)
+      (&arm_mark (:Key Ky) *P)
+      (frame_extent P *A *N))))
+
+;; The Z's arms: each casts from the stem's end on the edge, in the direction
+;; the mark's shade turns to.
+(INIT &arm Ray
+  (key ((OR ((&arm_mark (:Key ^Ky) *P))
+            ((dir_elem (:D Ky)))
+            ((&arm_frame.cell (:key Ky) P))))
+    (source (P)
+      (&arm_mark (:Key Ky) *P))
+    (node (P)
+      (&arm_frame.cell (:key Ky) *P))
+    (dir ((:D Ky))
+      (dir_elem (:D Ky)))))
+
+(RULE &arm_ray
+  (&arm.ray (:key (:Ky *Key)) *P *D *K (:Origin *Src))
+  (dir_elem (:D Key))
+  (input P)
+  (NOT (&mark P)))
+
+;; The Z's color.
+(DET &line AnyOutNewColor)
+
+(RULE &lit
+  (OR ((&stem_ray *P))
+      ((&arm_ray P))))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (IF ((&lit P))
+      ((&line (:C *Col)))
+      ((= Col Col_in))))
+
+(OUT (&output ^P ^Col))

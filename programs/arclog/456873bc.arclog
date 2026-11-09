@@ -1,0 +1,85 @@
+;; inputs 56f7a5c939493663ee871977b6219324eac10ceeca204a885a470c7d8ab7b009 programs/solvers/456873bc.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 456873bc
+
+(DET &gap DivisorRatio)
+
+(INIT &side_division Division
+  (key ((input *P)
+        (sub_extent P ^K))
+    (cell (P)
+      (input *P)
+      (sub_extent P K))
+    (side ((:A A2) K)
+      (axis_elem (:A *A2))
+      (input *P)
+      (sub_extent P K))
+    (gap ((:A A2) G)
+      (axis_elem (:A *A2))
+      (input *P)
+      (sub_extent P K)
+      (&gap (:K *G)))))
+
+(RULE &side
+  (&side_division.tile (:key *K) *P (:P_outer *P_tile))
+  (sub_extent P *A K)
+  (axis_extents (:P P_tile) A (:N1 K) (:N2 K)))
+
+(INIT &cell_division Division
+  (key ((&side ^K))
+    (side (A K)
+      (axis_elem *A)))
+  (cell ((:P P_grid))
+    (input (:P *P_grid)))
+  (gap (A G)
+    (axis_elem *A)
+    (&gap (:K *G))))
+
+(DET &bg DominantColor)
+
+(DET &ink SharedColor)
+
+(DET &mark AnyOutNewColor)
+
+(RULE &shape
+  (&cell_division.tile (:P *P_grid) (:P_inner *P_intile))
+  (input (:P P_grid) *Col)
+  (&ink (:C Col)))
+
+(RULE &inked
+  (&cell_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner *P_intile))
+  (&shape (:P_intile P_tile))
+  (&shape P_intile))
+
+(RULE &marked
+  (&cell_division.tile (:P *P_grid) (:P_outer *P_tile) (:P_inner P_tile))
+  (&shape (:P_intile P_tile)))
+
+(ALTS $choice "what the fractal's ink comes from" $Draw
+  (ALT $Restore
+    (DET &cover ChangedColor)
+
+    (RULE &output
+      (OR ((input *P *Col)
+           (NOT (&marked (:P_grid P)))
+           (NOT (&cover (:C Col))))
+          ((&marked (:P_grid P))
+           (&mark (:C Col)))
+          ((input P (:Col *Cover))
+           (&cover (:C Cover))
+           (NOT (&marked (:P_grid P)))
+           (IF ((&inked (:P_grid P)))
+               ((&ink (:C Col)))
+               ((&bg (:C Col)))))))))
+
+(RULE &output
+  (OR ((&inked (:P_grid *P))
+       (NOT (&marked (:P_grid P)))
+       (&ink (:C *Col)))
+      ((&marked (:P_grid P))
+       (&mark (:C Col)))
+      ((input P)
+       (NOT (&inked (:P_grid P)))
+       (&bg (:C Col)))))
+
+(OUT (&output ^P ^Col))

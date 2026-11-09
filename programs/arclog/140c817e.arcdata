@@ -1,0 +1,7 @@
+;; inputs 6d8b30979bd13e4423aa7b5bedd6b1f4097d44efa2ad238ee77a089fcd789a7e programs/solvers/140c817e.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 140c817e
+
+(param &line Color (1))
+(param &center Color (2))
+(param &corner Color (3))

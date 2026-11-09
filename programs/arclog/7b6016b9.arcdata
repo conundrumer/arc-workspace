@@ -1,0 +1,7 @@
+;; inputs 6378d7ca8e8d86264996cfcaa4590190a6a2b6c3baa8194d0cf36f1e14c53d6a programs/solvers/7b6016b9.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 7b6016b9
+
+(param &bg Color (0))
+(param &outside_fill Color (3))
+(param &fill Color (2))

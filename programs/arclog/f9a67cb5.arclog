@@ -1,0 +1,123 @@
+;; inputs f506dda7d9c15983c4823781e7e118c8bd678a46df8a60818db57e7bd33ab4f6 programs/solvers/f9a67cb5.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; f9a67cb5
+
+(INPUT one-source "exactly one cell of source_color (2) lies on an edge of the grid, off its corners; that edge is the source edge")
+
+(INPUT parallel-walls "full-length lines of wall_color (8) run parallel to the source edge, each broken by one or more one-cell gaps")
+
+(INPUT background "every other cell is background (0)")
+
+(OUTPUT fall-straight "water leaves the source moving away from the source edge and moves straight on while the cell ahead is not wall, until it leaves the grid")
+
+(OUTPUT spread-along-wall "where the cell ahead of the water is wall, the water spreads both ways along its line, each way up to and including the first cell whose cell ahead is not wall, or up to the grid edge")
+
+(OUTPUT drain-through-gap "from each cell the water reaches whose cell ahead is not wall, the water falls straight on through the gap; water that arrives straight in front of a gap passes through without spreading")
+
+(OUTPUT paint-water "every cell the water reaches takes source_color; every other cell keeps its input color"
+
+  (DET_OR_RULE &source_color "the spout's color" RarestColor
+    (ex_input *E *P (:Col *C0))
+    (ex_output E P (:Col *C))
+    (!= C C0))
+
+  (DET_OR_RULE &background DominantColor
+    (ex_input *E *P (:Col *C))
+    (ex_output E P (:Col *C2))
+    (!= C C2))
+
+  (RULE &source
+    (&source_color *C)
+    (input *P (:Col C)))
+
+  (RULE &flow
+    (&source *P)
+    (opposite *D (:Opp *E))
+    (margin (:B P) (:D E) (:K 0)))
+
+  (RULE &ahead
+    (&flow *D)
+    (input *P)
+    (neighbor P D *Q)
+    (input (:P Q)))
+
+  (DET &source_color_determined
+    (ex_input *E *P (:Col *C0))
+    (ex_output E P (:Col *C))
+    (!= C C0))
+
+  (DET &wall_color
+    (ex_input (:Col *C))
+    (NOT (&background C))
+    (NOT (&source_color_determined C)))
+
+  (RULE &wall
+    (&wall_color *C)
+    (input *P (:Col C)))
+
+  (RULE &beside
+    (&flow *D)
+    (perp_dir D (:D2 *S))
+    (input *P)
+    (neighbor P (:D S) *Q)
+    (input (:P Q))
+    (NOT (&wall (:P Q)))))
+
+(ALTS $w "what a wall is" $WallColor
+  (ALT $WallAnyColor
+    (INPUT parallel-walls "full-length lines of cells that are neither background nor the source run parallel to the source edge, each broken by one or more one-cell gaps"
+      (RULE &wall
+        (input *P (:Col *C))
+        (NOT (&background C))
+        (NOT (&source P))))))
+
+(ALTS $g "where the water drains through a gap" $DrainCell
+  (ALT $DrainWholeGap
+    (OUTPUT drain-through-gap "water at a cell that faces a gap also spreads over every cell that faces the same gap, and falls straight on from each of them"
+      (RULE &gap
+        (&flow *D)
+        (&wall (:P *Q))
+        (input *P)
+        (same_dist D (:P1 P) (:P2 Q))
+        (NOT (&wall P))))
+    (INIT &water Propagation
+      (source ((:n P))
+        (&source *P))
+      (edge ((:a P) (:b Q))
+        (OR ((OR ((&ahead *P *Q)
+                  (NOT (&wall (:P Q))))
+                 ((&ahead P (:Q *Q0))
+                  (&wall (:P Q0))
+                  (&beside P Q))))
+            ((&ahead P (:Q *G))
+             (&gap (:P G))
+             (&beside P Q)
+             (&ahead (:P Q) (:Q *G2))
+             (&gap (:P G2))))))))
+
+(RULE_OR_DET &water_color "The color the water takes: the spout's."
+  (&source *P)
+  (input P (:Col *C)))
+
+(INIT &water Propagation
+  (source ((:n P))
+    (&source *P))
+  (edge ((:a P) (:b Q))
+    (OR ((&ahead *P *Q)
+         (NOT (&wall (:P Q))))
+        ((&ahead P (:Q *Q0))
+         (&wall (:P Q0))
+         (&beside P Q)))))
+
+(RULE &output
+  (OR ((&water.reached (:n *P))
+       (&water_color (:C *Col)))
+      ((input P Col)
+       (NOT (&water.reached (:n P))))))
+
+(DET &background_determined
+  (ex_input *E *P (:Col *C))
+  (ex_output E P (:Col *C2))
+  (!= C C2))
+
+(OUT (&output ^P ^Col))

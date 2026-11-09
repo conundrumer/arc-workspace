@@ -1,0 +1,156 @@
+;; inputs 19176155f24c927a71918a12fd3d6daab7eba4ede0f4bfd38bfc297b1d0ee952 programs/solvers/abc82100.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; abc82100
+
+(INPUT background "the background is &bg"
+
+  (DET_OR_RULE &bg DominantColor))
+
+(INPUT legend-shape "each legend has a shape drawn in &key, one 8-connected component of that color. The key color occurs nowhere else."
+
+  (DET &key VanishedColor))
+
+(INPUT legend-domino "next to each shape, outside its bounding box on the box's center line, sits a domino of two cells in two colors other than the background and the key. The domino lies on the axis that runs out from the box. Its near cell touches the box edge, and its far cell is one step further out.")
+
+(INPUT legend-pair "the far cell's color is the source color, and the near cell's color is the target color. Each source color belongs to one legend.")
+
+(INPUT scene-cells "outside the legends, the grid has single cells of source colors, and it can have cells of other colors")
+
+(INPUT clear-stamps "no two stamps of different target colors write one cell, and no stamp writes a cell that keeps a color other than background")
+
+(OUTPUT key-site "a domino is a key of a shape when its near cell lies just outside the shape's bounding box, within the box's row or column span, and its far cell lies one step further out. Every key forms a legend with the shape.")
+
+(OUTPUT anchor "the anchor of a legend is the cell one step past the near cell, away from the far cell")
+
+(OUTPUT erase "every legend cell (shape, near, far) and every cell of a source color becomes background")
+
+(OUTPUT stamp "for each scene cell of a source color, the shape of that color's legend is drawn in the legend's target color, moved so that the anchor lands on that cell. Cells that fall off the grid are dropped. All stamps read the input, so the stamps do not chain.")
+
+(OUTPUT keep "every other cell keeps its input color"
+
+  (RULE &ink
+    (input *P *Col)
+    (NOT (&bg (:C Col)))
+    (NOT (&key (:C Col))))
+
+  (RULE &ink_pair
+    (&ink (:P *N))
+    (opposite *D (:Opp *D_back))
+    (neighbor (:P N) D (:Q *F))
+    (&ink (:P F))
+    (neighbor (:P N) (:D D_back) (:Q *A)))
+
+  (RULE &domino
+    (&ink_pair *A *N *F *D)
+    (input (:P N) *Col)
+    (input (:P F) (:Col *Col_f))
+    (!= Col Col_f))
+
+  (INIT &shape Connectivity
+    (node (P)
+      (input *P *Col)
+      (&key (:C Col)))
+    (step ((:Delta S))
+      (OR ((diag_dir_elem *D)
+           (step_offset D (:V *S)))
+          ((dir_elem (:D *D2))
+           (step_offset (:D D2) (:V S))))))
+
+  (INIT &hull BoundingBox
+    (key ((&shape.component *P ^Id))
+      (cell (P)
+        (&shape.component *P Id))))
+
+  (RULE &side_key
+    (&domino *A *N *F *D)
+    (&hull.box (:key *Id) *B)
+    (inside A B)
+    (same_dist D (:P1 A) (:P2 B)))
+
+  (RULE &key_domino
+    (&side_key *Id *A *N *F))
+
+  (RULE &legend_cell
+    (&key_domino *Id *N *F)
+    (OR ((&shape.component *P Id))
+        ((= P N))
+        ((= P F))))
+
+  (RULE &cleared
+    (OR ((&legend_cell *P))
+        ((&key_domino *F)
+         (input (:P F) *Col)
+         (input P Col))))
+
+  (RULE &write
+    (&key_domino *Id *A *N *F)
+    (input (:P F) *Col)
+    (input (:P N) (:Col *Tg))
+    (input *P Col)
+    (NOT (&legend_cell P))
+    (&shape.component (:P *X) Id)
+    (relative (:Base A) X (:X_rel *V))
+    (compose (:A P) (:B V) (:C *T))))
+
+(ALTS $colors "whether a domino's two cells can share a color" $TwoColors
+  (ALT $SameColorDomino
+    (INPUT legend-domino "the domino's two cells can share a color, which is then both the source and the target color"
+      (RULE &domino
+        (&ink_pair *A *N *F *D)))))
+
+(ALTS $site "which dominoes are keys of a shape" $BoxSide
+  (ALT $AnchorTouch
+    (OUTPUT key-site "a domino is a key of a shape when its anchor is a shape cell or 8-adjacent to one, and holds the background or the key color. The domino can point from any side, and it need not touch the box."
+      (RULE &key_domino
+        (&domino *A *N *F)
+        (input (:P A) *Col)
+        (OR ((&bg (:C Col)))
+            ((&key (:C Col))))
+        (OR ((&shape.component (:P A) *Id))
+            ((&shape.component (:P *Q) Id)
+             (neighbor (:P Q) (:Q A)))))))
+  (ALT $CenterLine
+    (OUTPUT key-site "the near cell also sits on the box's center row or center column"
+      (RULE &key_domino
+        (&side_key *Id *A *N *F *D)
+        (&hull.box (:key Id) *B)
+        (inside A B)
+        (relative (:Base B) (:X A) (:X_rel *A_rel))
+        (perp_dir D (:D2 *E))
+        (dist_pair (:P A_rel) (:D E) *K (:K2 K))))))
+
+(ALTS $cover "whether a stamp covers a kept cell" $StampOver
+  (ALT $KeepOnTop
+    (OUTPUT keep "a kept cell other than background shows over the stamps"
+      (RULE &kept
+        (input *P *Col)
+        (NOT (&bg (:C Col)))
+        (NOT (&cleared P))))
+    (RULE &shown
+      (&write *T (:Tg *Col))
+      (NOT (&kept (:P T))))))
+
+(ALTS $keyless "what happens to key-colored cells that no domino keys" $KeepKeyless
+  (ALT $EraseKeyColor
+    (OUTPUT erase "every key-colored cell becomes background, keyed or not"
+      (RULE &cleared
+        (OR ((&shape.component *P))
+            ((OR ((&legend_cell P))
+                 ((&key_domino *F)
+                  (input (:P F) *Col)
+                  (input P Col)))))))))
+
+(RULE &shown
+  (&write *T (:Tg *Col)))
+
+(RULE &output
+  (input *P (:Col *Col_in))
+  (OR ((&shown (:T P) *Col))
+      ((&cleared P)
+       (NOT (&shown (:T P)))
+       (&bg (:C Col)))
+      ((NOT (&shown (:T P)))
+       (NOT (&cleared P))
+       (= Col Col_in))))
+
+(OUT (&output ^P ^Col))

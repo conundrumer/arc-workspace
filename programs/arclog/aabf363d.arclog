@@ -1,0 +1,49 @@
+;; inputs b5857c339733450fa2404db6a38d012dc823a9b3e041e9e998335d69b1746c83 programs/solvers/aabf363d.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; aabf363d
+
+(DET &bg DominantColor)
+
+(DET &marker_corner DiagDirDomain)
+
+(RULE &marker
+  (input *P *Col)
+  (&marker_corner (:D *Diag))
+  (same_corner (:D Diag) (:P1 P) (:P2 0)))
+
+(INIT &color_count Cardinality
+  (key ((input *P ^Col))
+    (member ((:m P))
+      (input *P Col))))
+
+(ALTS $choice "which model identifies the marker color" $Anchor
+  (ALT $ByCount
+    (DET &marker_count DivisorRatio)
+
+    (RULE &marker
+      (input *P *Col)
+      (&marker_count *K)
+      (&color_count.size (:key Col) (:N K))))
+  (ALT $Minority
+    (INIT &rarest Order
+      (member ((:t (:V Col) (:S N)))
+        (&color_count.size (:key *Col) *N))
+      (score ((:t (:V Col) (:S N)) (:S N))
+        (&color_count.size (:key *Col) *N)))
+
+    (RULE &marker
+      (input *P *Col)
+      (&rarest.minimal (:t (:V Col))))))
+
+(RULE &output
+  (OR ((&marker *P)
+       (&bg (:C *Col)))
+      ((&marker)
+       (input P Col)
+       (&bg (:C Col)))
+      ((input P (:Col *Col2))
+       (NOT (&bg (:C Col2)))
+       (&marker Col)
+       (NOT (&marker P)))))
+
+(OUT (&output ^P ^Col))

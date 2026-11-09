@@ -1,0 +1,126 @@
+;; inputs 712f729d745d9b3f601bcdbcda2346139b70219f517b633d54c2ef56c99b575e programs/solvers/2dd70a9a.dl
+;; converter 1959b92f94886749d7d46dce9a29f9528f73630e5f2a59eda18069ab421bbc43
+;; 2dd70a9a
+
+(DET &bg DominantColor)
+
+(DET &source RarestColor)
+
+(DET &target RarestColor)
+
+(RULE &stub_dir
+  (OR ((&source (:C *Col)))
+      ((&target (:C Col))))
+  (input *P Col)
+  (input (:P *P2) Col)
+  (!= P P2)
+  (axis_of *D *A)
+  (same_line A P (:Q P2)))
+
+(RULE &leg_start
+  (&source (:C *Col))
+  (&stub_dir Col *P *D))
+
+(RULE &leg_blocked
+  (input *P *Col)
+  (NOT (&bg (:C Col))))
+
+;; A walker crosses the grid and halts before any occupied cell: a wall, a
+;; stub, or the target.
+(INIT &leg Ray
+  (source (P)
+    (input *P))
+  (node (P)
+    (input *P)
+    (NOT (&leg_blocked P)))
+  (dir (D)
+    (dir_elem *D)))
+
+;; The open cells the walker crosses. A rim direction is one the way ahead
+;; closes in: an occupied cell, or the grid edge.
+(INIT &open Boundary
+  (cell (P)
+    (input *P *Col)
+    (&bg (:C Col))))
+
+(RULE &at_target
+  (input *P)
+  (dir_elem *D)
+  (neighbor P D *Q)
+  (input (:P Q) *Col)
+  (&target (:C Col)))
+
+(RULE &run
+  (&leg.ray *P *D (:Origin *A))
+  (dir_elem D))
+
+(RULE &halt
+  (&run *A *D (:P *E1))
+  (!= E1 A)
+  (&open.exposed (:P E1) D)
+  (NOT (&at_target (:P E1) D)))
+
+(RULE &leg_goal
+  (&run (:A *P) *D (:P *E))
+  (&at_target (:P E) D))
+
+(RULE &target_side
+  (&open.cell *P)
+  (dir_elem *D)
+  (&target (:C *Col))
+  (input (:P *T) Col)
+  (nearer D (:P T) (:Q P)))
+
+(RULE &toward
+  (&halt *A *D (:E1 *A2))
+  (perp_dir D *D2)
+  (&target_side (:P A2) (:D D2)))
+
+;; The legs whose walk goes on to a last leg.
+(INIT &arrive Propagation
+  (source ((:n (:P A) D))
+    (&leg_goal (:P *A) *D))
+  (edge ((:a (:P A2) (:D D2)) (:b (:P A) D))
+    (&toward *A *D *A2 *D2)))
+
+;; The legs the walker reaches from the source.
+(INIT &reach Propagation
+  (source ((:n (:P A) D))
+    (&leg_start (:P *A) *D))
+  (edge ((:a (:P A) D) (:b (:P A2) (:D D2)))
+    (&toward *A *D *A2 *D2)))
+
+;; A leg the walker reaches from the source, whose walk goes on to arrive.
+(RULE &on_path
+  (&reach.reached (:n *P *D))
+  (&arrive.reached (:n P D)))
+
+(ALTS $choice "which path the task draws" $Toward
+  (ALT $Jog
+    (RULE &on_path
+      (&leg_start (:P *A1) (:D *D1))
+      (&halt (:A A1) (:D D1) (:E1 *A2))
+      (perp_dir (:D D1) *D2)
+      (&halt (:A A2) (:D D2) (:E1 *A3))
+      (perp_dir (:D D2) (:D2 *D3))
+      (&leg_goal (:P A3) (:D D3))
+      (&target (:C *Col))
+      (&stub_dir Col (:D D3))
+      (OR ((= *P A1)
+           (= *D D1))
+          ((= P A2)
+           (= D D2))
+          ((= P A3)
+           (= D D3))))))
+
+(RULE &path_cell
+  (&on_path (:P *A) *D)
+  (&run A D *P))
+
+(RULE &output
+  (OR ((&path_cell *P)
+       (&source (:C *Col)))
+      ((input P Col)
+       (NOT (&path_cell P)))))
+
+(OUT (&output ^P ^Col))
