@@ -17,6 +17,7 @@ mod study_features;
 mod corpus_tables;
 mod orientation;
 mod record;
+mod request_stats;
 mod shapes;
 mod spill;
 mod step_tables;

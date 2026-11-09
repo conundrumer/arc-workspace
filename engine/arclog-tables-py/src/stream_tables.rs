@@ -17,6 +17,7 @@ use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::case_tables::{Base, PyCaseTables};
+use crate::request_stats::RequestStats;
 use crate::record::StreamRecord;
 
 /// The stream a stream is cut from, and the length of the prefix they share.
@@ -189,6 +190,7 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
                     }
                     None => (case_columns_in(&materializer,&evidence, &replay.record.tables, train, None).with_copies(&replay.record.copies), None),
                 }))
+                .map(|(columns, cut)| (columns, cut, limits.request.clone()))
                 .map_err(|payload| replay_panic(&*payload))
             })
         })
@@ -198,10 +200,11 @@ pub(crate) fn stream_tables(py: Python<'_>, task: &str, tasks: &str, streams: Ve
     for (case, out) in names.iter().zip(&outs) {
         match out {
             Ok(replay) => match built.next().expect("columns for each stream that was replayed") {
-                Ok((columns, cut)) => {
+                Ok((columns, cut, request)) => {
                     let base = cut.map(|(base, tokens, count)| Base { case: names[base].clone(), tokens, tables: count });
                     if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {case}: native packing stopped {:?} at {:?}",stop.bound,stop.form));}
-                    tables.push(PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, columns, None, base)?);
+                    let table = PyCaseTables::of(py, task.to_string(), case.clone(), false, settings.projection_cap, columns, None, base)?;
+                    tables.push(table.with_request(&RequestStats::of(&request)));
                     ended.push(match replay.record.ended {
                         Some(at) => at.line(task, case),
                         None => format!("{task} {case}: ended none"),

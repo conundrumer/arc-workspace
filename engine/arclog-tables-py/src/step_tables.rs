@@ -23,6 +23,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 
 use crate::case_tables::{Base, PyCaseTables, Step};
+use crate::request_stats::RequestStats;
 use crate::spill::{SpillFolder, Spilled};
 use crate::shapes::ShapeRuntime;
 
@@ -122,7 +123,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     // The indexes of the tokens the model wrote, which the engine's forced tokens follow in the trace. The last is the index `stream_tables` gives the step; a decode before its first step has none, and no table.
     let (written, index) = engine.model_steps();
     let earlier = check_before(before.as_deref(), &task, &case, bodies, written, index)?;
-    let (columns, stream, left) = py.detach(|| -> Result<_, LabelingBound> {
+    let (columns, stream, left, request) = py.detach(|| -> Result<_, LabelingBound> {
         let limits=engine.limits();
         let operation=engine.clone().with_operation_limits(limits.clone());
         let engine=&operation;
@@ -155,7 +156,7 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
         } else {
             step_case_columns_in(&materializer,earlier.map(|step| &*step.stream), &evidence_tables, tables, evidence.train.len())
         };
-        Ok((columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start()))
+        Ok((columns.with_copies(&engine.take_copy_violations()), stream, arclog::clock::Stopwatch::start(), limits.request.clone()))
     }).map_err(|bound| labeling_bound_reached(py, bound))?;
     if arclog::stats::enabled() {
         split::add(Part::GilWait, left.elapsed().nanos());
@@ -165,7 +166,8 @@ pub(crate) fn step_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let _packing = arclog::stats::span(arclog::stats::Phase::PyPack);
     arclog::stats::units(arclog::stats::Phase::PyPack, columns.tables.token.len());
     let own = stream.count() - earlier.map_or(evidence_tables.len() as u32, |step| step.stream.count());
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, base)?.with_shapes(shapes).with_step(Step { stream: Arc::new(stream), bodies, token: index, own }))
+    let tables = PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, base)?;
+    Ok(tables.with_shapes(shapes).with_step(Step { stream: Arc::new(stream), bodies, token: index, own }).with_request(&RequestStats::of(&request)))
 }
 
 /// The base tables of the task of `decoder`: `input`, `ex_input` and
@@ -187,19 +189,21 @@ pub(crate) fn base_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, task: S
     let evidence_tables = decoder.derived(|| evidence_tables(evidence, engine.registry()));
     let train = decoder.derived(|| train_pairs(evidence));
     let shapes = decoder.derived(|| ShapeRuntime::new(evidence));
-    let columns = py.detach(|| {
+    let (columns, request) = py.detach(|| {
         let limits = engine.limits();
         let materializer = Materializer::new(engine.evaluation_inputs().1, &limits);
         let base: Vec<Table> = std::iter::once(input_table(evidence, engine.registry())).chain(evidence_tables.iter().cloned()).collect();
         // A cache of its own: the evidence tables' summaries are kept by their place, which differs here.
-        if summaries {
+        let columns = if summaries {
             step_case_columns_by_assignment_in(&materializer, None, &base, Vec::new(), &train, Vec::new(), rows, &SummaryCache::default()).0
         } else {
             step_case_columns_by_assignment_hashed(&materializer, None, &base, Vec::new(), &train, Vec::new(), &SummaryCache::default(), Assemblies::default()).0
-        }
+        };
+        (columns, limits.request.clone())
     });
     complete(py, &columns)?;
-    Ok(PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)?.with_shapes(shapes))
+    let tables = PyCaseTables::of(py, task, case, false, engine.settings().projection_cap, columns, None, None)?;
+    Ok(tables.with_shapes(shapes).with_request(&RequestStats::of(&request)))
 }
 
 /// What `successor_tables` gives for one id: the tables of its successor,
@@ -495,11 +499,11 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             copies.push(violations);
             each.push(Ok((kind, note, Packed::Own(columns, stream, own, spilled))));
         }
-        Ok((current, each, unchanged))
+        Ok((current, each, unchanged, limits.request.clone()))
     });
     // A request past its effort guard is a fault, whatever else stopped the call, and the check clears the fault.
     check_effort(py)?;
-    let (current, each, unchanged) = stopped.map_err(|stopped| stopped_error(py, stopped))?;
+    let (current, each, unchanged, request) = stopped.map_err(|stopped| stopped_error(py, stopped))?;
     for columns in current.iter().chain(unchanged.as_ref().map(|(columns, _)| columns)).chain(each.iter().filter_map(|result| match result {
         Ok((_, _, Packed::Own(columns, _, _, _))) => Some(columns),
         _ => None,
@@ -525,6 +529,11 @@ pub(crate) fn successor_tables(py: Python<'_>, decoder: PyRef<'_, PyDecoder>, id
             }
         };
         results.push(result);
+    }
+    // The request is read once the last result is made, as `arclog.request_stats()` gives it right after the call; each result holds that read, whether it is shared or not.
+    let stats = RequestStats::of(&request);
+    for tables in current.iter().chain(unchanged.iter()).chain(results.iter().filter_map(|result| result.2.as_ref())) {
+        tables.get().set_request(&stats);
     }
     Ok((current, results))
 }

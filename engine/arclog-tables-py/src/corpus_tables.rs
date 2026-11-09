@@ -20,6 +20,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 use crate::case_tables::PyCaseTables;
+use crate::request_stats::RequestStats;
 use crate::record::StreamRecord;
 
 /// A case of a solver whose tables `corpus_tables` builds: its stream's
@@ -160,7 +161,7 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
                     let session=record.session.as_ref().unwrap_or(&empty_session);
                     let materializer=Materializer::new(session,&limits);
                     let counts = session.largest_counts();
-                    (case_columns_in(&materializer,&evidence[solver],&record.tables,trains[solver],Some(streamed[solver].2[stream])).with_copies(&record.copies),record.ended,counts,record.query_stops())
+                    (case_columns_in(&materializer,&evidence[solver],&record.tables,trains[solver],Some(streamed[solver].2[stream])).with_copies(&record.copies),record.ended,counts,record.query_stops(),limits.request.clone())
                 }),
                 &|solver| progress.settle(solver),
                 step_cap,
@@ -183,12 +184,12 @@ pub(crate) fn corpus_tables(py: Python<'_>, corpus: &str, tasks: &str, all_cases
                 Err(fault) => Err(fault.clone()),
             };
             match outcome {
-                Ok(((columns, ended, counts, query_stops), relations)) => {
+                Ok(((columns, ended, counts, query_stops, request), relations)) => {
                     if let Some(stop)=columns.packing_stop() {faults.push(format!("{task} {}: native packing stopped {:?} at {:?}",case.case,stop.bound,stop.form));}
                     let mut table = PyCaseTables::of(py, task.clone(), case.case.clone(), case.concept, settings.projection_cap, columns, Some(relations), None)?;
                     table.largest_counts = Some((counts.bindings, counts.rows));
                     table.query_stops = Some(query_stops);
-                    tables.push(table);
+                    tables.push(table.with_request(&RequestStats::of(&request)));
                     if let Some(at) = ended.filter(|at| matches!(at.kind, PyConsistencyKind::Stopped)) {
                         faults.push(at.line(task, &case.case));
                     }

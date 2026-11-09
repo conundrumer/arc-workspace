@@ -1,5 +1,6 @@
 //! Study evaluation bindings, deliberately outside the streams bindings.
 use crate::case_tables::PyCaseTables;
+use crate::request_stats::RequestStats;
 use arclog::decode::corpus::read_task_files;
 use arclog::registry::Registry;
 use arclog::session::{SessionBound, TaskSession};
@@ -198,7 +199,7 @@ impl PyStudyTaskEvaluator {
         }
         if mutant.is_some_and(|m|m.settings!=self.settings) {return Err(PyValueError::new_err("candidate and evaluator settings differ"));}
         let constructions=constructions()?;
-        let (report,columns)=py.detach(||self.with_cache("prefix_tables",|_| {
+        let (report,columns,request)=py.detach(||self.with_cache("prefix_tables",|_| {
             let mut guard=universe.inner.lock().map_err(|_|"prefix receipt was poisoned")?;
             let inner=guard.as_mut().ok_or("prefix receipt unavailable or closed")?;
             let mut result=study_pair::prefix::acquire(inner,mutant.map(|m|&m.inner),&self.task,&self.session,
@@ -227,11 +228,13 @@ impl PyStudyTaskEvaluator {
             result.report["packing_complete"]=packing_complete.into();
             result.report["complete"]=(packing_complete && maps_complete && result.report["status"]=="complete"
                 && result.report["table_coverage"].as_array().is_some_and(|rows|rows.iter().all(|r|r["complete"]==true))).into();
-            Ok((result.report,columns))
+            let request=result.limits.request.clone();
+            Ok((result.report,columns,request))
         })).map_err(|error| study_error(py,error))?;
         check_effort(py)?;
         let side=if mutant.is_some(){"mutant"}else{"gold"};
-        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,columns,None,None)?))
+        let tables=PyCaseTables::of(py,self.task_name.clone(),side.into(),false,self.settings.projection_cap,columns,None,None)?;
+        Ok((report.to_string(),tables.with_request(&RequestStats::of(&request))))
     }
 
     /// Exact native ingestion in this task's session, with the GIL released.
@@ -317,7 +320,7 @@ impl PyStudyTaskEvaluator {
     fn gold_tables(&self,py:Python<'_>,gold:&PyStudyProgram,held_rows:bool,form:Option<usize>)->PyResult<(String,PyCaseTables)> {
         if gold.settings!=self.settings {return Err(PyValueError::new_err("task evaluator and program settings differ"));}
         let constructions=constructions()?;
-        let (report,columns)=py.detach(|| self.with_cache("gold_tables",|cache| {
+        let (report,columns,request)=py.detach(|| self.with_cache("gold_tables",|cache| {
             let limits=study_pair::table_limits(&self.settings);
             let (mut report,tables,evidence)=match form {
                 None=>{
@@ -348,10 +351,11 @@ impl PyStudyTaskEvaluator {
             report["packed_correspondence"]["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["program_sexp"]=gold.program.sexp(Registry::get()).into();
             report["native_columns_seconds"]=started.elapsed().seconds().into();
-            Ok((report,columns))
+            Ok((report,columns,limits.request.clone()))
         })).map_err(|error| study_error(py,error))?;
         check_effort(py)?;
-        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
+        let tables=PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?;
+        Ok((report.to_string(),tables.with_request(&RequestStats::of(&request))))
     }
 
     /// Native gold-only TRAIN FITS and ordered kept DET choices, without a mutant.
@@ -386,7 +390,7 @@ impl PyStudyTaskEvaluator {
         let expected=expected_kept_json.map(serde_json::from_str::<serde_json::Value>).transpose().map_err(|e|PyValueError::new_err(e.to_string()))?;
         let body=arclog::program::path::NodePath(body_path.into_iter().map(arclog::program::path::PathStep).collect());
         let constructions=constructions()?;
-        let (report,columns)=py.detach(||self.with_cache("gold_body",|cache| {
+        let (report,columns,request)=py.detach(||self.with_cache("gold_body",|cache| {
             let mut result=match prefix_conjuncts {
                 Some(count)=>study_pair::gold_body::evaluate_prefix_cached(&program.program,&body,count,&self.task,&self.session,
                     constructions,&self.settings,cache,expected.as_ref())?,
@@ -401,10 +405,12 @@ impl PyStudyTaskEvaluator {
             result.report["packed_correspondence"]["program_sexp"]=program.program.sexp(Registry::get()).into();
             result.report["packed_table_count"]=columns.tables.form.len().into();
             result.report["body_table_packed"]=result.report["body_table"].as_u64().is_some_and(|i|(i as usize)<columns.tables.form.len()).into();
-            Ok((result.report,columns))
+            let request=result.limits.request.clone();
+            Ok((result.report,columns,request))
         })).map_err(|error| study_error(py,error))?;
         check_effort(py)?;
-        Ok((report.to_string(),PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?))
+        let tables=PyCaseTables::of(py,self.task_name.clone(),"gold".into(),false,self.settings.projection_cap,columns,None,None)?;
+        Ok((report.to_string(),tables.with_request(&RequestStats::of(&request))))
     }
 
     fn evaluate_pair(&self,py:Python<'_>,gold:&PyStudyProgram,point:&PyMutationPoint,mutant:&PyValidMutant)->PyResult<(String,PyCaseTables,PyCaseTables)> {
@@ -521,9 +527,16 @@ fn packing_stops<'a>(report:&mut serde_json::Value,stops:impl IntoIterator<Item=
     }
 }
 
-trait PackingReport {fn packing_report(&mut self)->&mut serde_json::Value;}
+trait PackingReport {
+    fn packing_report(&mut self)->&mut serde_json::Value;
+    /// The request that the evaluation and the packing of both sides ran in.
+    fn request(&self)->arclog::eval::RequestWork;
+}
 macro_rules! packing_report {($($ty:ty),*)=>{$(
-    impl PackingReport for $ty {fn packing_report(&mut self)->&mut serde_json::Value {&mut self.report}}
+    impl PackingReport for $ty {
+        fn packing_report(&mut self)->&mut serde_json::Value {&mut self.report}
+        fn request(&self)->arclog::eval::RequestWork {self.limits.request.clone()}
+    }
 )*};}
 packing_report!(study_pair::PairEvaluation,study_pair::component_tables::ComponentTables,study_pair::continuation::Continuation);
 
@@ -552,6 +565,10 @@ fn pack_pair<R:PackingReport+Send+Sync>(
     };
     let gold=side(0)?;
     let mutant=side(1)?;
+    // The request is read once both sides are packed, as `arclog.request_stats()` gives it right after the call.
+    let stats=RequestStats::of(&result.request());
+    gold.set_request(&stats);
+    mutant.set_request(&stats);
     let report=result.packing_report();
     packing_stops(report,&stops);
     report["packed_correspondence"]=serde_json::json!(bindings);

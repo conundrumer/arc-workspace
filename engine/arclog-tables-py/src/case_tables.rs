@@ -2,11 +2,12 @@
 //! flat columns of [`arclog_tables::columns`], each part a dict of columns.
 
 use std::cell::RefCell;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use arclog_tables::columns::{CaseColumns, StopColumns, StreamTables, TableColumns};
 use arclog_tables::shape_rows::ShapeRows;
 
+use crate::request_stats::RequestStats;
 use crate::shapes::{PyTableShapes, ShapeRuntime};
 use crate::spill::Spilled;
 use pyo3::prelude::*;
@@ -197,6 +198,18 @@ use pyo3::sync::PyOnceLock;
 /// three are `None` for every other case. The `CaseTables` that `step_tables`
 /// gives at a decode's later model step holds its step's tables alone in the
 /// same way, with the step's token index as `base_tokens`.
+///
+/// `request_stats` is a new dict, at each read, in the form that `arclog.request_stats()` gives
+/// (`work`, `cap`, `bytes`, `byte_cap`, `effort`, `effort_cap`, `gauges`, `search_gauges` and
+/// `held_gauges`), for the request of the call that made this `CaseTables`: what that function gives
+/// right after the call returns. Later calls, and the drop of other results, do not change it. It
+/// is read-only, and `None` for a `CaseTables` that no request made. A call that evaluates several
+/// candidates (`successor_tables`) gives each `CaseTables` of its result the gauges of the request
+/// of the call itself, which the candidates share, and not those of a candidate alone. A call
+/// whose result holds several cases (`stream_tables`, `corpus_tables`) gives each case the request
+/// that exported that case's tables. The first model step of `step_tables` and `successor_tables`
+/// exports the evidence tables in a request of its own, which `arclog.evidence_request_stats()`
+/// gives and `request_stats` leaves out.
 #[pyclass(name = "CaseTables", frozen, module = "arclog")]
 pub(crate) struct PyCaseTables {
     #[pyo3(get)]
@@ -255,6 +268,8 @@ pub(crate) struct PyCaseTables {
     /// The rows of each row of `tables` and its TableHash, for `shapes`; none for a row whose summary holds none, and none at all in the result of a function that gives no summary.
     shape_rows: Vec<Option<(Arc<ShapeRows>, u128)>>,
     shape_runtime: Option<Arc<ShapeRuntime>>,
+    /// The stats of the request that made this `CaseTables`, set once by the call that made it; empty for a `CaseTables` that no request made.
+    request_stats: OnceLock<RequestStats>,
 }
 
 /// What a `step_tables` call leaves for the call at the decode's next model
@@ -625,7 +640,19 @@ impl PyCaseTables {
             materialization_stop,
             shape_rows,
             shape_runtime: None,
+            request_stats: OnceLock::new(),
         })
+    }
+
+    /// This `CaseTables` with the stats `stats` as its `request_stats`.
+    pub(crate) fn with_request(self, stats: &RequestStats) -> Self {
+        self.set_request(stats);
+        self
+    }
+
+    /// Gives this `CaseTables` the stats `stats` as its `request_stats`, where it has none yet. A call that makes several results reads the request once its last result is made, and gives that read to each.
+    pub(crate) fn set_request(&self, stats: &RequestStats) {
+        let _ = self.request_stats.set(stats.clone());
     }
 
     /// This `CaseTables` as one whose `shapes` read the session's `runtime`.
@@ -664,6 +691,12 @@ impl PyCaseTables {
                 Ok(PyBytes::new(py, &bytes).unbind())
             }
         }
+    }
+
+    /// The stats of the request that made this `CaseTables`, as `arclog.request_stats()` gives them, or `None` for a `CaseTables` that no request made.
+    #[getter]
+    fn request_stats<'py>(&self, py: Python<'py>) -> PyResult<Option<Bound<'py, PyDict>>> {
+        self.request_stats.get().map(|stats| stats.to_dict(py)).transpose()
     }
 
     /// The shapes of the table at row `row` of `tables`, a `TableShapes`, or `None` where the row's summary holds no rows (a table with no TableHash, or a result of a call
