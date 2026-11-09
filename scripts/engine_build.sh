@@ -7,7 +7,7 @@
 #   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH, and COMMIT, the full SHA of the commit they were built from.
 #   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features and the feature-encoder binary, with SHA256SUMS and COMMIT, for a pod.
 #   Beside each arclog binary of NAME, as arclog/engine-record.json in builds/NAME and in the Linux arclog wheel, the engine record that
-#   scripts/engine_record.py writes at the end of a build that made a binary: the commit, the cargo profile, and the sha256 of each platform's binary.
+#   scripts/engine_record.py writes at the end of a build that made a binary: the commit, the cargo profile, and the sha256 of each native binary of each platform's site.
 #   zig/           the C compiler wrappers that link the Linux binaries with zig, through maturin's `zig cc`.
 #   bin/           tool binaries, each as TOOL-NAME.
 #   logs/NAME.log  each step's time and cargo's output.
