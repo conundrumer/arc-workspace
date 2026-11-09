@@ -271,7 +271,7 @@ impl Builder<'_> {
         if let Some((columns, _)) = &columns {
             self.label_positions(node, columns);
         }
-        self.choose_ranks(node);
+        self.pick_ranks(node);
         let (columns, orders) = columns.unzip();
         self.names.contents[local] = content;
         self.names.node_columns[local] = columns;
@@ -315,21 +315,30 @@ impl Builder<'_> {
         }
     }
 
-    /// Records in `label_ranks` the rank of each column label of each `CHOOSE`
-    /// form of `node` in the canonical labeling of the form, which writes each
-    /// relation the form reads by its content and each column by its place, so
-    /// that the ranks are the same where a file names the labels and where a
-    /// decode names them by slots.
-    fn choose_ranks(&mut self, node: usize) {
+    /// Records in `label_ranks` the rank of each column label of each form of
+    /// `node`, a chosen relation's node, in the canonical labeling of the
+    /// form, which writes each relation the form reads by its content and each
+    /// column by its place, so that the ranks are the same where a file names
+    /// the labels and where a decode names them by slots. A form of another
+    /// kind of node has none.
+    fn pick_ranks(&mut self, node: usize) {
         let local = node - self.offset;
+        if !matches!(self.nodes[local].kind, crate::resolver::DependencyKind::Chosen(_)) {
+            return;
+        }
         let scope = self.nodes[local].scope.clone();
         let mut found = Vec::new();
         for path in &self.forms[local] {
-            let Some(NodeRef::Choose(choose)) = node_at(NodeRef::Program(self.case.value()), path) else { continue };
-            let own = Own::of(NodeRef::Choose(choose));
+            let form = node_at(NodeRef::Program(self.case.value()), path).expect("the path of a form of the case");
+            let scope_of = match form {
+                NodeRef::Choose(choose) => LabelScope::Choose(choose),
+                NodeRef::Clause(clause) => LabelScope::Clause(clause),
+                _ => continue,
+            };
+            let own = Own::of(form);
             let writer = Writer { names: &self.names, scope: &scope, own: own.as_ref() };
-            let labeling = canonical_labeling(LabelScope::Choose(choose), &writer, &mut SearchBudget::new());
-            for column in form_columns(NodeRef::Choose(choose)) {
+            let labeling = canonical_labeling(scope_of, &writer, &mut SearchBudget::new());
+            for column in form_columns(form) {
                 if let Some(rank) = position(&labeling.positions, column.label) {
                     found.push(((path.clone(), column.label), rank));
                 }

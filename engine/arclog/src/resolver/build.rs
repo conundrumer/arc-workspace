@@ -135,9 +135,9 @@ struct Builder<'a> {
     /// The position in its node's rows of each column a form gives, by
     /// the form's path and the column's label.
     label_positions: StableHashMap<(NodePath, LabelId), ColumnPosition>,
-    /// The rank of each column label of each `CHOOSE` form in the canonical
-    /// labeling of the form under the resolved names, by the form's path and
-    /// the label.
+    /// The rank of each column label of each form of a chosen relation in the
+    /// canonical labeling of the form under the resolved names, by the form's
+    /// path and the label.
     label_ranks: StableHashMap<(NodePath, LabelId), u32>,
     groups: StableHashMap<NodePath, ColumnGroup>,
     proposer_columns: StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
