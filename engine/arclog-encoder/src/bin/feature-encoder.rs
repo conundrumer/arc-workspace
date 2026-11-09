@@ -14,7 +14,7 @@
 //!   feature-encoder candidate-lists OUT_DIR (TASK | TABLES_FILE)... --size D [--names DERANGEMENTS] [--threads N] [--wide-only [--wide-size D] | --parents-only | --state-only] [--tables-cmd COMMAND]
 //!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D --tables-cmd COMMAND [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR] [--count-bounds]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
-//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR] [--count-bounds]
+//!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR] [--count-bounds] [--headerless]
 //!   feature-encoder engine
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
@@ -53,7 +53,8 @@
 //! The commands that read or print a term's text keep it always: `cap-hits`, `term-counts` and
 //! `term-stats`.
 //!
-//! `engine` prints the encoder's producers, which the header of a rows file must name for `shapes-refresh` to read it.
+//! `engine` prints the encoder's producers, which the header of a rows file must name for `shapes-refresh` to read it. `shapes-refresh`
+//! refuses a rows file with no header, unless `--headerless`, which only the store's check set of `scripts/shape_store.py same-values` passes.
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -109,10 +110,12 @@ struct Arguments {
     count_bounds: bool,
     /// The command that prints a task's tables, as words: `--tables-cmd`.
     tables_cmd: Option<Vec<String>>,
+    /// Whether `shapes-refresh` reads a rows file with no header: `--headerless`.
+    headerless: bool,
 }
 
 fn arguments() -> Arguments {
-    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX, count_bounds: false, tables_cmd: None };
+    let mut parsed = Arguments { kinds: None, families: None, wide_size: None, wide_only: false, parents_only: false, state_only: false, positional: Vec::new(), corpus: PathBuf::from("work/arclog/gen"), tasks: PathBuf::from("data/tasks"), task_wide: false, size: 0, out: None, work_cap: 1 << 20, limit: None, max_inputs: None, program_relations: false, rate: 20_000, tables_per_task: 3, tasks_count: 60, shard: (0, 1), control: false, names: None, thin: 1_000_000, seconds: 30.0, program_compare: false, rule: false, threads: 1, max_columns: None, passes: 1, relational: false, shapes: None, sample: 0, seed: 1, max_tables: usize::MAX, count_bounds: false, tables_cmd: None, headerless: false };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -135,6 +138,7 @@ fn arguments() -> Arguments {
             "--control" => parsed.control = true,
             "--program-compare" => parsed.program_compare = true,
             "--count-bounds" => parsed.count_bounds = true,
+            "--headerless" => parsed.headerless = true,
             "--tables-cmd" => parsed.tables_cmd = Some(args.next().expect("a command after --tables-cmd").split_whitespace().map(str::to_string).collect()),
             "--rule" => parsed.rule = true,
             "--relational" => parsed.relational = true,
@@ -942,7 +946,7 @@ fn run_shapes_refresh(arguments: &Arguments, rows: &str, task: &str, out: &str) 
         families.saved = Some(saved);
         families.saved_limit = arclog_encoder::generate::CACHED_TERMS;
     }
-    let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families)?;
+    let summary = arclog_encoder::shapes_refresh::run(std::path::Path::new(rows), std::path::Path::new(out), &arguments.tasks, task, only.as_deref(), arguments.threads, &families, arguments.headerless)?;
     let counts = if arclog_encoder::bounds::enabled() { "; bound counts on" } else { "" };
     eprintln!("{summary}{counts}");
     if arclog_encoder::bounds::enabled() {

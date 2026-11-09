@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The `shapes` records of a task's tables, from a store of walked values, with a walk of only the values that the store lacks.
 
-Usage: scripts/shape_store.py refresh ENCODER ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--tasks DIR] [--store DIR] [--header] [--families DIR]
+Usage: scripts/shape_store.py refresh ENCODER ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--tasks DIR] [--store DIR] [--header] [--families DIR] [--headerless]
        scripts/shape_store.py same-values NEW BASE [--threads N] [--jobs N] [--tasks DIR] [--store DIR]
        scripts/shape_store.py version ENCODER [--store DIR]
 
@@ -10,9 +10,10 @@ the least, the mean and the most over the examples of one shape of one table of 
 did not stop, under the build's value version, and a refresh walks only the tables and shapes that the store lacks. The store keeps
 nothing of a walk that stopped at the cell budget, and of a table that has too many columns: the encoder walks such a table with the
 whole request, and its record goes to OUT as the encoder writes it. A refresh with an environment variable set that changes the
-encoder's values (see VALUE_VARIABLES and VALUE_PREFIXES) is refused. A rows file whose first line is a header, with `schema`
-TABLE_ROWS_FORMAT and the producers of its rows (PRODUCER_FIELDS), is refused unless those producers are the encoder's (`ENCODER engine`), as the
-encoder refuses it. With `--header`, OUT's first line is `{"record":"header","value_version":V,"binary":SHA256}`: the build's value
+encoder's values (see VALUE_VARIABLES and VALUE_PREFIXES) is refused. A rows file's first line is a header, with `schema`
+TABLE_ROWS_FORMAT and the producers of its rows (PRODUCER_FIELDS), and the file is refused unless those producers are the encoder's
+(`ENCODER engine`), as the encoder refuses it. A rows file with no header is refused, unless `--headerless`, which a round's run never passes.
+With `--header`, OUT's first line is `{"record":"header","value_version":V,"binary":SHA256}`: the build's value
 version and the hash of its binary, and the rows file's producers where its header names them. With `--families DIR`,
 the encoder saves each family it builds under DIR and reads it there in a later run of the same binary (`shapes-refresh --families`).
 
@@ -23,7 +24,8 @@ whose change gives the same values reads the values stored before it, and any ot
 
 The store is a folder, work/shape-store by default, of `<version>/<task>-<hash of the task file>.jsonl.zst`. Each line is
 `{"table":HASH,"complete":FLAG,"h":B,"v":B}`, with `h` and `v` as in a `shapes` record. `complete` is true where a walk listed no shapes,
-so the line holds each shape of the table, and a shape that it lacks has 0. The check set is `check-rows/<task>.rows.zst` in the store.
+so the line holds each shape of the table, and a shape that it lacks has 0. The check set is `check-rows/<task>.rows.zst` in the store: rows
+files with no header, which both builds read under `shapes-refresh --headerless`, so each must be a build that has the flag.
 """
 import argparse
 import base64
@@ -227,6 +229,8 @@ def walk(encoder: Path, task: str, lines: list[str], shapes: list[int] | None, t
     out = work / f'{name}.out.jsonl'
     write_lines(rows, ([header] if header else []) + lines)
     command = [str(encoder), 'shapes-refresh', str(rows), task, str(out), '--tasks', str(tasks), '--threads', str(threads)]
+    if header is None:  # a rows file with no header reaches a walk only under refresh's --headerless
+        command.append('--headerless')
     if families:
         command += ['--families', families]
     if shapes is not None:
@@ -264,6 +268,8 @@ def refresh(args) -> str:
         if not isinstance(hash_, str) or not hash_ or any(c not in '0123456789abcdefABCDEF' for c in hash_):
             raise Refused(f'{args.rows}: a line with no hash')
         tables.append((hash_, line.rstrip('\n')))
+    if header is None and not args.headerless:
+        raise Refused(f'{args.rows}: the rows file has no header line, which names the producers of its rows')
     held = load(path)
     groups: dict[tuple, list[int]] = {}
     for at, (table, _) in enumerate(tables):
@@ -377,7 +383,8 @@ def same_values(args) -> str:
             for build, name in ((base, 'base'), (new, 'new')):
                 out = Path(work) / f'{name}.jsonl'
                 outs.append(out)
-                started.append((time.monotonic(), subprocess.Popen(timed + [str(build), 'shapes-refresh', str(rows), task, str(out), '--tasks', str(tasks), '--threads', str(args.threads)],
+                # The check set's rows files have no header: they are the one input that a build reads under --headerless.
+                started.append((time.monotonic(), subprocess.Popen(timed + [str(build), 'shapes-refresh', str(rows), task, str(out), '--tasks', str(tasks), '--threads', str(args.threads), '--headerless'],
                                                                     stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)))
             for begun, process in started:
                 _, error = process.communicate()
@@ -416,6 +423,7 @@ def main():
     one.add_argument('--store', default=str(STORE))
     one.add_argument('--header', action='store_true', help='write the build\'s value version and binary hash as the first line of OUT')
     one.add_argument('--families', help='a folder where the encoder saves the families it builds and reads them in a later run of the same binary')
+    one.add_argument('--headerless', action='store_true', help='read a rows file with no header, whose producers nothing checks; a round\'s run never passes it')
     two = commands.add_parser('same-values')
     two.add_argument('new')
     two.add_argument('base')

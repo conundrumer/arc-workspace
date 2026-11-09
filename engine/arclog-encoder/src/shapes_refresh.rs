@@ -1,8 +1,9 @@
 //! The `shapes` records of a task's tables, from the tables' stored rows and the task's grids, with no replay of the engine.
 //!
 //! A rows file is zstd (or plain) JSON lines, one per distinct TableHash: `{"hash": "<32 hex digits>", "table": T}`, where `T` is the table in the form that `atom_lists::stored_of` reads (`stored_json` writes
-//! it). Its first line may be a header, `{"record": "header", "schema": TABLE_ROWS_FORMAT, ...}` with the producers of the engine that wrote the rows (`table_hash_version`, `query_hash_version` and `engine`);
-//! the run reads such a file only where those producers are this encoder's own (`producers`), and the header gives no record.
+//! it). Its first line is a header, `{"record": "header", "schema": TABLE_ROWS_FORMAT, ...}` with the producers of the engine that wrote the rows (`table_hash_version`, `query_hash_version` and `engine`);
+//! the run reads the file only where those producers are this encoder's own (`producers`), and the header gives no record. A file with no header is refused, unless the run is told to read one
+//! (`headerless`), as only the store's check set of headerless files is.
 //! For each line the walk of the table's shapes runs on a walker of its own, so a record depends on the table, the task's grids and the list of shapes alone, whatever else the run walked. The output has a line
 //! for each line of the input, in its order: `{"record":"shapes","table":HASH,"h":B,"v":B,"stopped":FLAG}`. `h` is the base64 of the shape hashes as little-endian u64, and `v` the base64 of the least, mean and
 //! most of each shape as little-endian f32, three to a shape. With a list of shape hashes, the record holds those shapes alone, in the list's order, and a shape the table lacks has 0; otherwise it holds each shape of
@@ -49,12 +50,18 @@ fn check_header(held: &serde_json::Value) -> Result<(), String> {
     }
 }
 
-/// The first line of a rows file as a table's line, or none where it is the header, which must pass `check_header`.
-fn first_table_line(first: Option<std::io::Result<String>>) -> Result<Option<std::io::Result<String>>, String> {
-    let Some(Ok(text)) = &first else { return Ok(first) };
-    match serde_json::from_str::<serde_json::Value>(text) {
-        Ok(held) if held["record"] == "header" => check_header(&held).map(|()| None),
-        _ => Ok(first),
+/// The first line of a rows file as a table's line, or none where it is the header, which must pass `check_header`. A file whose first line is no header is refused unless `headerless`.
+fn first_table_line(first: Option<std::io::Result<String>>, headerless: bool) -> Result<Option<std::io::Result<String>>, String> {
+    let header = match &first {
+        Some(Ok(text)) => serde_json::from_str::<serde_json::Value>(text).ok().filter(|held| held["record"] == "header"),
+        // A line that can't be read is reported with the other lines.
+        Some(Err(_)) => return Ok(first),
+        None => None,
+    };
+    match header {
+        Some(held) => check_header(&held).map(|()| None),
+        None if headerless => Ok(first),
+        None => Err("the rows file has no header line, which names the producers of its rows".to_string()),
     }
 }
 
@@ -139,13 +146,14 @@ fn lines_of(path: &Path) -> Result<std::io::Lines<std::io::BufReader<Box<dyn Rea
 }
 
 /// Writes the `shapes` records of the tables in `input` to `out`, on `threads` threads, for the task `task` of `task_dir`, and gives a line of counts. `only` lists the shapes to walk, or is none for each shape.
-/// It fails, with `out` unwritten, where a line can't be read or the header's format or producers are not this encoder's.
-pub fn run(input: &Path, out: &Path, task_dir: &Path, task: &str, only: Option<&[u64]>, threads: usize, generators: &Generators) -> Result<String, String> {
+/// It fails, with `out` unwritten, where a line can't be read, the header's format or producers are not this encoder's, or the file has no header and `headerless` is false.
+#[allow(clippy::too_many_arguments)]
+pub fn run(input: &Path, out: &Path, task_dir: &Path, task: &str, only: Option<&[u64]>, threads: usize, generators: &Generators, headerless: bool) -> Result<String, String> {
     let begun = std::time::Instant::now();
     let (parsed, grids) = Grids::of_file(task_dir, task, None)?;
     let (train, test) = (parsed.train.len(), parsed.test.len());
     let mut lines = lines_of(input)?;
-    let first = first_table_line(lines.next()).map_err(|why| format!("{}: {why}", input.display()))?;
+    let first = first_table_line(lines.next(), headerless).map_err(|why| format!("{}: {why}", input.display()))?;
     let source = Mutex::new((first.into_iter().chain(lines), 0usize));
     let done: Mutex<Vec<(usize, Result<Walked, String>)>> = Mutex::new(Vec::new());
     std::thread::scope(|scope| {
