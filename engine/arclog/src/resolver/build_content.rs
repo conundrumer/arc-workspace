@@ -271,6 +271,7 @@ impl Builder<'_> {
         if let Some((columns, _)) = &columns {
             self.label_positions(node, columns);
         }
+        self.choose_ranks(node);
         let (columns, orders) = columns.unzip();
         self.names.contents[local] = content;
         self.names.node_columns[local] = columns;
@@ -312,6 +313,29 @@ impl Builder<'_> {
         for (name, ranks) in ranked {
             self.names.key_ranks.entry(scope.clone()).or_default().insert(name, ranks);
         }
+    }
+
+    /// Records in `label_ranks` the rank of each column label of each `CHOOSE`
+    /// form of `node` in the canonical labeling of the form, which writes each
+    /// relation the form reads by its content and each column by its place, so
+    /// that the ranks are the same where a file names the labels and where a
+    /// decode names them by slots.
+    fn choose_ranks(&mut self, node: usize) {
+        let local = node - self.offset;
+        let scope = self.nodes[local].scope.clone();
+        let mut found = Vec::new();
+        for path in &self.forms[local] {
+            let Some(NodeRef::Choose(choose)) = node_at(NodeRef::Program(self.case.value()), path) else { continue };
+            let own = Own::of(NodeRef::Choose(choose));
+            let writer = Writer { names: &self.names, scope: &scope, own: own.as_ref() };
+            let labeling = canonical_labeling(LabelScope::Choose(choose), &writer, &mut SearchBudget::new());
+            for column in form_columns(NodeRef::Choose(choose)) {
+                if let Some(rank) = position(&labeling.positions, column.label) {
+                    found.push(((path.clone(), column.label), rank));
+                }
+            }
+        }
+        self.label_ranks.extend(found);
     }
 
     /// Records the position in `columns`, the rows of `node`, of each

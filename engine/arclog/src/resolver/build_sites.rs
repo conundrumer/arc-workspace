@@ -109,6 +109,7 @@ impl Builder<'_> {
                 signatures: self.signatures,
                 positions: self.positions,
                 label_positions: self.label_positions,
+                label_ranks: self.label_ranks,
                 groups: self.groups,
                 proposer_columns: self.proposer_columns,
                 lifted: self.lifted,

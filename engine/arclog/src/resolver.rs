@@ -443,6 +443,10 @@ pub struct ResolvedProgram {
     signatures: crate::hash::StableHashMap<NodePath, Signature>,
     positions: crate::hash::StableHashMap<NodePath, ColumnPosition>,
     label_positions: crate::hash::StableHashMap<(NodePath, LabelId), ColumnPosition>,
+    /// The rank of each column label of each `CHOOSE` form that this layer
+    /// holds in the canonical labeling of the form under the resolved names,
+    /// by the form's path and the label.
+    label_ranks: crate::hash::StableHashMap<(NodePath, LabelId), u32>,
     groups: crate::hash::StableHashMap<NodePath, crate::relations::ColumnGroup>,
     proposer_columns: crate::hash::StableHashMap<(NodePath, usize), Box<[ColumnName]>>,
     /// The path of each read that its form reads in its lifted form.
@@ -633,6 +637,19 @@ impl ResolvedProgram {
         match self.earlier_of(form) {
             Some(earlier) => earlier.label_position(form, label),
             None => self.label_positions.get(&(form.clone(), label)).copied(),
+        }
+    }
+
+    /// The rank of the column `label` of the `CHOOSE` form at `form` in the
+    /// canonical labeling of the form, with each relation that the form reads
+    /// written by its content and each column by its place, so that the rank
+    /// does not depend on the names that label the form, a file's or a
+    /// decode's slots. `None` for a form that is no `CHOOSE` form or a label
+    /// that the form's labeling does not number.
+    pub fn label_rank(&self, form: &NodePath, label: LabelId) -> Option<u32> {
+        match self.earlier_of(form) {
+            Some(earlier) => earlier.label_rank(form, label),
+            None => self.label_ranks.get(&(form.clone(), label)).copied(),
         }
     }
 
