@@ -248,7 +248,12 @@ def git_common_dir(tree: Path) -> Path:
 
 def main_worktree(tree: Path) -> Path:
     """The main worktree of the repository `tree` is a worktree of: the
-    directory that holds the common git directory."""
+    directory that holds the common git directory, or the directory that
+    the environment variable `ARC_MAIN_ROOT` names where it is set and not
+    empty (a kit, which has no git repository, sets it: no git runs)."""
+    named = os.environ.get("ARC_MAIN_ROOT")
+    if named:
+        return Path(named)
     return git_common_dir(tree).parent
 
 
