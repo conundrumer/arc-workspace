@@ -6,8 +6,8 @@
 #   target/        the cargo target folder. Only the build checkout builds into it, so cargo never reuses a crate built from another tree.
 #   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH, and COMMIT, the full SHA of the commit they were built from.
 #   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features and the feature-encoder binary, with SHA256SUMS and COMMIT, for a pod.
-#   Beside each arclog binary of NAME, as arclog/engine-record.json in builds/NAME and in the Linux arclog wheel, the engine record that
-#   scripts/engine_record.py writes at the end of a build that made a binary: the commit, the cargo profile, and the sha256 of each native binary of each platform's site.
+#   Beside each arclog binary of NAME, as arclog/engine-record.json in builds/NAME and in the Linux arclog wheel, and beside each feature-encoder of NAME, the engine record that
+#   scripts/engine_record.py writes at the end of a build that made a binary: the commit, the cargo profile, and the sha256 of each native binary of each platform.
 #   zig/           the C compiler wrappers that link the Linux binaries with zig, through maturin's `zig cc`.
 #   bin/           tool binaries, each as TOOL-NAME.
 #   logs/NAME.log  each step's time and cargo's output.
@@ -15,7 +15,7 @@
 #
 # PARTs, in any order (default: wheel):
 #   wheel    arclog and arclog_features into builds/NAME/.
-#   encoder  feature-encoder into bin/feature-encoder-NAME.
+#   encoder  feature-encoder into bin/feature-encoder-NAME, with the commit and the profile compiled in (`feature-encoder engine` prints them).
 #   cli      arclog-cli's arclog-cli, verdicts and stream_round_trip into bin/.
 #   linux    Linux x86_64 wheels and feature-encoder, cross-built with zig for glibc 2.17 into the same target folder, into linux/NAME/.
 #   linux-encoder  the Linux feature-encoder alone, added to the wheels already in linux/NAME/.
@@ -63,7 +63,7 @@ wheel() {
 }
 
 encoder() {
-  CARGO_TARGET_DIR=$T cargo build --offline --profile tool --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
+  ARCLOG_ENGINE_COMMIT=$COMMIT ARCLOG_ENGINE_PROFILE=tool CARGO_TARGET_DIR=$T cargo build --offline --profile tool --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
   cp "$T/tool/feature-encoder" "$R/bin/feature-encoder-$NAME"
 }
 
@@ -91,7 +91,7 @@ linux_encoder() {
   printf '#!/bin/sh\nexec "%s" zig ranlib -- "$@"\n' "$M" > "$Z/ranlib" &&
   chmod +x "$Z/cc" "$Z/c++" "$Z/ar" "$Z/ranlib" &&
   RUSTC_WRAPPER= CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$Z/cc CC_x86_64_unknown_linux_gnu=$Z/cc CXX_x86_64_unknown_linux_gnu=$Z/c++ AR_x86_64_unknown_linux_gnu=$Z/ar RANLIB_x86_64_unknown_linux_gnu=$Z/ranlib \
-    CARGO_TARGET_DIR=$T cargo build --offline --profile tool --target x86_64-unknown-linux-gnu --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
+    ARCLOG_ENGINE_COMMIT=$COMMIT ARCLOG_ENGINE_PROFILE=tool CARGO_TARGET_DIR=$T cargo build --offline --profile tool --target x86_64-unknown-linux-gnu --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
   cp "$T/x86_64-unknown-linux-gnu/tool/feature-encoder" "$R/linux/$NAME/feature-encoder" &&
   (cd "$R/linux/$NAME" && shasum -a 256 $(ls | grep -v -x -e SHA256SUMS -e COMMIT) > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
 }
@@ -106,7 +106,7 @@ clippy() {
   local status=$?; prune_debug; return $status
 }
 
-# The engine record of NAME, beside each arclog binary of NAME built from COMMIT, the same in every site (engine_record.py gives its form).
+# The engine record of NAME, beside each arclog binary and feature-encoder of NAME built from COMMIT, the same in every place (engine_record.py gives its form).
 record() {
   python3 -I "$(dirname "$0")/engine_record.py" "$R" "$NAME" "$COMMIT"
 }
@@ -147,6 +147,6 @@ for PART in $PARTS; do
   esac
 done
 case " $PARTS " in
-  *" wheel "*|*" linux "*|*" linux-encoder "*) locked record || fail record; step "$(grep -E '^engine record' "$LOG" | tail -1)";;
+  *" wheel "*|*" encoder "*|*" linux "*|*" linux-encoder "*) locked record || fail record; step "$(grep -E '^engine record' "$LOG" | tail -1)";;
 esac
 step "done"

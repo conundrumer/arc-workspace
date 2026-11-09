@@ -8,11 +8,17 @@ Linux wheels in `linux/NAME`, as `linux-x86_64`, whose binaries are read from th
 names another commit takes no part, nor does one that lacks its arclog binary. Every site of NAME gets the same record:
 `builds/NAME/arclog/engine-record.json`, and the file `arclog/engine-record.json` in the Linux arclog wheel, with its line in the wheel's RECORD
 and the folder's SHA256SUMS made again. The build checks out COMMIT in a clean tree, so `clean` is true. `profile` is the cargo profile that
-every part of the build compiles with."""
-import base64, glob, hashlib, json, os, platform, re, sys, zipfile
+every part of the build compiles with.
+
+The feature-encoders of NAME get a record of their own in the same form, with the encoder's path relative to the folder of the record in place of
+a path in the site: `bin/feature-encoder-NAME` where it prints COMMIT as its engine's (`feature-encoder engine`), and `linux/NAME/feature-encoder`
+where that folder's COMMIT file names COMMIT. Each such encoder gets that record beside it, as `bin/feature-encoder-NAME.engine-record.json` and
+`linux/NAME/feature-encoder.engine-record.json`. The site's record lists no encoder, since `Engine.load` checks each listed file in the site."""
+import base64, glob, hashlib, json, os, platform, re, subprocess, sys, zipfile
 
 RECORD_NAME = "arclog/engine-record.json"
 PACKAGES = ("arclog", "arclog_features")
+ENCODER = "feature-encoder"  # the encoder binary's name in `binaries`, on every platform
 
 
 def sha256(data):
@@ -65,6 +71,48 @@ def linux_binaries(folder):
     return found if any(k.startswith("arclog/") for k in found) else None
 
 
+def prints_commit(path, commit):
+    """Whether the encoder at `path` prints `commit` as its engine's (`feature-encoder engine`)."""
+    try:
+        printed = json.loads(subprocess.run([path, "engine"], capture_output=True, text=True, check=True).stdout)
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return False
+    return (printed.get("engine") or {}).get("commit") == commit
+
+
+def record_bytes(commit, binaries):
+    return (json.dumps({"commit": commit, "flags": {"profile": "tool"}, "clean": True, "binaries": binaries}, indent=1, sort_keys=True) + "\n").encode()
+
+
+def write_sums(folder):
+    """The SHA256SUMS of the Linux folder, over each file but itself and COMMIT."""
+    files = sorted(f for f in os.listdir(folder) if f not in ("SHA256SUMS", "COMMIT") and os.path.isfile(os.path.join(folder, f)))
+    with open(os.path.join(folder, "SHA256SUMS"), "w") as handle:
+        for f in files:
+            with open(os.path.join(folder, f), "rb") as body:
+                handle.write("%s  %s\n" % (sha256(body.read()), f))
+
+
+def encoder_records(root, name, commit, linux):
+    """The record of NAME's feature-encoders, beside each one built from `commit`. Gives its binaries, {} where there is none."""
+    mac_path, linux_path = os.path.join(root, "bin", "%s-%s" % (ENCODER, name)), os.path.join(linux, ENCODER)
+    places, binaries = [], {}
+    if os.path.isfile(mac_path) and prints_commit(mac_path, commit):
+        with open(mac_path, "rb") as handle:
+            binaries["%s-%s" % (sys.platform, platform.machine())] = {os.path.basename(mac_path): sha256(handle.read())}
+        places.append(mac_path)
+    if commit_of(linux) == commit and os.path.isfile(linux_path):
+        with open(linux_path, "rb") as handle:
+            binaries["linux-x86_64"] = {ENCODER: sha256(handle.read())}
+        places.append(linux_path)
+    for path in places:
+        with open(path + ".engine-record.json", "wb") as handle:
+            handle.write(record_bytes(commit, binaries))
+    if linux_path in places:
+        write_sums(linux)
+    return binaries
+
+
 def write_into_wheel(wheel, data):
     """Rewrite `wheel` with RECORD_NAME holding `data`, in place of any earlier copy, and with its line in the dist-info RECORD. The entries keep
     their order and their times, so the rewrite of one record into one wheel gives the same bytes."""
@@ -93,6 +141,7 @@ def write_into_wheel(wheel, data):
 def main():
     root, name, commit = sys.argv[1:4]
     mac, linux = os.path.join(root, "builds", name), os.path.join(root, "linux", name)
+    encoders = encoder_records(root, name, commit, linux)
     binaries = {}
     mac_found = mac_binaries(mac) if commit_of(mac) == commit else None
     if mac_found:
@@ -100,21 +149,18 @@ def main():
     linux_found = linux_binaries(linux) if commit_of(linux) == commit else None
     if linux_found:
         binaries["linux-x86_64"] = linux_found
+    told = "; encoders: %s" % ", ".join(sorted(encoders)) if encoders else ""
     if not binaries:
-        print("engine record: no arclog binary of %s for %s" % (commit[:9], name))
+        print("engine record: no arclog binary of %s for %s%s" % (commit[:9], name, told))
         return
-    data = (json.dumps({"commit": commit, "flags": {"profile": "tool"}, "clean": True, "binaries": binaries}, indent=1, sort_keys=True) + "\n").encode()
+    data = record_bytes(commit, binaries)
     if mac_found:
         with open(os.path.join(mac, RECORD_NAME), "wb") as handle:
             handle.write(data)
     if linux_found:
         write_into_wheel(wheel_of(linux, "arclog"), data)
-        files = sorted(f for f in os.listdir(linux) if f not in ("SHA256SUMS", "COMMIT") and os.path.isfile(os.path.join(linux, f)))
-        with open(os.path.join(linux, "SHA256SUMS"), "w") as handle:
-            for f in files:
-                with open(os.path.join(linux, f), "rb") as body:
-                    handle.write("%s  %s\n" % (sha256(body.read()), f))
-    print("engine record of %s for %s: %s" % (commit[:9], name, "; ".join("%s %d binaries" % (p, len(b)) for p, b in sorted(binaries.items()))))
+        write_sums(linux)
+    print("engine record of %s for %s: %s%s" % (commit[:9], name, "; ".join("%s %d binaries" % (p, len(b)) for p, b in sorted(binaries.items())), told))
 
 
 if __name__ == "__main__":

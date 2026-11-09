@@ -1,7 +1,9 @@
 //! The `shapes` records of a task's tables, from the tables' stored rows and the task's grids, with no replay of the engine.
 //!
 //! A rows file is zstd (or plain) JSON lines, one per distinct TableHash: `{"hash": "<32 hex digits>", "table": T}`, where `T` is the table in the form that `atom_lists::stored_of` reads (`stored_json` writes
-//! it). For each line the walk of the table's shapes runs on a walker of its own, so a record depends on the table, the task's grids and the list of shapes alone, whatever else the run walked. The output has a line
+//! it). Its first line may be a header, `{"record": "header", "schema": TABLE_ROWS_FORMAT, ...}` with the producers of the engine that wrote the rows (`table_hash_version`, `query_hash_version` and `engine`);
+//! the run reads such a file only where those producers are this encoder's own (`producers`), and the header gives no record.
+//! For each line the walk of the table's shapes runs on a walker of its own, so a record depends on the table, the task's grids and the list of shapes alone, whatever else the run walked. The output has a line
 //! for each line of the input, in its order: `{"record":"shapes","table":HASH,"h":B,"v":B,"stopped":FLAG}`. `h` is the base64 of the shape hashes as little-endian u64, and `v` the base64 of the least, mean and
 //! most of each shape as little-endian f32, three to a shape. With a list of shape hashes, the record holds those shapes alone, in the list's order, and a shape the table lacks has 0; otherwise it holds each shape of
 //! the table's vector in the order of their hashes. `stopped` says that the walk passed its bound on cells, so that the terms after that point have no value (NaN), or that the table has more columns than the
@@ -18,6 +20,43 @@ use std::sync::Mutex;
 
 /// The size of the shapes, as the candidate lists build them.
 pub const SIZE: usize = 2;
+
+/// The `schema` of a rows file's header: one header line, then one line for each distinct TableHash (`table_hash.TABLE_ROWS_FORMAT`).
+pub const TABLE_ROWS_FORMAT: &str = "table-rows-1";
+
+/// This encoder's producers, in the form of a rows file's header (`producer.header`): the versions of its engine's TableHash and QueryHash, and `engine`, the identity of its build: the commit and the
+/// flags that `scripts/engine_build.sh` gives the compiler. A build made otherwise has `engine` null, which no header names.
+pub fn producers() -> serde_json::Value {
+    let engine = option_env!("ARCLOG_ENGINE_COMMIT").map(|commit| serde_json::json!({"commit": commit, "flags": {"profile": option_env!("ARCLOG_ENGINE_PROFILE").unwrap_or_default()}}));
+    serde_json::json!({
+        "table_hash_version": arclog_tables::summary::TABLE_HASH_VERSION,
+        "query_hash_version": arclog::resolver::QUERY_HASH_VERSION,
+        "engine": engine,
+    })
+}
+
+/// The check of a rows file's header: its format is TABLE_ROWS_FORMAT, and its producers are this encoder's. Gives the reason where either is not.
+fn check_header(held: &serde_json::Value) -> Result<(), String> {
+    if held["schema"] != TABLE_ROWS_FORMAT {
+        return Err(format!("the rows file is in format {}, and this encoder reads {TABLE_ROWS_FORMAT}", held["schema"]));
+    }
+    let own = producers();
+    let differ: Vec<String> = ["table_hash_version", "query_hash_version", "engine"].iter().filter(|field| held[**field] != own[**field]).map(|field| format!("{field} {} against {}", held[*field], own[*field])).collect();
+    if differ.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("the rows file's producers are not this encoder's: {}", differ.join("; ")))
+    }
+}
+
+/// The first line of a rows file as a table's line, or none where it is the header, which must pass `check_header`.
+fn first_table_line(first: Option<std::io::Result<String>>) -> Result<Option<std::io::Result<String>>, String> {
+    let Some(Ok(text)) = &first else { return Ok(first) };
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(held) if held["record"] == "header" => check_header(&held).map(|()| None),
+        _ => Ok(first),
+    }
+}
 
 /// The hashes and the numbers of a vector's shapes: the listed shapes, or each shape of the vector. A shape that the vector lacks is at its default at every example.
 fn numbers_of(vector: &TableVector, only: Option<&[u64]>) -> (Vec<u64>, Vec<f32>) {
@@ -100,12 +139,14 @@ fn lines_of(path: &Path) -> Result<std::io::Lines<std::io::BufReader<Box<dyn Rea
 }
 
 /// Writes the `shapes` records of the tables in `input` to `out`, on `threads` threads, for the task `task` of `task_dir`, and gives a line of counts. `only` lists the shapes to walk, or is none for each shape.
-/// It fails, with `out` unwritten, where a line can't be read.
+/// It fails, with `out` unwritten, where a line can't be read or the header's format or producers are not this encoder's.
 pub fn run(input: &Path, out: &Path, task_dir: &Path, task: &str, only: Option<&[u64]>, threads: usize, generators: &Generators) -> Result<String, String> {
     let begun = std::time::Instant::now();
     let (parsed, grids) = Grids::of_file(task_dir, task, None)?;
     let (train, test) = (parsed.train.len(), parsed.test.len());
-    let source = Mutex::new((lines_of(input)?, 0usize));
+    let mut lines = lines_of(input)?;
+    let first = first_table_line(lines.next()).map_err(|why| format!("{}: {why}", input.display()))?;
+    let source = Mutex::new((first.into_iter().chain(lines), 0usize));
     let done: Mutex<Vec<(usize, Result<Walked, String>)>> = Mutex::new(Vec::new());
     std::thread::scope(|scope| {
         for _ in 0..threads.max(1) {

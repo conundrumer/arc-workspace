@@ -10,8 +10,10 @@ the least, the mean and the most over the examples of one shape of one table of 
 did not stop, under the build's value version, and a refresh walks only the tables and shapes that the store lacks. The store keeps
 nothing of a walk that stopped at the cell budget, and of a table that has too many columns: the encoder walks such a table with the
 whole request, and its record goes to OUT as the encoder writes it. A refresh with an environment variable set that changes the
-encoder's values (see VALUE_VARIABLES and VALUE_PREFIXES) is refused. With `--header`, OUT's first line is
-`{"record":"header","value_version":V,"binary":SHA256}`: the build's value version and the hash of its binary. With `--families DIR`,
+encoder's values (see VALUE_VARIABLES and VALUE_PREFIXES) is refused. A rows file whose first line is a header, with `schema`
+TABLE_ROWS_FORMAT and the producers of its rows (PRODUCER_FIELDS), is refused unless those producers are the encoder's (`ENCODER engine`), as the
+encoder refuses it. With `--header`, OUT's first line is `{"record":"header","value_version":V,"binary":SHA256}`: the build's value
+version and the hash of its binary, and the rows file's producers where its header names them. With `--families DIR`,
 the encoder saves each family it builds under DIR and reads it there in a later run of the same binary (`shapes-refresh --families`).
 
 A value version names the values that a build gives. A build has a version of its own, from the hash of its binary, unless an entry of
@@ -54,6 +56,9 @@ VALUE_PREFIXES = ()
 # The most encoder calls a refresh makes for the tables that the store holds in part. Past it, those tables are walked in one call,
 # with each shape that one of them lacks.
 MOST_GROUPS = 8
+# A rows file's header: its `schema`, and the fields that name the producers of its rows (`table_hash.TABLE_ROWS_FORMAT` and `table_hash.PRODUCER_FIELDS`).
+TABLE_ROWS_FORMAT = 'table-rows-1'
+PRODUCER_FIELDS = ('table_hash_version', 'query_hash_version', 'engine')
 
 
 class Refused(Exception):
@@ -195,11 +200,32 @@ def needs_of(held: Held | None, only: list[int] | None) -> list[int] | None:
     return missing or None
 
 
-def walk(encoder: Path, task: str, lines: list[str], shapes: list[int] | None, threads: int, tasks: Path, work: Path, name: str, families: str | None = None) -> list[str]:
-    """The encoder's records for the rows lines, with the listed shapes or with each shape."""
+def producers_of(encoder: Path) -> dict:
+    """The encoder's producers, which a rows file's header must name (`ENCODER engine`)."""
+    done = subprocess.run([str(encoder), 'engine'], capture_output=True, text=True)
+    if done.returncode != 0:
+        raise Refused(f'{encoder.name} engine failed: {done.stderr.strip()[-400:]}')
+    return json.loads(done.stdout)
+
+
+def check_header(header: dict, encoder: Path, rows: str) -> None:
+    """The check of a rows file's header: its format is TABLE_ROWS_FORMAT, and its producers are the encoder's, as the encoder checks
+    them where it reads the file. Raises Refused where either is not."""
+    if header.get('schema') != TABLE_ROWS_FORMAT:
+        raise Refused(f'{rows}: the rows file is in format {header.get("schema")!r}, and this store reads {TABLE_ROWS_FORMAT!r}')
+    own = producers_of(encoder)
+    differ = [f'{field} {header.get(field)!r} against {own.get(field)!r}' for field in PRODUCER_FIELDS if header.get(field) != own.get(field)]
+    if differ:
+        raise Refused(f'{rows}: the rows file\'s producers are not those of {encoder.name}: {"; ".join(differ)}')
+
+
+def walk(encoder: Path, task: str, lines: list[str], shapes: list[int] | None, threads: int, tasks: Path, work: Path, name: str, families: str | None = None,
+         header: str | None = None) -> list[str]:
+    """The encoder's records for the rows lines, with the listed shapes or with each shape. `header` is the rows file's header line,
+    which the encoder checks again."""
     rows = work / f'{name}.rows.jsonl'
     out = work / f'{name}.out.jsonl'
-    write_lines(rows, lines)
+    write_lines(rows, ([header] if header else []) + lines)
     command = [str(encoder), 'shapes-refresh', str(rows), task, str(out), '--tasks', str(tasks), '--threads', str(threads)]
     if families:
         command += ['--families', families]
@@ -222,13 +248,19 @@ def refresh(args) -> str:
     path = store / version / f'{args.task}-{task_digest}.jsonl.zst'
     only = shape_list(Path(args.shapes)) if args.shapes else None
     tables: list[tuple[str, str]] = []
+    header_line, header = None, None
     for line in lines_of(Path(args.rows)):
         if not line.strip():
             continue
         try:
-            hash_ = json.loads(line).get('hash')
+            held = json.loads(line)
         except json.JSONDecodeError:
             raise Refused(f'{args.rows}: a line that is not JSON') from None
+        if not tables and header is None and isinstance(held, dict) and held.get('record') == 'header':
+            check_header(held, encoder, args.rows)
+            header_line, header = line.rstrip('\n'), held
+            continue
+        hash_ = held.get('hash') if isinstance(held, dict) else None
         if not isinstance(hash_, str) or not hash_ or any(c not in '0123456789abcdefABCDEF' for c in hash_):
             raise Refused(f'{args.rows}: a line with no hash')
         tables.append((hash_, line.rstrip('\n')))
@@ -248,7 +280,7 @@ def refresh(args) -> str:
         for number, (key, ats) in enumerate(groups.items()):
             shapes = None if key == ('every',) else list(key)
             whole = shapes is None or shapes == only
-            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in ats], shapes, args.threads, tasks, Path(work), f'g{number}', args.families)}
+            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in ats], shapes, args.threads, tasks, Path(work), f'g{number}', args.families, header_line)}
             for at in ats:
                 table = tables[at][0]
                 line = by_table.get(table)
@@ -265,7 +297,7 @@ def refresh(args) -> str:
                 if whole:
                     direct[at] = line
         if again:
-            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in sorted(again)], only, args.threads, tasks, Path(work), 'again', args.families)}
+            by_table = {json.loads(line)['table']: line for line in walk(encoder, args.task, [tables[at][1] for at in sorted(again)], only, args.threads, tasks, Path(work), 'again', args.families, header_line)}
             for at in again:
                 line = by_table.get(tables[at][0])
                 if line is not None:
@@ -299,7 +331,8 @@ def refresh(args) -> str:
         if at not in walked_at:
             served += 1
     if args.header:
-        out_lines.insert(0, json.dumps({'record': 'header', 'value_version': version, 'binary': binary}, separators=(',', ':')))
+        producers = {field: header[field] for field in PRODUCER_FIELDS} if header is not None else {}
+        out_lines.insert(0, json.dumps({'record': 'header', 'value_version': version, 'binary': binary, **producers}, separators=(',', ':')))
     write_lines(Path(args.out), out_lines)
     walked = len(walked_at)
     return (f'{args.task}: {len(out_lines) - int(args.header)} records, {served} tables wholly from the store ({version}), {walked} tables walked in {len(groups)} calls, '
