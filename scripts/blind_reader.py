@@ -35,7 +35,7 @@ one assignment, which, or how many. It holds counts and numbers alone.
 Features are sparse: an entry at its default is left out.
 - A table's section is `## TABLE`, with lines `VALUE<tab>SHAPE`. VALUE is the entry's value at each train example, as
   `a | b | c`, or one value where they agree. Where the shape's greatest and sum differ, it is `greatest,sum`. A fraction
-  is `top/bottom`. `?` is no value, where a bound on the walk stopped it. `test:` says whether each test input has a value.
+  is `top/bottom`. `?` is no value: a bound on the walk stopped it, a value set does not have exactly one member, or a ratio has no rows below it. `test:` says whether each test input has a value.
   A shape's `T` is the table.
 - `## TABLE task-wide` gives the shapes that read all examples at once, with one value each. Their names are long, and a table
   can have hundreds, so a run gives the count of them and the count of values, and `--wide` lists them, last.
@@ -53,6 +53,8 @@ import argparse, ast, hashlib, json, os, re, signal, subprocess, sys
 from pathlib import Path
 
 HEADS = ('(RULE', '(DET', '(INIT', '(RIGID_DET')
+# The shape size. The learned model's shape columns use size 2, which can print megabytes a run; size 1 is the default.
+SIZE = '1'
 BASE = ('ex_input', 'ex_output', 'input', 'output')
 TIMEOUT = float(os.environ.get('BLIND_READER_TIMEOUT', '170'))
 INNER = 'BLIND_READER_INNER'
@@ -206,7 +208,7 @@ def table_section(task, corpus, name, assignment, target=None):
     out = f'{corpus}/v-{hashlib.sha1(name.encode()).hexdigest()[:10]}.jsonl'
     if os.path.exists(out):
         os.remove(out)
-    r = encoder('vector', task, name, '--size', '1', '--corpus', corpus, '--tasks', CFG['tasks'], '--out', out)
+    r = encoder('vector', task, name, '--size', SIZE, '--corpus', corpus, '--tasks', CFG['tasks'], '--out', out)
     if not os.path.exists(out):
         return [';; no vector: ' + fault(r)], [], None, None
     lines, wide, pool, number = read_vector(out, assignment, target)
@@ -222,7 +224,7 @@ def base_sections(task, corpus):
     out = corpus + '/b.jsonl'
     if os.path.exists(out):
         os.remove(out)
-    r = encoder('base-vectors', task, '--size', '1', '--corpus', corpus, '--tasks', CFG['tasks'], '--out', out)
+    r = encoder('base-vectors', task, '--size', SIZE, '--corpus', corpus, '--tasks', CFG['tasks'], '--out', out)
     if not os.path.exists(out):
         return {'base': [';; no vector: ' + fault(r)]}
     res, name, train = {}, None, 0
@@ -240,7 +242,7 @@ def query_sections(task, corpus):
     out = corpus + '/q.jsonl'
     if os.path.exists(out):
         os.remove(out)
-    r = encoder('query-vectors', task, '--size', '1', '--corpus', corpus, '--tasks', CFG['tasks'], '--out', out)
+    r = encoder('query-vectors', task, '--size', SIZE, '--corpus', corpus, '--tasks', CFG['tasks'], '--out', out)
     if not os.path.exists(out):
         return {}, ';; no query vectors: ' + fault(r)
     res = {}
@@ -556,9 +558,11 @@ def main():
     ap = argparse.ArgumentParser(prog='arclog.py', description=__doc__[__doc__.index('Running:'):], formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--setting', required=True, help="the file that holds the internal folder's path")
     sub = ap.add_subparsers(dest='command', required=True)
-    p = sub.add_parser('tables'); p.add_argument('program'); p.add_argument('task'); p.add_argument('--case'); p.add_argument('--all', action='store_true'); p.add_argument('--shapes', action='store_true'); p.add_argument('--wide', action='store_true')
-    p = sub.add_parser('rows'); p.add_argument('program'); p.add_argument('task'); p.add_argument('relation'); p.add_argument('--case'); p.add_argument('--assignment', type=int); p.add_argument('--shapes', action='store_true'); p.add_argument('--wide', action='store_true')
+    p = sub.add_parser('tables'); p.add_argument('program'); p.add_argument('task'); p.add_argument('--size', choices=['1', '2'], default='1'); p.add_argument('--case'); p.add_argument('--all', action='store_true'); p.add_argument('--shapes', action='store_true'); p.add_argument('--wide', action='store_true')
+    p = sub.add_parser('rows'); p.add_argument('program'); p.add_argument('task'); p.add_argument('relation'); p.add_argument('--size', choices=['1', '2'], default='1'); p.add_argument('--case'); p.add_argument('--assignment', type=int); p.add_argument('--shapes', action='store_true'); p.add_argument('--wide', action='store_true')
     a = ap.parse_args()
+    global SIZE
+    SIZE = a.size
     configure(a.setting)
     a.program = os.path.abspath(a.program)
     try:
