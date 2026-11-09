@@ -1613,11 +1613,12 @@ fn push_run(values: &mut Vec<i32>, runs: &mut Runs, count: u64, cells: Vec<i32>)
 /// The count of rows, the offset of the run of the rows of `rows`, of
 /// columns of `types`, in the order of their cells, as [`push_run`] places it,
 /// and the places of the rows in that order, as [`sorted_rows`] gives them.
+///
+/// Each call admits the bytes of the rows and walks them, whether or not `runs` holds the places of the rows already. Two entries with equal rows hold
+/// one `Arc` where the result cache gave both its one relation of those rows, and two where each computed its own. The bytes held and the work
+/// counted must not depend on that, so a call that finds the `Arc` in `runs` makes the charges of a call that sorts, and leaves out the sort.
 fn push_rows(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclog::session::SessionAllocation>>,values: &mut Vec<i32>, runs: &mut Runs, rows: &Arc<Relation>, types: &[ValueType]) -> Result<(u64, u64, Arc<[usize]>),arclog::eval::ReachedBound> {
     let key=(Arc::as_ptr(rows) as usize,types.to_vec());
-    if let Some((_,offset,order))=runs.1.get(&key) {
-        return Ok((order.len() as u64,*offset,Arc::clone(order)));
-    }
     // Flattening, sorting and export use contiguous buffers. The cells stand
     // at most four times during Python conversion; sorting keeps two index
     // buffers. Digest export can also collect one (offset, Ident) per Ident
@@ -1627,6 +1628,14 @@ fn push_rows(materializer:&Materializer<'_>,allocations:&mut Vec<Arc<arclog::ses
         .saturating_add(2*std::mem::size_of::<usize>())
         .saturating_add(ident_columns.saturating_mul(2*std::mem::size_of::<(usize,Ident)>()));
     let allocation=materializer.admit(rows,bytes)?;
+    if let Some((_,offset,order))=runs.1.get(&key) {
+        // The charges of `sorted_rows`: the walk of the rows and its two checks.
+        materializer.walk(rows,&mut |_|{})?;
+        materializer.check()?;
+        materializer.check()?;
+        allocations.push(allocation);
+        return Ok((order.len() as u64,*offset,Arc::clone(order)));
+    }
     let (written, order) = sorted_rows(materializer,rows, types)?;
     let width = row_width(types) as usize;
     let count = order.len() as u64;
@@ -2131,7 +2140,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
         let index = u32::try_from(index).expect("fewer than 2^32 examples");
         let push = |materializer: &Materializer<'_>, out: &mut CaseColumns, runs: &mut Runs, settled: &mut Settled, at_assignment:usize, model: u32, value: Option<&RelationValue>, stop: Option<&Stop>, fault: Option<String>, extents: Option<&EntryExtents>| {
             let count_only=matches!(value,Some(RelationValue::Rows(rows)) if row_export.count_only(rows,contents.projections.is_some()));
-            let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
+            let (values_from,allocations_from)=(out.values.len(),out.allocations.len());
             let heap_from=values_heap(out.values.capacity());
             let faulted = fault.is_some();
             let entries = &mut out.entries;
@@ -2205,7 +2214,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                     }
                 }
             } else {Vec::new()};
-            let order_kept=if runs.1.len()>runs_from {order.len()} else {0};
+            let order_kept=order.len();
             let kept=kept_bytes(out.values.len()-values_from,order_kept,&extent_status);
             settled.scratch=settled.scratch.saturating_add(order_kept.saturating_mul(std::mem::size_of::<usize>()));
             settle(settled,&mut out.allocations[allocations_from..],kept,values_heap(out.values.capacity())-heap_from+extent_status.heap_bytes());
@@ -2241,12 +2250,12 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                     }
                     let mut assigned_runs = Vec::new();
                     for (position, ((_, det_rows), det)) in assigned.iter().zip(contents.dets.iter()).enumerate().filter(|_| !row_export.skips_dets()) {
-                        let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
+                        let (values_from,allocations_from)=(out.values.len(),out.allocations.len());
                         let heap_from=values_heap(out.values.capacity());
                         let mut order_kept=0;
                         match push_rows(materializer,&mut out.allocations,&mut out.values,runs,det_rows,&det.types) {
                             Ok((count,offset,order))=>{
-                                if runs.1.len()>runs_from {order_kept=order.len();}
+                                order_kept=order.len();
                                 assigned_runs.push((position as u32,count,offset));
                             },
                             Err(bound)=>{
@@ -2288,7 +2297,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
             out.projections.width.push(row_width(&projection_types));
             for (example, assigned) in projection.rows.iter().enumerate() {
                 for (at, (_, projection_rows)) in assigned.at.iter().enumerate() {
-                    let (values_from,allocations_from,runs_from)=(out.values.len(),out.allocations.len(),runs.1.len());
+                    let (values_from,allocations_from)=(out.values.len(),out.allocations.len());
                     let heap_from=values_heap(out.values.capacity());
                     let mut order:Arc<[usize]> = Arc::from([]);
                     let (defined, count, offset) = match projection_rows {
@@ -2334,7 +2343,7 @@ fn push_contents(materializer:&Materializer<'_>,form:&NodePath,out: &mut CaseCol
                         Ok(value)=>value,
                         Err(bound)=>{out.packing_stop=Some(Stop {bound,form:form.clone()});(-1,Vec::new())},
                     };
-                    let order_kept=if runs.1.len()>runs_from {order.len()} else {0};
+                    let order_kept=order.len();
                     let kept=kept_bytes(out.values.len()-values_from,order_kept,&extent_status);
                     settled.scratch=settled.scratch.saturating_add(order_kept.saturating_mul(std::mem::size_of::<usize>()));
                     settle(&mut settled,&mut out.allocations[allocations_from..],kept,values_heap(out.values.capacity())-heap_from+extent_status.heap_bytes());
