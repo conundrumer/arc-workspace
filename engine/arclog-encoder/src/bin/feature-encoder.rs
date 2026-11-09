@@ -15,6 +15,7 @@
 //!   feature-encoder all-lists ROOT (TASK | TABLES_FILE)... --size D --tables-cmd COMMAND [--names DERANGEMENTS] [--threads N] [--wide-size D] [--families DIR] [--count-bounds]
 //!   feature-encoder term-counts PATTERN TABLES_FILE [--size D]
 //!   feature-encoder shapes-refresh ROWS_FILE TASK OUT [--shapes FILE] [--threads N] [--families DIR] [--count-bounds]
+//!   feature-encoder engine
 //!   feature-encoder term-stats TYPE,TYPE,... [--size D]
 //!   feature-encoder family-names TYPE,TYPE,... [--size D]
 //!   feature-encoder refine-explain CALL ARITY KEY_BITS
@@ -51,6 +52,8 @@
 //! term's text, so a run with the counts keeps the text of its terms, and reads and writes no saved family.
 //! The commands that read or print a term's text keep it always: `cap-hits`, `term-counts` and
 //! `term-stats`.
+//!
+//! `engine` prints the encoder's producers, which the header of a rows file must name for `shapes-refresh` to read it.
 
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -1482,6 +1485,10 @@ fn main() {
         }
         ("shape-count", files) if !files.is_empty() => run_shape_count(&arguments, files),
         ("shapes-refresh", [rows, task, out]) => run_shapes_refresh(&arguments, rows, task, out),
+        ("engine", []) => {
+            println!("{}", arclog_encoder::shapes_refresh::producers());
+            Ok(())
+        }
         ("count", [solver, tables @ ..]) if !tables.is_empty() => run_count(&arguments, solver, tables),
         ("grid-values", [grids]) => run_grid_values(&arguments, grids),
         ("grid-vectors", [grids]) => run_grid_vectors(&arguments, grids),

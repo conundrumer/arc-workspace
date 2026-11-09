@@ -15,7 +15,7 @@
 #
 # PARTs, in any order (default: wheel):
 #   wheel    arclog and arclog_features into builds/NAME/.
-#   encoder  feature-encoder into bin/feature-encoder-NAME.
+#   encoder  feature-encoder into bin/feature-encoder-NAME, with the commit and the profile compiled in (`feature-encoder engine` prints them).
 #   cli      arclog-cli's arclog-cli, verdicts and stream_round_trip into bin/.
 #   linux    Linux x86_64 wheels and feature-encoder, cross-built with zig for glibc 2.17 into the same target folder, into linux/NAME/.
 #   linux-encoder  the Linux feature-encoder alone, added to the wheels already in linux/NAME/.
@@ -63,7 +63,7 @@ wheel() {
 }
 
 encoder() {
-  CARGO_TARGET_DIR=$T cargo build --offline --profile tool --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
+  ARCLOG_ENGINE_COMMIT=$COMMIT ARCLOG_ENGINE_PROFILE=tool CARGO_TARGET_DIR=$T cargo build --offline --profile tool --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
   cp "$T/tool/feature-encoder" "$R/bin/feature-encoder-$NAME"
 }
 
@@ -91,7 +91,7 @@ linux_encoder() {
   printf '#!/bin/sh\nexec "%s" zig ranlib -- "$@"\n' "$M" > "$Z/ranlib" &&
   chmod +x "$Z/cc" "$Z/c++" "$Z/ar" "$Z/ranlib" &&
   RUSTC_WRAPPER= CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=$Z/cc CC_x86_64_unknown_linux_gnu=$Z/cc CXX_x86_64_unknown_linux_gnu=$Z/c++ AR_x86_64_unknown_linux_gnu=$Z/ar RANLIB_x86_64_unknown_linux_gnu=$Z/ranlib \
-    CARGO_TARGET_DIR=$T cargo build --offline --profile tool --target x86_64-unknown-linux-gnu --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
+    ARCLOG_ENGINE_COMMIT=$COMMIT ARCLOG_ENGINE_PROFILE=tool CARGO_TARGET_DIR=$T cargo build --offline --profile tool --target x86_64-unknown-linux-gnu --manifest-path "$B/engine/Cargo.toml" -p arclog-encoder --bin feature-encoder &&
   cp "$T/x86_64-unknown-linux-gnu/tool/feature-encoder" "$R/linux/$NAME/feature-encoder" &&
   (cd "$R/linux/$NAME" && shasum -a 256 $(ls | grep -v -x -e SHA256SUMS -e COMMIT) > SHA256SUMS && git -C "$B" rev-parse HEAD > COMMIT)
 }
