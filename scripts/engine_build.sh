@@ -6,8 +6,8 @@
 #   target/        the cargo target folder. Only the build checkout builds into it, so cargo never reuses a crate built from another tree.
 #   builds/NAME/   the engine build: the arclog and arclog_features packages, for PYTHONPATH, and COMMIT, the full SHA of the commit they were built from.
 #   linux/NAME/    Linux x86_64 wheels of arclog and arclog_features and the feature-encoder binary, with SHA256SUMS and COMMIT, for a pod.
-#   Beside each arclog binary of NAME, as arclog/engine-record.json in builds/NAME and in the Linux arclog wheel, the engine record that
-#   scripts/engine_record.py writes at the end of a build that made a binary: the commit, the cargo profile, and the sha256 of each native binary of each platform's site.
+#   Beside each arclog binary of NAME, as arclog/engine-record.json in builds/NAME and in the Linux arclog wheel, and beside each feature-encoder of NAME, the engine record that
+#   scripts/engine_record.py writes at the end of a build that made a binary: the commit, the cargo profile, and the sha256 of each native binary of each platform.
 #   zig/           the C compiler wrappers that link the Linux binaries with zig, through maturin's `zig cc`.
 #   bin/           tool binaries, each as TOOL-NAME.
 #   logs/NAME.log  each step's time and cargo's output.
@@ -106,7 +106,7 @@ clippy() {
   local status=$?; prune_debug; return $status
 }
 
-# The engine record of NAME, beside each arclog binary of NAME built from COMMIT, the same in every site (engine_record.py gives its form).
+# The engine record of NAME, beside each arclog binary and feature-encoder of NAME built from COMMIT, the same in every place (engine_record.py gives its form).
 record() {
   python3 -I "$(dirname "$0")/engine_record.py" "$R" "$NAME" "$COMMIT"
 }
@@ -147,6 +147,6 @@ for PART in $PARTS; do
   esac
 done
 case " $PARTS " in
-  *" wheel "*|*" linux "*|*" linux-encoder "*) locked record || fail record; step "$(grep -E '^engine record' "$LOG" | tail -1)";;
+  *" wheel "*|*" encoder "*|*" linux "*|*" linux-encoder "*) locked record || fail record; step "$(grep -E '^engine record' "$LOG" | tail -1)";;
 esac
 step "done"
