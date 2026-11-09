@@ -9,6 +9,7 @@
 //! The settings, the replay progress and the walk over a corpus are those of
 //! `arclog-bindings`, which depends on nothing here.
 
+mod atom_mode;
 mod case_tables;
 mod study_pair;
 mod study_filters;
@@ -69,6 +70,7 @@ pub fn register(names: &Names<'_, '_>) -> PyResult<()> {
     names.function(wrap_pyfunction!(step_tables::base_tables, module)?)?;
     names.function(wrap_pyfunction!(step_tables::output_columns, module)?)?;
     names.function(wrap_pyfunction!(step_tables::step_tables_split, module)?)?;
+    names.function(wrap_pyfunction!(atom_mode::atom_mode_holds, module)?)?;
     names.function(wrap_pyfunction!(table_feature_names, module)?)?;
     names.function(wrap_pyfunction!(table_features_version, module)?)?;
     names.function(wrap_pyfunction!(table_hash_version, module)?)?;

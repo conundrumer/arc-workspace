@@ -266,6 +266,29 @@ impl PyDecoder {
         Ok(admitted)
     }
 
+    /// Whether taking each token with an id of `ids` would be refused because a
+    /// search spent its budget, one verdict for each id: `True` where `forced`
+    /// raises a `Refusal` whose text says `spent its budget` (a search of the
+    /// completion of a projection or of a head used all its steps), and `False`
+    /// for a token that `forced` gives and for a token that it refuses for any
+    /// other reason. It raises no `Refusal` and leaves the decode as it was.
+    /// Each token is checked as `forced` checks it, one after the other, so the
+    /// call costs as the calls of `forced` do, and `request_stats()` after it
+    /// gives the request of the last token. Raises `IndexError` for an id
+    /// outside the vocabulary, as `forced` does, and `EffortExhausted` where a
+    /// request passes its effort guard.
+    fn spent(&self, py: Python<'_>, ids: Vec<u32>) -> PyResult<Vec<bool>> {
+        let _entry = self.enter()?;
+        let tokens = ids.iter().map(|&id| self.token(id)).collect::<PyResult<Vec<_>>>()?;
+        let decoder = self.decoder();
+        let spent = tokens
+            .iter()
+            .map(|token| matches!(decoder.forced(token), Err(refusal) if refusal_message(&refusal).contains("spent its budget")))
+            .collect();
+        check_effort(py)?;
+        Ok(spent)
+    }
+
     /// A second decode from the same state, which shares this one's caches.
     pub(crate) fn fork(&self) -> PyResult<PyDecoder> {
         let _entry = self.enter()?;
