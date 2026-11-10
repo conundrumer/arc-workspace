@@ -4,6 +4,17 @@ ARC-AGI-2 work for the 2026 Kaggle competition. Python 3.12, `uv`.
 
 Run `just` to see frequently used scripts.
 
+## A Foundation for Symbolic Research on ARC
+
+This repository contains the paper's data set.
+
+- [`programs/arclog/`](programs/arclog/): the solvers, in arclog.
+- [`programs/solvers/`](programs/solvers/): the same solvers in Soufflé Datalog.
+- [`data/tasks/`](data/tasks/): the tasks as JSON, with the revisions applied.
+- [`data/patches/`](data/patches/): the revisions, each with its reason.
+- [`docs/arclog/arclog.md`](docs/arclog/arclog.md): the arclog language.
+- [`docs/arclog/lib.md`](docs/arclog/lib.md): the lib, the priors as an explicit set of primitives.
+
 ## Setup
 
 ```sh
