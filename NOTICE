@@ -1,0 +1,15 @@
+This repository is licensed under MIT No Attribution (MIT-0), in LICENSE, except for the ARC-AGI task data that this file describes.
+
+ARC-AGI task data
+
+This repository contains tasks from these datasets:
+
+- ARC-AGI-1, https://github.com/fchollet/ARC-AGI. Copyright 2019 Francois Chollet.
+- ARC-AGI-2, https://github.com/arcprize/ARC-AGI-2. Copyright 2019 ARC Prize Foundation.
+
+Both datasets are licensed under the Apache License, Version 2.0, in LICENSES/Apache-2.0.txt. Each file in this repository that contains tasks or grids from these datasets is licensed under the Apache License, Version 2.0.
+
+These files are changed from the upstream data:
+
+- data/tasks/ holds the upstream tasks with corrections applied. data/patches/ holds the corrections.
+- Other files hold the tasks, or parts of them, in other formats.

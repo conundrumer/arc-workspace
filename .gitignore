@@ -36,6 +36,11 @@ programs/arclog/cases/
 *.swap
 programs/solvers/.tmp*.dl
 
+# backups left by editors, patch and merge tools
+*.bak
+*.orig
+*.rej
+
 docs/codex-style.md
 
 # Lean build outputs
